@@ -1,0 +1,6 @@
+[python]
+path = "/usr/local/bin/python3.9"
+version = "3.9"
+
+[tool]
+in-project = true 

@@ -5,6 +5,12 @@ __pycache__/
 *$py.class
 .env
 
+# PDM
+__pypackages__/
+.pdm-python
+.pdm.toml
+pdm.lock
+
 # Build files
 build/
 dist/
