@@ -1,6 +1,6 @@
-# FastCuts Backend
+# Nowait Backend
 
-FastAPI backend for the FastCuts haircut service finder application.
+FastAPI backend for the Nowait universal queue management system.
 
 ## Development
 

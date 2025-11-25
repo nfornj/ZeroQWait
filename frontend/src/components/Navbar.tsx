@@ -12,9 +12,14 @@ import {
   Button,
   Tooltip,
   MenuItem,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import ContentCutIcon from "@mui/icons-material/ContentCut";
+import SearchIcon from "@mui/icons-material/Search";
+import FavoriteIcon from "@mui/icons-material/Favorite";
+import PersonIcon from "@mui/icons-material/Person";
 import { useAuth } from "../contexts/AuthContext";
 
 const pages = [
@@ -27,6 +32,8 @@ const Navbar = () => {
   const [anchorElUser, setAnchorElUser] = useState<null | HTMLElement>(null);
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const handleOpenNavMenu = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorElNav(event.currentTarget);
@@ -51,179 +58,299 @@ const Navbar = () => {
   };
 
   return (
-    <AppBar position="static">
+    <AppBar position="static" elevation={0} sx={{ borderBottom: '1px solid #EBEBEB' }}>
       <Container maxWidth="xl">
-        <Toolbar disableGutters>
-          {/* Logo for larger screens */}
-          <ContentCutIcon sx={{ display: { xs: "none", md: "flex" }, mr: 1 }} />
-          <Typography
-            variant="h6"
-            noWrap
+        <Toolbar
+          disableGutters
+          sx={{
+            minHeight: { xs: 64, md: 80 },
+            py: { xs: 1, md: 1.5 }
+          }}
+        >
+          {/* Logo */}
+          <Box
             component={RouterLink}
             to="/"
             sx={{
-              mr: 2,
-              display: { xs: "none", md: "flex" },
-              fontFamily: "monospace",
-              fontWeight: 700,
-              letterSpacing: ".3rem",
-              color: "inherit",
-              textDecoration: "none",
+              display: 'flex',
+              alignItems: 'center',
+              textDecoration: 'none',
+              color: 'inherit',
+              '&:hover': { opacity: 0.8 }
             }}
           >
-            FastCuts
-          </Typography>
+            <ContentCutIcon
+              sx={{
+                fontSize: { xs: 28, md: 32 },
+                color: 'primary.main',
+                mr: 1.5
+              }}
+            />
+            <Typography
+              variant="h5"
+              sx={{
+                fontWeight: 700,
+                fontSize: { xs: '1.5rem', md: '1.75rem' },
+                color: 'text.primary',
+                letterSpacing: '-0.02em'
+              }}
+            >
+              Nowait
+            </Typography>
+          </Box>
 
-          {/* Mobile menu */}
-          <Box sx={{ flexGrow: 1, display: { xs: "flex", md: "none" } }}>
+          <Box sx={{ flexGrow: 1 }} />
+
+          {/* Desktop Navigation */}
+          {!isMobile && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {/* Only show customer-facing features for non-employees */}
+              {user?.role !== 'employee' && (
+                <>
+                  <Button
+                    component={RouterLink}
+                    to="/search"
+                    startIcon={<SearchIcon />}
+                    sx={{
+                      color: 'text.primary',
+                      fontWeight: 500,
+                      px: 2,
+                      py: 1.5,
+                      borderRadius: '50px',
+                      '&:hover': {
+                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                      }
+                    }}
+                  >
+                    Search
+                  </Button>
+                  <Button
+                    component={RouterLink}
+                    to="/pricing"
+                    sx={{
+                      color: 'text.primary',
+                      fontWeight: 500,
+                      px: 2,
+                      py: 1.5,
+                      borderRadius: '50px',
+                      '&:hover': {
+                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                      }
+                    }}
+                  >
+                    Pricing
+                  </Button>
+
+                  {isAuthenticated && (
+                    <Button
+                      component={RouterLink}
+                      to="/favorites"
+                      startIcon={<FavoriteIcon />}
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        px: 2,
+                        py: 1.5,
+                        borderRadius: '50px',
+                        '&:hover': {
+                          backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                        }
+                      }}
+                    >
+                      Favorites
+                    </Button>
+                  )}
+                </>
+              )}
+
+              {/* User Menu */}
+              <Box sx={{ ml: 2 }}>
+                {isAuthenticated ? (
+                  <>
+                    <Tooltip title="Account menu">
+                      <IconButton
+                        onClick={handleOpenUserMenu}
+                        sx={{
+                          p: 0.5,
+                          border: '1px solid #DDDDDD',
+                          borderRadius: '50px',
+                          px: 1.5,
+                          '&:hover': {
+                            boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.18)',
+                          }
+                        }}
+                      >
+                        <PersonIcon sx={{ fontSize: 18, mr: 1 }} />
+                        <Avatar
+                          alt={user?.username || "User"}
+                          sx={{
+                            width: 24,
+                            height: 24,
+                            fontSize: '0.75rem',
+                            bgcolor: 'primary.main'
+                          }}
+                        >
+                          {user?.username?.charAt(0).toUpperCase() || 'U'}
+                        </Avatar>
+                      </IconButton>
+                    </Tooltip>
+                    <Menu
+                      anchorEl={anchorElUser}
+                      open={Boolean(anchorElUser)}
+                      onClose={handleCloseUserMenu}
+                      sx={{ mt: 1 }}
+                      PaperProps={{
+                        sx: {
+                          borderRadius: 2,
+                          boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.1)',
+                          border: '1px solid #EBEBEB'
+                        }
+                      }}
+                    >
+                      <MenuItem
+                        onClick={handleLogout}
+                        sx={{
+                          px: 3,
+                          py: 1.5,
+                          fontSize: '0.875rem'
+                        }}
+                      >
+                        Logout
+                      </MenuItem>
+                    </Menu>
+                  </>
+                ) : (
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      component={RouterLink}
+                      to="/login"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        px: 2,
+                        py: 1.5,
+                        borderRadius: '50px',
+                        '&:hover': {
+                          backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                        }
+                      }}
+                    >
+                      Log in
+                    </Button>
+                    <Button
+                      component={RouterLink}
+                      to="/pricing"
+                      variant="contained"
+                      sx={{
+                        fontWeight: 600,
+                        px: 3,
+                        py: 1.5,
+                        borderRadius: '50px',
+                        background: 'linear-gradient(135deg, #FF5A5F 0%, #FF385C 100%)',
+                        '&:hover': {
+                          background: 'linear-gradient(135deg, #FF385C 0%, #E00007 100%)',
+                        }
+                      }}
+                    >
+                      Sign up
+                    </Button>
+                  </Box>
+                )}
+              </Box>
+            </Box>
+          )}
+
+          {/* Mobile Menu */}
+          {isMobile && (
             <IconButton
-              size="large"
-              aria-label="account of current user"
-              aria-controls="menu-appbar"
-              aria-haspopup="true"
               onClick={handleOpenNavMenu}
-              color="inherit"
+              sx={{
+                ml: 2,
+                p: 1,
+                border: '1px solid #DDDDDD',
+                borderRadius: 1
+              }}
             >
               <MenuIcon />
             </IconButton>
-            <Menu
-              id="menu-appbar"
-              anchorEl={anchorElNav}
-              anchorOrigin={{
-                vertical: "bottom",
-                horizontal: "left",
-              }}
-              keepMounted
-              transformOrigin={{
-                vertical: "top",
-                horizontal: "left",
-              }}
-              open={Boolean(anchorElNav)}
-              onClose={handleCloseNavMenu}
-              sx={{
-                display: { xs: "block", md: "none" },
-              }}
-            >
-              {pages.map((page) => (
-                <MenuItem
-                  key={page.title}
-                  onClick={handleCloseNavMenu}
-                  component={RouterLink}
-                  to={page.path}
-                >
-                  <Typography textAlign="center">{page.title}</Typography>
-                </MenuItem>
-              ))}
-              {isAuthenticated && (
-                <MenuItem
-                  onClick={handleCloseNavMenu}
-                  component={RouterLink}
-                  to="/favorites"
-                >
-                  <Typography textAlign="center">Favorites</Typography>
-                </MenuItem>
-              )}
-            </Menu>
-          </Box>
+          )}
 
-          {/* Logo for mobile screens */}
-          <ContentCutIcon sx={{ display: { xs: "flex", md: "none" }, mr: 1 }} />
-          <Typography
-            variant="h5"
-            noWrap
-            component={RouterLink}
-            to="/"
-            sx={{
-              mr: 2,
-              display: { xs: "flex", md: "none" },
-              flexGrow: 1,
-              fontFamily: "monospace",
-              fontWeight: 700,
-              letterSpacing: ".3rem",
-              color: "inherit",
-              textDecoration: "none",
+          <Menu
+            anchorEl={anchorElNav}
+            open={Boolean(anchorElNav)}
+            onClose={handleCloseNavMenu}
+            sx={{ display: { xs: 'block', md: 'none' } }}
+            PaperProps={{
+              sx: {
+                borderRadius: 2,
+                boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.1)',
+                border: '1px solid #EBEBEB',
+                minWidth: 200
+              }
             }}
           >
-            FastCuts
-          </Typography>
-
-          {/* Desktop menu */}
-          <Box sx={{ flexGrow: 1, display: { xs: "none", md: "flex" } }}>
-            {pages.map((page) => (
-              <Button
-                key={page.title}
-                component={RouterLink}
-                to={page.path}
-                onClick={handleCloseNavMenu}
-                sx={{ my: 2, color: "white", display: "block" }}
-              >
-                {page.title}
-              </Button>
-            ))}
-            {isAuthenticated && (
-              <Button
-                component={RouterLink}
-                to="/favorites"
-                onClick={handleCloseNavMenu}
-                sx={{ my: 2, color: "white", display: "block" }}
-              >
-                Favorites
-              </Button>
-            )}
-          </Box>
-
-          {/* User menu */}
-          <Box sx={{ flexGrow: 0 }}>
-            {isAuthenticated ? (
+            {/* Only show customer-facing features for non-employees */}
+            {user?.role !== 'employee' && (
               <>
-                <Tooltip title="Open settings">
-                  <IconButton onClick={handleOpenUserMenu} sx={{ p: 0 }}>
-                    <Avatar
-                      alt={user?.username || "User"}
-                      src="/static/images/avatar/2.jpg"
-                    />
-                  </IconButton>
-                </Tooltip>
-                <Menu
-                  sx={{ mt: "45px" }}
-                  id="menu-appbar"
-                  anchorEl={anchorElUser}
-                  anchorOrigin={{
-                    vertical: "top",
-                    horizontal: "right",
-                  }}
-                  keepMounted
-                  transformOrigin={{
-                    vertical: "top",
-                    horizontal: "right",
-                  }}
-                  open={Boolean(anchorElUser)}
-                  onClose={handleCloseUserMenu}
+                <MenuItem
+                  component={RouterLink}
+                  to="/search"
+                  onClick={handleCloseNavMenu}
+                  sx={{ px: 3, py: 1.5 }}
                 >
-                  <MenuItem onClick={handleLogout}>
-                    <Typography textAlign="center">Logout</Typography>
+                  <SearchIcon sx={{ mr: 2, fontSize: 18 }} />
+                  Search
+                </MenuItem>
+                <MenuItem
+                  component={RouterLink}
+                  to="/pricing"
+                  onClick={handleCloseNavMenu}
+                  sx={{ px: 3, py: 1.5 }}
+                >
+                  Pricing
+                </MenuItem>
+                {isAuthenticated && (
+                  <MenuItem
+                    component={RouterLink}
+                    to="/favorites"
+                    onClick={handleCloseNavMenu}
+                    sx={{ px: 3, py: 1.5 }}
+                  >
+                    <FavoriteIcon sx={{ mr: 2, fontSize: 18 }} />
+                    Favorites
                   </MenuItem>
-                </Menu>
+                )}
               </>
-            ) : (
-              <Box sx={{ display: "flex" }}>
-                <Button
+            )}
+            {!isAuthenticated && (
+              <>
+                <MenuItem
                   component={RouterLink}
                   to="/login"
-                  sx={{ color: "white" }}
+                  onClick={handleCloseNavMenu}
+                  sx={{ px: 3, py: 1.5 }}
                 >
-                  Login
-                </Button>
-                <Button
+                  Log in
+                </MenuItem>
+                <MenuItem
                   component={RouterLink}
-                  to="/register"
-                  sx={{ color: "white" }}
+                  to="/pricing"
+                  onClick={handleCloseNavMenu}
+                  sx={{ px: 3, py: 1.5 }}
                 >
-                  Register
-                </Button>
-              </Box>
+                  Sign up
+                </MenuItem>
+              </>
             )}
-          </Box>
+            {isAuthenticated && (
+              <MenuItem
+                onClick={handleLogout}
+                sx={{ px: 3, py: 1.5, borderTop: '1px solid #EBEBEB' }}
+              >
+                Logout
+              </MenuItem>
+            )}
+          </Menu>
         </Toolbar>
       </Container>
     </AppBar>

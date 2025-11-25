@@ -1,20 +1,19 @@
 [project]
-name = "fastcuts-backend"
+name = "nowait-backend"
 version = "0.1.0"
-description = "FastAPI backend for FastCuts haircut service finder"
+description = "FastAPI backend for Nowait universal queue management system"
 authors = [
-    {name = "FastCuts Team", email = "team@fastcuts.com"}
+    {name = "Nowait Team", email = "team@nowait.com"}
 ]
 dependencies = [
     "fastapi==0.104.1",
     "uvicorn==0.23.2",
-    "sqlalchemy==2.0.23",
+    "supabase>=2.9.0",
     "pydantic==2.4.2",
     "python-jose==3.3.0",
     "passlib==1.7.4",
     "python-multipart==0.0.6",
-    "psycopg2-binary==2.9.9",
-    "httpx==0.25.1",
+    "httpx>=0.24.0",
     "python-dotenv==1.0.0",
     "bcrypt==4.0.1",
     "email-validator==2.1.0.post1"
@@ -37,7 +36,7 @@ source-includes = ["README.md"]
 test = [
     "pytest==7.4.3",
     "pytest-cov==4.1.0",
-    "httpx==0.25.1"
+    "httpx>=0.24.0"
 ]
 lint = [
     "black==23.10.1",

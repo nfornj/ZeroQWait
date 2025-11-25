@@ -1,0 +1,135 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+    Container,
+    Box,
+    Typography,
+    Grid,
+    Card,
+    CardContent,
+    Button,
+    CircularProgress,
+    Alert,
+    Chip
+} from '@mui/material';
+import StorefrontIcon from '@mui/icons-material/Storefront';
+import QueueIcon from '@mui/icons-material/Queue';
+import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+
+interface Shop {
+    id: number;
+    name: string;
+    description?: string;
+    shop_type: string;
+    address: string;
+    city: string;
+    state: string;
+    phone: string;
+}
+
+const EmployeeDashboardPage: React.FC = () => {
+    const [shops, setShops] = useState<Shop[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const { user } = useAuth();
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        fetchMyShops();
+    }, []);
+
+    const fetchMyShops = async () => {
+        try {
+            setLoading(true);
+            const token = localStorage.getItem('token');
+            const response = await axios.get(`${API_URL}/employees/my-shops`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setShops(response.data);
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to load shops');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
+                <CircularProgress />
+            </Box>
+        );
+    }
+
+    return (
+        <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+            <Box sx={{ mb: 4 }}>
+                <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
+                    Welcome, {user?.username}!
+                </Typography>
+                <Typography variant="body1" color="text.secondary">
+                    Manage queues for your assigned shops
+                </Typography>
+            </Box>
+
+            {error && (
+                <Alert severity="error" sx={{ mb: 3 }}>
+                    {error}
+                </Alert>
+            )}
+
+            {shops.length === 0 ? (
+                <Alert severity="info">
+                    You are not assigned to any shops yet. Contact your shop owner to get access.
+                </Alert>
+            ) : (
+                <Grid container spacing={3}>
+                    {shops.map((shop) => (
+                        <Grid item xs={12} md={6} key={shop.id}>
+                            <Card sx={{ height: '100%' }}>
+                                <CardContent>
+                                    <Box sx={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', mb: 2 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <StorefrontIcon color="primary" />
+                                            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                                                {shop.name}
+                                            </Typography>
+                                        </Box>
+                                        <Chip label={shop.shop_type} size="small" color="primary" />
+                                    </Box>
+
+                                    {shop.description && (
+                                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                            {shop.description}
+                                        </Typography>
+                                    )}
+
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                        📍 {shop.address}, {shop.city}, {shop.state}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                                        📞 {shop.phone}
+                                    </Typography>
+
+                                    <Button
+                                        fullWidth
+                                        variant="contained"
+                                        startIcon={<QueueIcon />}
+                                        onClick={() => navigate(`/dashboard?shop=${shop.id}`)}
+                                    >
+                                        Manage Queue
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    ))}
+                </Grid>
+            )}
+        </Container>
+    );
+};
+
+export default EmployeeDashboardPage;

@@ -8,199 +8,358 @@ import {
   Grid,
   Card,
   CardContent,
-  CardMedia,
+  alpha,
+  useTheme,
 } from "@mui/material";
-import ContentCutIcon from "@mui/icons-material/ContentCut";
 import SearchIcon from "@mui/icons-material/Search";
-import FavoriteIcon from "@mui/icons-material/Favorite";
+import LocationOnIcon from "@mui/icons-material/LocationOn";
+import StarIcon from "@mui/icons-material/Star";
+import ScheduleIcon from "@mui/icons-material/Schedule";
 import { useAuth } from "../contexts/AuthContext";
 
 const HomePage: React.FC = () => {
   const { isAuthenticated } = useAuth();
+  const theme = useTheme();
 
   return (
-    <Container maxWidth="lg">
+    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
       {/* Hero Section */}
       <Box
         sx={{
-          pt: 8,
-          pb: 6,
-          textAlign: "center",
+          background: 'linear-gradient(135deg, rgba(255, 90, 95, 0.1) 0%, rgba(0, 166, 153, 0.05) 100%)',
+          pt: { xs: 6, md: 10 },
+          pb: { xs: 8, md: 12 },
         }}
       >
-        <Typography
-          component="h1"
-          variant="h2"
-          align="center"
-          color="text.primary"
-          gutterBottom
-        >
-          <ContentCutIcon
-            sx={{ fontSize: 40, verticalAlign: "middle", mr: 1 }}
-          />
-          FastCuts
-        </Typography>
-        <Typography
-          variant="h5"
-          align="center"
-          color="text.secondary"
-          paragraph
-        >
-          Find the best haircut services near you, quickly and easily. Save your
-          favorites and never worry about finding a good haircut again!
-        </Typography>
-        <Box sx={{ mt: 4 }}>
-          <Grid container spacing={2} justifyContent="center">
-            <Grid item>
+        <Container maxWidth="lg">
+          <Box sx={{ textAlign: 'center', maxWidth: '800px', mx: 'auto' }}>
+            <Typography
+              variant="h1"
+              sx={{
+                fontSize: { xs: '2.5rem', md: '3.5rem', lg: '4rem' },
+                fontWeight: 700,
+                mb: 3,
+                background: 'linear-gradient(135deg, #FF5A5F 0%, #00A699 100%)',
+                backgroundClip: 'text',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                lineHeight: 1.1
+              }}
+            >
+              Skip the wait,
+              <br />serve smarter
+            </Typography>
+
+            <Typography
+              variant="h5"
+              sx={{
+                fontSize: { xs: '1.125rem', md: '1.25rem' },
+                color: 'text.secondary',
+                mb: 5,
+                maxWidth: '600px',
+                mx: 'auto',
+                lineHeight: 1.5
+              }}
+            >
+              Universal queue management for barbershops, salons, clinics, and more.
+              Manage your queues efficiently while customers check in online and track real-time wait times.
+            </Typography>
+
+            <Box sx={{ mb: 6 }}>
               <Button
                 variant="contained"
                 size="large"
                 component={RouterLink}
                 to="/search"
                 startIcon={<SearchIcon />}
+                sx={{
+                  fontSize: '1.125rem',
+                  fontWeight: 600,
+                  px: 4,
+                  py: 2,
+                  borderRadius: '50px',
+                  background: 'linear-gradient(135deg, #FF5A5F 0%, #FF385C 100%)',
+                  boxShadow: '0 8px 32px rgba(255, 90, 95, 0.3)',
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #FF385C 0%, #E00007 100%)',
+                    boxShadow: '0 12px 40px rgba(255, 90, 95, 0.4)',
+                    transform: 'translateY(-2px)'
+                  },
+                  transition: 'all 0.3s ease-in-out'
+                }}
               >
-                Find Haircuts
+                Start Searching
               </Button>
+            </Box>
+
+            {/* Stats */}
+            <Grid container spacing={4} sx={{ mt: 4 }}>
+              <Grid item xs={12} sm={4}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                    500+
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary">
+                    Service Providers
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h3" sx={{ fontWeight: 700, color: 'secondary.main' }}>
+                    10k+
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary">
+                    Active Customers
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                    4.8★
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary">
+                    Average Rating
+                  </Typography>
+                </Box>
+              </Grid>
             </Grid>
-            {isAuthenticated ? (
-              <Grid item>
-                <Button
-                  variant="outlined"
-                  size="large"
-                  component={RouterLink}
-                  to="/favorites"
-                  startIcon={<FavoriteIcon />}
-                >
-                  My Favorites
-                </Button>
-              </Grid>
-            ) : (
-              <Grid item>
-                <Button
-                  variant="outlined"
-                  size="large"
-                  component={RouterLink}
-                  to="/login"
-                >
-                  Login / Register
-                </Button>
-              </Grid>
-            )}
-          </Grid>
-        </Box>
+          </Box>
+        </Container>
       </Box>
 
       {/* Features Section */}
-      <Box sx={{ py: 8 }}>
-        <Typography variant="h4" align="center" gutterBottom>
-          How It Works
-        </Typography>
-        <Grid container spacing={4} sx={{ mt: 2 }}>
-          <Grid item xs={12} md={4}>
-            <Card sx={{ height: "100%" }}>
-              <CardMedia
-                component="div"
+      <Box sx={{ py: { xs: 8, md: 12 } }}>
+        <Container maxWidth="lg">
+          <Box sx={{ textAlign: 'center', mb: 8 }}>
+            <Typography
+              variant="h2"
+              sx={{
+                fontSize: { xs: '2rem', md: '2.5rem' },
+                fontWeight: 600,
+                mb: 2,
+                color: 'text.primary'
+              }}
+            >
+              How Nowait Works
+            </Typography>
+            <Typography
+              variant="h6"
+              sx={{
+                color: 'text.secondary',
+                maxWidth: '600px',
+                mx: 'auto',
+                fontWeight: 400
+              }}
+            >
+              Managing queues and delighting customers is simple with our efficient 3-step process
+            </Typography>
+          </Box>
+
+          <Grid container spacing={4}>
+            <Grid item xs={12} md={4}>
+              <Card
+                elevation={0}
                 sx={{
-                  pt: "56.25%",
-                  bgcolor: "primary.light",
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
+                  height: '100%',
+                  textAlign: 'center',
+                  p: 4,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 4,
+                  transition: 'all 0.3s ease-in-out',
+                  '&:hover': {
+                    transform: 'translateY(-8px)',
+                    boxShadow: theme.shadows[8]
+                  }
                 }}
               >
-                <SearchIcon
+                <Box
                   sx={{
-                    fontSize: 80,
-                    color: "white",
-                    position: "absolute",
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-50%, -50%)",
+                    width: 80,
+                    height: 80,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #FF5A5F 0%, #FF8A80 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mx: 'auto',
+                    mb: 3
                   }}
-                />
-              </CardMedia>
-              <CardContent sx={{ flexGrow: 1 }}>
-                <Typography gutterBottom variant="h5" component="h2">
-                  Search
+                >
+                  <LocationOnIcon sx={{ fontSize: 40, color: 'white' }} />
+                </Box>
+                <Typography variant="h5" sx={{ fontWeight: 600, mb: 2 }}>
+                  Register Your Shop
                 </Typography>
-                <Typography>
-                  Find haircut services near your location with our easy-to-use
-                  search feature.
+                <Typography variant="body1" color="text.secondary">
+                  Set up your business profile in minutes. Create your custom queue system
+                  with flexible settings for wait times and capacity management.
                 </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <Card sx={{ height: "100%" }}>
-              <CardMedia
-                component="div"
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <Card
+                elevation={0}
                 sx={{
-                  pt: "56.25%",
-                  bgcolor: "secondary.light",
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
+                  height: '100%',
+                  textAlign: 'center',
+                  p: 4,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 4,
+                  transition: 'all 0.3s ease-in-out',
+                  '&:hover': {
+                    transform: 'translateY(-8px)',
+                    boxShadow: theme.shadows[8]
+                  }
                 }}
               >
-                <ContentCutIcon
+                <Box
                   sx={{
-                    fontSize: 80,
-                    color: "white",
-                    position: "absolute",
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-50%, -50%)",
+                    width: 80,
+                    height: 80,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #00A699 0%, #4DB6AC 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mx: 'auto',
+                    mb: 3
                   }}
-                />
-              </CardMedia>
-              <CardContent sx={{ flexGrow: 1 }}>
-                <Typography gutterBottom variant="h5" component="h2">
-                  Compare
+                >
+                  <StarIcon sx={{ fontSize: 40, color: 'white' }} />
+                </Box>
+                <Typography variant="h5" sx={{ fontWeight: 600, mb: 2 }}>
+                  Manage Queue
                 </Typography>
-                <Typography>
-                  View details, ratings, and prices to find the perfect haircut
-                  service for you.
+                <Typography variant="body1" color="text.secondary">
+                  Real-time dashboard to manage customer flow. Update wait times,
+                  process check-ins, and keep customers informed automatically.
                 </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <Card sx={{ height: "100%" }}>
-              <CardMedia
-                component="div"
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <Card
+                elevation={0}
                 sx={{
-                  pt: "56.25%",
-                  bgcolor: "error.light",
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
+                  height: '100%',
+                  textAlign: 'center',
+                  p: 4,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 4,
+                  transition: 'all 0.3s ease-in-out',
+                  '&:hover': {
+                    transform: 'translateY(-8px)',
+                    boxShadow: theme.shadows[8]
+                  }
                 }}
               >
-                <FavoriteIcon
+                <Box
                   sx={{
-                    fontSize: 80,
-                    color: "white",
-                    position: "absolute",
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-50%, -50%)",
+                    width: 80,
+                    height: 80,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #9C27B0 0%, #E1BEE7 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mx: 'auto',
+                    mb: 3
                   }}
-                />
-              </CardMedia>
-              <CardContent sx={{ flexGrow: 1 }}>
-                <Typography gutterBottom variant="h5" component="h2">
-                  Save
+                >
+                  <ScheduleIcon sx={{ fontSize: 40, color: 'white' }} />
+                </Box>
+                <Typography variant="h5" sx={{ fontWeight: 600, mb: 2 }}>
+                  Customers Check In
                 </Typography>
-                <Typography>
-                  Save your favorite haircut services to quickly find them again
-                  in the future.
+                <Typography variant="body1" color="text.secondary">
+                  {isAuthenticated
+                    ? "Customers join your queue online and track their estimated wait time in real-time from anywhere."
+                    : "Let customers check in remotely and view live queue status, reducing crowding and improving satisfaction."
+                  }
                 </Typography>
-              </CardContent>
-            </Card>
+              </Card>
+            </Grid>
           </Grid>
-        </Grid>
+        </Container>
       </Box>
-    </Container>
+
+      {/* CTA Section */}
+      <Box
+        sx={{
+          py: { xs: 8, md: 12 },
+          background: 'linear-gradient(135deg, rgba(255, 90, 95, 0.05) 0%, rgba(0, 166, 153, 0.05) 100%)',
+        }}
+      >
+        <Container maxWidth="md">
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography
+              variant="h2"
+              sx={{
+                fontSize: { xs: '1.75rem', md: '2.25rem' },
+                fontWeight: 600,
+                mb: 2
+              }}
+            >
+              Ready to modernize your queue?
+            </Typography>
+            <Typography
+              variant="h6"
+              sx={{
+                color: 'text.secondary',
+                mb: 4,
+                fontWeight: 400
+              }}
+            >
+              Join hundreds of businesses using Nowait to streamline operations and delight customers.
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Button
+                variant="contained"
+                size="large"
+                component={RouterLink}
+                to="/search"
+                sx={{
+                  fontSize: '1.125rem',
+                  fontWeight: 600,
+                  px: 4,
+                  py: 1.5,
+                  borderRadius: '50px',
+                }}
+              >
+                Get Started
+              </Button>
+              {!isAuthenticated && (
+                <Button
+                  variant="outlined"
+                  size="large"
+                  component={RouterLink}
+                  to="/register"
+                  sx={{
+                    fontSize: '1.125rem',
+                    fontWeight: 600,
+                    px: 4,
+                    py: 1.5,
+                    borderRadius: '50px',
+                    borderWidth: 2,
+                    '&:hover': {
+                      borderWidth: 2
+                    }
+                  }}
+                >
+                  Sign Up Your Business
+                </Button>
+              )}
+            </Box>
+          </Box>
+        </Container>
+      </Box>
+    </Box>
   );
 };
 

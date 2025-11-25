@@ -1,14 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from sqlalchemy import func
 from typing import List
 import math
 import httpx
 import os
 from dotenv import load_dotenv
 
-from database import get_db
-import models
+from supabase_client import supabase
 import schemas
 from auth_utils import get_current_active_user
 
@@ -84,63 +81,78 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return distance
 
 @router.get("/haircuts", response_model=List[schemas.HaircutService])
-def get_haircuts(db: Session = Depends(get_db)):
-    haircuts = db.query(models.HaircutService).all()
-    
-    # If no haircuts in database, seed with mock data
-    if not haircuts:
-        for haircut_data in MOCK_HAIRCUT_SERVICES:
-            haircut = models.HaircutService(**haircut_data)
-            db.add(haircut)
-        db.commit()
-        haircuts = db.query(models.HaircutService).all()
-    
-    return haircuts
+def get_haircuts():
+    try:
+        response = supabase.table("haircut_services").select("*").execute()
+        haircuts = response.data if response.data else []
+        
+        # If no haircuts in database, seed with mock data
+        if not haircuts:
+            supabase.table("haircut_services").insert(MOCK_HAIRCUT_SERVICES).execute()
+            response = supabase.table("haircut_services").select("*").execute()
+            haircuts = response.data if response.data else []
+        
+        return haircuts
+    except Exception:
+        return []
 
 @router.get("/haircuts/{haircut_id}", response_model=schemas.HaircutService)
-def get_haircut(haircut_id: int, db: Session = Depends(get_db)):
-    haircut = db.query(models.HaircutService).filter(models.HaircutService.id == haircut_id).first()
-    if not haircut:
+def get_haircut(haircut_id: int):
+    try:
+        response = supabase.table("haircut_services").select("*").eq("id", haircut_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Haircut service not found")
+        return response.data[0]
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(status_code=404, detail="Haircut service not found")
-    return haircut
 
 @router.post("/haircuts/search", response_model=List[schemas.HaircutService])
-def search_haircuts(search: schemas.HaircutSearch, db: Session = Depends(get_db)):
-    # Get all haircut services
-    haircuts = db.query(models.HaircutService).all()
-    
-    # Filter by distance
-    nearby_haircuts = []
-    for haircut in haircuts:
-        distance = calculate_distance(
-            search.latitude, 
-            search.longitude, 
-            haircut.latitude, 
-            haircut.longitude
+def search_haircuts(search: schemas.HaircutSearch):
+    try:
+        # Get all haircut services
+        response = supabase.table("haircut_services").select("*").execute()
+        haircuts = response.data if response.data else []
+        
+        # Filter by distance
+        nearby_haircuts = []
+        for haircut in haircuts:
+            distance = calculate_distance(
+                search.latitude, 
+                search.longitude, 
+                haircut["latitude"], 
+                haircut["longitude"]
+            )
+            if distance <= search.radius:
+                nearby_haircuts.append(haircut)
+        
+        # Sort by distance (closest first)
+        nearby_haircuts.sort(
+            key=lambda x: calculate_distance(
+                search.latitude, 
+                search.longitude, 
+                x["latitude"], 
+                x["longitude"]
+            )
         )
-        if distance <= search.radius:
-            nearby_haircuts.append(haircut)
-    
-    # Sort by distance (closest first)
-    nearby_haircuts.sort(
-        key=lambda x: calculate_distance(
-            search.latitude, 
-            search.longitude, 
-            x.latitude, 
-            x.longitude
-        )
-    )
-    
-    return nearby_haircuts
+        
+        return nearby_haircuts
+    except Exception:
+        return []
 
 @router.post("/haircuts", response_model=schemas.HaircutService)
 def create_haircut(
     haircut: schemas.HaircutServiceCreate, 
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
+    current_user: dict = Depends(get_current_active_user)
 ):
-    db_haircut = models.HaircutService(**haircut.dict())
-    db.add(db_haircut)
-    db.commit()
-    db.refresh(db_haircut)
-    return db_haircut 
+    try:
+        haircut_data = haircut.dict()
+        response = supabase.table("haircut_services").insert(haircut_data).execute()
+        if response.data:
+            return response.data[0]
+        raise HTTPException(status_code=500, detail="Failed to create haircut service")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create haircut service: {str(e)}")

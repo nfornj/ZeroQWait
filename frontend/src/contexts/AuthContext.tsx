@@ -5,6 +5,7 @@ interface User {
   id: number;
   username: string;
   email: string;
+  role: "customer" | "shop_owner" | "employee";
 }
 
 interface AuthContextType {
@@ -15,7 +16,8 @@ interface AuthContextType {
   register: (
     username: string,
     email: string,
-    password: string
+    password: string,
+    role?: "customer" | "shop_owner"
   ) => Promise<void>;
   logout: () => void;
   loading: boolean;
@@ -90,7 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       formData.append("username", username);
       formData.append("password", password);
 
-      const response = await axios.post("/api/token", formData);
+      const response = await axios.post("/api/auth/token", formData);
       const { access_token } = response.data;
 
       localStorage.setItem("token", access_token);
@@ -114,7 +116,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const register = async (
     username: string,
     email: string,
-    password: string
+    password: string,
+    role: "customer" | "shop_owner" = "customer"
   ) => {
     try {
       setLoading(true);
@@ -124,6 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         username,
         email,
         password,
+        role,
       });
 
       // Login after successful registration
@@ -131,6 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch (err: any) {
       setError(err.response?.data?.detail || "Registration failed");
       console.error("Registration error:", err);
+      throw err; // Re-throw to prevent navigation
     } finally {
       setLoading(false);
     }

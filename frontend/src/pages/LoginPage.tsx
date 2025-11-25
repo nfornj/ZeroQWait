@@ -23,8 +23,23 @@ const LoginPage: React.FC = () => {
     username?: string;
     password?: string;
   }>({});
-  const { login, loading, error } = useAuth();
+  const { login, loading, error, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  const { user } = useAuth();
+
+  // Navigate based on user role after successful login
+  React.useEffect(() => {
+    if (isAuthenticated && !loading && !error && user) {
+      if (user.role === "shop_owner") {
+        navigate("/dashboard");
+      } else if (user.role === "employee") {
+        navigate("/employee-dashboard");
+      } else {
+        navigate("/");
+      }
+    }
+  }, [isAuthenticated, loading, error, user, navigate]);
 
   const validateForm = () => {
     const errors: { username?: string; password?: string } = {};
@@ -48,12 +63,8 @@ const LoginPage: React.FC = () => {
     e.preventDefault();
 
     if (validateForm()) {
-      try {
-        await login(username, password);
-        navigate("/");
-      } catch (err) {
-        // Error is handled in the AuthContext
-      }
+      await login(username, password);
+      // Navigation will happen automatically via useEffect if login succeeds
     }
   };
 
@@ -126,9 +137,14 @@ const LoginPage: React.FC = () => {
           >
             {loading ? <CircularProgress size={24} /> : "Sign In"}
           </Button>
-          <Grid container justifyContent="flex-end">
+          <Grid container justifyContent="space-between">
             <Grid item>
-              <Link component={RouterLink} to="/register" variant="body2">
+              <Link component={RouterLink} to="/forgot-password" variant="body2">
+                Forgot password?
+              </Link>
+            </Grid>
+            <Grid item>
+              <Link component={RouterLink} to="/pricing" variant="body2">
                 {"Don't have an account? Sign Up"}
               </Link>
             </Grid>

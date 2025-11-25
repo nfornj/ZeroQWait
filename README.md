@@ -1,12 +1,14 @@
-# FastCuts
+# Nowait
 
-A web application for finding and saving nearby haircut services, similar to Great Clips.
+A universal queue management system for service providers including barbershops, salons, clinics, and more. Customers can check in online and view real-time wait times.
 
 ## Features
 
-- Search for nearby haircut services
-- View details about each service (location, hours, ratings, etc.)
-- Save favorite haircut services to a personal list
+- Service providers can register and create their queue systems
+- Real-time queue management dashboard for shops
+- Customer check-in and live queue viewing
+- Estimated wait time calculations
+- Multi-tenant architecture supporting various service types
 - User authentication
 
 ## Tech Stack
@@ -39,7 +41,7 @@ docker-compose up
 ## Project Structure
 
 ```
-FastCuts/
+Nowait/
 ├── backend/            # FastAPI application
 ├── frontend/           # React application
 ├── docker-compose.yml  # Docker Compose configuration

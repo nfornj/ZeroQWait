@@ -12,6 +12,7 @@ import {
   Avatar,
   Alert,
   CircularProgress,
+  MenuItem,
 } from "@mui/material";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import { useAuth } from "../contexts/AuthContext";
@@ -22,6 +23,7 @@ const RegisterPage: React.FC = () => {
     email: "",
     password: "",
     confirmPassword: "",
+    role: "customer" as "customer" | "shop_owner",
   });
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
   const { register, loading, error } = useAuth();
@@ -66,7 +68,7 @@ const RegisterPage: React.FC = () => {
 
     if (validateForm()) {
       try {
-        await register(formData.username, formData.email, formData.password);
+        await register(formData.username, formData.email, formData.password, formData.role);
         navigate("/");
       } catch (err) {
         // Error is handled in the AuthContext
@@ -142,6 +144,23 @@ const RegisterPage: React.FC = () => {
                 helperText={formErrors.email}
                 disabled={loading}
               />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                select
+                required
+                fullWidth
+                id="role"
+                label="Account Type"
+                name="role"
+                value={formData.role}
+                onChange={handleChange}
+                disabled={loading}
+                helperText="Choose customer for joining queues, or shop owner for creating and managing shops"
+              >
+                <MenuItem value="customer">Customer</MenuItem>
+                <MenuItem value="shop_owner">Shop Owner</MenuItem>
+              </TextField>
             </Grid>
             <Grid item xs={12}>
               <TextField

@@ -1,21 +1,4 @@
 services:
-  # PostgreSQL Database
-  db:
-    image: postgres:13
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=fastcuts
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   # FastAPI Backend
   backend:
     build: ./backend
@@ -23,12 +6,10 @@ services:
       - ./backend:/app
     ports:
       - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
+    env_file:
+      - ./backend/.env
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/fastcuts
-      - SECRET_KEY=09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7
+      - PYTHONUNBUFFERED=1
 
   # React Frontend
   frontend:
@@ -40,6 +21,3 @@ services:
       - "3000:80"
     depends_on:
       - backend
-
-volumes:
-  postgres_data:
