@@ -20,6 +20,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/token")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="api/token", auto_error=False)
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
@@ -77,3 +78,27 @@ def get_current_active_user(current_user: dict = Depends(get_current_user)):
     if not current_user.get("is_active", True):
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
+
+def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme_optional)) -> Optional[dict]:
+    """
+    Optional authentication - returns user if authenticated, None if not.
+    Does not raise exception for missing/invalid tokens.
+    """
+    if not token:
+        return None
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+        
+        response = supabase.table("users").select("*").eq("username", username).execute()
+        if not response.data:
+            return None
+        
+        return response.data[0]
+    except JWTError:
+        return None
+    except Exception:
+        return None

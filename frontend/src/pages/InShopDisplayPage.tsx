@@ -133,16 +133,18 @@ const InShopDisplayPage: React.FC = () => {
         <Box
             sx={{
                 minHeight: '100vh',
+                height: '100vh',
                 bgcolor: '#f5f5f5',
-                p: 4,
+                p: 3,
+                overflow: 'hidden',
             }}
         >
             {/* Header */}
             <Paper
                 elevation={3}
                 sx={{
-                    p: 4,
-                    mb: 4,
+                    p: 2,
+                    mb: 3,
                     bgcolor: primaryColor,
                     color: 'white',
                     borderRadius: 2,
@@ -153,23 +155,23 @@ const InShopDisplayPage: React.FC = () => {
                         {shop.logo_url && (
                             <Avatar
                                 src={shop.logo_url}
-                                sx={{ width: 100, height: 100, border: '3px solid white' }}
+                                sx={{ width: 70, height: 70, border: '2px solid white' }}
                             />
                         )}
                     </Grid>
                     <Grid item xs>
-                        <Typography variant="h2" fontWeight="bold">
+                        <Typography variant="h3" fontWeight="bold">
                             {shop.name}
                         </Typography>
-                        <Typography variant="h5" sx={{ opacity: 0.9, mt: 1 }}>
+                        <Typography variant="h6" sx={{ opacity: 0.9, mt: 0.5 }}>
                             Queue Status
                         </Typography>
                     </Grid>
                     <Grid item>
-                        <Typography variant="h3" fontWeight="bold" textAlign="right">
+                        <Typography variant="h4" fontWeight="bold" textAlign="right">
                             {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </Typography>
-                        <Typography variant="body1" textAlign="right">
+                        <Typography variant="caption" textAlign="right" display="block">
                             {currentTime.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
                         </Typography>
                     </Grid>
@@ -362,16 +364,17 @@ const InShopDisplayPage: React.FC = () => {
             {/* Footer */}
             <Paper
                 elevation={3}
-                sx={{
-                    mt: 4,
-                    p: 3,
+                sx={
+{
+                    mt: 3,
+                    p: 2,
                     bgcolor: 'white',
                     textAlign: 'center',
                     borderRadius: 2,
                 }}
             >
-                <Typography variant="h5" color="text.secondary">
-                    📱 Join the queue online at <strong style={{ color: primaryColor }}>nowait.app/{shop.id}</strong>
+                <Typography variant="h6" color="text.secondary">
+                    📱 Join online at <strong style={{ color: primaryColor }}>nowait.app/{shop.id}</strong>
                 </Typography>
             </Paper>
         </Box>

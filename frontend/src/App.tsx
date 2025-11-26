@@ -202,8 +202,10 @@ function App() {
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/queue/:shopId" element={<QueueViewPage />} />
-          <Route path="/display/:shopId" element={<InShopDisplayPage />} />
         </Route>
+
+        {/* In-Shop Display (No Layout - Fullscreen) */}
+        <Route path="/display/:shopId" element={<InShopDisplayPage />} />
 
         {/* Vanity URL Route (No Global Navbar) */}
         <Route path="/s/:slug" element={<PublicShopPage />} />

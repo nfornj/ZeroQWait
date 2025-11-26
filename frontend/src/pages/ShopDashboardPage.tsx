@@ -145,19 +145,24 @@ const ShopDashboardPage: React.FC = () => {
         try {
             const token = localStorage.getItem('token');
             const response = await axios.get(
-                `${API_URL}/employees/shops/${selectedShop.id}/clocked-in`,
+                `${API_URL}/shops/${selectedShop.id}/clocked-in`,
                 {
                     headers: { Authorization: `Bearer ${token}` },
                 }
             );
+            console.log('Fetched employees:', response.data);
             setEmployees(response.data);
         } catch (err) {
-            console.error('Failed to fetch employees');
+            console.error('Failed to fetch employees:', err);
         }
     };
 
     const handleCallNext = async () => {
         if (!queue) return;
+        // Fetch latest employee list before opening dialog
+        setLoadingEmployees(true);
+        await fetchClockedInEmployees();
+        setLoadingEmployees(false);
         setEmployeeSelectorOpen(true);
     };
 

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Response
-from typing import List
+from typing import List, Optional
 from supabase_client import supabase
 from schemas import Shop, ShopCreate, ShopUpdate, ShopWithQueue
-from auth_utils import get_current_user
+from auth_utils import get_current_user, get_current_user_optional
+from permissions import sanitize_queue_data_for_public
 from datetime import datetime
 import random
 
@@ -112,8 +113,8 @@ def get_my_shops(
         return []
 
 @router.get("/{shop_id}", response_model=ShopWithQueue)
-def get_shop(shop_id: int):
-    """Get shop details with active queue"""
+def get_shop(shop_id: int, current_user: Optional[dict] = Depends(get_current_user_optional)):
+    """Get shop details with active queue (Public endpoint - sanitizes employee data for non-staff)"""
     try:
         shop_response = supabase.table("shops").select("*").eq("id", shop_id).execute()
         if not shop_response.data:
@@ -134,6 +135,9 @@ def get_shop(shop_id: int):
                     "queue_id", queue["id"]
                 ).execute()
                 queue["queue_items"] = items_response.data if items_response.data else []
+                
+                # Sanitize employee data for public access
+                queue = sanitize_queue_data_for_public(queue, current_user, shop_id)
                 queues.append(queue)
         
         shop["queues"] = queues
@@ -144,18 +148,19 @@ def get_shop(shop_id: int):
         raise HTTPException(status_code=500, detail=f"Failed to fetch shop: {str(e)}")
 
 @router.get("/s/{slug}", response_model=ShopWithQueue)
-def get_shop_by_slug(slug: str):
-    """Get shop details by slug (Public)"""
+def get_shop_by_slug(slug: str, current_user: Optional[dict] = Depends(get_current_user_optional)):
+    """Get shop details by slug (Public endpoint - sanitizes employee data for non-staff)"""
     try:
         shop_response = supabase.table("shops").select("*").eq("slug", slug).execute()
         if not shop_response.data:
             raise HTTPException(status_code=404, detail="Shop not found")
         
         shop = shop_response.data[0]
+        shop_id = shop["id"]
         
         # Fetch queues with queue items
         queues_response = supabase.table("queues").select("*").eq(
-            "shop_id", shop["id"]
+            "shop_id", shop_id
         ).eq("is_active", True).execute()
         
         queues = []
@@ -166,6 +171,9 @@ def get_shop_by_slug(slug: str):
                     "queue_id", queue["id"]
                 ).execute()
                 queue["queue_items"] = items_response.data if items_response.data else []
+                
+                # Sanitize employee data for public access
+                queue = sanitize_queue_data_for_public(queue, current_user, shop_id)
                 queues.append(queue)
         
         shop["queues"] = queues

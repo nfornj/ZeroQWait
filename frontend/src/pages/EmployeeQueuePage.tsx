@@ -31,6 +31,7 @@ import SkipNextIcon from '@mui/icons-material/SkipNext';
 import IconButton from '@mui/material/IconButton';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
@@ -216,25 +217,22 @@ const EmployeeQueuePage: React.FC = () => {
         }
     };
 
-    const handleUploadPhoto = async () => {
+    const handleUploadPhoto = async (photoDataUrl: string) => {
         try {
-            setError(null);
             const token = localStorage.getItem('token');
             await axios.post(`${API_URL}/upload-profile-photo`, 
-                { photo_url: photoUrl },
+                { photo_url: photoDataUrl },
                 {
                     headers: { 
                         Authorization: `Bearer ${token}`,
                         'Content-Type': 'application/json'
                     },
-                    params: { photo_url: photoUrl }
+                    params: { photo_url: photoDataUrl }
                 }
             );
             setSuccess('Profile photo updated!');
-            setPhotoDialogOpen(false);
-            setPhotoUrl('');
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to upload photo');
+            throw new Error(err.response?.data?.detail || 'Failed to upload photo');
         }
     };
 
@@ -410,25 +408,11 @@ const EmployeeQueuePage: React.FC = () => {
             )}
 
             {/* Photo Upload Dialog */}
-            <Dialog open={photoDialogOpen} onClose={() => setPhotoDialogOpen(false)}>
-                <DialogTitle>Update Profile Photo</DialogTitle>
-                <DialogContent>
-                    <TextField
-                        fullWidth
-                        label="Photo URL"
-                        value={photoUrl}
-                        onChange={(e) => setPhotoUrl(e.target.value)}
-                        sx={{ mt: 2 }}
-                        helperText="Enter the URL of your profile photo"
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setPhotoDialogOpen(false)}>Cancel</Button>
-                    <Button onClick={handleUploadPhoto} variant="contained" disabled={!photoUrl}>
-                        Update
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <ProfilePhotoUploader
+                open={photoDialogOpen}
+                onClose={() => setPhotoDialogOpen(false)}
+                onUpload={handleUploadPhoto}
+            />
 
             {/* Remove Customer Dialog */}
             <Dialog open={removeDialogOpen} onClose={() => setRemoveDialogOpen(false)}>
