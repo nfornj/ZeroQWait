@@ -25,6 +25,7 @@ import EmployeeQueuePage from "./pages/EmployeeQueuePage";
 import QueueManagementPage from "./pages/QueueManagementPage";
 import QueueViewPage from "./pages/QueueViewPage";
 import InShopDisplayPage from "./pages/InShopDisplayPage";
+import WidgetPage from "./pages/WidgetPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ShopLayout from "./layouts/ShopLayout";
@@ -206,6 +207,9 @@ function App() {
 
         {/* In-Shop Display (No Layout - Fullscreen) */}
         <Route path="/display/:shopId" element={<InShopDisplayPage />} />
+
+        {/* Embeddable Widget (No Layout - For iframe embedding) */}
+        <Route path="/widget/:shopId" element={<WidgetPage />} />
 
         {/* Vanity URL Route (No Global Navbar) */}
         <Route path="/s/:slug" element={<PublicShopPage />} />

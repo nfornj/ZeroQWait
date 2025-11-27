@@ -132,7 +132,7 @@ const ShopSettingsPage: React.FC = () => {
                     <Grid container spacing={3}>
                         <Grid item xs={12}>
                             <Typography variant="h6" gutterBottom>
-                                Branding
+                                Branding & Identity
                             </Typography>
                         </Grid>
 
@@ -149,51 +149,6 @@ const ShopSettingsPage: React.FC = () => {
                         <Grid item xs={12} sm={6}>
                             <TextField
                                 fullWidth
-                                label="Primary Color"
-                                name="primary_color"
-                                type="color"
-                                value={formData.primary_color}
-                                onChange={handleChange}
-                                helperText="Click to pick a brand color"
-                            />
-                        </Grid>
-
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                fullWidth
-                                label="Secondary Color"
-                                name="secondary_color"
-                                type="color"
-                                value={formData.secondary_color}
-                                onChange={handleChange}
-                            />
-                        </Grid>
-
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                fullWidth
-                                label="Accent Color"
-                                name="accent_color"
-                                type="color"
-                                value={formData.accent_color}
-                                onChange={handleChange}
-                            />
-                        </Grid>
-
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                fullWidth
-                                label="Background Color"
-                                name="background_color"
-                                type="color"
-                                value={formData.background_color}
-                                onChange={handleChange}
-                            />
-                        </Grid>
-
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                fullWidth
                                 label="Logo URL (optional)"
                                 name="logo_url"
                                 value={formData.logo_url}
@@ -203,8 +158,8 @@ const ShopSettingsPage: React.FC = () => {
                         </Grid>
 
                         <Grid item xs={12} sm={6}>
-                            <Button variant="outlined" component="label" fullWidth>
-                                {logoFile ? 'Change Logo (DB)' : 'Upload Logo (DB)'}
+                            <Button variant="outlined" component="label" fullWidth sx={{ height: 56 }}>
+                                {logoFile ? 'Change Logo' : 'Upload Logo'}
                                 <input
                                     type="file"
                                     accept="image/*"
@@ -216,17 +171,77 @@ const ShopSettingsPage: React.FC = () => {
                                     }}
                                 />
                             </Button>
-                            {logoPreview && (
-                                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Avatar src={logoPreview} sx={{ width: 48, height: 48 }} />
-                                    <Typography variant="caption" color="text.secondary">Preview</Typography>
+                        </Grid>
+
+                        {logoPreview && (
+                            <Grid item xs={12} sm={6}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    <Avatar src={logoPreview} sx={{ width: 56, height: 56 }} />
+                                    <Typography variant="caption" color="text.secondary">Logo Preview</Typography>
                                 </Box>
-                            )}
+                            </Grid>
+                        )}
+
+                        <Grid item xs={12}>
+                            <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
+                                Color Theme
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                Customize your brand colors. These colors will be used throughout your dashboard, public queue page, and widget.
+                            </Typography>
+                        </Grid>
+
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                label="Primary Color"
+                                name="primary_color"
+                                type="color"
+                                value={formData.primary_color}
+                                onChange={handleChange}
+                                helperText="Main buttons, headers, and Call Next button"
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                label="Secondary Color"
+                                name="secondary_color"
+                                type="color"
+                                value={formData.secondary_color || '#f5f5f5'}
+                                onChange={handleChange}
+                                helperText="Backgrounds and subtle elements"
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                label="Accent Color"
+                                name="accent_color"
+                                type="color"
+                                value={formData.accent_color || '#ff5722'}
+                                onChange={handleChange}
+                                helperText="Highlights and important elements"
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                label="Queue Card Color"
+                                name="background_color"
+                                type="color"
+                                value={formData.background_color || '#fff3e0'}
+                                onChange={handleChange}
+                                helperText="Color for waiting queue cards"
+                            />
                         </Grid>
 
                         <Grid item xs={12}>
                             <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
-                                General Information
+                                Contact Information
                             </Typography>
                         </Grid>
 

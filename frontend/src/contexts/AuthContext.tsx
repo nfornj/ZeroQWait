@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from "react";
 import axios from "axios";
+import { isTokenExpired } from "../utils/authHelpers";
 
 interface User {
   id: number;
@@ -45,9 +46,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!token);
 
-  // Set up axios interceptor for authentication
+  // Define logout early so it can be used in useEffects
+  const logout = React.useCallback(() => {
+    localStorage.removeItem("token");
+    setToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
+  }, []);
+
+  // Check token expiration on mount and periodically
   useEffect(() => {
-    const interceptor = axios.interceptors.request.use(
+    const checkTokenExpiration = () => {
+      const storedToken = localStorage.getItem('token');
+      if (storedToken && isTokenExpired(storedToken)) {
+        console.warn('Token expired. Logging out...');
+        logout();
+        window.location.href = '/login';
+      }
+    };
+
+    // Check immediately on mount
+    checkTokenExpiration();
+
+    // Check every minute
+    const interval = setInterval(checkTokenExpiration, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Set up axios interceptors for authentication
+  useEffect(() => {
+    // Request interceptor - add token to headers
+    const requestInterceptor = axios.interceptors.request.use(
       (config) => {
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
@@ -57,10 +87,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       (error) => Promise.reject(error)
     );
 
+    // Response interceptor - handle 401 Unauthorized
+    const responseInterceptor = axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401) {
+          // Token expired or invalid - auto logout
+          console.warn('Authentication expired. Logging out...');
+          logout();
+          // Redirect to login page
+          window.location.href = '/login';
+        }
+        return Promise.reject(error);
+      }
+    );
+
     return () => {
-      axios.interceptors.request.eject(interceptor);
+      axios.interceptors.request.eject(requestInterceptor);
+      axios.interceptors.response.eject(responseInterceptor);
     };
-  }, [token]);
+  }, [token, logout]);
 
   // Fetch user data if token exists
   useEffect(() => {
@@ -71,9 +117,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           const response = await axios.get("/api/users/me");
           setUser(response.data);
           setIsAuthenticated(true);
-        } catch (err) {
+        } catch (err: any) {
           console.error("Error fetching user:", err);
-          logout();
+          // Only logout if it's not a 401 (interceptor handles that)
+          if (err.response?.status !== 401) {
+            logout();
+          }
         } finally {
           setLoading(false);
         }
@@ -81,7 +130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     fetchUser();
-  }, [token]);
+  }, [token, logout]);
 
   const login = async (username: string, password: string) => {
     try {
@@ -139,13 +188,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     } finally {
       setLoading(false);
     }
-  };
-
-  const logout = () => {
-    localStorage.removeItem("token");
-    setToken(null);
-    setUser(null);
-    setIsAuthenticated(false);
   };
 
   const value = {

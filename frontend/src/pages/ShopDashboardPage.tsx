@@ -19,7 +19,6 @@ import {
     IconButton,
     Avatar,
 } from '@mui/material';
-import SettingsIcon from '@mui/icons-material/Settings';
 import PersonIcon from '@mui/icons-material/Person';
 import axios from 'axios';
 import EmployeeSelector from '../components/EmployeeSelector';
@@ -248,35 +247,21 @@ const ShopDashboardPage: React.FC = () => {
             {selectedShop && (
                 <Paper elevation={1} sx={{ p: 2, mb: 2, border: '1px solid #eee' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            {selectedShop.logo_url ? (
-                                <Avatar src={selectedShop.logo_url} alt={selectedShop.name} sx={{ width: 48, height: 48, border: '2px solid #e0e0e0' }} />
-                            ) : (
-                                <Avatar sx={{ width: 48, height: 48, bgcolor: selectedShop.primary_color || '#1976d2', fontWeight: 700, fontSize: '1.25rem' }}>
-                                    {selectedShop.name.charAt(0).toUpperCase()}
-                                </Avatar>
-                            )}
-                            <Box>
-                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.25rem', lineHeight: 1.2, color: selectedShop.primary_color || 'text.primary' }}>
-                                    {selectedShop.name}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                    {selectedShop.shop_type} • {selectedShop.city}, {selectedShop.state}
-                                </Typography>
-                            </Box>
+                        {selectedShop.logo_url ? (
+                            <Avatar src={selectedShop.logo_url} alt={selectedShop.name} sx={{ width: 48, height: 48, border: '2px solid #e0e0e0' }} />
+                        ) : (
+                            <Avatar sx={{ width: 48, height: 48, bgcolor: selectedShop.primary_color || '#1976d2', fontWeight: 700, fontSize: '1.25rem' }}>
+                                {selectedShop.name.charAt(0).toUpperCase()}
+                            </Avatar>
+                        )}
+                        <Box>
+                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.25rem', lineHeight: 1.2, color: selectedShop.primary_color || 'text.primary' }}>
+                                {selectedShop.name}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                {selectedShop.shop_type} • {selectedShop.city}, {selectedShop.state}
+                            </Typography>
                         </Box>
-                        <IconButton
-                            onClick={() => navigate('/settings')}
-                            sx={{
-                                bgcolor: selectedShop.primary_color || '#1976d2',
-                                color: 'white',
-                                '&:hover': { bgcolor: selectedShop.secondary_color || '#1565c0' },
-                                width: 44,
-                                height: 44
-                            }}
-                        >
-                            <SettingsIcon />
-                        </IconButton>
                     </Box>
                     <Box sx={{ mt: 1.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
@@ -293,14 +278,6 @@ const ShopDashboardPage: React.FC = () => {
                             </Button>
                             <Button variant="outlined" onClick={() => window.open(`/display/${selectedShop.id}`, '_blank')} disabled={!selectedShop} size="small">
                                 In-Shop Display
-                            </Button>
-                            <Button
-                                variant="contained"
-                                size="small"
-                                sx={{ bgcolor: selectedShop.primary_color || 'primary.main', '&:hover': { bgcolor: selectedShop.secondary_color || 'primary.dark' } }}
-                                onClick={() => navigate('/analytics')}
-                            >
-                                View Analytics
                             </Button>
                         </Box>
                     </Box>

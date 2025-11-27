@@ -108,34 +108,27 @@ const ShopLayout: React.FC = () => {
 
     const drawer = (
         <div>
-            <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', px: sidebarCollapsed ? 1 : 2, flexDirection: 'column', py: 2, minHeight: 80 }}>
+            <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', px: sidebarCollapsed ? 1 : 2, py: 2, minHeight: 64 }}>
                 {shop?.logo_url ? (
                     <Avatar 
                         src={shop.logo_url} 
                         alt={shop.name} 
                         sx={{ 
-                            width: sidebarCollapsed ? 40 : 56, 
-                            height: sidebarCollapsed ? 40 : 56, 
-                            mb: sidebarCollapsed ? 0 : 1,
+                            width: sidebarCollapsed ? 36 : 48, 
+                            height: sidebarCollapsed ? 36 : 48, 
                             transition: 'all 0.3s ease'
                         }} 
                     />
                 ) : (
                     <Avatar sx={{ 
-                        width: sidebarCollapsed ? 40 : 56, 
-                        height: sidebarCollapsed ? 40 : 56, 
-                        mb: sidebarCollapsed ? 0 : 1, 
+                        width: sidebarCollapsed ? 36 : 48, 
+                        height: sidebarCollapsed ? 36 : 48, 
                         bgcolor: shop?.primary_color || 'primary.main', 
-                        fontSize: sidebarCollapsed ? '1rem' : '1.5rem',
+                        fontSize: '1.2rem',
                         transition: 'all 0.3s ease'
                     }}>
-                        {sidebarCollapsed ? shop?.name?.charAt(0).toUpperCase() : (shop?.name?.charAt(0).toUpperCase() || <StoreIcon />)}
+                        {shop?.name?.charAt(0).toUpperCase() || <StoreIcon />}
                     </Avatar>
-                )}
-                {!sidebarCollapsed && (
-                    <Typography variant="subtitle1" noWrap component="div" sx={{ fontWeight: 'bold', textAlign: 'center' }}>
-                        {shop?.name || 'Shop Portal'}
-                    </Typography>
                 )}
             </Toolbar>
             <Divider />
