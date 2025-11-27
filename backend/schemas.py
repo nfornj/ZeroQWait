@@ -161,3 +161,15 @@ class ShopEmployee(BaseModel):
 
     class Config:
         from_attributes = True
+
+# Employee shift schemas
+class EmployeeShift(BaseModel):
+    id: int
+    user_id: int
+    username: str
+    shop_id: int
+    clock_in: datetime
+    clock_out: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True

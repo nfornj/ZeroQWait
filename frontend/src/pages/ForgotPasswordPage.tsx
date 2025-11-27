@@ -13,7 +13,6 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const ForgotPasswordPage: React.FC = () => {
     const navigate = useNavigate();
@@ -28,7 +27,7 @@ const ForgotPasswordPage: React.FC = () => {
         setError('');
 
         try {
-            await axios.post(`${API_URL}/auth/forgot-password`, null, {
+            await axios.post(`/auth/forgot-password`, null, {
                 params: { email }
             });
             setSuccess(true);

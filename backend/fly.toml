@@ -1,4 +1,4 @@
-# fly.toml app configuration file generated for nowait-backend on 2025-11-26T21:03:09-05:00
+# fly.toml app configuration file generated for nowait-backend on 2025-11-26T22:17:00-05:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
@@ -7,10 +7,6 @@ app = 'nowait-backend'
 primary_region = 'sjc'
 
 [build]
-  dockerfile = 'Dockerfile'
-
-[env]
-  PORT = '8000'
 
 [http_service]
   internal_port = 8000
@@ -19,13 +15,6 @@ primary_region = 'sjc'
   auto_start_machines = true
   min_machines_running = 0
   processes = ['app']
-
-  [[http_service.checks]]
-    interval = '15s'
-    timeout = '10s'
-    grace_period = '10s'
-    method = 'GET'
-    path = '/'
 
 [[vm]]
   memory = '1gb'

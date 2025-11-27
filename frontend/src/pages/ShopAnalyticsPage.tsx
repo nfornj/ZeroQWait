@@ -19,7 +19,6 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PeopleIcon from '@mui/icons-material/People';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 interface DailyStat {
     date: string;
@@ -51,7 +50,7 @@ const ShopAnalyticsPage: React.FC = () => {
                 }
 
                 // First, get the user's shops to find the shop ID
-                const shopsResponse = await axios.get(`${API_URL}/shops/my-shops`, {
+                const shopsResponse = await axios.get(`/shops/my-shops`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
 
@@ -65,7 +64,7 @@ const ShopAnalyticsPage: React.FC = () => {
                 setShopId(firstShopId);
 
                 // Fetch analytics for the shop
-                const response = await axios.get(`${API_URL}/analytics/${firstShopId}`, {
+                const response = await axios.get(`/analytics/${firstShopId}`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
 

@@ -14,7 +14,6 @@ import {
 } from '@mui/material';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const ShopRegistrationPage: React.FC = () => {
   const navigate = useNavigate();
@@ -62,7 +61,7 @@ const ShopRegistrationPage: React.FC = () => {
         return;
       }
 
-      await axios.post(`${API_URL}/shops/`, formData, {
+      await axios.post(`/shops/`, formData, {
         headers: { Authorization: `Bearer ${token}` },
       });
 

@@ -17,7 +17,6 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PeopleIcon from '@mui/icons-material/People';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const PublicShopPage: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
@@ -40,7 +39,7 @@ const PublicShopPage: React.FC = () => {
             // Wait, I didn't add fetch by slug endpoint. I added the field but not the lookup.
             // I need to add `GET /shops/s/{slug}` to backend.
 
-            const response = await axios.get(`${API_URL}/shops/s/${slug}`);
+            const response = await axios.get(`/shops/s/${slug}`);
             setShop(response.data);
             if (response.data.queues) {
                 setQueues(response.data.queues.filter((q: any) => q.is_active));

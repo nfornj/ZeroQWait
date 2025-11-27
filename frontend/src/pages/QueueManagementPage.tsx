@@ -23,7 +23,6 @@ import AddIcon from '@mui/icons-material/Add';
 import TvIcon from '@mui/icons-material/Tv';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const QueueManagementPage: React.FC = () => {
     const [queues, setQueues] = useState<any[]>([]);
@@ -39,7 +38,7 @@ const QueueManagementPage: React.FC = () => {
     const fetchShopAndQueues = async () => {
         try {
             const token = localStorage.getItem('token');
-            const shopRes = await axios.get(`${API_URL}/shops/my-shops`, {
+            const shopRes = await axios.get(`/shops/my-shops`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -48,7 +47,7 @@ const QueueManagementPage: React.FC = () => {
                 setShop(currentShop);
 
                 // Fetch all queues for the shop
-                const queueRes = await axios.get(`${API_URL}/queues/shop/${currentShop.id}/all`, {
+                const queueRes = await axios.get(`/queues/shop/${currentShop.id}/all`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setQueues(queueRes.data);
@@ -62,7 +61,7 @@ const QueueManagementPage: React.FC = () => {
         try {
             const token = localStorage.getItem('token');
             setError('');
-            await axios.post(`${API_URL}/queues/shop/${shop.id}`,
+            await axios.post(`/queues/shop/${shop.id}`,
                 { name: newQueueName },
                 { headers: { Authorization: `Bearer ${token}` } }
             );

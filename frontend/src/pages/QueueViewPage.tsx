@@ -23,7 +23,6 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PeopleIcon from '@mui/icons-material/People';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 interface Shop {
     id: number;
@@ -91,7 +90,7 @@ const QueueViewPage: React.FC = () => {
 
     const fetchShop = async () => {
         try {
-            const response = await axios.get(`${API_URL}/shops/${shopId}`);
+            const response = await axios.get(`/shops/${shopId}`);
             setShop(response.data);
             setLoading(false);
         } catch (err) {
@@ -102,7 +101,7 @@ const QueueViewPage: React.FC = () => {
 
     const fetchQueue = async () => {
         try {
-            const response = await axios.get(`${API_URL}/queues/shop/${shopId}/active`);
+            const response = await axios.get(`/queues/shop/${shopId}/active`);
             setQueue(response.data);
 
             // Check if user has an active queue item
@@ -128,7 +127,7 @@ const QueueViewPage: React.FC = () => {
 
         try {
             const response = await axios.get(
-                `${API_URL}/queues/items/${myQueueItem.id}/estimate`
+                `/queues/items/${myQueueItem.id}/estimate`
             );
             setWaitEstimate(response.data);
         } catch (err) {
@@ -147,7 +146,7 @@ const QueueViewPage: React.FC = () => {
         }
 
         try {
-            const response = await axios.post(`${API_URL}/queues/shop/${shopId}/join`, {
+            const response = await axios.post(`/queues/shop/${shopId}/join`, {
                 customer_name: customerName,
                 customer_phone: customerPhone,
                 customer_email: customerEmail,
@@ -171,7 +170,7 @@ const QueueViewPage: React.FC = () => {
         if (!window.confirm('Are you sure you want to leave the queue?')) return;
 
         try {
-            await axios.delete(`${API_URL}/queues/items/${myQueueItem.id}/leave`);
+            await axios.delete(`/queues/items/${myQueueItem.id}/leave`);
             setSuccess('You have left the queue');
             localStorage.removeItem(`queue_item_${shopId}`);
             setMyQueueItem(null);

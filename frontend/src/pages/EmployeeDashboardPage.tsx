@@ -17,7 +17,6 @@ import QueueIcon from '@mui/icons-material/Queue';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 interface Shop {
     id: number;
@@ -45,7 +44,7 @@ const EmployeeDashboardPage: React.FC = () => {
         try {
             setLoading(true);
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}/employees/my-shops`, {
+            const response = await axios.get(`/employees/my-shops`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setShops(response.data);

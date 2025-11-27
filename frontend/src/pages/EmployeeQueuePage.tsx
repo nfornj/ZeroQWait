@@ -33,7 +33,6 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 interface Shop {
     id: number;
@@ -88,13 +87,13 @@ const EmployeeQueuePage: React.FC = () => {
             const token = localStorage.getItem('token');
             
             // Fetch shops
-            const shopsResponse = await axios.get(`${API_URL}/employees/my-shops`, {
+            const shopsResponse = await axios.get(`/employees/my-shops`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setShops(shopsResponse.data);
 
             // Fetch current shift
-            const shiftResponse = await axios.get(`${API_URL}/current-shift`, {
+            const shiftResponse = await axios.get(`/current-shift`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             
@@ -119,7 +118,7 @@ const EmployeeQueuePage: React.FC = () => {
 
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}/queues/shop/${id}/active`, {
+            const response = await axios.get(`/queues/shop/${id}/active`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setQueue(response.data.queue_items || []);
@@ -132,7 +131,7 @@ const EmployeeQueuePage: React.FC = () => {
         try {
             setError(null);
             const token = localStorage.getItem('token');
-            await axios.post(`${API_URL}/clock-in/${shopId}`, {}, {
+            await axios.post(`/clock-in/${shopId}`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setSuccess('Clocked in successfully!');
@@ -146,7 +145,7 @@ const EmployeeQueuePage: React.FC = () => {
         try {
             setError(null);
             const token = localStorage.getItem('token');
-            await axios.post(`${API_URL}/clock-out`, {}, {
+            await axios.post(`/clock-out`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setSuccess('Clocked out successfully!');
@@ -164,13 +163,13 @@ const EmployeeQueuePage: React.FC = () => {
         try {
             setError(null);
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}/queues/shop/${selectedShop.id}/active`, {
+            const response = await axios.get(`/queues/shop/${selectedShop.id}/active`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             
             const queueId = response.data.id;
             
-            await axios.post(`${API_URL}/queues/${queueId}/call-next`, {}, {
+            await axios.post(`/queues/${queueId}/call-next`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             
@@ -187,7 +186,7 @@ const EmployeeQueuePage: React.FC = () => {
         try {
             setError(null);
             const token = localStorage.getItem('token');
-            await axios.delete(`${API_URL}/queues/items/${selectedCustomer.id}`, {
+            await axios.delete(`/queues/items/${selectedCustomer.id}`, {
                 headers: { Authorization: `Bearer ${token}` },
                 params: { reason: removeReason }
             });
@@ -207,7 +206,7 @@ const EmployeeQueuePage: React.FC = () => {
         try {
             setError(null);
             const token = localStorage.getItem('token');
-            await axios.post(`${API_URL}/queues/items/${customer.id}/serve`, {}, {
+            await axios.post(`/queues/items/${customer.id}/serve`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setSuccess(`Now serving ${customer.customer_name}`);
@@ -220,7 +219,7 @@ const EmployeeQueuePage: React.FC = () => {
     const handleUploadPhoto = async (photoDataUrl: string) => {
         try {
             const token = localStorage.getItem('token');
-            await axios.post(`${API_URL}/upload-profile-photo`, 
+            await axios.post(`/upload-profile-photo`, 
                 { photo_url: photoDataUrl },
                 {
                     headers: { 

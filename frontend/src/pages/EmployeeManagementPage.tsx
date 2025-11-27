@@ -19,14 +19,17 @@ import {
     IconButton,
     Chip,
     Alert,
-    CircularProgress
+    CircularProgress,
+    Tabs,
+    Tab
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RestoreIcon from '@mui/icons-material/Restore';
 import PeopleIcon from '@mui/icons-material/People';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import AttendanceCalendar from '../components/AttendanceCalendar';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 interface Employee {
     employee_link_id: number;
@@ -59,10 +62,24 @@ const EmployeeManagementPage: React.FC = () => {
     const [checkingUsername, setCheckingUsername] = useState(false);
     const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
     const [checkingEmail, setCheckingEmail] = useState(false);
+    const [currentTab, setCurrentTab] = useState(0);
+    const [shifts, setShifts] = useState<any[]>([]);
+    const [shiftsLoading, setShiftsLoading] = useState(false);
+    const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState<number | null>(null);
 
     useEffect(() => {
         fetchShopAndEmployees();
     }, []);
+
+    useEffect(() => {
+        // Fetch shifts when switching to attendance tab
+        if (currentTab === 1 && shopId) {
+            const token = localStorage.getItem('token');
+            if (token) {
+                fetchShifts(shopId, token, selectedEmployeeFilter);
+            }
+        }
+    }, [currentTab, shopId, selectedEmployeeFilter]);
 
     useEffect(() => {
         const checkUsername = async () => {
@@ -73,7 +90,7 @@ const EmployeeManagementPage: React.FC = () => {
 
             setCheckingUsername(true);
             try {
-                const response = await axios.get(`${API_URL}/check-username/${formData.username}`);
+                const response = await axios.get(`/check-username/${formData.username}`);
                 setUsernameAvailable(response.data.available);
             } catch (err) {
                 console.error('Failed to check username:', err);
@@ -98,7 +115,7 @@ const EmployeeManagementPage: React.FC = () => {
 
             setCheckingEmail(true);
             try {
-                const response = await axios.get(`${API_URL}/check-email/${encodeURIComponent(formData.email)}`);
+                const response = await axios.get(`/check-email/${encodeURIComponent(formData.email)}`);
                 setEmailAvailable(response.data.available);
             } catch (err) {
                 console.error('Failed to check email:', err);
@@ -122,7 +139,7 @@ const EmployeeManagementPage: React.FC = () => {
             }
 
             // Get shop ID first
-            const shopResponse = await axios.get(`${API_URL}/shops/my-shops`, {
+            const shopResponse = await axios.get(`/shops/my-shops`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -147,13 +164,32 @@ const EmployeeManagementPage: React.FC = () => {
 
     const fetchEmployees = async (id: number, token: string) => {
         try {
-            const response = await axios.get(`${API_URL}/shops/${id}/employees`, {
+            const response = await axios.get(`/shops/${id}/employees`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setEmployees(response.data);
         } catch (err: any) {
             console.error('Failed to fetch employees:', err);
             setError(err.response?.data?.detail || 'Failed to load employees');
+        }
+    };
+
+    const fetchShifts = async (id: number, token: string, employeeId: number | null = null) => {
+        setShiftsLoading(true);
+        try {
+            let url = `/shops/${id}/employee-shifts?months=3`;
+            if (employeeId) {
+                url += `&employee_id=${employeeId}`;
+            }
+            const response = await axios.get(url, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setShifts(response.data);
+        } catch (err: any) {
+            console.error('Failed to fetch shifts:', err);
+            setError(err.response?.data?.detail || 'Failed to load attendance data');
+        } finally {
+            setShiftsLoading(false);
         }
     };
 
@@ -167,7 +203,7 @@ const EmployeeManagementPage: React.FC = () => {
         try {
             const token = localStorage.getItem('token');
             await axios.post(
-                `${API_URL}/shops/${shopId}/employees`,
+                `/shops/${shopId}/employees`,
                 formData,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
@@ -192,7 +228,7 @@ const EmployeeManagementPage: React.FC = () => {
         try {
             const token = localStorage.getItem('token');
             await axios.delete(
-                `${API_URL}/shops/${shopId}/employees/${employeeId}`,
+                `/shops/${shopId}/employees/${employeeId}`,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
@@ -209,7 +245,7 @@ const EmployeeManagementPage: React.FC = () => {
         try {
             const token = localStorage.getItem('token');
             await axios.put(
-                `${API_URL}/shops/${shopId}/employees/${employeeId}/reactivate`,
+                `/shops/${shopId}/employees/${employeeId}/reactivate`,
                 {},
                 { headers: { Authorization: `Bearer ${token}` } }
             );
@@ -219,6 +255,14 @@ const EmployeeManagementPage: React.FC = () => {
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to reactivate employee');
         }
+    };
+
+    const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+        setCurrentTab(newValue);
+    };
+
+    const handleEmployeeFilterChange = (employeeId: number | null) => {
+        setSelectedEmployeeFilter(employeeId);
     };
 
     if (loading) {
@@ -238,20 +282,30 @@ const EmployeeManagementPage: React.FC = () => {
                         Team Management
                     </Typography>
                 </Box>
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={() => setOpenDialog(true)}
-                    disabled={!shopId}
-                >
-                    Add Employee
-                </Button>
+                {currentTab === 0 && (
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={() => setOpenDialog(true)}
+                        disabled={!shopId}
+                    >
+                        Add Employee
+                    </Button>
+                )}
             </Box>
 
             {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>{error}</Alert>}
             {success && <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>{success}</Alert>}
 
-            <Paper>
+            <Paper sx={{ mb: 3 }}>
+                <Tabs value={currentTab} onChange={handleTabChange} aria-label="team management tabs">
+                    <Tab label="Employee List" icon={<PeopleIcon />} iconPosition="start" />
+                    <Tab label="Attendance Calendar" icon={<CalendarMonthIcon />} iconPosition="start" />
+                </Tabs>
+            </Paper>
+
+            {currentTab === 0 && (
+                <Paper>
                 <TableContainer>
                     <Table>
                         <TableHead>
@@ -312,7 +366,27 @@ const EmployeeManagementPage: React.FC = () => {
                         </TableBody>
                     </Table>
                 </TableContainer>
-            </Paper>
+                </Paper>
+            )}
+
+            {currentTab === 1 && (
+                <Box>
+                    {shiftsLoading ? (
+                        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+                            <CircularProgress />
+                        </Box>
+                    ) : (
+                        <AttendanceCalendar
+                            shifts={shifts}
+                            employees={employees.filter(emp => emp.is_active).map(emp => ({
+                                id: emp.user.id,
+                                username: emp.user.username
+                            }))}
+                            onEmployeeChange={handleEmployeeFilterChange}
+                        />
+                    )}
+                </Box>
+            )}
 
             {/* Add Employee Dialog */}
             <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>

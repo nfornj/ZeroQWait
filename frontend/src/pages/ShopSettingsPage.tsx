@@ -13,7 +13,6 @@ import {
 } from '@mui/material';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const ShopSettingsPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
@@ -43,7 +42,7 @@ const ShopSettingsPage: React.FC = () => {
     const fetchShop = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}/shops/my-shops`, {
+            const response = await axios.get(`/shops/my-shops`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -86,7 +85,7 @@ const ShopSettingsPage: React.FC = () => {
 
         try {
             const token = localStorage.getItem('token');
-            await axios.put(`${API_URL}/shops/${shop.id}`, formData, {
+            await axios.put(`/shops/${shop.id}`, formData, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -94,7 +93,7 @@ const ShopSettingsPage: React.FC = () => {
             if (logoFile) {
                 const fd = new FormData();
                 fd.append('file', logoFile);
-                await axios.put(`${API_URL}/shops/${shop.id}/logo`, fd, {
+                await axios.put(`/shops/${shop.id}/logo`, fd, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
             }

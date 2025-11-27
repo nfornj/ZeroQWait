@@ -19,7 +19,6 @@ import PhoneIcon from "@mui/icons-material/Phone";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import axios from "axios";
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 interface Shop {
   id: number;
@@ -65,7 +64,7 @@ const SearchPage: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await axios.get(`${API_URL}/shops/`);
+      const response = await axios.get(`/shops/`);
       setShops(response.data);
       setFilteredShops(response.data);
     } catch (err) {

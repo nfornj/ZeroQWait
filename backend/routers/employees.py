@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from typing import List, Optional
 from supabase_client import supabase
-from schemas import EmployeeCreate, ShopEmployee, User
+from schemas import EmployeeCreate, ShopEmployee, User, EmployeeShift
 from auth_utils import get_password_hash, get_current_user
 from permissions import check_shop_access, get_employee_shops
-from datetime import datetime
+from datetime import datetime, timedelta
 
 router = APIRouter()
 
@@ -515,4 +515,81 @@ def get_my_shops(current_user: dict = Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch shops: {str(e)}"
+        )
+
+
+@router.get("/shops/{shop_id}/employee-shifts", response_model=List[dict])
+def get_employee_shifts(
+    shop_id: int,
+    months: int = 3,
+    employee_id: Optional[int] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get employee shift history for the last N months (default 3).
+    Shop owners can view all employees, employees can only view their own.
+    """
+    # Check if user has access to this shop
+    check_shop_access(shop_id, current_user, require_owner=False)
+    
+    try:
+        # Calculate date range
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=months * 30)  # Approximate months
+        
+        # Build query
+        query = supabase.table("employee_shifts").select("*").eq("shop_id", shop_id)
+        query = query.gte("clock_in", start_date.isoformat())
+        query = query.lte("clock_in", end_date.isoformat())
+        
+        # Filter by employee if specified or if current user is employee
+        if employee_id:
+            query = query.eq("user_id", employee_id)
+        elif current_user.get("role") == "employee":
+            # Employees can only see their own shifts
+            query = query.eq("user_id", current_user["id"])
+        
+        # Order by clock_in descending
+        query = query.order("clock_in", desc=True)
+        
+        shifts_response = query.execute()
+        
+        if not shifts_response.data:
+            return []
+        
+        # Get unique user IDs from shifts
+        user_ids = list(set(shift["user_id"] for shift in shifts_response.data))
+        
+        # Fetch user details
+        users_response = supabase.table("users").select(
+            "id, username, email, profile_photo_url"
+        ).in_("id", user_ids).execute()
+        
+        # Create a map of user_id to username
+        user_map = {user["id"]: user for user in users_response.data} if users_response.data else {}
+        
+        # Combine shift and user data
+        result = []
+        for shift in shifts_response.data:
+            user = user_map.get(shift["user_id"])
+            if user:
+                result.append({
+                    "id": shift["id"],
+                    "user_id": shift["user_id"],
+                    "username": user["username"],
+                    "email": user.get("email"),
+                    "profile_photo_url": user.get("profile_photo_url"),
+                    "shop_id": shift["shop_id"],
+                    "clock_in": shift["clock_in"],
+                    "clock_out": shift.get("clock_out")
+                })
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch employee shifts: {str(e)}"
         )

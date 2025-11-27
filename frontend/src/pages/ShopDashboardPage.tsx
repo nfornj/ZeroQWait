@@ -20,10 +20,11 @@ import {
     Avatar,
 } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
+import SettingsIcon from '@mui/icons-material/Settings';
+import StoreIcon from '@mui/icons-material/Store';
 import axios from 'axios';
 import EmployeeSelector from '../components/EmployeeSelector';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 interface Shop {
     id: number;
@@ -106,7 +107,7 @@ const ShopDashboardPage: React.FC = () => {
                 return;
             }
 
-            const response = await axios.get(`${API_URL}/shops/my-shops`, {
+            const response = await axios.get(`/shops/my-shops`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
 
@@ -127,7 +128,7 @@ const ShopDashboardPage: React.FC = () => {
         try {
             const token = localStorage.getItem('token');
             const response = await axios.get(
-                `${API_URL}/queues/shop/${selectedShop.id}/active`,
+                `/queues/shop/${selectedShop.id}/active`,
                 {
                     headers: { Authorization: `Bearer ${token}` },
                 }
@@ -144,7 +145,7 @@ const ShopDashboardPage: React.FC = () => {
         try {
             const token = localStorage.getItem('token');
             const response = await axios.get(
-                `${API_URL}/shops/${selectedShop.id}/clocked-in`,
+                `/shops/${selectedShop.id}/clocked-in`,
                 {
                     headers: { Authorization: `Bearer ${token}` },
                 }
@@ -172,7 +173,7 @@ const ShopDashboardPage: React.FC = () => {
             const token = localStorage.getItem('token');
             const params = employeeId ? { employee_id: employeeId } : {};
             await axios.post(
-                `${API_URL}/queues/${queue.id}/call-next`,
+                `/queues/${queue.id}/call-next`,
                 {},
                 {
                     headers: { Authorization: `Bearer ${token}` },
@@ -189,7 +190,7 @@ const ShopDashboardPage: React.FC = () => {
         try {
             const token = localStorage.getItem('token');
             await axios.patch(
-                `${API_URL}/queues/items/${itemId}/status?new_status=completed`,
+                `/queues/items/${itemId}/status?new_status=completed`,
                 {},
                 {
                     headers: { Authorization: `Bearer ${token}` },
@@ -243,26 +244,90 @@ const ShopDashboardPage: React.FC = () => {
     }
 
     return (
-        <Container maxWidth="lg" sx={{ mt: 3, mb: 4 }}>
+        <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
+            {/* Shop Header */}
             {selectedShop && (
-                <Paper elevation={1} sx={{ p: 2, mb: 2, border: '1px solid #eee' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        {selectedShop.logo_url ? (
-                            <Avatar src={selectedShop.logo_url} alt={selectedShop.name} sx={{ width: 48, height: 48, border: '2px solid #e0e0e0' }} />
-                        ) : (
-                            <Avatar sx={{ width: 48, height: 48, bgcolor: selectedShop.primary_color || '#1976d2', fontWeight: 700, fontSize: '1.25rem' }}>
-                                {selectedShop.name.charAt(0).toUpperCase()}
-                            </Avatar>
-                        )}
-                        <Box>
-                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.25rem', lineHeight: 1.2, color: selectedShop.primary_color || 'text.primary' }}>
-                                {selectedShop.name}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                {selectedShop.shop_type} • {selectedShop.city}, {selectedShop.state}
-                            </Typography>
+                <Paper 
+                    elevation={2} 
+                    sx={{ 
+                        bgcolor: selectedShop.primary_color || '#1976d2',
+                        color: 'white',
+                        borderRadius: 0,
+                        mb: 3
+                    }}
+                >
+                    <Container maxWidth="lg">
+                        <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between',
+                            py: 2,
+                            gap: 2
+                        }}>
+                            {/* Logo and Shop Info */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                                {selectedShop.logo_url ? (
+                                    <Avatar 
+                                        src={selectedShop.logo_url} 
+                                        alt={selectedShop.name} 
+                                        sx={{ 
+                                            width: 64, 
+                                            height: 64, 
+                                            bgcolor: 'white',
+                                            border: '3px solid rgba(255,255,255,0.3)',
+                                            boxShadow: 2
+                                        }} 
+                                    />
+                                ) : (
+                                    <Avatar 
+                                        sx={{ 
+                                            width: 64, 
+                                            height: 64, 
+                                            bgcolor: 'white',
+                                            color: selectedShop.primary_color || '#1976d2',
+                                            fontWeight: 700, 
+                                            fontSize: '1.75rem',
+                                            border: '3px solid rgba(255,255,255,0.3)',
+                                            boxShadow: 2
+                                        }}
+                                    >
+                                        <StoreIcon sx={{ fontSize: '2rem' }} />
+                                    </Avatar>
+                                )}
+                                <Box>
+                                    <Typography variant="h5" sx={{ fontWeight: 700, color: 'white', lineHeight: 1.2 }}>
+                                        {selectedShop.name}
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)', mt: 0.5 }}>
+                                        {selectedShop.shop_type} • {selectedShop.city}, {selectedShop.state}
+                                    </Typography>
+                                </Box>
+                            </Box>
+
+                            {/* Settings Button */}
+                            <Button
+                                variant="outlined"
+                                startIcon={<SettingsIcon />}
+                                onClick={() => navigate('/settings')}
+                                sx={{
+                                    color: 'white',
+                                    borderColor: 'rgba(255,255,255,0.5)',
+                                    '&:hover': {
+                                        borderColor: 'white',
+                                        bgcolor: 'rgba(255,255,255,0.1)'
+                                    }
+                                }}
+                            >
+                                Settings
+                            </Button>
                         </Box>
-                    </Box>
+                    </Container>
+                </Paper>
+            )}
+
+            <Container maxWidth="lg" sx={{ pb: 4 }}>
+            {selectedShop && (
+                <Paper elevation={1} sx={{ p: 2, mb: 3, bgcolor: 'background.paper' }}>
                     <Box sx={{ mt: 1.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                             <Typography variant="body2" color="textSecondary">
@@ -420,7 +485,8 @@ const ShopDashboardPage: React.FC = () => {
                 title="Assign Employee to Customer"
                 allowRandom={true}
             />
-        </Container>
+            </Container>
+        </Box>
     );
 };
 

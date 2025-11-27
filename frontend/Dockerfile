@@ -3,8 +3,8 @@ FROM node:16-alpine as build
 
 WORKDIR /app
 
-# Accept build argument for API URL
-ARG REACT_APP_API_URL
+# Accept build argument for API URL with production default
+ARG REACT_APP_API_URL=https://nowait-backend.fly.dev/api
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 
 # Copy package files
@@ -28,8 +28,8 @@ COPY --from=build /app/build /usr/share/nginx/html
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Expose port 8080
-EXPOSE 8080
+# Expose port 80
+EXPOSE 80
 
 # Start nginx
-CMD ["nginx", "-g", "daemon off;"] 
+CMD ["nginx", "-g", "daemon off;"]

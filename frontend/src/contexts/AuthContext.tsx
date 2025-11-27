@@ -114,7 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (token) {
         try {
           setLoading(true);
-          const response = await axios.get("/api/users/me");
+          const response = await axios.get("/users/me");
           setUser(response.data);
           setIsAuthenticated(true);
         } catch (err: any) {
@@ -141,14 +141,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       formData.append("username", username);
       formData.append("password", password);
 
-      const response = await axios.post("/api/auth/token", formData);
+      const response = await axios.post("/auth/token", formData);
       const { access_token } = response.data;
 
       localStorage.setItem("token", access_token);
       setToken(access_token);
 
       // Fetch user data
-      const userResponse = await axios.get("/api/users/me", {
+      const userResponse = await axios.get("/users/me", {
         headers: { Authorization: `Bearer ${access_token}` },
       });
 
@@ -172,7 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(true);
       setError(null);
 
-      await axios.post("/api/users", {
+      await axios.post("/users", {
         username,
         email,
         password,

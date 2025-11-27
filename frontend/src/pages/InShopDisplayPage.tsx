@@ -19,7 +19,6 @@ import PeopleIcon from '@mui/icons-material/People';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 interface Shop {
     id: number;
@@ -83,7 +82,7 @@ const InShopDisplayPage: React.FC = () => {
 
     const fetchShop = async () => {
         try {
-            const response = await axios.get(`${API_URL}/shops/${shopId}`);
+            const response = await axios.get(`/shops/${shopId}`);
             setShop(response.data);
             setLoading(false);
         } catch (err) {
@@ -94,7 +93,7 @@ const InShopDisplayPage: React.FC = () => {
 
     const fetchQueue = async () => {
         try {
-            const response = await axios.get(`${API_URL}/queues/shop/${shopId}/active`);
+            const response = await axios.get(`/queues/shop/${shopId}/active`);
             setQueue(response.data);
         } catch (err) {
             console.error('Failed to fetch queue');

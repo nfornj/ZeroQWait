@@ -13,7 +13,6 @@ import LockResetIcon from '@mui/icons-material/LockReset';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const ResetPasswordPage: React.FC = () => {
     const navigate = useNavigate();
@@ -53,7 +52,7 @@ const ResetPasswordPage: React.FC = () => {
         setLoading(true);
 
         try {
-            await axios.post(`${API_URL}/auth/reset-password`, null, {
+            await axios.post(`/auth/reset-password`, null, {
                 params: {
                     token,
                     new_password: newPassword

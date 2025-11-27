@@ -3,7 +3,7 @@ FROM node:16-alpine as frontend-build
 
 WORKDIR /app/frontend
 
-# Accept build argument for API URL
+# Accept build argument for API URL (relative path for combined deployment)
 ARG REACT_APP_API_URL=/api
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 

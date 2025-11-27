@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .env
+.env.local
 
 # PDM
 __pypackages__/

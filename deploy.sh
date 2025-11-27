@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Nowait Fly.io Deployment Script
-# This script helps you deploy the backend and frontend to Fly.io
+# Nowait Fly.io Deployment Script (Combined Deployment)
+# This script helps you deploy the combined backend+frontend app to Fly.io
 
 set -e  # Exit on error
 
-echo "🚀 Nowait Fly.io Deployment Script"
-echo "===================================="
+echo "🚀 Nowait Fly.io Deployment Script (Combined)"
+echo "============================================="
 echo ""
 
 # Check if flyctl is installed
@@ -26,100 +26,38 @@ fi
 echo "✅ flyctl is installed and you're logged in"
 echo ""
 
-# Ask what to deploy
-echo "What would you like to deploy?"
-echo "1) Backend only"
-echo "2) Frontend only"
-echo "3) Both (recommended for first deployment)"
-read -p "Enter your choice (1-3): " choice
+# Check if app exists
+if ! flyctl status --app nowait &> /dev/null; then
+    echo "❌ App 'nowait' doesn't exist yet."
+    echo "   Please run the initial setup first:"
+    echo "   See DEPLOYMENT_COMBINED_SUCCESS.md for instructions"
+    exit 1
+fi
 
-case $choice in
-    1)
-        deploy_backend=true
-        deploy_frontend=false
-        ;;
-    2)
-        deploy_backend=false
-        deploy_frontend=true
-        ;;
-    3)
-        deploy_backend=true
-        deploy_frontend=true
-        ;;
-    *)
-        echo "❌ Invalid choice"
-        exit 1
-        ;;
-esac
+echo "📦 Deploying Combined App (Backend + Frontend)..."
+echo "================================================="
+echo ""
 
-# Deploy Backend
-if [ "$deploy_backend" = true ]; then
+# Deploy from project root
+flyctl deploy --app nowait
+
+if [ $? -eq 0 ]; then
     echo ""
-    echo "📦 Deploying Backend..."
+    echo "🎉 Deployment Complete!"
     echo "======================"
-    cd backend
-    
-    # Check if app exists
-    if flyctl status &> /dev/null; then
-        echo "Backend app already exists. Deploying..."
-        flyctl deploy
-    else
-        echo "Backend app doesn't exist. Please run the initial setup:"
-        echo "  cd backend"
-        echo "  flyctl launch --no-deploy"
-        echo "  # Follow the prompts, then set secrets as described in FLY_DEPLOYMENT.md"
-        echo "  flyctl deploy"
-        cd ..
-        exit 1
-    fi
-    
-    echo "✅ Backend deployed successfully!"
-    cd ..
-fi
-
-# Deploy Frontend
-if [ "$deploy_frontend" = true ]; then
     echo ""
-    echo "🎨 Deploying Frontend..."
-    echo "======================="
-    
-    # Ask for backend URL if deploying frontend
-    read -p "Enter your backend URL (e.g., https://nowait-backend.fly.dev): " backend_url
-    
-    if [ -z "$backend_url" ]; then
-        echo "❌ Backend URL is required"
-        exit 1
-    fi
-    
-    cd frontend
-    
-    # Check if app exists
-    if flyctl status &> /dev/null; then
-        echo "Frontend app already exists. Deploying with API URL: $backend_url/api"
-        flyctl deploy --build-arg REACT_APP_API_URL="$backend_url/api"
-    else
-        echo "Frontend app doesn't exist. Please run the initial setup:"
-        echo "  cd frontend"
-        echo "  flyctl launch --no-deploy"
-        echo "  # Follow the prompts"
-        echo "  flyctl deploy --build-arg REACT_APP_API_URL=$backend_url/api"
-        cd ..
-        exit 1
-    fi
-    
-    echo "✅ Frontend deployed successfully!"
-    cd ..
+    echo "✅ App: https://nowait.fly.dev"
+    echo "✅ API: https://nowait.fly.dev/api"
+    echo "✅ Docs: https://nowait.fly.dev/docs"
+    echo ""
+    echo "Useful commands:"
+    echo "  - View logs: flyctl logs --app nowait"
+    echo "  - Check status: flyctl status --app nowait"
+    echo "  - Open app: flyctl apps open nowait"
+    echo ""
+else
+    echo ""
+    echo "❌ Deployment failed!"
+    echo "Check the logs: flyctl logs --app nowait"
+    exit 1
 fi
-
-echo ""
-echo "🎉 Deployment Complete!"
-echo "======================="
-echo ""
-echo "Next steps:"
-echo "1. Test your backend: curl https://your-backend.fly.dev/"
-echo "2. Visit your frontend: https://your-frontend.fly.dev"
-echo "3. Check logs if needed:"
-echo "   - Backend: cd backend && flyctl logs"
-echo "   - Frontend: cd frontend && flyctl logs"
-echo ""
-echo "For more details, see FLY_DEPLOYMENT.md"
