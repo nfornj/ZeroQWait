@@ -1,0 +1,61 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
+.coverage
+htmlcov
+.tox
+.venv
+venv
+env
+.mypy_cache
+.ruff_cache
+
+# Node
+node_modules
+npm-debug.log
+frontend/build
+
+# IDE
+.vscode
+.idea
+.DS_Store
+
+# Fly.io
+fly.toml.bak
+backend/fly.toml
+frontend/fly.toml
+
+# Other deployment files
+docker-compose.yml
+combined-deploy/
+
+# Test files
+test*.sh
+test*.py
+
+# Scripts
+setup-flyio.sh
+deploy.sh
