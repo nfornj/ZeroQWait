@@ -4,7 +4,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Project Overview
 
-Nowait is a universal queue management system for various service providers including barbershops, salons, clinics, and more. It's built with a modern full-stack architecture using FastAPI for the backend and React with TypeScript for the frontend. The platform enables businesses to create and manage queues while customers can check in online and view real-time wait times.
+ZeroQwait (zeroqwait.com) is a universal queue management system for various service providers including barbershops, salons, clinics, and more. It's built with a modern full-stack architecture using FastAPI for the backend and React with TypeScript for the frontend. The platform enables businesses to create and manage queues while customers can check in online and view real-time wait times.
 
 ## Architecture
 

@@ -1,6 +1,6 @@
 # fly.toml app configuration file for combined deployment
 
-app = "nowait"
+app = "zeroqwait"
 primary_region = "sjc"
 
 [build]

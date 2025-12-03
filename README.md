@@ -1,6 +1,8 @@
-# Nowait
+# ZeroQwait
 
 A universal queue management system for service providers including barbershops, salons, clinics, and more. Customers can check in online and view real-time wait times.
+
+**Live at: https://zeroqwait.com**
 
 ## Features
 
@@ -41,7 +43,7 @@ docker-compose up
 ## Project Structure
 
 ```
-Nowait/
+ZeroQwait/
 ├── backend/            # FastAPI application
 ├── frontend/           # React application
 ├── docker-compose.yml  # Docker Compose configuration

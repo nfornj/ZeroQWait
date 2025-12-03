@@ -13,7 +13,8 @@ app = FastAPI(
 import os
 allowed_origins = [
     "http://localhost:3000",
-    "https://nowait.fly.dev",
+    "https://zeroqwait.com",
+    "https://www.zeroqwait.com",
 ]
 
 # Allow custom frontend URL from environment variable

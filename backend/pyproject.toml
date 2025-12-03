@@ -1,9 +1,9 @@
 [project]
-name = "nowait-backend"
+name = "zeroqwait-backend"
 version = "0.1.0"
-description = "FastAPI backend for Nowait universal queue management system"
+description = "FastAPI backend for ZeroQwait universal queue management system"
 authors = [
-    {name = "Nowait Team", email = "team@nowait.com"}
+    {name = "ZeroQwait Team", email = "team@zeroqwait.com"}
 ]
 dependencies = [
     "fastapi==0.104.1",

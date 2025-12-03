@@ -95,7 +95,7 @@ const Navbar = () => {
                 letterSpacing: '-0.02em'
               }}
             >
-              Nowait
+              ZeroQwait
             </Typography>
           </Box>
 

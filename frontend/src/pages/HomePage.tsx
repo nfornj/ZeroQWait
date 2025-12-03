@@ -142,7 +142,7 @@ const HomePage: React.FC = () => {
                 color: 'text.primary'
               }}
             >
-              How Nowait Works
+              How ZeroQwait Works
             </Typography>
             <Typography
               variant="h6"
@@ -316,7 +316,7 @@ const HomePage: React.FC = () => {
                 fontWeight: 400
               }}
             >
-              Join hundreds of businesses using Nowait to streamline operations and delight customers.
+              Join hundreds of businesses using ZeroQwait to streamline operations and delight customers.
             </Typography>
             <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
               <Button

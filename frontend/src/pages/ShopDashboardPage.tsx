@@ -19,6 +19,8 @@ import {
     IconButton,
     Avatar,
 } from '@mui/material';
+import LaunchIcon from '@mui/icons-material/Launch';
+import TvIcon from '@mui/icons-material/Tv';
 import PersonIcon from '@mui/icons-material/Person';
 import SettingsIcon from '@mui/icons-material/Settings';
 import StoreIcon from '@mui/icons-material/Store';
@@ -245,108 +247,68 @@ const ShopDashboardPage: React.FC = () => {
 
     return (
         <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
-            {/* Shop Header */}
-            {selectedShop && (
-                <Paper 
-                    elevation={2} 
-                    sx={{ 
-                        bgcolor: selectedShop.primary_color || '#1976d2',
-                        color: 'white',
-                        borderRadius: 0,
-                        mb: 3
-                    }}
-                >
-                    <Container maxWidth="lg">
-                        <Box sx={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'space-between',
-                            py: 2,
-                            gap: 2
-                        }}>
-                            {/* Logo and Shop Info */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
-                                {selectedShop.logo_url ? (
-                                    <Avatar 
-                                        src={selectedShop.logo_url} 
-                                        alt={selectedShop.name} 
-                                        sx={{ 
-                                            width: 64, 
-                                            height: 64, 
-                                            bgcolor: 'white',
-                                            border: '3px solid rgba(255,255,255,0.3)',
-                                            boxShadow: 2
-                                        }} 
-                                    />
-                                ) : (
-                                    <Avatar 
-                                        sx={{ 
-                                            width: 64, 
-                                            height: 64, 
-                                            bgcolor: 'white',
-                                            color: selectedShop.primary_color || '#1976d2',
-                                            fontWeight: 700, 
-                                            fontSize: '1.75rem',
-                                            border: '3px solid rgba(255,255,255,0.3)',
-                                            boxShadow: 2
-                                        }}
-                                    >
-                                        <StoreIcon sx={{ fontSize: '2rem' }} />
-                                    </Avatar>
-                                )}
-                                <Box>
-                                    <Typography variant="h5" sx={{ fontWeight: 700, color: 'white', lineHeight: 1.2 }}>
-                                        {selectedShop.name}
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)', mt: 0.5 }}>
-                                        {selectedShop.shop_type} • {selectedShop.city}, {selectedShop.state}
-                                    </Typography>
-                                </Box>
-                            </Box>
-
-                            {/* Settings Button */}
+            {/* Dashboard Header & Actions */}
+            <Box sx={{ bgcolor: 'background.paper', borderBottom: '1px solid rgba(0,0,0,0.08)', py: 2, mb: 3 }}>
+                <Container maxWidth="lg">
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h5" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                            Overview
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
                             <Button
                                 variant="outlined"
+                                startIcon={<LaunchIcon />}
+                                onClick={() => window.open(`/queue/${selectedShop?.id}`, '_blank')}
+                                disabled={!selectedShop}
+                                size="small"
+                            >
+                                Public View
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                startIcon={<TvIcon />}
+                                onClick={() => window.open(`/display/${selectedShop?.id}`, '_blank')}
+                                disabled={!selectedShop}
+                                size="small"
+                            >
+                                TV Mode
+                            </Button>
+                            <Button
+                                variant="contained"
                                 startIcon={<SettingsIcon />}
                                 onClick={() => navigate('/settings')}
-                                sx={{
-                                    color: 'white',
-                                    borderColor: 'rgba(255,255,255,0.5)',
-                                    '&:hover': {
-                                        borderColor: 'white',
-                                        bgcolor: 'rgba(255,255,255,0.1)'
-                                    }
-                                }}
+                                disabled={!selectedShop}
+                                size="small"
+                                sx={{ bgcolor: selectedShop?.primary_color }}
                             >
                                 Settings
                             </Button>
                         </Box>
-                    </Container>
-                </Paper>
-            )}
+                    </Box>
+                </Container>
+            </Box>
 
             <Container maxWidth="lg" sx={{ pb: 4 }}>
+            {/* Mobile Actions (Visible only on small screens) */}
             {selectedShop && (
-                <Paper elevation={1} sx={{ p: 2, mb: 3, bgcolor: 'background.paper' }}>
-                    <Box sx={{ mt: 1.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                        <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                            <Typography variant="body2" color="textSecondary">
-                                <strong>Public Queue URL:</strong> {window.location.origin}/queue/{selectedShop.id}
-                            </Typography>
-                            <Typography variant="body2" color="textSecondary">
-                                <strong>In-Shop Display:</strong> {window.location.origin}/display/{selectedShop.id}
-                            </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Button variant="outlined" onClick={() => navigate(`/queue/${selectedShop.id}`)} disabled={!selectedShop} size="small">
-                                Public Queue
-                            </Button>
-                            <Button variant="outlined" onClick={() => window.open(`/display/${selectedShop.id}`, '_blank')} disabled={!selectedShop} size="small">
-                                In-Shop Display
-                            </Button>
-                        </Box>
-                    </Box>
-                </Paper>
+                <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1, mb: 3, flexWrap: 'wrap' }}>
+                    <Button
+                        fullWidth
+                        variant="outlined"
+                        startIcon={<LaunchIcon />}
+                        onClick={() => window.open(`/queue/${selectedShop.id}`, '_blank')}
+                    >
+                        Public View
+                    </Button>
+                    <Button
+                        fullWidth
+                        variant="outlined"
+                        startIcon={<TvIcon />}
+                        onClick={() => window.open(`/display/${selectedShop.id}`, '_blank')}
+                    >
+                        TV Mode
+                    </Button>
+                </Box>
             )}
 
             {error && (
