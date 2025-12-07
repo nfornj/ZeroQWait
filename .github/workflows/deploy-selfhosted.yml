@@ -1,0 +1,76 @@
+name: Deploy to Raspberry Pi (Self-Hosted)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: self-hosted  # This runs on your Pi!
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Deploy Application
+      run: |
+        echo "🚀 Starting deployment..."
+        
+        # Navigate to project directory
+        cd /home/pi/Documents/projects/apps/zeroqwait
+        
+        # Pull latest changes
+        echo "📥 Pulling latest changes from GitHub..."
+        git pull origin main
+        
+        # Stop containers
+        echo "🛑 Stopping containers..."
+        docker compose -f docker-compose.prod.simple.yml down
+        
+        # Build new images
+        echo "🔨 Building Docker images..."
+        docker compose -f docker-compose.prod.simple.yml build --no-cache
+        
+        # Start containers
+        echo "🚀 Starting containers..."
+        docker compose -f docker-compose.prod.simple.yml up -d
+        
+        # Wait for containers to be healthy
+        echo "⏳ Waiting for containers to start..."
+        sleep 15
+        
+        # Check status
+        echo "📊 Container status:"
+        docker compose -f docker-compose.prod.simple.yml ps
+        
+        # Clean up old images
+        echo "🧹 Cleaning up old Docker images..."
+        docker image prune -f
+        
+        echo "✅ Deployment complete!"
+        
+    - name: Verify Deployment
+      run: |
+        echo "🔍 Verifying deployment..."
+        
+        # Test backend
+        if curl -f http://localhost:8000/ > /dev/null 2>&1; then
+          echo "✅ Backend is responding"
+        else
+          echo "❌ Backend health check failed"
+          exit 1
+        fi
+        
+        # Test frontend
+        if curl -f http://localhost:3000/ > /dev/null 2>&1; then
+          echo "✅ Frontend is responding"
+        else
+          echo "❌ Frontend health check failed"
+          exit 1
+        fi
+        
+        echo "🎉 Deployment verified successfully!"
+        echo "🌐 Site: https://zeroqwait.com"
+        echo "🔌 API: https://zeroqwait.com/api"

@@ -15,6 +15,8 @@ import SearchIcon from "@mui/icons-material/Search";
 import LocationOnIcon from "@mui/icons-material/LocationOn";
 import StarIcon from "@mui/icons-material/Star";
 import ScheduleIcon from "@mui/icons-material/Schedule";
+import VideocamIcon from "@mui/icons-material/Videocam";
+import SmartToyIcon from "@mui/icons-material/SmartToy";
 import { useAuth } from "../contexts/AuthContext";
 
 const HomePage: React.FC = () => {
@@ -284,6 +286,103 @@ const HomePage: React.FC = () => {
                   }
                 </Typography>
               </Card>
+            </Grid>
+          </Grid>
+        </Container>
+      </Box>
+
+      {/* AI Demo Section */}
+      <Box sx={{ py: { xs: 8, md: 12 }, bgcolor: 'background.paper' }}>
+        <Container maxWidth="lg">
+          <Grid container spacing={6} alignItems="center">
+            <Grid item xs={12} md={6}>
+              <Box
+                sx={{
+                  background: 'linear-gradient(135deg, #FF5A5F 0%, #00A699 100%)',
+                  borderRadius: 4,
+                  p: 4,
+                  color: 'white',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center'
+                }}
+              >
+                <SmartToyIcon sx={{ fontSize: 60, mb: 2 }} />
+                <Typography variant="h3" sx={{ fontWeight: 700, mb: 2 }}>
+                  🎮 AI Queue Counter
+                </Typography>
+                <Typography variant="h6" sx={{ mb: 3, opacity: 0.9 }}>
+                  See AI in action! Our demo uses computer vision to count people in real-time.
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body1" sx={{ mb: 1 }}>
+                    ✓ Real-time person detection
+                  </Typography>
+                  <Typography variant="body1" sx={{ mb: 1 }}>
+                    ✓ Automatic wait time calculation
+                  </Typography>
+                  <Typography variant="body1" sx={{ mb: 1 }}>
+                    ✓ Works with camera on phone
+                  </Typography>
+                  <Typography variant="body1">
+                    ✓ Fun demo with toys or real people!
+                  </Typography>
+                </Box>
+              </Box>
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <Box sx={{ textAlign: 'center' }}>
+                <Box
+                  sx={{
+                    width: { xs: 200, md: 250 },
+                    height: { xs: 200, md: 250 },
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, rgba(255, 90, 95, 0.1) 0%, rgba(0, 166, 153, 0.1) 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mx: 'auto',
+                    mb: 4,
+                    border: '4px solid',
+                    borderColor: 'primary.main'
+                  }}
+                >
+                  <VideocamIcon sx={{ fontSize: { xs: 80, md: 100 }, color: 'primary.main' }} />
+                </Box>
+                <Typography variant="h4" sx={{ fontWeight: 600, mb: 3 }}>
+                  Try the Demo!
+                </Typography>
+                <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
+                  Experience the future of queue management with our AI-powered camera demo.
+                  Perfect for showing kids how AI and computer vision work!
+                </Typography>
+                <Button
+                  variant="contained"
+                  size="large"
+                  component={RouterLink}
+                  to="/queue-counter"
+                  startIcon={<SmartToyIcon />}
+                  sx={{
+                    fontSize: '1.25rem',
+                    fontWeight: 600,
+                    px: 5,
+                    py: 2,
+                    borderRadius: '50px',
+                    background: 'linear-gradient(135deg, #00A699 0%, #4DB6AC 100%)',
+                    boxShadow: '0 8px 32px rgba(0, 166, 153, 0.3)',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #00897B 0%, #00A699 100%)',
+                      boxShadow: '0 12px 40px rgba(0, 166, 153, 0.4)',
+                      transform: 'translateY(-2px)'
+                    },
+                    transition: 'all 0.3s ease-in-out'
+                  }}
+                >
+                  Launch AI Demo
+                </Button>
+              </Box>
             </Grid>
           </Grid>
         </Container>

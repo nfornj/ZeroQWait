@@ -31,6 +31,7 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ShopLayout from "./layouts/ShopLayout";
 import PublicShopPage from "./pages/PublicShopPage";
 import PublicLayout from "./layouts/PublicLayout";
+import QueueCounterPage from "./pages/QueueCounterPage";
 
 // Create a modern, Airbnb-inspired theme
 const theme = createTheme({
@@ -203,6 +204,7 @@ function App() {
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/queue/:shopId" element={<QueueViewPage />} />
+          <Route path="/queue-counter" element={<QueueCounterPage />} />
         </Route>
 
         {/* In-Shop Display (No Layout - Fullscreen) */}
