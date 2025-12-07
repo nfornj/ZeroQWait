@@ -1,8 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from database import get_db
 from supabase_client import supabase
 from auth_utils import get_current_user
-from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from analytics_processor import get_analytics_summary, get_peak_hours_analysis, AnalyticsProcessor
+from scheduler import trigger_maintenance_now
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta, date
 
 router = APIRouter()
 
@@ -126,3 +130,160 @@ def get_shop_analytics(
         "avg_service_minutes": avg_service_minutes,
         "daily_stats": chart_data
     }
+
+
+@router.get("/daily/{shop_id}")
+def get_daily_analytics(
+    shop_id: int,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get aggregated daily analytics from queue_analytics_daily table
+    Much faster than calculating from raw queue_items
+    """
+    # Verify shop ownership
+    try:
+        shop_response = supabase.table("shops").select("*").eq("id", shop_id).execute()
+        if not shop_response.data:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        
+        shop = shop_response.data[0]
+        if shop["owner_id"] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    
+    # Parse dates
+    if end_date:
+        end = date.fromisoformat(end_date)
+    else:
+        end = date.today()
+    
+    if start_date:
+        start = date.fromisoformat(start_date)
+    else:
+        start = end - timedelta(days=30)
+    
+    # Get summary from analytics processor
+    try:
+        summary = get_analytics_summary(db, shop_id, start, end)
+        return summary
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching analytics: {str(e)}")
+
+
+@router.get("/peak-hours/{shop_id}")
+def get_peak_hours(
+    shop_id: int,
+    days: int = 7,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get peak hours analysis for a shop
+    Shows which hours of the day are busiest
+    """
+    # Verify shop ownership
+    try:
+        shop_response = supabase.table("shops").select("*").eq("id", shop_id).execute()
+        if not shop_response.data:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        
+        shop = shop_response.data[0]
+        if shop["owner_id"] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    
+    try:
+        analysis = get_peak_hours_analysis(db, shop_id, days)
+        return analysis
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing peak hours: {str(e)}")
+
+
+@router.post("/maintenance/run")
+async def run_maintenance(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Manually trigger analytics aggregation and archival
+    Admin/testing endpoint
+    """
+    # For now, allow any authenticated user to trigger
+    # In production, you may want to restrict this to admins only
+    
+    try:
+        await trigger_maintenance_now()
+        return {"status": "success", "message": "Maintenance tasks triggered"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error running maintenance: {str(e)}")
+
+
+@router.get("/archive/stats/{shop_id}")
+def get_archive_stats(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get statistics about archived queue items
+    Shows how many items are in archive vs active table
+    """
+    # Verify shop ownership
+    try:
+        shop_response = supabase.table("shops").select("*").eq("id", shop_id).execute()
+        if not shop_response.data:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        
+        shop = shop_response.data[0]
+        if shop["owner_id"] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    
+    try:
+        from sqlalchemy import text
+        
+        # Count active items
+        active_query = text("""
+            SELECT COUNT(*) FROM queue_items qi
+            JOIN queues q ON qi.queue_id = q.id
+            WHERE q.shop_id = :shop_id
+        """)
+        active_count = db.execute(active_query, {"shop_id": shop_id}).scalar()
+        
+        # Count archived items
+        archive_query = text("""
+            SELECT COUNT(*) FROM queue_items_archive
+            WHERE shop_id = :shop_id
+        """)
+        archive_count = db.execute(archive_query, {"shop_id": shop_id}).scalar()
+        
+        # Get oldest archived item
+        oldest_query = text("""
+            SELECT MIN(completed_at) FROM queue_items_archive
+            WHERE shop_id = :shop_id
+        """)
+        oldest_date = db.execute(oldest_query, {"shop_id": shop_id}).scalar()
+        
+        return {
+            "shop_id": shop_id,
+            "active_items_count": active_count or 0,
+            "archived_items_count": archive_count or 0,
+            "total_items_count": (active_count or 0) + (archive_count or 0),
+            "oldest_archived_date": oldest_date.isoformat() if oldest_date else None
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching archive stats: {str(e)}")

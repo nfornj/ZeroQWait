@@ -1,12 +1,40 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from contextlib import asynccontextmanager
 from routers import users, auth, shops, queues, subscriptions, analytics, uploads, employees
+from scheduler import start_scheduler, stop_scheduler
+import logging
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle application startup and shutdown"""
+    # Startup
+    logger.info("Starting analytics scheduler...")
+    await start_scheduler(run_at_hour=0, run_at_minute=30)  # Run at 00:30 daily
+    logger.info("Application started")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Stopping analytics scheduler...")
+    await stop_scheduler()
+    logger.info("Application shutdown complete")
+
 
 app = FastAPI(
     title="Universal Queue System API",
     description="API for managing queues for any service business",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Configure CORS
