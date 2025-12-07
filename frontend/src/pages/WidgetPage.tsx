@@ -333,7 +333,7 @@ const WidgetPage: React.FC = () => {
                         color="text.secondary"
                         sx={{ display: 'block', textAlign: 'center', mt: 2 }}
                     >
-                        Powered by ZeroQwait
+                        Served by ZeroQwait
                     </Typography>
                 </CardContent>
             </Card>
