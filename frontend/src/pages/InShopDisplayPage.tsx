@@ -93,7 +93,14 @@ const InShopDisplayPage: React.FC = () => {
 
     const fetchQueue = async () => {
         try {
-            const response = await axios.get(`/queues/shop/${shopId}/active`);
+            // Try to get token from localStorage for authenticated display
+            // This allows shop staff to see full customer names on the in-shop display
+            const token = localStorage.getItem('token');
+            const config = token ? {
+                headers: { Authorization: `Bearer ${token}` }
+            } : {};
+            
+            const response = await axios.get(`/queues/shop/${shopId}/active`, config);
             setQueue(response.data);
         } catch (err) {
             console.error('Failed to fetch queue');

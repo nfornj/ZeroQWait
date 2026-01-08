@@ -2,11 +2,25 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional
 from supabase_client import supabase
 from schemas import Queue, QueueItem, QueueItemCreate, QueueCreate
-from auth_utils import get_current_user
+from auth_utils import get_current_user, get_current_user_optional
 from permissions import check_shop_access
 from datetime import datetime
 
 router = APIRouter()
+
+# Helper function to anonymize customer names for privacy
+def anonymize_customer_name(name: str) -> str:
+    """Anonymize customer name by showing first name and first letter of last name"""
+    if not name or not name.strip():
+        return "Customer"
+    
+    parts = name.strip().split()
+    if len(parts) == 1:
+        # Single name: show first 3 chars + "..."
+        return parts[0][:3] + "..." if len(parts[0]) > 3 else parts[0]
+    else:
+        # Multiple names: show first name + first letter of last name
+        return f"{parts[0]} {parts[-1][0]}."
 
 # Helper function to populate employee details for queue items
 def populate_employee_details(items: List[dict]) -> List[dict]:
@@ -45,9 +59,21 @@ QUEUE_STATUS_COMPLETED = "completed"
 QUEUE_STATUS_CANCELLED = "cancelled"
 
 @router.get("/shop/{shop_id}/active", response_model=Queue)
-def get_active_queue(shop_id: int):
-    """Get the active queue for a shop"""
+def get_active_queue(
+    shop_id: int,
+    current_user: Optional[dict] = Depends(get_current_user_optional)
+):
+    """Get the active queue for a shop (public endpoint with privacy protection)"""
     try:
+        # Check if user has access to this shop (owner or employee)
+        has_shop_access = False
+        if current_user:
+            try:
+                check_shop_access(shop_id, current_user, require_owner=False)
+                has_shop_access = True
+            except HTTPException:
+                has_shop_access = False
+        
         queue_response = supabase.table("queues").select("*").eq(
             "shop_id", shop_id
         ).eq("is_active", True).execute()
@@ -86,6 +112,16 @@ def get_active_queue(shop_id: int):
         
         # Populate employee details
         all_items = populate_employee_details(all_items)
+        
+        # PRIVACY: Anonymize customer names for public users (non-shop staff)
+        if not has_shop_access:
+            for item in all_items:
+                if item.get("customer_name"):
+                    item["customer_name"] = anonymize_customer_name(item["customer_name"])
+                # Also remove sensitive fields for public view
+                item.pop("customer_phone", None)
+                item.pop("customer_email", None)
+                item.pop("notes", None)
         
         queue["queue_items"] = all_items
         return queue
