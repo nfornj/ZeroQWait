@@ -83,14 +83,32 @@ def create_shop(
 @router.get("/", response_model=List[Shop])
 def get_all_shops(
     skip: int = 0,
-    limit: int = 100
+    limit: int = 100,
+    country: Optional[str] = None
 ):
-    """Get all active shops"""
+    """Get all active shops, optionally filtered by country"""
     try:
-        response = supabase.table("shops").select("*").eq(
-            "is_active", True
-        ).range(skip, skip + limit - 1).execute()
+        query = supabase.table("shops").select("*").eq("is_active", True)
+        
+        if country:
+            query = query.eq("country", country)
+        
+        response = query.range(skip, skip + limit - 1).execute()
         return response.data if response.data else []
+    except Exception:
+        return []
+
+@router.get("/countries")
+def get_countries():
+    """Get list of unique countries from active shops"""
+    try:
+        response = supabase.table("shops").select("country").eq(
+            "is_active", True
+        ).execute()
+        if response.data:
+            countries = list(set([shop["country"] for shop in response.data if shop.get("country")]))
+            return sorted(countries)
+        return []
     except Exception:
         return []
 

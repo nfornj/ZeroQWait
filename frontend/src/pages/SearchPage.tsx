@@ -13,11 +13,21 @@ import {
   Button,
   Chip,
   TextField,
+  ToggleButtonGroup,
+  ToggleButton,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  SelectChangeEvent,
 } from "@mui/material";
 import LocationOnIcon from "@mui/icons-material/LocationOn";
 import PhoneIcon from "@mui/icons-material/Phone";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import MapIcon from "@mui/icons-material/Map";
+import ViewListIcon from "@mui/icons-material/ViewList";
 import axios from "axios";
+import MapView from "../components/MapView";
 
 
 interface Shop {
@@ -28,8 +38,11 @@ interface Shop {
   address: string;
   city: string;
   state: string;
+  country: string;
   phone: string;
   average_service_time: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 const SearchPage: React.FC = () => {
@@ -38,11 +51,18 @@ const SearchPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [countries, setCountries] = useState<string[]>([]);
+  const [selectedCountry, setSelectedCountry] = useState<string>('all');
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchAllShops();
+    fetchCountries();
   }, []);
+
+  useEffect(() => {
+    fetchAllShops();
+  }, [selectedCountry]);
 
   useEffect(() => {
     if (searchTerm.trim() === '') {
@@ -60,11 +80,21 @@ const SearchPage: React.FC = () => {
     }
   }, [searchTerm, shops]);
 
+  const fetchCountries = async () => {
+    try {
+      const response = await axios.get('/shops/countries');
+      setCountries(response.data || []);
+    } catch (err) {
+      console.error('Failed to fetch countries:', err);
+    }
+  };
+
   const fetchAllShops = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await axios.get(`/shops/`);
+      const params = selectedCountry !== 'all' ? { country: selectedCountry } : {};
+      const response = await axios.get(`/shops/`, { params });
       setShops(response.data);
       setFilteredShops(response.data);
     } catch (err) {
@@ -72,6 +102,19 @@ const SearchPage: React.FC = () => {
       console.error("Fetch error:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCountryChange = (event: SelectChangeEvent) => {
+    setSelectedCountry(event.target.value);
+  };
+
+  const handleViewModeChange = (
+    _event: React.MouseEvent<HTMLElement>,
+    newMode: 'list' | 'map' | null
+  ) => {
+    if (newMode !== null) {
+      setViewMode(newMode);
     }
   };
 
@@ -166,7 +209,7 @@ const SearchPage: React.FC = () => {
           </Box>
         ) : filteredShops.length > 0 ? (
           <Box>
-            <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box sx={{ mb: 4, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' }, gap: 2 }}>
               <Typography 
                 variant="h5" 
                 sx={{ 
@@ -176,8 +219,46 @@ const SearchPage: React.FC = () => {
               >
                 Found {filteredShops.length} business{filteredShops.length !== 1 ? 'es' : ''}
               </Typography>
+              
+              <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2 }}>
+                <FormControl sx={{ minWidth: 200 }} size="small">
+                  <InputLabel>Country</InputLabel>
+                  <Select
+                    value={selectedCountry}
+                    label="Country"
+                    onChange={handleCountryChange}
+                  >
+                    <MenuItem value="all">All Countries</MenuItem>
+                    {countries.map((country) => (
+                      <MenuItem key={country} value={country}>
+                        {country}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                
+                <ToggleButtonGroup
+                  value={viewMode}
+                  exclusive
+                  onChange={handleViewModeChange}
+                  aria-label="view mode"
+                  size="small"
+                >
+                  <ToggleButton value="list" aria-label="list view">
+                    <ViewListIcon sx={{ mr: 1 }} />
+                    List
+                  </ToggleButton>
+                  <ToggleButton value="map" aria-label="map view">
+                    <MapIcon sx={{ mr: 1 }} />
+                    Map
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
             </Box>
             
+            {viewMode === 'map' ? (
+              <MapView shops={filteredShops} />
+            ) : (
             <Grid container spacing={3}>
               {filteredShops.map((shop) => (
                 <Grid item xs={12} sm={6} lg={4} key={shop.id}>
@@ -222,6 +303,7 @@ const SearchPage: React.FC = () => {
                 </Grid>
               ))}
             </Grid>
+            )}
           </Box>
         ) : (
           !loading && !error && (

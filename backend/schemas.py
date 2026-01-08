@@ -61,6 +61,8 @@ class ShopBase(BaseModel):
     accent_color: Optional[str] = None
     background_color: Optional[str] = None
     slug: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class ShopCreate(ShopBase):
     pass
@@ -85,6 +87,8 @@ class ShopUpdate(BaseModel):
     accent_color: Optional[str] = None
     background_color: Optional[str] = None
     slug: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class Shop(ShopBase):
     id: int

@@ -11,7 +11,7 @@ services:
       - ./backend/.env
     environment:
       - PYTHONUNBUFFERED=1
-      - FRONTEND_URL=http://192.168.1.15:3000
+      - FRONTEND_URL=http://192.168.2.85:3000
     restart: unless-stopped
 
   # React Frontend
@@ -19,7 +19,7 @@ services:
     build:
       context: ./frontend
       args:
-        REACT_APP_API_URL: http://192.168.1.15:8000/api
+        REACT_APP_API_URL: http://192.168.2.85:8000/api
     ports:
       - "3000:80"
     depends_on:
