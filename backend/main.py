@@ -41,6 +41,7 @@ app = FastAPI(
 import os
 allowed_origins = [
     "http://localhost:3000",
+    "http://192.168.1.15:3000",
     "https://zeroqwait.com",
     "https://www.zeroqwait.com",
 ]
