@@ -52,3 +52,21 @@ def create_user(user: schemas.UserCreate):
 def read_users_me(current_user: dict = Depends(get_current_active_user)):
     return current_user
 
+@router.get("/users/check-username/{username}")
+def check_username_availability(username: str):
+    """Check if a username is available"""
+    try:
+        response = supabase.table("users").select("id").eq("username", username).execute()
+        return {"available": len(response.data) == 0}
+    except Exception:
+        return {"available": True}
+
+@router.get("/users/check-email/{email}")
+def check_email_availability(email: str):
+    """Check if an email is available"""
+    try:
+        response = supabase.table("users").select("id").eq("email", email).execute()
+        return {"available": len(response.data) == 0}
+    except Exception:
+        return {"available": True}
+

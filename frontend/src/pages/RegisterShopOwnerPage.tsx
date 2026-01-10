@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import {
     Container,
@@ -15,6 +15,7 @@ import {
 } from "@mui/material";
 import StoreIcon from "@mui/icons-material/Store";
 import { useAuth } from "../contexts/AuthContext";
+import axios from "axios";
 
 const RegisterShopOwnerPage: React.FC = () => {
     const [formData, setFormData] = useState({
@@ -24,6 +25,8 @@ const RegisterShopOwnerPage: React.FC = () => {
         confirmPassword: "",
     });
     const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
+    const [checkingUsername, setCheckingUsername] = useState(false);
+    const [checkingEmail, setCheckingEmail] = useState(false);
     const { register, loading, error, isAuthenticated } = useAuth();
     const navigate = useNavigate();
 
@@ -62,11 +65,64 @@ const RegisterShopOwnerPage: React.FC = () => {
         return Object.keys(errors).length === 0;
     };
 
+    // Real-time username validation
+    useEffect(() => {
+        const checkUsername = async () => {
+            if (formData.username && formData.username.length >= 3) {
+                setCheckingUsername(true);
+                try {
+                    const response = await axios.get(`/users/check-username/${formData.username}`);
+                    if (!response.data.available) {
+                        setFormErrors(prev => ({ ...prev, username: "Username already taken" }));
+                    } else {
+                        setFormErrors(prev => {
+                            const { username, ...rest } = prev;
+                            return rest;
+                        });
+                    }
+                } catch (err) {
+                    console.error("Error checking username:", err);
+                } finally {
+                    setCheckingUsername(false);
+                }
+            }
+        };
+
+        const timer = setTimeout(checkUsername, 500);
+        return () => clearTimeout(timer);
+    }, [formData.username]);
+
+    // Real-time email validation
+    useEffect(() => {
+        const checkEmail = async () => {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (formData.email && emailRegex.test(formData.email)) {
+                setCheckingEmail(true);
+                try {
+                    const response = await axios.get(`/users/check-email/${formData.email}`);
+                    if (!response.data.available) {
+                        setFormErrors(prev => ({ ...prev, email: "Email already registered" }));
+                    } else {
+                        setFormErrors(prev => {
+                            const { email, ...rest } = prev;
+                            return rest;
+                        });
+                    }
+                } catch (err) {
+                    console.error("Error checking email:", err);
+                } finally {
+                    setCheckingEmail(false);
+                }
+            }
+        };
+
+        const timer = setTimeout(checkEmail, 500);
+        return () => clearTimeout(timer);
+    }, [formData.email]);
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
-        if (formErrors[e.target.name]) {
-            setFormErrors({ ...formErrors, [e.target.name]: "" });
-        }
+        // Don't clear errors on change - let real-time validation handle it
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
