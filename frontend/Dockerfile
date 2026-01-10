@@ -4,7 +4,7 @@ FROM node:16-alpine as build
 WORKDIR /app
 
 # Accept build argument for API URL with production default
-ARG REACT_APP_API_URL=https://nowait-backend.fly.dev/api
+ARG REACT_APP_API_URL=/api
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 
 # Copy package files
