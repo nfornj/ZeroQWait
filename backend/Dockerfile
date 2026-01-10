@@ -2,21 +2,26 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install pip and requirements
-RUN pip install -U pip setuptools wheel
-
-# Copy requirements file
+# Copy requirements file first for better caching
 COPY requirements.txt ./
 
-# Install dependencies
-RUN pip install -r requirements.txt
+# Install only production dependencies (no dev/test deps)
+RUN pip install --no-cache-dir \
+    fastapi==0.104.1 \
+    uvicorn==0.23.2 \
+    supabase==2.16.0 \
+    pydantic==2.4.2 \
+    python-jose==3.3.0 \
+    passlib==1.7.4 \
+    python-multipart==0.0.6 \
+    httpx[http2]==0.28.1 \
+    python-dotenv==1.0.0 \
+    bcrypt==4.0.1 \
+    email-validator==2.1.0.post1 \
+    sqlalchemy==2.0.36 \
+    psycopg2-binary==2.9.10
 
-# Copy the rest of the application code
+# Copy the application code
 COPY . .
 
 # Expose port
