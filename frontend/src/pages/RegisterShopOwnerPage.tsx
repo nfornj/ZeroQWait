@@ -71,7 +71,7 @@ const RegisterShopOwnerPage: React.FC = () => {
             if (formData.username && formData.username.length >= 3) {
                 setCheckingUsername(true);
                 try {
-                    const response = await axios.get(`/users/check-username/${formData.username}`);
+                    const response = await axios.get(`/check-username/${formData.username}`);
                     if (!response.data.available) {
                         setFormErrors(prev => ({ ...prev, username: "Username already taken" }));
                     } else {
@@ -99,7 +99,7 @@ const RegisterShopOwnerPage: React.FC = () => {
             if (formData.email && emailRegex.test(formData.email)) {
                 setCheckingEmail(true);
                 try {
-                    const response = await axios.get(`/users/check-email/${formData.email}`);
+                    const response = await axios.get(`/check-email/${formData.email}`);
                     if (!response.data.available) {
                         setFormErrors(prev => ({ ...prev, email: "Email already registered" }));
                     } else {
