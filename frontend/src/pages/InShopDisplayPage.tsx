@@ -103,7 +103,7 @@ const InShopDisplayPage: React.FC = () => {
             const response = await axios.get(`/queues/shop/${shopId}/active`, config);
             setQueue(response.data);
         } catch (err) {
-            console.error('Failed to fetch queue');
+            // Silently fail - retry on next interval
         }
     };
 

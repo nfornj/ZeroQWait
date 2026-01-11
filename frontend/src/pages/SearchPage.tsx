@@ -85,7 +85,7 @@ const SearchPage: React.FC = () => {
       const response = await axios.get('/shops/countries');
       setCountries(response.data || []);
     } catch (err) {
-      console.error('Failed to fetch countries:', err);
+      // Silently fail - countries filter optional
     }
   };
 
@@ -99,7 +99,6 @@ const SearchPage: React.FC = () => {
       setFilteredShops(response.data);
     } catch (err) {
       setError("Failed to load businesses. Please try again.");
-      console.error("Fetch error:", err);
     } finally {
       setLoading(false);
     }

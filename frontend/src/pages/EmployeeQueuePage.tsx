@@ -123,7 +123,7 @@ const EmployeeQueuePage: React.FC = () => {
             });
             setQueue(response.data.queue_items || []);
         } catch (err) {
-            console.error('Failed to fetch queue');
+            // Silently fail - retry on next interval
         }
     };
 

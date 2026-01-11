@@ -81,7 +81,7 @@ const RegisterShopOwnerPage: React.FC = () => {
                         });
                     }
                 } catch (err) {
-                    console.error("Error checking username:", err);
+                    // Silently fail - user will get error on submit if needed
                 } finally {
                     setCheckingUsername(false);
                 }
@@ -109,7 +109,7 @@ const RegisterShopOwnerPage: React.FC = () => {
                         });
                     }
                 } catch (err) {
-                    console.error("Error checking email:", err);
+                    // Silently fail - user will get error on submit if needed
                 } finally {
                     setCheckingEmail(false);
                 }

@@ -118,7 +118,7 @@ const QueueViewPage: React.FC = () => {
                 }
             }
         } catch (err) {
-            console.error('Failed to fetch queue');
+            // Silently fail - retry on next interval
         }
     };
 
@@ -131,7 +131,7 @@ const QueueViewPage: React.FC = () => {
             );
             setWaitEstimate(response.data);
         } catch (err) {
-            console.error('Failed to fetch wait estimate');
+            // Silently fail - retry on next interval
         }
     };
 

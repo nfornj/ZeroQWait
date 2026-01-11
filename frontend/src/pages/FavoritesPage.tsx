@@ -24,7 +24,6 @@ const FavoritesPage: React.FC = () => {
         setFavorites(data);
       } catch (err) {
         setError("Failed to load favorites. Please try again.");
-        console.error("Error fetching favorites:", err);
       } finally {
         setLoading(false);
       }

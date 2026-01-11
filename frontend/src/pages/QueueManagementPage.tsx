@@ -53,7 +53,7 @@ const QueueManagementPage: React.FC = () => {
                 setQueues(queueRes.data);
             }
         } catch (err) {
-            console.error(err);
+            // Silently fail - error will show in UI
         }
     };
 

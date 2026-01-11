@@ -137,7 +137,7 @@ const ShopDashboardPage: React.FC = () => {
             );
             setQueue(response.data);
         } catch (err) {
-            console.error('Failed to fetch queue');
+            // Silently fail - retry on next interval
         }
     };
 
@@ -152,10 +152,9 @@ const ShopDashboardPage: React.FC = () => {
                     headers: { Authorization: `Bearer ${token}` },
                 }
             );
-            console.log('Fetched employees:', response.data);
             setEmployees(response.data);
         } catch (err) {
-            console.error('Failed to fetch employees:', err);
+            // Silently fail - retry on next interval
         }
     };
 

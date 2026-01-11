@@ -71,7 +71,6 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
       }
     } catch (err) {
       setError("Failed to update favorite status");
-      console.error("Favorite error:", err);
     }
   };
 

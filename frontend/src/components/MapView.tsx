@@ -79,7 +79,6 @@ const geocodeAddress = async (
     }
     return null;
   } catch (error) {
-    console.error("Geocoding error:", error);
     return null;
   }
 };

@@ -37,7 +37,7 @@ export const getTokenExpiration = (token: string): Date | null => {
       return new Date(payload.exp * 1000);
     }
   } catch (e) {
-    console.error('Failed to decode token:', e);
+    // Silently fail on invalid token
   }
   return null;
 };

@@ -71,7 +71,6 @@ const ShopAnalyticsPage: React.FC = () => {
                 setData(response.data);
             } catch (err: any) {
                 setError('Failed to load analytics data');
-                console.error(err);
             } finally {
                 setLoading(false);
             }

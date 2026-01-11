@@ -255,7 +255,6 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
                                     }}
                                     mirrored={facingMode === 'user'}
                                     onUserMediaError={(err) => {
-                                        console.error('Camera error:', err);
                                         setError('Could not access camera. Please check permissions.');
                                     }}
                                 />

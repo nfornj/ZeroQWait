@@ -49,7 +49,6 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
           );
         } catch (err) {
           setError("Failed to search with current location");
-          console.error("Search error:", err);
         } finally {
           setLoading(false);
         }
@@ -57,7 +56,6 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
       (error) => {
         setError("Failed to get your location. Please enter it manually.");
         setLoading(false);
-        console.error("Geolocation error:", error);
       }
     );
   };
@@ -80,7 +78,6 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
       await onSearch(coords[0], coords[1], radius);
     } catch (err) {
       setError("Failed to search for haircut services");
-      console.error("Search error:", err);
     } finally {
       setLoading(false);
     }

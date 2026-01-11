@@ -59,7 +59,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     const checkTokenExpiration = () => {
       const storedToken = localStorage.getItem('token');
       if (storedToken && isTokenExpired(storedToken)) {
-        console.warn('Token expired. Logging out...');
         logout();
         window.location.href = '/login';
       }
@@ -93,7 +92,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       (error) => {
         if (error.response?.status === 401) {
           // Token expired or invalid - auto logout
-          console.warn('Authentication expired. Logging out...');
           logout();
           // Redirect to login page
           window.location.href = '/login';
@@ -118,7 +116,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           setUser(response.data);
           setIsAuthenticated(true);
         } catch (err: any) {
-          console.error("Error fetching user:", err);
           // Only logout if it's not a 401 (interceptor handles that)
           if (err.response?.status !== 401) {
             logout();
@@ -156,7 +153,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsAuthenticated(true);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Login failed");
-      console.error("Login error:", err);
     } finally {
       setLoading(false);
     }
@@ -183,7 +179,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       await login(username, password);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Registration failed");
-      console.error("Registration error:", err);
       throw err; // Re-throw to prevent navigation
     } finally {
       setLoading(false);

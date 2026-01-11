@@ -1,11 +1,14 @@
-FROM python:3.9-slim
+# Use Python slim for better compatibility and faster builds
+FROM python:3.9-slim-bullseye
 
 WORKDIR /app
 
-# Copy requirements file first for better caching
-COPY requirements.txt ./
+# Install only necessary system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install only production dependencies (no dev/test deps)
+# Install Python dependencies (no dev packages)
 RUN pip install --no-cache-dir \
     fastapi==0.104.1 \
     uvicorn==0.23.2 \
@@ -21,8 +24,10 @@ RUN pip install --no-cache-dir \
     sqlalchemy==2.0.36 \
     psycopg2-binary==2.9.10
 
-# Copy the application code
-COPY . .
+# Copy only the application code (no tests, dev files)
+COPY main.py auth_utils.py database.py email_utils.py permissions.py \
+     scheduler.py schemas.py supabase_client.py tier_limits.py ./
+COPY routers ./routers/
 
 # Expose port
 EXPOSE 8000

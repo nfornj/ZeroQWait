@@ -89,7 +89,7 @@ const ShopLayout: React.FC = () => {
                     setShop(response.data[0]);
                 }
             } catch (err) {
-                console.error('Failed to fetch shop:', err);
+                // Silently fail - non-critical data
             }
         };
 

@@ -93,7 +93,6 @@ const EmployeeManagementPage: React.FC = () => {
                 const response = await axios.get(`/check-username/${formData.username}`);
                 setUsernameAvailable(response.data.available);
             } catch (err) {
-                console.error('Failed to check username:', err);
                 setUsernameAvailable(null);
             } finally {
                 setCheckingUsername(false);
@@ -118,7 +117,6 @@ const EmployeeManagementPage: React.FC = () => {
                 const response = await axios.get(`/check-email/${encodeURIComponent(formData.email)}`);
                 setEmailAvailable(response.data.available);
             } catch (err) {
-                console.error('Failed to check email:', err);
                 setEmailAvailable(null);
             } finally {
                 setCheckingEmail(false);
@@ -155,7 +153,6 @@ const EmployeeManagementPage: React.FC = () => {
             // Fetch employees
             await fetchEmployees(shop.id, token);
         } catch (err: any) {
-            console.error('Failed to fetch data:', err);
             setError(err.response?.data?.detail || 'Failed to load data');
         } finally {
             setLoading(false);
@@ -169,7 +166,6 @@ const EmployeeManagementPage: React.FC = () => {
             });
             setEmployees(response.data);
         } catch (err: any) {
-            console.error('Failed to fetch employees:', err);
             setError(err.response?.data?.detail || 'Failed to load employees');
         }
     };
@@ -186,7 +182,6 @@ const EmployeeManagementPage: React.FC = () => {
             });
             setShifts(response.data);
         } catch (err: any) {
-            console.error('Failed to fetch shifts:', err);
             setError(err.response?.data?.detail || 'Failed to load attendance data');
         } finally {
             setShiftsLoading(false);

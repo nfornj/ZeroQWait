@@ -82,7 +82,6 @@ const QueueCounterPage: React.FC = () => {
         
         setLoading(false);
       } catch (err) {
-        console.error('Error loading models:', err);
         setError('Failed to load AI models. Please refresh the page.');
         setLoading(false);
       }
@@ -257,7 +256,7 @@ const QueueCounterPage: React.FC = () => {
             ctx.fillText(text, x + 5, y - 10);
           });
         } catch (err) {
-          console.error('Person detection error:', err);
+          // Silently continue detection
         }
       }
 
@@ -266,7 +265,7 @@ const QueueCounterPage: React.FC = () => {
         try {
           await hands.send({ image: video });
         } catch (err) {
-          console.error('Hand detection error:', err);
+          // Silently continue detection
         }
       }
 
