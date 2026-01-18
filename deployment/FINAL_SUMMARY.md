@@ -3,6 +3,7 @@
 ## What Was Completed Today
 
 ### 1. ✅ Created `/deployment` Folder Structure
+
 - **Location:** `/Users/neekrish/zeroqwait/deployment/`
 - **Status:** Ready to use
 
@@ -29,45 +30,49 @@ deployment/
 
 ### 2. ✅ Created 7 New Deployment Scripts
 
-| Script | Purpose | Status |
-|--------|---------|--------|
-| `deploy.sh` | Interactive deployment menu | ✅ Ready |
-| `deploy-local.sh` | Local Docker deployment | ✅ Ready |
-| `deploy-k8s.sh` | Kubernetes deployment | ✅ Ready |
-| `deploy-compose.sh` | Production Docker Compose | ✅ Ready |
-| `logs.sh` | View logs (Docker/K8s) | ✅ Ready |
-| `cleanup.sh` | Stop containers | ✅ Ready |
-| `setup-monitoring.sh` | Setup monitoring tools | ✅ Ready |
+| Script                | Purpose                     | Status   |
+| --------------------- | --------------------------- | -------- |
+| `deploy.sh`           | Interactive deployment menu | ✅ Ready |
+| `deploy-local.sh`     | Local Docker deployment     | ✅ Ready |
+| `deploy-k8s.sh`       | Kubernetes deployment       | ✅ Ready |
+| `deploy-compose.sh`   | Production Docker Compose   | ✅ Ready |
+| `logs.sh`             | View logs (Docker/K8s)      | ✅ Ready |
+| `cleanup.sh`          | Stop containers             | ✅ Ready |
+| `setup-monitoring.sh` | Setup monitoring tools      | ✅ Ready |
 
 ### 3. ✅ Created Comprehensive Documentation
 
-| Document | Purpose | Size |
-|----------|---------|------|
-| `QUICK_REFERENCE.md` | One-page cheat sheet | 2 KB |
-| `CLEANUP_GUIDE.md` | Guide to cleaning root directory | 8 KB |
-| `MONITORING_GUIDE.md` | All monitoring options & setup | 12 KB |
-| `docs/README.md` | Deployment folder overview | 5 KB |
-| `ORGANIZATION_SUMMARY.md` | This summary | 3 KB |
+| Document                  | Purpose                          | Size  |
+| ------------------------- | -------------------------------- | ----- |
+| `QUICK_REFERENCE.md`      | One-page cheat sheet             | 2 KB  |
+| `CLEANUP_GUIDE.md`        | Guide to cleaning root directory | 8 KB  |
+| `MONITORING_GUIDE.md`     | All monitoring options & setup   | 12 KB |
+| `docs/README.md`          | Deployment folder overview       | 5 KB  |
+| `ORGANIZATION_SUMMARY.md` | This summary                     | 3 KB  |
 
 ### 4. ✅ Recommended Monitoring Tools
 
 **Phase 1 (Development - Now)**
+
 - Docker Stats (Free, 0 min setup)
 - Sentry (Free tier, 10 min setup)
 
 **Phase 2 (Before Production)**
+
 - Prometheus + Grafana (Free, 30 min setup)
 - Keep Sentry
 
 **Phase 3 (At Scale)**
+
 - DataDog or New Relic ($15-100/month, 15 min)
 - Keep Sentry
 
 ### 5. ✅ Root Directory Cleanup Plan
 
 **100+ files identified for removal:**
+
 - Old deployment scripts (deploy.sh, deploy-local.sh, etc.)
-- Outdated documentation (DEPLOYMENT*.md, PHASE2_*.md, etc.)
+- Outdated documentation (DEPLOYMENT*.md, PHASE2\_*.md, etc.)
 - Legacy setup scripts (setup-github-actions.sh, etc.)
 - Old configs (supervisord.conf, Dockerfile.combined, etc.)
 
@@ -78,12 +83,14 @@ deployment/
 ## 🎯 How to Use
 
 ### Quick Start
+
 ```bash
 cd /Users/neekrish/zeroqwait/deployment
 ./deploy.sh
 ```
 
 ### Deploy Locally
+
 ```bash
 bash scripts/deploy-local.sh
 # Access: http://192.168.2.88.nip.io:3000 (frontend)
@@ -91,24 +98,28 @@ bash scripts/deploy-local.sh
 ```
 
 ### Deploy to Kubernetes
+
 ```bash
 bash scripts/deploy-k8s.sh
 # Access: http://192.168.2.88.nip.io/
 ```
 
 ### View Logs
+
 ```bash
 bash scripts/logs.sh
 # Interactive menu for Docker or K8s logs
 ```
 
 ### Setup Monitoring
+
 ```bash
 bash scripts/setup-monitoring.sh
 # Interactive menu for Prometheus, DataDog, New Relic, or ELK
 ```
 
 ### Stop Everything
+
 ```bash
 bash scripts/cleanup.sh
 # Stops and removes all containers
@@ -120,14 +131,14 @@ bash scripts/cleanup.sh
 
 ### Cost Analysis for Monitoring
 
-| Solution | Cost | Setup Time |
-|----------|------|-----------|
-| Docker Stats | Free | 0 min |
-| Sentry | Free/$5+/month | 10 min |
-| Prometheus + Grafana | Free | 30 min |
-| DataDog | $15-100/month | 15 min |
-| New Relic | $50-500/month | 15 min |
-| ELK Stack | Free | 1 hour |
+| Solution             | Cost           | Setup Time |
+| -------------------- | -------------- | ---------- |
+| Docker Stats         | Free           | 0 min      |
+| Sentry               | Free/$5+/month | 10 min     |
+| Prometheus + Grafana | Free           | 30 min     |
+| DataDog              | $15-100/month  | 15 min     |
+| New Relic            | $50-500/month  | 15 min     |
+| ELK Stack            | Free           | 1 hour     |
 
 **Recommendation:** Start with Docker Stats + Sentry ($0), upgrade when needed
 
@@ -136,6 +147,7 @@ bash scripts/cleanup.sh
 ## 📁 File Organization Benefits
 
 ### Before
+
 ```
 Root directory had 100+ files:
 - Multiple deploy*.sh scripts
@@ -145,6 +157,7 @@ Root directory had 100+ files:
 ```
 
 ### After
+
 ```
 Organized structure:
 - Single entry point (deployment/deploy.sh)
@@ -160,16 +173,19 @@ Organized structure:
 ## 🚀 Next Steps
 
 ### Immediate (Today)
+
 1. ✅ Explore `/deployment` folder
 2. ✅ Read `deployment/QUICK_REFERENCE.md`
 3. ✅ Try `cd deployment && ./deploy.sh`
 
 ### Short Term (This Week)
+
 1. Read `deployment/monitoring/MONITORING_GUIDE.md`
 2. Choose monitoring solution
 3. Run `bash scripts/setup-monitoring.sh`
 
 ### Before Production (This Month)
+
 1. Test full deployment pipeline
 2. Setup alerting rules
 3. Train team on monitoring
@@ -205,30 +221,35 @@ deployment/
 ## ✨ Key Improvements
 
 ✅ **Organized Structure**
+
 - Central deployment folder
 - All scripts in one place
 - Easy to find what you need
 - Professional organization
 
 ✅ **Multiple Deployment Options**
+
 - Local Docker for development
 - Kubernetes for production
 - Docker Compose for staging
 - All accessible via menu
 
 ✅ **Monitoring Ready**
+
 - Recommendations for all scenarios
 - Setup guides for 8+ tools
 - Cost comparison included
 - One-line setup commands
 
 ✅ **Better Documentation**
+
 - Quick reference card
 - Comprehensive guides
 - Cleanup instructions
 - Architecture documentation
 
 ✅ **Scalable Design**
+
 - Works for single shop or multi-tenant
 - Supports multiple deployment environments
 - Monitoring integrated from day 1
@@ -239,9 +260,11 @@ deployment/
 ## 🔍 File Reference
 
 ### Main Entry Point
+
 - `deployment/deploy.sh` - Interactive menu
 
 ### Deployment Scripts
+
 - `deployment/scripts/deploy-local.sh` - Local Docker
 - `deployment/scripts/deploy-k8s.sh` - Kubernetes
 - `deployment/scripts/deploy-compose.sh` - Production Compose
@@ -250,6 +273,7 @@ deployment/
 - `deployment/scripts/setup-monitoring.sh` - Monitoring
 
 ### Documentation
+
 - `deployment/docs/README.md` - Overview
 - `deployment/QUICK_REFERENCE.md` - Cheat sheet
 - `deployment/CLEANUP_GUIDE.md` - Cleanup guide
@@ -281,15 +305,19 @@ deployment/
 ## 📞 Support Reference
 
 **Can't find something?**
+
 - Check: `deployment/docs/README.md`
 
 **Need quick commands?**
+
 - Check: `deployment/QUICK_REFERENCE.md`
 
 **Want to cleanup root?**
+
 - Check: `deployment/CLEANUP_GUIDE.md`
 
 **Need monitoring recommendations?**
+
 - Check: `deployment/monitoring/MONITORING_GUIDE.md`
 
 ---
@@ -312,13 +340,15 @@ deployment/
 **Everything is ready!**
 
 You now have:
+
 - ✅ Professional deployment structure
 - ✅ Multiple deployment options
 - ✅ Monitoring recommendations
 - ✅ Comprehensive documentation
 - ✅ Clear cleanup path
 
-**Next action:** 
+**Next action:**
+
 ```bash
 cd deployment
 ./deploy.sh
