@@ -9,7 +9,10 @@ import { AuthProvider } from "./contexts/AuthContext";
 import axios from "axios";
 
 // Configure axios defaults
-axios.defaults.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+console.log("[Frontend] REACT_APP_API_URL env var:", process.env.REACT_APP_API_URL);
+console.log("[Frontend] Axios baseURL set to:", apiUrl);
+axios.defaults.baseURL = apiUrl;
 
 const root = ReactDOM.createRoot(
   document.getElementById("root") as HTMLElement

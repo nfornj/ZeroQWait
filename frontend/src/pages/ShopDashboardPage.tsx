@@ -86,6 +86,7 @@ const ShopDashboardPage: React.FC = () => {
     const [loadingEmployees, setLoadingEmployees] = useState(false);
 
     useEffect(() => {
+        console.log("[ShopDashboardPage] Mounted");
         fetchShops();
     }, []);
 
@@ -104,21 +105,29 @@ const ShopDashboardPage: React.FC = () => {
     const fetchShops = async () => {
         try {
             const token = localStorage.getItem('token');
+            console.log("[ShopDashboardPage] fetchShops - token exists:", !!token);
             if (!token) {
+                console.log("[ShopDashboardPage] No token, redirecting to login");
                 navigate('/login');
                 return;
             }
 
+            console.log("[ShopDashboardPage] Fetching shops...");
             const response = await axios.get(`/shops/my-shops`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
 
+            console.log("[ShopDashboardPage] Shops received:", response.data);
             setShops(response.data);
             if (response.data.length > 0) {
+                console.log("[ShopDashboardPage] Setting selected shop:", response.data[0]);
                 setSelectedShop(response.data[0]);
+            } else {
+                console.log("[ShopDashboardPage] No shops found");
             }
             setLoading(false);
         } catch (err: any) {
+            console.error("[ShopDashboardPage] Error loading shops:", err.response?.status, err.response?.data);
             setError('Failed to load shops');
             setLoading(false);
         }

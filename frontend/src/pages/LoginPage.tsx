@@ -30,16 +30,77 @@ const LoginPage: React.FC = () => {
 
   // Navigate based on user role after successful login
   React.useEffect(() => {
+    console.log("[LoginPage] useEffect triggered", {
+      isAuthenticated,
+      loading,
+      error,
+      user,
+    });
     if (isAuthenticated && !loading && !error && user) {
+      console.log("[LoginPage] User role:", user.role);
       if (user.role === "shop_owner") {
-        navigate("/dashboard");
+        // Redirect to shop subdomain dashboard
+        redirectToShopDashboard();
       } else if (user.role === "employee") {
+        console.log("[LoginPage] Redirecting to /employee-dashboard");
         navigate("/employee-dashboard");
       } else {
+        console.log("[LoginPage] Redirecting to home");
         navigate("/");
       }
     }
   }, [isAuthenticated, loading, error, user, navigate]);
+
+  // Function to redirect to shop-specific subdomain
+  const redirectToShopDashboard = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      // Fetch user's shops
+      const response = await fetch(
+        `${process.env.REACT_APP_API_URL || "http://192.168.2.88.nip.io/api"}/shops/my-shops`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (response.ok) {
+        const shops = await response.json();
+        if (shops && shops.length > 0) {
+          const shop = shops[0];
+          const shopSlug =
+            shop.slug || shop.name.toLowerCase().replace(/\s+/g, "-");
+
+          // Get current host parts
+          const currentHost = window.location.hostname;
+          const hostParts = currentHost.split(".");
+
+          // Build new subdomain URL
+          let newUrl = `http://${shopSlug}.`;
+          if (currentHost.includes("nip.io")) {
+            // For nip.io URLs: shop.192.168.2.88.nip.io
+            newUrl += hostParts.slice(-3).join(".");
+          } else if (currentHost.includes("localhost")) {
+            // For localhost: shop.localhost
+            newUrl += "localhost";
+          } else {
+            // For other domains: shop.yourdomain.com
+            newUrl += hostParts.slice(-2).join(".");
+          }
+
+          newUrl += "/dashboard";
+          window.location.href = newUrl;
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching shops:", error);
+      // Fallback to regular dashboard if fetch fails
+      navigate("/dashboard");
+    }
+  };
 
   const validateForm = () => {
     const errors: { username?: string; password?: string } = {};
@@ -139,7 +200,11 @@ const LoginPage: React.FC = () => {
           </Button>
           <Grid container justifyContent="space-between">
             <Grid item>
-              <Link component={RouterLink} to="/forgot-password" variant="body2">
+              <Link
+                component={RouterLink}
+                to="/forgot-password"
+                variant="body2"
+              >
                 Forgot password?
               </Link>
             </Grid>

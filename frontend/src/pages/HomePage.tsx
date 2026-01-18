@@ -1,5 +1,5 @@
-import React from "react";
-import { Link as RouterLink } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Link as RouterLink, useNavigate } from "react-router-dom";
 import {
   Container,
   Typography,
@@ -20,8 +20,24 @@ import SmartToyIcon from "@mui/icons-material/SmartToy";
 import { useAuth } from "../contexts/AuthContext";
 
 const HomePage: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const navigate = useNavigate();
   const theme = useTheme();
+
+  // Redirect authenticated users based on their role
+  useEffect(() => {
+    console.log("[HomePage] Auth check", { isAuthenticated, user });
+    if (isAuthenticated && user) {
+      console.log("[HomePage] User role is", user.role);
+      if (user.role === "shop_owner") {
+        console.log("[HomePage] Redirecting shop_owner to /dashboard");
+        navigate("/dashboard");
+      } else if (user.role === "employee") {
+        console.log("[HomePage] Redirecting employee to /employee-dashboard");
+        navigate("/employee-dashboard");
+      }
+    }
+  }, [isAuthenticated, user, navigate]);
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Response
 from typing import List, Optional
-from supabase_client import supabase
+from db_interface import db_interface
 from schemas import Shop, ShopCreate, ShopUpdate, ShopWithQueue
 from auth_utils import get_current_user, get_current_user_optional
 from permissions import sanitize_queue_data_for_public
@@ -24,10 +24,8 @@ def create_shop(
     # Check shop limit based on subscription tier
     try:
         from tier_limits import TIER_LIMITS
-        shops_response = supabase.table("shops").select("id").eq(
-            "owner_id", current_user["id"]
-        ).execute()
-        user_shops_count = len(shops_response.data) if shops_response.data else 0
+        user_shops = db_interface.get_shops({"owner_id": current_user["id"]})
+        user_shops_count = len(user_shops)
         
         tier_limit = TIER_LIMITS.get(current_user.get("subscription_tier", "free"), {}).get("max_shops")
         if tier_limit is not None and user_shops_count >= tier_limit:
@@ -46,12 +44,9 @@ def create_shop(
     # Generate slug from name
     base_slug = shop.name.lower().replace(" ", "-").replace("'", "").replace(".", "")
     # Ensure uniqueness (simple check)
-    try:
-        existing_slug_response = supabase.table("shops").select("slug").eq("slug", base_slug).execute()
-        if existing_slug_response.data:
-            base_slug = f"{base_slug}-{random.randint(100, 999)}"
-    except Exception:
-        pass
+    existing_shop = db_interface.get_shop_by_slug(base_slug)
+    if existing_shop:
+        base_slug = f"{base_slug}-{random.randint(100, 999)}"
     
     # Create shop
     shop_data = shop.dict()
@@ -60,11 +55,9 @@ def create_shop(
     shop_data["is_active"] = True
     
     try:
-        shop_response = supabase.table("shops").insert(shop_data).execute()
-        if not shop_response.data:
+        db_shop = db_interface.create_shop(shop_data)
+        if not db_shop:
             raise HTTPException(status_code=500, detail="Failed to create shop")
-        
-        db_shop = shop_response.data[0]
         
         # Create an active queue for today
         queue_data = {
@@ -72,7 +65,7 @@ def create_shop(
             "name": "Main Queue",
             "is_active": True
         }
-        supabase.table("queues").insert(queue_data).execute()
+        db_interface.create_queue(queue_data)
         
         return db_shop
     except HTTPException:
@@ -88,13 +81,12 @@ def get_all_shops(
 ):
     """Get all active shops, optionally filtered by country"""
     try:
-        query = supabase.table("shops").select("*").eq("is_active", True)
-        
+        filters = {"is_active": True}
         if country:
-            query = query.eq("country", country)
+            filters["country"] = country
         
-        response = query.range(skip, skip + limit - 1).execute()
-        return response.data if response.data else []
+        shops = db_interface.get_shops(filters=filters, skip=skip, limit=limit)
+        return shops
     except Exception:
         return []
 
@@ -102,11 +94,9 @@ def get_all_shops(
 def get_countries():
     """Get list of unique countries from active shops"""
     try:
-        response = supabase.table("shops").select("country").eq(
-            "is_active", True
-        ).execute()
-        if response.data:
-            countries = list(set([shop["country"] for shop in response.data if shop.get("country")]))
+        shops = db_interface.get_shops(filters={"is_active": True}, limit=1000)
+        if shops:
+            countries = list(set([shop["country"] for shop in shops if shop.get("country")]))
             return sorted(countries)
         return []
     except Exception:
@@ -123,10 +113,8 @@ def get_my_shops(
             detail="Only shop owners can view their shops"
         )
     try:
-        response = supabase.table("shops").select("*").eq(
-            "owner_id", current_user["id"]
-        ).execute()
-        return response.data if response.data else []
+        shops = db_interface.get_shops(filters={"owner_id": current_user["id"]})
+        return shops
     except Exception:
         return []
 
@@ -134,29 +122,20 @@ def get_my_shops(
 def get_shop(shop_id: int, current_user: Optional[dict] = Depends(get_current_user_optional)):
     """Get shop details with active queue (Public endpoint - sanitizes employee data for non-staff)"""
     try:
-        shop_response = supabase.table("shops").select("*").eq("id", shop_id).execute()
-        if not shop_response.data:
+        shop = db_interface.get_shop_by_id(shop_id)
+        if not shop:
             raise HTTPException(status_code=404, detail="Shop not found")
         
-        shop = shop_response.data[0]
-        
         # Fetch queues with queue items
-        queues_response = supabase.table("queues").select("*").eq(
-            "shop_id", shop_id
-        ).eq("is_active", True).execute()
+        queues = db_interface.get_queues(filters={"shop_id": shop_id, "is_active": True})
         
-        queues = []
-        if queues_response.data:
-            for queue in queues_response.data:
-                # Fetch queue items for each queue
-                items_response = supabase.table("queue_items").select("*").eq(
-                    "queue_id", queue["id"]
-                ).execute()
-                queue["queue_items"] = items_response.data if items_response.data else []
-                
-                # Sanitize employee data for public access
-                queue = sanitize_queue_data_for_public(queue, current_user, shop_id)
-                queues.append(queue)
+        for queue in queues:
+            # Fetch queue items for each queue
+            queue_items = db_interface.get_queue_items(filters={"queue_id": queue["id"]})
+            queue["queue_items"] = queue_items
+            
+            # Sanitize employee data for public access
+            queue = sanitize_queue_data_for_public(queue, current_user, shop_id)
         
         shop["queues"] = queues
         return shop
@@ -169,30 +148,22 @@ def get_shop(shop_id: int, current_user: Optional[dict] = Depends(get_current_us
 def get_shop_by_slug(slug: str, current_user: Optional[dict] = Depends(get_current_user_optional)):
     """Get shop details by slug (Public endpoint - sanitizes employee data for non-staff)"""
     try:
-        shop_response = supabase.table("shops").select("*").eq("slug", slug).execute()
-        if not shop_response.data:
+        shop = db_interface.get_shop_by_slug(slug)
+        if not shop:
             raise HTTPException(status_code=404, detail="Shop not found")
         
-        shop = shop_response.data[0]
         shop_id = shop["id"]
         
         # Fetch queues with queue items
-        queues_response = supabase.table("queues").select("*").eq(
-            "shop_id", shop_id
-        ).eq("is_active", True).execute()
+        queues = db_interface.get_queues(filters={"shop_id": shop_id, "is_active": True})
         
-        queues = []
-        if queues_response.data:
-            for queue in queues_response.data:
-                # Fetch queue items for each queue
-                items_response = supabase.table("queue_items").select("*").eq(
-                    "queue_id", queue["id"]
-                ).execute()
-                queue["queue_items"] = items_response.data if items_response.data else []
-                
-                # Sanitize employee data for public access
-                queue = sanitize_queue_data_for_public(queue, current_user, shop_id)
-                queues.append(queue)
+        for queue in queues:
+            # Fetch queue items for each queue
+            queue_items = db_interface.get_queue_items(filters={"queue_id": queue["id"]})
+            queue["queue_items"] = queue_items
+            
+            # Sanitize employee data for public access
+            queue = sanitize_queue_data_for_public(queue, current_user, shop_id)
         
         shop["queues"] = queues
         return shop

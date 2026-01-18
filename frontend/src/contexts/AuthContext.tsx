@@ -112,10 +112,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (token) {
         try {
           setLoading(true);
+          console.log("[AuthContext] Fetching user data with token:", token.substring(0, 20) + "...");
           const response = await axios.get("/users/me");
+          console.log("[AuthContext] User data received:", response.data);
           setUser(response.data);
           setIsAuthenticated(true);
         } catch (err: any) {
+          console.error("[AuthContext] Error fetching user:", err.response?.status, err.response?.data);
           // Only logout if it's not a 401 (interceptor handles that)
           if (err.response?.status !== 401) {
             logout();
@@ -184,6 +187,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(false);
     }
   };
+
+  console.log("[AuthContext] Current state:", { user, token: token ? token.substring(0, 20) + "..." : null, isAuthenticated, loading });
 
   const value = {
     user,

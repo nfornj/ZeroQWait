@@ -44,12 +44,17 @@ allowed_origins = [
     "http://192.168.1.15:3000",
     "https://zeroqwait.com",
     "https://www.zeroqwait.com",
+    "http://192.168.2.88.nip.io",
+    "http://*.192.168.2.88.nip.io",  # Support all shop subdomains
 ]
 
 # Allow custom frontend URL from environment variable
 frontend_url = os.getenv("FRONTEND_URL")
 if frontend_url and frontend_url not in allowed_origins:
     allowed_origins.append(frontend_url)
+    # Also add subdomain versions
+    if "nip.io" in frontend_url or "localhost" not in frontend_url:
+        allowed_origins.append(f"http://*.{frontend_url.replace('http://', '')}")
 
 app.add_middleware(
     CORSMiddleware,

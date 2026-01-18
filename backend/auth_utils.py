@@ -7,7 +7,7 @@ from typing import Optional
 import os
 from dotenv import load_dotenv
 
-from supabase_client import supabase
+from db_interface import db_interface
 import schemas
 
 load_dotenv()
@@ -30,10 +30,9 @@ def get_password_hash(password):
 
 def authenticate_user(username: str, password: str):
     try:
-        response = supabase.table("users").select("*").eq("username", username).execute()
-        if not response.data:
+        user = db_interface.get_user_by_username(username)
+        if not user:
             return False
-        user = response.data[0]
         if not verify_password(password, user["hashed_password"]):
             return False
         return user
@@ -66,10 +65,9 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     
     try:
-        response = supabase.table("users").select("*").eq("username", token_data.username).execute()
-        if not response.data:
+        user = db_interface.get_user_by_username(token_data.username)
+        if not user:
             raise credentials_exception
-        user = response.data[0]
         return user
     except Exception:
         raise credentials_exception
@@ -93,11 +91,11 @@ def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme_optio
         if username is None:
             return None
         
-        response = supabase.table("users").select("*").eq("username", username).execute()
-        if not response.data:
+        user = db_interface.get_user_by_username(username)
+        if not user:
             return None
         
-        return response.data[0]
+        return user
     except JWTError:
         return None
     except Exception:
