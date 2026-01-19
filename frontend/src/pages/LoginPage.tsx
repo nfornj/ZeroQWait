@@ -139,7 +139,7 @@ const LoginPage: React.FC = () => {
           }
         }
 
-        newUrl += "/dashboard";
+        newUrl += `/dashboard?token=${token}`;
         console.log("[LoginPage] Redirecting to subdomain:", newUrl);
         window.location.href = newUrl;
         return;

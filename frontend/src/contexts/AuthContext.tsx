@@ -56,6 +56,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Check token expiration on mount and periodically
   useEffect(() => {
+    // Check for token in URL (passed from cross-domain redirect)
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("token");
+
+    if (urlToken) {
+      console.log("[AuthContext] Token found in URL, saving to localStorage");
+      localStorage.setItem("token", urlToken);
+      setToken(urlToken);
+      setIsAuthenticated(true);
+
+      // Clean URL without reloading
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+
     const checkTokenExpiration = () => {
       const storedToken = localStorage.getItem('token');
       if (storedToken && isTokenExpired(storedToken)) {
@@ -64,8 +79,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     };
 
-    // Check immediately on mount
-    checkTokenExpiration();
+    // Check immediately on mount (if no URL token was just set)
+    if (!urlToken) {
+      checkTokenExpiration();
+    }
 
     // Check every minute
     const interval = setInterval(checkTokenExpiration, 60000);

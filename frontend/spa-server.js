@@ -7,7 +7,8 @@ const port = 3000;
 app.use(express.static(path.join(__dirname, 'build')));
 
 // Handle all other routes by returning index.html (SPA fallback)
-app.get('*', (req, res) => {
+// Handle all other routes by returning index.html (SPA fallback)
+app.get('(.*)', (req, res) => {
     const indexFile = path.join(__dirname, 'build', 'index.html');
     res.sendFile(indexFile, (err) => {
         if (err) {
