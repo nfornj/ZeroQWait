@@ -17,22 +17,47 @@ spec:
       - name: frontend
         image: node:18-alpine
         workingDir: /app
+        env:
+        - name: NODE_OPTIONS
+          value: "--max-old-space-size=1536 --openssl-legacy-provider"
+        - name: REACT_APP_API_URL
+          value: "/api"
         command: ["/bin/sh", "-c"]
         args:
           - |
-            echo "Cleaning npm cache and node_modules..."
-            npm cache clean --force
-            rm -rf node_modules package-lock.json
-            echo "Building frontend with API URL: /api (relative path)"
-            npm install --legacy-peer-deps
-            NODE_OPTIONS="--max-old-space-size=1536" REACT_APP_API_URL=/api npm run build
-            if [ -d "build" ] && [ -f "build/index.html" ]; then
-              echo "Build successful!"
+            echo "Starting deployment process..."
+            
+            # Use existing node_modules if possible to speed up restart
+            if [ -d "node_modules" ]; then
+              echo "Found existing node_modules, attempting to use them..."
             else
-              echo "Build failed, using old build if available"
+              echo "Installing dependencies..."
+              npm install --legacy-peer-deps
             fi
-            echo "Starting server on port 3000..."
-            npx serve -s build -l 3000
+            
+            echo "Building frontend..."
+            # Capture build output to log
+            if npm run build; then
+              echo "Build command finished successfully."
+            else
+              echo "❌ Build command FAILED!"
+              exit 1
+            fi
+            
+            if [ -d "build" ] && [ -f "build/index.html" ]; then
+              echo "✅ Build verification successful: index.html found."
+              echo "Starting server on port 3000..."
+              npx serve -s build -l 3000
+            else
+              echo "❌ Build verification FAILED: No index.html found in /app/build"
+              echo "Listing /app directory:"
+              ls -la /app
+              if [ -d "/app/build" ]; then
+                 echo "Listing /app/build directory:"
+                 ls -la /app/build
+              fi
+              exit 1
+            fi
         ports:
         - containerPort: 3000
         volumeMounts:
@@ -40,18 +65,18 @@ spec:
           mountPath: /app
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
-          limits:
             memory: "2Gi"
             cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
         livenessProbe:
           httpGet:
             path: /
             port: 3000
-          initialDelaySeconds: 180
-          periodSeconds: 10
-          timeoutSeconds: 5
+          initialDelaySeconds: 300
+          periodSeconds: 20
+          timeoutSeconds: 10
         readinessProbe:
           httpGet:
             path: /

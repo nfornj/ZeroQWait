@@ -61,31 +61,6 @@ const ShopLayout: React.FC = () => {
     const collapsedWidth = 72;
     const expandedWidth = 240;
 
-    // Check if user should be redirected to their shop's subdomain
-    useEffect(() => {
-        if (shop && !loading) {
-            const currentHost = window.location.hostname;
-            const shopSlug = shop.slug || shop.name.toLowerCase().replace(/\s+/g, "-");
-            
-            // If not on the subdomain and have a shop, redirect
-            if (!currentHost.startsWith(shopSlug)) {
-                let newUrl = `http://${shopSlug}.`;
-                const hostParts = currentHost.split(".");
-                
-                if (currentHost.includes("nip.io")) {
-                    newUrl += hostParts.slice(-3).join(".");
-                } else if (currentHost.includes("localhost")) {
-                    newUrl += "localhost";
-                } else {
-                    newUrl += hostParts.slice(-2).join(".");
-                }
-                
-                newUrl += location.pathname + location.search;
-                window.location.href = newUrl;
-            }
-        }
-    }, [shop, loading]);
-
     const handleDrawerToggle = () => {
         setMobileOpen(!mobileOpen);
     };

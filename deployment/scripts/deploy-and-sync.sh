@@ -8,7 +8,7 @@ set -e
 
 # Configuration
 DESTINATION_SERVER="${1:-neekrishrichu@192.168.2.88}"
-DESTINATION_PATH="${2:-/home/neekrishrichu/zeroqwait}"
+DESTINATION_PATH="${2:-/home/neekrishrichu/apps/zeroqwait}"
 
 # Colors
 GREEN='\033[0;32m'

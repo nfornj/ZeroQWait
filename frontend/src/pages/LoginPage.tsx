@@ -70,7 +70,7 @@ const LoginPage: React.FC = () => {
 
       const shops = response.data;
       console.log("[LoginPage] Shops fetched:", shops);
-      
+
       if (shops && shops.length > 0) {
         const shop = shops[0];
         // The shop should have a slug - use it or generate from name
@@ -82,29 +82,35 @@ const LoginPage: React.FC = () => {
         const currentHost = window.location.hostname;
         const protocol = window.location.protocol;
         let newUrl = "";
-        
-        if (currentHost.includes("nip.io")) {
-          // nip.io URLs logic
+
+        if (currentHost.includes("nip.io") || currentHost.includes("np.io")) {
+          // nip.io / np.io URLs logic
           // Check if we are already on a subdomain or the base IP
-          // Base IP format: 192.168.2.88.nip.io (starts with digits)
-          if (currentHost.match(/^\d+\.\d+\.\d+\.\d+\.nip\.io$/)) {
-             // We are on the base, prepend slug
-             newUrl = `${protocol}//${shopSlug}.${currentHost}`;
+          // Base IP format: 192.168.2.88.nip.io or 192.168.2.88.np.io
+          const isBaseDomain = currentHost.match(/^\d+\.\d+\.\d+\.\d+\.(nip|np)\.io$/);
+
+          if (isBaseDomain) {
+            // We are on the base, prepend slug
+            newUrl = `${protocol}//${shopSlug}.${currentHost}`;
           } else {
-             // We might be on www.192... or another subdomain.
-             // We want to REPLACE the subdomain with the shop slug.
-             // Extract the IP part.
-             const parts = currentHost.split(".");
-             // Find where the IP starts (4 numbers followed by nip.io)
-             // simplified: take the last 6 parts (IP + nip + io)
-             if (parts.length >= 6) {
-                 const baseParts = parts.slice(-6);
-                 const baseHost = baseParts.join(".");
-                 newUrl = `${protocol}//${shopSlug}.${baseHost}`;
-             } else {
-                 // Fallback
-                 newUrl = `${protocol}//${shopSlug}.${currentHost}`;
-             }
+            // We might be on www.192... or another subdomain.
+            // We want to REPLACE the subdomain with the shop slug.
+            // Strategy: Find the part that looks like an IP + suffix
+            const ipSuffixMatch = currentHost.match(/(\d+\.\d+\.\d+\.\d+\.(nip|np)\.io)$/);
+            if (ipSuffixMatch) {
+              const baseHost = ipSuffixMatch[1];
+              newUrl = `${protocol}//${shopSlug}.${baseHost}`;
+            } else {
+              // Fallback: just append if we can't parse it well, or replace first part
+              const parts = currentHost.split(".");
+              if (parts.length >= 6) {
+                const baseParts = parts.slice(-6); // loose heuristic
+                const baseHost = baseParts.join(".");
+                newUrl = `${protocol}//${shopSlug}.${baseHost}`;
+              } else {
+                newUrl = `${protocol}//${shopSlug}.${currentHost}`;
+              }
+            }
           }
         } else if (currentHost === "localhost" || currentHost === "127.0.0.1") {
           console.log("[LoginPage] Localhost detected, navigating to /dashboard");
@@ -119,17 +125,17 @@ const LoginPage: React.FC = () => {
           // Ideally we should know the root domain.
           // For now, if it starts with www, replace it.
           if (parts[0] === "www") {
-              newUrl = `${protocol}//${shopSlug}.${parts.slice(1).join(".")}`;
+            newUrl = `${protocol}//${shopSlug}.${parts.slice(1).join(".")}`;
           } else if (parts.length === 2) {
-              newUrl = `${protocol}//${shopSlug}.${currentHost}`;
+            newUrl = `${protocol}//${shopSlug}.${currentHost}`;
           } else {
-              // Assume we are on a subdomain, replace it? Or prepend?
-              // Safest to assume we are replacing the current subdomain if it exists
-              // or prepending if we are at root.
-              // Let's just prepend to the *registrable* domain if possible.
-              // Simple heuristic: keep last 2 parts.
-              const baseDomain = parts.slice(-2).join(".");
-              newUrl = `${protocol}//${shopSlug}.${baseDomain}`;
+            // Assume we are on a subdomain, replace it? Or prepend?
+            // Safest to assume we are replacing the current subdomain if it exists
+            // or prepending if we are at root.
+            // Let's just prepend to the *registrable* domain if possible.
+            // Simple heuristic: keep last 2 parts.
+            const baseDomain = parts.slice(-2).join(".");
+            newUrl = `${protocol}//${shopSlug}.${baseDomain}`;
           }
         }
 
@@ -141,7 +147,7 @@ const LoginPage: React.FC = () => {
     } catch (error) {
       console.error("[LoginPage] Error redirecting:", error);
     }
-    
+
     // Fallback
     console.log("[LoginPage] Fallback: navigating to /dashboard");
     navigate("/dashboard");
