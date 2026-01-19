@@ -2,6 +2,7 @@
 
 # ZeroQwait Deploy & Sync - One command to sync code and deploy
 # Syncs from current branch, then deploys to K8s on remote server
+# Auto-generates commit messages using local LLM (llama3)
 
 set -e
 
@@ -30,34 +31,88 @@ echo -e "${YELLOW}📌 Server: ${GREEN}$DESTINATION_SERVER${NC}"
 echo -e "${YELLOW}📌 Path: ${GREEN}$DESTINATION_PATH${NC}"
 echo ""
 
+# Function to generate commit message using llama3
+generate_commit_message() {
+    local git_diff="$1"
+    
+    if command -v ollama &> /dev/null; then
+        echo -e "${BLUE}🤖 Generating commit message with llama3...${NC}" >&2
+        
+        # Create prompt and get response
+        local prompt="Based on these changes, write ONE SHORT git commit message (max 60 chars). Be concise. Output ONLY the message.\n\n$git_diff"
+        local message=$(echo -e "$prompt" | ollama run llama3 2>/dev/null | grep -v "^>" | head -1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/^[0-9]\+:[[:space:]]*//g' | head -c 60)
+        
+        if [ ! -z "$message" ] && [ ${#message} -gt 5 ]; then
+            echo "$message"
+            return 0
+        fi
+    fi
+    
+    # Fallback: generate basic message
+    echo "chore: sync code and deploy"
+}
+
 # Step 1: Commit and push
 echo -e "${BLUE}Step 1️⃣  - Pushing code to Git...${NC}"
 UNCOMMITTED=$(git -C "$PROJECT_ROOT" status --porcelain | wc -l)
+
 if [ $UNCOMMITTED -gt 0 ]; then
     echo -e "${YELLOW}You have $UNCOMMITTED uncommitted changes${NC}"
-    read -p "Commit changes? (y/n) " -n 1 -r
+    echo ""
+    
+    # Get git diff for LLM
+    GIT_DIFF=$(git -C "$PROJECT_ROOT" diff --stat 2>/dev/null | head -5)
+    
+    # Auto-generate commit message with llama3
+    COMMIT_MSG=$(generate_commit_message "$GIT_DIFF")
+    echo -e "${GREEN}✓ Generated: \"$COMMIT_MSG\"${NC}"
+    echo ""
+    
+    read -p "Use this message? (y/n) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        read -p "Enter commit message: " COMMIT_MSG
         git -C "$PROJECT_ROOT" add -A
         git -C "$PROJECT_ROOT" commit -m "$COMMIT_MSG"
+    else
+        read -p "Enter custom commit message: " CUSTOM_MSG
+        git -C "$PROJECT_ROOT" add -A
+        git -C "$PROJECT_ROOT" commit -m "$CUSTOM_MSG"
     fi
 fi
+
 git -C "$PROJECT_ROOT" push origin "$CURRENT_BRANCH"
 echo -e "${GREEN}✓ Code pushed${NC}"
 echo ""
 
 # Step 2: Sync on remote
 echo -e "${BLUE}Step 2️⃣  - Syncing on remote server...${NC}"
+
+# Create path if doesn't exist, then sync
 ssh "$DESTINATION_SERVER" "
-    cd $DESTINATION_PATH && \
+    # Create directory if needed
+    mkdir -p $DESTINATION_PATH
+    cd $DESTINATION_PATH
+    
+    # Initialize git if not already
+    if [ ! -d .git ]; then
+        echo '⏳ Initializing git repository...'
+        git init
+        git remote add origin https://github.com/nfornj/FastCuts.git || true
+    fi
+    
+    # Sync code
     git fetch origin && \
     git checkout $CURRENT_BRANCH 2>/dev/null || git checkout -b $CURRENT_BRANCH origin/$CURRENT_BRANCH && \
     git pull origin $CURRENT_BRANCH
 " || {
     echo -e "${RED}❌ Failed to sync on remote server${NC}"
+    echo -e "${YELLOW}Troubleshooting:${NC}"
+    echo "  1. Check SSH connection: ssh $DESTINATION_SERVER 'echo ok'"
+    echo "  2. Check Git access: ssh $DESTINATION_SERVER 'git ls-remote https://github.com/nfornj/FastCuts.git'"
+    echo "  3. Check path permissions: ssh $DESTINATION_SERVER 'ls -la \$(dirname $DESTINATION_PATH)'"
     exit 1
 }
+
 echo -e "${GREEN}✓ Code synced${NC}"
 echo ""
 
