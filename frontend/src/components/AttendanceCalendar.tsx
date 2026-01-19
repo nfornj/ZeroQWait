@@ -13,7 +13,6 @@ import {
     Card,
     CardContent,
 } from '@mui/material';
-import Grid from '@mui/material/Grid2';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
@@ -154,9 +153,9 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
             {/* Calendar Grid */}
             <Paper sx={{ p: 2 }}>
                 {/* Day headers */}
-                <Grid container spacing={1} sx={{ mb: 1 }}>
+                <Box display="flex" gap={1} sx={{ mb: 1 }}>
                     {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                        <Grid xs={12 / 7} key={day}>
+                        <Box key={day} flex="1">
                             <Typography
                                 variant="caption"
                                 fontWeight="bold"
@@ -166,19 +165,19 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                             >
                                 {day}
                             </Typography>
-                        </Grid>
+                        </Box>
                     ))}
-                </Grid>
+                </Box>
 
                 {/* Calendar days */}
-                <Grid container spacing={1}>
+                <Box display="flex" flexWrap="wrap" gap={1}>
                     {calendarDays.map((day, index) => {
                         const dayShifts = getShiftsForDay(day);
                         const isCurrentMonth = day.getMonth() === currentMonth.getMonth();
                         const isTodayDate = isToday(day);
 
                         return (
-                            <Grid xs={12 / 7} key={index}>
+                            <Box key={index} sx={{ width: 'calc((100% - 6 * 8px) / 7)' }}>
                                 <Paper
                                     variant="outlined"
                                     sx={{
@@ -251,10 +250,10 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                                         </Box>
                                     )}
                                 </Paper>
-                            </Grid>
+                            </Box>
                         );
                     })}
-                </Grid>
+                </Box>
             </Paper>
 
             {/* Legend */}
