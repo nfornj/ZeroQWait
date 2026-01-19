@@ -24,8 +24,6 @@ interface ShopContextType {
 
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
-
 export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [shop, setShop] = useState<Shop | null>(null);
   const [shopSlug, setShopSlug] = useState<string | null>(null);
@@ -66,7 +64,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setError(null);
       
       console.log("[ShopContext] Fetching shop by slug:", slug);
-      const response = await axios.get(`${API_URL}/shops/by-slug/${slug}`);
+      const response = await axios.get(`/shops/by-slug/${slug}`);
       const shopData = response.data;
       console.log("[ShopContext] Shop fetched by slug:", shopData.name, shopData.slug);
       setShop(shopData);
@@ -94,7 +92,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       console.log("[ShopContext] Fetching user's shop");
-      const response = await axios.get(`${API_URL}/shops/my-shops`, {
+      const response = await axios.get(`/shops/my-shops`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
