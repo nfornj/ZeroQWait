@@ -119,10 +119,23 @@ echo ""
 
 # Step 3: Deploy
 echo -e "${BLUE}Step 3️⃣  - Deploying to Kubernetes...${NC}"
-ssh "$DESTINATION_SERVER" "cd $DESTINATION_PATH/deployment && bash scripts/deploy-k8s.sh" || {
+
+# Try deployment
+if ! ssh "$DESTINATION_SERVER" "cd $DESTINATION_PATH/deployment && bash scripts/deploy-k8s.sh"; then
     echo -e "${RED}❌ Deployment failed${NC}"
+    echo ""
+    echo -e "${YELLOW}If you see 'sudo: a terminal is required' error, setup passwordless sudo:${NC}"
+    echo ""
+    echo "  ssh $DESTINATION_SERVER"
+    echo "  # Then on remote server:"
+    echo "  echo 'neekrishrichu ALL=(ALL) NOPASSWD: /usr/bin/kubectl' | sudo tee /etc/sudoers.d/kubectl-nopass"
+    echo "  sudo chmod 440 /etc/sudoers.d/kubectl-nopass"
+    echo "  exit"
+    echo ""
+    echo "  Then retry:"
+    echo "  bash scripts/deploy-and-sync.sh"
     exit 1
-}
+fi
 
 echo ""
 echo -e "${GREEN}✅ Deploy & Sync Complete!${NC}"
