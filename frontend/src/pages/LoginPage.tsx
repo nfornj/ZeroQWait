@@ -57,11 +57,8 @@ const LoginPage: React.FC = () => {
       const token = localStorage.getItem("token");
       if (!token) return;
 
-      // Build API URL correctly
-      const apiBaseUrl = process.env.REACT_APP_API_URL || "/api";
-      const apiUrl = apiBaseUrl.startsWith("http") 
-        ? apiBaseUrl 
-        : `${window.location.origin}${apiBaseUrl}`;
+      // Build API URL correctly - use relative path
+      const apiUrl = "/api";
 
       // Fetch user's shops
       const response = await fetch(`${apiUrl}/shops/my-shops`, {
@@ -72,10 +69,13 @@ const LoginPage: React.FC = () => {
 
       if (response.ok) {
         const shops = await response.json();
+        console.log("[LoginPage] Shops fetched:", shops);
         if (shops && shops.length > 0) {
           const shop = shops[0];
           const shopSlug =
             shop.slug || shop.name.toLowerCase().replace(/\s+/g, "-");
+
+          console.log("[LoginPage] Redirecting to shop:", shopSlug);
 
           // Get current host parts
           const currentHost = window.location.hostname;
@@ -95,6 +95,7 @@ const LoginPage: React.FC = () => {
           }
 
           newUrl += "/dashboard";
+          console.log("[LoginPage] Redirecting to:", newUrl);
           window.location.href = newUrl;
         }
       }
