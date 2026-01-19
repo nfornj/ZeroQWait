@@ -1,4 +1,5 @@
-import { createTheme, alpha, PaletteMode, Shadows } from '@mui/material/styles';
+import { createTheme, alpha, Shadows } from '@mui/material/styles';
+import { PaletteMode } from '@mui/material';
 
 declare module '@mui/material/Paper' {
   interface PaperPropsVariantOverrides {
@@ -19,7 +20,7 @@ declare module '@mui/material/styles' {
     900: string;
   }
 
-  interface PaletteColor extends ColorRange {}
+  interface PaletteColor extends ColorRange { }
 
   interface Palette {
     baseShadow: string;
@@ -31,16 +32,16 @@ const defaultTheme = createTheme();
 const customShadows: Shadows = [...defaultTheme.shadows];
 
 export const brand = {
-  50: 'hsl(210, 100%, 95%)',
-  100: 'hsl(210, 100%, 92%)',
-  200: 'hsl(210, 100%, 80%)',
-  300: 'hsl(210, 100%, 65%)',
-  400: 'hsl(210, 98%, 48%)',
-  500: 'hsl(210, 98%, 42%)',
-  600: 'hsl(210, 98%, 55%)',
-  700: 'hsl(210, 100%, 35%)',
-  800: 'hsl(210, 100%, 16%)',
-  900: 'hsl(210, 100%, 21%)',
+  50: '#fff0f1',
+  100: '#ffdbdc',
+  200: '#ffb8ba',
+  300: '#ff8a8d',
+  400: '#ff5a5f', // Main Coral
+  500: '#ff2e35',
+  600: '#fa1119',
+  700: '#d70a11',
+  800: '#b10d13',
+  900: '#921116',
 };
 
 export const gray = {

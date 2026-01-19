@@ -10,27 +10,27 @@ import { SitemarkIcon } from './CustomIcons';
 const items = [
   {
     icon: <SettingsSuggestRoundedIcon sx={{ color: 'text.secondary' }} />,
-    title: 'Adaptable performance',
+    title: 'Smart Queue Management',
     description:
-      'Our product effortlessly adjusts to your needs, boosting efficiency and simplifying your tasks.',
+      'Effortlessly manage your customer flow with our intelligent queuing algorithm.',
   },
   {
     icon: <ConstructionRoundedIcon sx={{ color: 'text.secondary' }} />,
-    title: 'Built to last',
+    title: 'Reliable & Robust',
     description:
-      'Experience unmatched durability that goes above and beyond with lasting investment.',
+      'Built for high-volume shops, ensuring stability during your busiest hours.',
   },
   {
     icon: <ThumbUpAltRoundedIcon sx={{ color: 'text.secondary' }} />,
-    title: 'Great user experience',
+    title: 'Customer Satisfaction',
     description:
-      'Integrate our product into your routine with an intuitive and easy-to-use interface.',
+      'Let your customers check wait times and join the line remotely.',
   },
   {
     icon: <AutoFixHighRoundedIcon sx={{ color: 'text.secondary' }} />,
-    title: 'Innovative functionality',
+    title: 'Insights & Analytics',
     description:
-      'Stay ahead with features that set new standards, addressing your evolving needs better than the rest.',
+      'Gain valuable insights into service times and peak hours to optimize your staff.',
   },
 ];
 
@@ -40,7 +40,9 @@ export default function Content() {
       sx={{ flexDirection: 'column', alignSelf: 'center', gap: 4, maxWidth: 450 }}
     >
       <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
-        <SitemarkIcon />
+        <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+          ZeroQwait
+        </Typography>
       </Box>
       {items.map((item, index) => (
         <Stack key={index} direction="row" sx={{ gap: 2 }}>

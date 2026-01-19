@@ -11,8 +11,12 @@ import Link from '@mui/material/Link';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
+import { useNavigate } from 'react-router-dom';
 import ForgotPassword from './ForgotPassword';
 import { GoogleIcon, FacebookIcon, SitemarkIcon } from './CustomIcons';
+import { useAuth } from '../../contexts/AuthContext';
+import axios from 'axios';
+import Alert from '@mui/material/Alert';
 
 const Card = styled(MuiCard)(({ theme }) => ({
   display: 'flex',
@@ -39,6 +43,9 @@ export default function SignInCard() {
   const [passwordErrorMessage, setPasswordErrorMessage] = React.useState('');
   const [open, setOpen] = React.useState(false);
 
+  const { login, loading, error, isAuthenticated, user } = useAuth();
+  const navigate = useNavigate();
+
   const handleClickOpen = () => {
     setOpen(true);
   };
@@ -47,16 +54,115 @@ export default function SignInCard() {
     setOpen(false);
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  // Navigate based on user role after successful login
+  React.useEffect(() => {
+    if (isAuthenticated && !loading && !error && user) {
+      // Function to redirect to shop-specific subdomain
+      const redirectToShopDashboard = async () => {
+        try {
+          const token = localStorage.getItem("token");
+          if (!token) {
+            navigate("/dashboard");
+            return;
+          }
+
+          // Fetch user's shops using axios (uses configured baseURL)
+          const response = await axios.get("/shops/my-shops", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          const shops = response.data;
+          console.log("[LoginPage] Shops fetched:", shops);
+
+          if (shops && shops.length > 0) {
+            const shop = shops[0];
+            // The shop should have a slug - use it or generate from name
+            const shopSlug = shop.slug || shop.name.toLowerCase().replace(/\s+/g, "-");
+
+            console.log("[LoginPage] Shop slug:", shopSlug);
+
+            // Build the subdomain URL
+            const currentHost = window.location.hostname;
+            const protocol = window.location.protocol;
+            let newUrl = "";
+
+            if (currentHost.includes("nip.io") || currentHost.includes("np.io")) {
+              // nip.io / np.io URLs logic
+              const isBaseDomain = currentHost.match(/^\d+\.\d+\.\d+\.\d+\.(nip|np)\.io$/);
+
+              if (isBaseDomain) {
+                // We are on the base, prepend slug
+                newUrl = `${protocol}//${shopSlug}.${currentHost}/dashboard`;
+              } else {
+                // We might be on www.192... or another subdomain.
+                // We want to REPLACE the subdomain with the shop slug.
+                const ipSuffixMatch = currentHost.match(/(\d+\.\d+\.\d+\.\d+\.(nip|np)\.io)$/);
+                if (ipSuffixMatch) {
+                  newUrl = `${protocol}//${shopSlug}.${ipSuffixMatch[1]}/dashboard`;
+                } else {
+                  // Fallback
+                  newUrl = "/dashboard";
+                }
+              }
+            } else if (currentHost === "localhost") {
+              // For pure localhost (no subclomain support usually unless configured in hosts)
+              newUrl = "/dashboard";
+            } else {
+              // Production domain logic (e.g. zeroqwait.com)
+              const parts = currentHost.split('.');
+              if (parts.length === 2) { // zeroqwait.com
+                newUrl = `${protocol}//${shopSlug}.${currentHost}/dashboard`;
+              } else { // www.zeroqwait.com or existing.zeroqwait.com
+                // Replace subdomain or add it
+                const domain = parts.slice(-2).join('.'); // zeroqwait.com
+                newUrl = `${protocol}//${shopSlug}.${domain}/dashboard`;
+              }
+            }
+
+            console.log(`[LoginPage] Redirecting to: ${newUrl}`);
+            if (newUrl.startsWith("http")) {
+              window.location.href = newUrl;
+            } else {
+              navigate(newUrl);
+            }
+          } else {
+            console.log("[LoginPage] No shops found, redirecting to /dashboard");
+            navigate("/dashboard");
+          }
+        } catch (err) {
+          console.error("[LoginPage] Error fetching shop info:", err);
+          navigate("/dashboard");
+        }
+      };
+
+      console.log("[LoginPage] User role:", user.role);
+      if (user.role === "shop_owner") {
+        // Try to redirect to shop subdomain, but fallback to regular dashboard
+        redirectToShopDashboard();
+      } else if (user.role === "employee") {
+        console.log("[LoginPage] Redirecting to /employee-dashboard");
+        navigate("/employee-dashboard");
+      } else {
+        console.log("[LoginPage] Redirecting to home");
+        navigate("/");
+      }
+    }
+  }, [isAuthenticated, loading, error, user, navigate]);
+
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); // Always prevent default first
     if (emailError || passwordError) {
-      event.preventDefault();
       return;
     }
     const data = new FormData(event.currentTarget);
-    console.log({
-      email: data.get('email'),
-      password: data.get('password'),
-    });
+    const email = data.get('email') as string;
+    const password = data.get('password') as string;
+
+    // Call existing login function
+    await login(email, password);
   };
 
   const validateInputs = () => {
@@ -74,9 +180,9 @@ export default function SignInCard() {
       setEmailErrorMessage('');
     }
 
-    if (!password.value || password.value.length < 6) {
+    if (!password.value || password.value.length < 3) { // Changed to 3 as previously it was 6 but some dev passwords might be short
       setPasswordError(true);
-      setPasswordErrorMessage('Password must be at least 6 characters long.');
+      setPasswordErrorMessage('Password must be at least 3 characters long.');
       isValid = false;
     } else {
       setPasswordError(false);
@@ -89,7 +195,9 @@ export default function SignInCard() {
   return (
     <Card variant="outlined">
       <Box sx={{ display: { xs: 'flex', md: 'none' } }}>
-        <SitemarkIcon />
+        <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+          ZeroQwait
+        </Typography>
       </Box>
       <Typography
         component="h1"
@@ -98,6 +206,11 @@ export default function SignInCard() {
       >
         Sign in
       </Typography>
+      {error && (
+        <Alert severity="error" sx={{ width: '100%' }}>
+          {error}
+        </Alert>
+      )}
       <Box
         component="form"
         onSubmit={handleSubmit}
@@ -142,7 +255,6 @@ export default function SignInCard() {
             type="password"
             id="password"
             autoComplete="current-password"
-            autoFocus
             required
             fullWidth
             variant="outlined"
@@ -154,14 +266,14 @@ export default function SignInCard() {
           label="Remember me"
         />
         <ForgotPassword open={open} handleClose={handleClose} />
-        <Button type="submit" fullWidth variant="contained" onClick={validateInputs}>
-          Sign in
+        <Button type="submit" fullWidth variant="contained" onClick={validateInputs} disabled={loading}>
+          {loading ? 'Signing in...' : 'Sign in'}
         </Button>
         <Typography sx={{ textAlign: 'center' }}>
           Don&apos;t have an account?{' '}
           <span>
             <Link
-              href="/material-ui/getting-started/templates/sign-in/"
+              href="/register-shop"
               variant="body2"
               sx={{ alignSelf: 'center' }}
             >
