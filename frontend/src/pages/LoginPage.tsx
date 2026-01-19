@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
+import axios from "axios";
 import {
   Container,
   Typography,
@@ -60,62 +61,89 @@ const LoginPage: React.FC = () => {
         return;
       }
 
-      // Build API URL correctly - use relative path
-      const apiUrl = "/api";
-
-      // Set a timeout for the fetch
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      // Fetch user's shops
-      const response = await fetch(`${apiUrl}/shops/my-shops`, {
+      // Fetch user's shops using axios (uses configured baseURL)
+      const response = await axios.get("/shops/my-shops", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
-        signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
+      const shops = response.data;
+      console.log("[LoginPage] Shops fetched:", shops);
+      
+      if (shops && shops.length > 0) {
+        const shop = shops[0];
+        // The shop should have a slug - use it or generate from name
+        const shopSlug = shop.slug || shop.name.toLowerCase().replace(/\s+/g, "-");
 
-      if (response.ok) {
-        const shops = await response.json();
-        console.log("[LoginPage] Shops fetched:", shops);
-        if (shops && shops.length > 0) {
-          const shop = shops[0];
-          const shopSlug =
-            shop.slug || shop.name.toLowerCase().replace(/\s+/g, "-");
+        console.log("[LoginPage] Shop slug:", shopSlug);
 
-          console.log("[LoginPage] Redirecting to shop:", shopSlug);
-
-          // Get current host parts
-          const currentHost = window.location.hostname;
-          const hostParts = currentHost.split(".");
-
-          // Build new subdomain URL
-          let newUrl = `http://${shopSlug}.`;
-          if (currentHost.includes("nip.io")) {
-            // For nip.io URLs: shop.192.168.2.88.nip.io
-            newUrl += hostParts.slice(-3).join(".");
-          } else if (currentHost.includes("localhost")) {
-            // For localhost: shop.localhost
-            newUrl += "localhost";
+        // Build the subdomain URL
+        const currentHost = window.location.hostname;
+        const protocol = window.location.protocol;
+        let newUrl = "";
+        
+        if (currentHost.includes("nip.io")) {
+          // nip.io URLs logic
+          // Check if we are already on a subdomain or the base IP
+          // Base IP format: 192.168.2.88.nip.io (starts with digits)
+          if (currentHost.match(/^\d+\.\d+\.\d+\.\d+\.nip\.io$/)) {
+             // We are on the base, prepend slug
+             newUrl = `${protocol}//${shopSlug}.${currentHost}`;
           } else {
-            // For other domains: shop.yourdomain.com
-            newUrl += hostParts.slice(-2).join(".");
+             // We might be on www.192... or another subdomain.
+             // We want to REPLACE the subdomain with the shop slug.
+             // Extract the IP part.
+             const parts = currentHost.split(".");
+             // Find where the IP starts (4 numbers followed by nip.io)
+             // simplified: take the last 6 parts (IP + nip + io)
+             if (parts.length >= 6) {
+                 const baseParts = parts.slice(-6);
+                 const baseHost = baseParts.join(".");
+                 newUrl = `${protocol}//${shopSlug}.${baseHost}`;
+             } else {
+                 // Fallback
+                 newUrl = `${protocol}//${shopSlug}.${currentHost}`;
+             }
           }
-
-          newUrl += "/dashboard";
-          console.log("[LoginPage] Redirecting to:", newUrl);
-          window.location.href = newUrl;
+        } else if (currentHost === "localhost" || currentHost === "127.0.0.1") {
+          console.log("[LoginPage] Localhost detected, navigating to /dashboard");
+          navigate("/dashboard");
           return;
+        } else {
+          // Regular domain logic
+          const parts = currentHost.split(".");
+          // If 2 parts (example.com), prepend.
+          // If > 2 parts (www.example.com), replace first part? 
+          // Let's assume we always prepend to the "root" domain.
+          // Ideally we should know the root domain.
+          // For now, if it starts with www, replace it.
+          if (parts[0] === "www") {
+              newUrl = `${protocol}//${shopSlug}.${parts.slice(1).join(".")}`;
+          } else if (parts.length === 2) {
+              newUrl = `${protocol}//${shopSlug}.${currentHost}`;
+          } else {
+              // Assume we are on a subdomain, replace it? Or prepend?
+              // Safest to assume we are replacing the current subdomain if it exists
+              // or prepending if we are at root.
+              // Let's just prepend to the *registrable* domain if possible.
+              // Simple heuristic: keep last 2 parts.
+              const baseDomain = parts.slice(-2).join(".");
+              newUrl = `${protocol}//${shopSlug}.${baseDomain}`;
+          }
         }
+
+        newUrl += "/dashboard";
+        console.log("[LoginPage] Redirecting to subdomain:", newUrl);
+        window.location.href = newUrl;
+        return;
       }
     } catch (error) {
-      console.error("Error fetching shops:", error);
+      console.error("[LoginPage] Error redirecting:", error);
     }
     
-    // Fallback: redirect to regular dashboard which will handle subdomain redirect
-    console.log("[LoginPage] Falling back to /dashboard");
+    // Fallback
+    console.log("[LoginPage] Fallback: navigating to /dashboard");
     navigate("/dashboard");
   };
 
