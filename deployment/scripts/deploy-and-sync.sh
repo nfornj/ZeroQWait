@@ -97,7 +97,7 @@ ssh "$DESTINATION_SERVER" "
     if [ ! -d .git ]; then
         echo '⏳ Initializing git repository...'
         git init
-        git remote add origin https://github.com/nfornj/FastCuts.git || true
+        git remote add origin git@github.com:nfornj/FastCuts.git || true
     fi
     
     # Sync code
@@ -108,8 +108,9 @@ ssh "$DESTINATION_SERVER" "
     echo -e "${RED}❌ Failed to sync on remote server${NC}"
     echo -e "${YELLOW}Troubleshooting:${NC}"
     echo "  1. Check SSH connection: ssh $DESTINATION_SERVER 'echo ok'"
-    echo "  2. Check Git access: ssh $DESTINATION_SERVER 'git ls-remote https://github.com/nfornj/FastCuts.git'"
-    echo "  3. Check path permissions: ssh $DESTINATION_SERVER 'ls -la \$(dirname $DESTINATION_PATH)'"
+    echo "  2. Setup SSH key on remote: ssh-copy-id -i ~/.ssh/id_rsa.pub $DESTINATION_SERVER"
+    echo "  3. Check Git SSH access: ssh $DESTINATION_SERVER 'ssh -T git@github.com'"
+    echo "  4. Or use git clone: ssh $DESTINATION_SERVER 'rm -rf $DESTINATION_PATH && git clone git@github.com:nfornj/FastCuts.git $DESTINATION_PATH && cd $DESTINATION_PATH && git checkout $CURRENT_BRANCH'"
     exit 1
 }
 
