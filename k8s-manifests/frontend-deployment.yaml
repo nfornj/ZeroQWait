@@ -57,7 +57,8 @@ spec:
             
             echo "Patching react-scripts memory limit..."
             # Force increase memory limit for ForkTsCheckerWebpackPlugin (default is 2048MB)
-            sed -i 's/async: isEnvDevelopment,/async: isEnvDevelopment, memoryLimit: 4096,/' node_modules/react-scripts/config/webpack.config.js
+            # Must be inside typescript: { ... } object
+            sed -i "s/mode: 'write-references',/mode: 'write-references', memoryLimit: 4096,/" node_modules/react-scripts/config/webpack.config.js
             
             echo "Building frontend..."
             # Capture build output to log
