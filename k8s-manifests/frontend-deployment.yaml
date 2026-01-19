@@ -25,7 +25,6 @@ spec:
             rm -rf node_modules package-lock.json
             echo "Building frontend with API URL: /api (relative path)"
             npm install --legacy-peer-deps
-            npm audit fix --force --audit-level=low
             NODE_OPTIONS="--max-old-space-size=1536" REACT_APP_API_URL=/api npm run build
             if [ -d "build" ] && [ -f "build/index.html" ]; then
               echo "Build successful!"
