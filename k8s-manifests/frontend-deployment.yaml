@@ -37,9 +37,9 @@ spec:
             rm -rf node_modules/* 
             # We skip deleting package-lock.json as it might fail due to host permissions
             
-            echo "Installing dependencies (ignoring lockfile)..."
-            # Use --no-package-lock to force resolution from package.json
-            npm install --no-package-lock --legacy-peer-deps
+            echo "Installing dependencies (using lockfile)..."
+            # Use npm ci for clean, deterministic install based on package-lock.json
+            npm ci --legacy-peer-deps
             
             echo "Ensuring react-scripts is installed..."
             if [ ! -f "node_modules/.bin/react-scripts" ]; then
