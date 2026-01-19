@@ -12,16 +12,6 @@ K8S_MANIFESTS="$PROJECT_ROOT/deployment/kubernetes"
 # Set KUBECONFIG for k3s
 export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 
-# Helper function to run kubectl (fallback to sudo if needed)
-kubectl_safe() {
-    kubectl "$@" 2>/dev/null || (
-        # If normal kubectl fails, try with sudo but don't require terminal
-        # Use echo password piped to sudo -S (if password available)
-        # Or just try and let it fail with clear error
-        sudo -n kubectl "$@" 2>/dev/null || kubectl "$@"
-    )
-}
-
 echo "🚀 Starting ZeroQwait Kubernetes Deployment"
 echo "=========================================================="
 echo ""
@@ -54,40 +44,40 @@ echo ""
 
 # Create namespace
 echo -e "${BLUE}📋 Creating namespace...${NC}"
-kubectl_safe create namespace $NAMESPACE --dry-run=client -o yaml | kubectl_safe apply -f -
+kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 echo "✓ Namespace ready"
 echo ""
 
 # Create secrets & config
 echo -e "${BLUE}📋 Setting up secrets and configuration...${NC}"
-kubectl_safe apply -f "$K8S_MANIFESTS/postgres-secret.yaml"
-kubectl_safe apply -f "$K8S_MANIFESTS/backend-secret.yaml"
-kubectl_safe apply -f "$K8S_MANIFESTS/backend-configmap.yaml"
+kubectl apply -f "$K8S_MANIFESTS/postgres-secret.yaml"
+kubectl apply -f "$K8S_MANIFESTS/backend-secret.yaml"
+kubectl apply -f "$K8S_MANIFESTS/backend-configmap.yaml"
 echo "✓ Secrets and ConfigMaps created"
 echo ""
 
 # Database
 echo -e "${BLUE}📋 Setting up database...${NC}"
-kubectl_safe apply -f "$K8S_MANIFESTS/postgres-statefulset.yaml"
-kubectl_safe apply -f "$K8S_MANIFESTS/postgres-pvc.yaml"
+kubectl apply -f "$K8S_MANIFESTS/postgres-statefulset.yaml"
+kubectl apply -f "$K8S_MANIFESTS/postgres-pvc.yaml"
 echo "⏳ Waiting for PostgreSQL..."
-kubectl_safe wait --for=condition=ready pod -l app=postgres -n $NAMESPACE --timeout=300s 2>/dev/null || echo "⚠️  PostgreSQL initializing..."
+kubectl wait --for=condition=ready pod -l app=postgres -n $NAMESPACE --timeout=300s 2>/dev/null || echo "⚠️  PostgreSQL initializing..."
 echo ""
 
 # Deploy backend & frontend
 echo -e "${BLUE}📋 Deploying backend...${NC}"
-kubectl_safe apply -f "$K8S_MANIFESTS/backend-deployment.yaml"
+kubectl apply -f "$K8S_MANIFESTS/backend-deployment.yaml"
 
 echo -e "${BLUE}📋 Deploying frontend...${NC}"
-kubectl_safe apply -f "$K8S_MANIFESTS/frontend-deployment.yaml"
+kubectl apply -f "$K8S_MANIFESTS/frontend-deployment.yaml"
 
 echo "⏳ Waiting for deployments..."
-kubectl_safe wait --for=condition=available --timeout=300s deployment/backend -n $NAMESPACE 2>/dev/null || echo "⚠️  Backend deploying..."
+kubectl wait --for=condition=available --timeout=300s deployment/backend -n $NAMESPACE 2>/dev/null || echo "⚠️  Backend deploying..."
 echo ""
 
 # Ingress
 echo -e "${BLUE}📋 Setting up Traefik Ingress...${NC}"
-kubectl_safe apply -f "$K8S_MANIFESTS/ingress-traefik.yaml"
+kubectl apply -f "$K8S_MANIFESTS/ingress-traefik.yaml"
 echo "✓ Ingress configured"
 echo ""
 

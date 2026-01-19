@@ -119,31 +119,19 @@ echo ""
 
 # Step 3: Deploy
 echo -e "${BLUE}Step 3️⃣  - Deploying to Kubernetes...${NC}"
-echo -e "${YELLOW}Note: The deployment script on remote server may need sudo for kubectl.${NC}"
-echo -e "${YELLOW}Setting up passwordless sudo on remote server first...${NC}"
-echo ""
 
-# Setup passwordless sudo if not already done
-ssh "$DESTINATION_SERVER" bash <<'SUDO_SETUP'
-# Check if kubectl path is correct
-KUBECTL_PATH=$(which kubectl)
-SUDOERS_FILE="/etc/sudoers.d/zeroqwait-kubectl"
+# Copy script to /tmp and run as sudo to avoid kubeconfig permission issues
+ssh "$DESTINATION_SERVER" bash <<'DEPLOY_SCRIPT'
+set -e
+DEST_PATH="/home/neekrishrichu/zeroqwait"
+cd "$DEST_PATH/deployment"
+sudo bash scripts/deploy-k8s.sh
+DEPLOY_SCRIPT
 
-# Create sudoers entry with correct kubectl path
-echo "Setting up sudoers for: $KUBECTL_PATH"
-echo "neekrishrichu ALL=(ALL) NOPASSWD: $KUBECTL_PATH" | sudo tee "$SUDOERS_FILE" >/dev/null
-sudo chmod 440 "$SUDOERS_FILE"
-echo "✅ Sudoers configured"
-SUDO_SETUP
-
-echo ""
-echo -e "${BLUE}Running deployment...${NC}"
-
-# Now run deployment
-ssh "$DESTINATION_SERVER" "cd $DESTINATION_PATH/deployment && bash scripts/deploy-k8s.sh" || {
+if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Deployment failed${NC}"
     exit 1
-}
+fi
 
 echo ""
 echo -e "${GREEN}✅ Deploy & Sync Complete!${NC}"
