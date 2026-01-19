@@ -65,13 +65,16 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
       setError(null);
       
+      console.log("[ShopContext] Fetching shop by slug:", slug);
       const response = await axios.get(`${API_URL}/shops/by-slug/${slug}`);
       const shopData = response.data;
+      console.log("[ShopContext] Shop fetched by slug:", shopData.name, shopData.slug);
       setShop(shopData);
       setShopSlug(slug);
       return shopData;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to fetch shop';
+      console.log("[ShopContext] Slug fetch failed:", errorMsg);
       setError(errorMsg);
       setShop(null);
       return null;
@@ -85,20 +88,27 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      if (!token) return null;
+      if (!token) {
+        console.log("[ShopContext] No token, skipping shop fetch");
+        return null;
+      }
 
+      console.log("[ShopContext] Fetching user's shop");
       const response = await axios.get(`${API_URL}/shops/my-shops`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
       if (response.data.length > 0) {
-        setShop(response.data[0]);
-        setShopSlug(response.data[0].slug);
-        return response.data[0];
+        const myShop = response.data[0];
+        console.log("[ShopContext] User's shop fetched:", myShop.name, "slug:", myShop.slug);
+        setShop(myShop);
+        setShopSlug(myShop.slug);
+        return myShop;
       }
       return null;
     } catch (err) {
       // Silently fail - user might not have a shop
+      console.log("[ShopContext] My shop fetch failed:", err instanceof Error ? err.message : 'Unknown error');
       return null;
     } finally {
       setLoading(false);
@@ -106,15 +116,26 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    const subdomain = getSubdomainFromHost();
+    const initializeShop = async () => {
+      const subdomain = getSubdomainFromHost();
+      console.log("[ShopContext] Subdomain detected:", subdomain);
+      
+      if (subdomain && subdomain !== '192' && subdomain !== '168') {
+        // This is a shop subdomain, fetch the shop data
+        console.log("[ShopContext] Fetching shop by subdomain:", subdomain);
+        const result = await fetchShopBySlug(subdomain);
+        if (!result) {
+          console.log("[ShopContext] Subdomain fetch failed, trying user's shop");
+          await fetchMyShop();
+        }
+      } else {
+        // Regular domain, try to fetch user's shop if authenticated
+        console.log("[ShopContext] Regular domain, fetching user's shop");
+        await fetchMyShop();
+      }
+    };
     
-    if (subdomain && subdomain !== '192' && subdomain !== '168') {
-      // This is a shop subdomain, fetch the shop data
-      fetchShopBySlug(subdomain);
-    } else {
-      // Regular domain, try to fetch user's shop if authenticated
-      fetchMyShop();
-    }
+    initializeShop();
   }, []);
 
   const value: ShopContextType = {
