@@ -55,6 +55,10 @@ spec:
             ls -la node_modules/.bin/ || echo "node_modules/.bin listing failed"
             ls -la node_modules/.bin/react-scripts || echo "react-scripts STILL not found"
             
+            echo "Patching react-scripts memory limit..."
+            # Force increase memory limit for ForkTsCheckerWebpackPlugin (default is 2048MB)
+            sed -i 's/async: isEnvDevelopment,/async: isEnvDevelopment, memoryLimit: 4096,/' node_modules/react-scripts/config/webpack.config.js
+            
             echo "Building frontend..."
             # Capture build output to log
             if npm run build; then
