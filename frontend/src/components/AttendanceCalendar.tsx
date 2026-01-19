@@ -4,7 +4,6 @@ import {
     Paper,
     Typography,
     IconButton,
-    Grid,
     Chip,
     Tooltip,
     FormControl,
@@ -14,6 +13,7 @@ import {
     Card,
     CardContent,
 } from '@mui/material';
+import Grid from '@mui/material/Grid2';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
@@ -156,7 +156,7 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                 {/* Day headers */}
                 <Grid container spacing={1} sx={{ mb: 1 }}>
                     {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                        <Grid item xs={12 / 7} key={day}>
+                        <Grid xs={12 / 7} key={day}>
                             <Typography
                                 variant="caption"
                                 fontWeight="bold"
@@ -178,7 +178,7 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                         const isTodayDate = isToday(day);
 
                         return (
-                            <Grid item xs={12 / 7} key={index}>
+                            <Grid xs={12 / 7} key={index}>
                                 <Paper
                                     variant="outlined"
                                     sx={{
