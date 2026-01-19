@@ -39,7 +39,7 @@ const LoginPage: React.FC = () => {
     if (isAuthenticated && !loading && !error && user) {
       console.log("[LoginPage] User role:", user.role);
       if (user.role === "shop_owner") {
-        // Redirect to shop subdomain dashboard
+        // Try to redirect to shop subdomain, but fallback to regular dashboard
         redirectToShopDashboard();
       } else if (user.role === "employee") {
         console.log("[LoginPage] Redirecting to /employee-dashboard");
@@ -55,17 +55,27 @@ const LoginPage: React.FC = () => {
   const redirectToShopDashboard = async () => {
     try {
       const token = localStorage.getItem("token");
-      if (!token) return;
+      if (!token) {
+        navigate("/dashboard");
+        return;
+      }
 
       // Build API URL correctly - use relative path
       const apiUrl = "/api";
+
+      // Set a timeout for the fetch
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
 
       // Fetch user's shops
       const response = await fetch(`${apiUrl}/shops/my-shops`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (response.ok) {
         const shops = await response.json();
@@ -97,13 +107,16 @@ const LoginPage: React.FC = () => {
           newUrl += "/dashboard";
           console.log("[LoginPage] Redirecting to:", newUrl);
           window.location.href = newUrl;
+          return;
         }
       }
     } catch (error) {
       console.error("Error fetching shops:", error);
-      // Fallback to regular dashboard if fetch fails
-      navigate("/dashboard");
     }
+    
+    // Fallback: redirect to regular dashboard which will handle subdomain redirect
+    console.log("[LoginPage] Falling back to /dashboard");
+    navigate("/dashboard");
   };
 
   const validateForm = () => {
