@@ -114,7 +114,7 @@ const ShopAnalyticsPage: React.FC = () => {
 
             {/* Summary Cards */}
             <Grid container spacing={3} mb={4}>
-                <Grid item xs={12} md={4}>
+                <Grid xs={12} md={4}>
                     <Card elevation={2}>
                         <CardContent>
                             <Box display="flex" alignItems="center" mb={1}>
@@ -131,7 +131,7 @@ const ShopAnalyticsPage: React.FC = () => {
                     </Card>
                 </Grid>
 
-                <Grid item xs={12} md={4}>
+                <Grid xs={12} md={4}>
                     <Card elevation={2}>
                         <CardContent>
                             <Box display="flex" alignItems="center" mb={1}>
@@ -148,7 +148,7 @@ const ShopAnalyticsPage: React.FC = () => {
                     </Card>
                 </Grid>
 
-                <Grid item xs={12} md={4}>
+                <Grid xs={12} md={4}>
                     <Card elevation={2}>
                         <CardContent>
                             <Box display="flex" alignItems="center" mb={1}>

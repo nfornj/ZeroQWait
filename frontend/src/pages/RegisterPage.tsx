@@ -115,7 +115,7 @@ const RegisterPage: React.FC = () => {
           sx={{ mt: 3, width: "100%" }}
         >
           <Grid container spacing={2}>
-            <Grid item xs={12}>
+            <Grid xs={12}>
               <TextField
                 required
                 fullWidth
@@ -130,7 +130,7 @@ const RegisterPage: React.FC = () => {
                 disabled={loading}
               />
             </Grid>
-            <Grid item xs={12}>
+            <Grid xs={12}>
               <TextField
                 required
                 fullWidth
@@ -145,7 +145,7 @@ const RegisterPage: React.FC = () => {
                 disabled={loading}
               />
             </Grid>
-            <Grid item xs={12}>
+            <Grid xs={12}>
               <TextField
                 select
                 required
@@ -162,7 +162,7 @@ const RegisterPage: React.FC = () => {
                 <MenuItem value="shop_owner">Shop Owner</MenuItem>
               </TextField>
             </Grid>
-            <Grid item xs={12}>
+            <Grid xs={12}>
               <TextField
                 required
                 fullWidth
@@ -178,7 +178,7 @@ const RegisterPage: React.FC = () => {
                 disabled={loading}
               />
             </Grid>
-            <Grid item xs={12}>
+            <Grid xs={12}>
               <TextField
                 required
                 fullWidth

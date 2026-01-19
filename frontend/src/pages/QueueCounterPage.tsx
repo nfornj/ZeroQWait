@@ -340,7 +340,7 @@ const QueueCounterPage: React.FC = () => {
 
       <Grid container spacing={3}>
         {/* Camera View */}
-        <Grid item xs={12} md={8}>
+        <Grid xs={12} md={8}>
           <Paper
             elevation={3}
             sx={{
@@ -420,7 +420,7 @@ const QueueCounterPage: React.FC = () => {
         </Grid>
 
         {/* Stats Panel */}
-        <Grid item xs={12} md={4}>
+        <Grid xs={12} md={4}>
           <Card
             elevation={3}
             sx={{
@@ -538,70 +538,70 @@ const QueueCounterPage: React.FC = () => {
           👋 Gestures You Can Try:
         </Typography>
         <Grid container spacing={3} sx={{ mt: 1 }}>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid xs={6} sm={4} md={3}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>1️⃣-5️⃣</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Number Counting</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Show 1-5 fingers</Typography>
             </Box>
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid xs={6} sm={4} md={3}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>👍</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Thumbs Up</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Point thumb up</Typography>
             </Box>
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid xs={6} sm={4} md={3}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>👎</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Thumbs Down</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Point thumb down</Typography>
             </Box>
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid xs={6} sm={4} md={3}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>✌️</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Peace Sign</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Two fingers up</Typography>
             </Box>
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid xs={6} sm={4} md={3}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>👌</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>OK Sign</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Circle with thumb & index</Typography>
             </Box>
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid xs={6} sm={4} md={3}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>🤘</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Rock On</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Index & pinky up</Typography>
             </Box>
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid xs={6} sm={4} md={3}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>🤟</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>I Love You</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Thumb, index & pinky</Typography>
             </Box>
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid xs={6} sm={4} md={3}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>✋</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Open Hand</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>All fingers extended</Typography>
             </Box>
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid xs={6} sm={4} md={3}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>✊</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Fist</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Closed hand</Typography>
             </Box>
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid xs={6} sm={4} md={3}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>☝️</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Pointing</Typography>
@@ -625,7 +625,7 @@ const QueueCounterPage: React.FC = () => {
           🎯 Try These Fun Experiments:
         </Typography>
         <Grid container spacing={2} sx={{ mt: 1 }}>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid xs={12} sm={6} md={3}>
             <Box>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>
                 1. Count with fingers
@@ -635,7 +635,7 @@ const QueueCounterPage: React.FC = () => {
               </Typography>
             </Box>
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid xs={12} sm={6} md={3}>
             <Box>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>
                 2. Give feedback
@@ -645,7 +645,7 @@ const QueueCounterPage: React.FC = () => {
               </Typography>
             </Box>
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid xs={12} sm={6} md={3}>
             <Box>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>
                 3. Try all gestures
@@ -655,7 +655,7 @@ const QueueCounterPage: React.FC = () => {
               </Typography>
             </Box>
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid xs={12} sm={6} md={3}>
             <Box>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>
                 4. Both hands

@@ -272,7 +272,7 @@ const EmployeeQueuePage: React.FC = () => {
             {!currentShift ? (
                 <Grid container spacing={3}>
                     {shops.map((shop) => (
-                        <Grid item xs={12} md={6} key={shop.id}>
+                        <Grid xs={12} md={6} key={shop.id}>
                             <Card>
                                 <CardContent>
                                     <Typography variant="h6" sx={{ mb: 2 }}>
@@ -313,7 +313,7 @@ const EmployeeQueuePage: React.FC = () => {
                     </Paper>
 
                     <Grid container spacing={3}>
-                        <Grid item xs={12} md={6}>
+                        <Grid xs={12} md={6}>
                             <Card>
                                 <CardContent>
                                     <Typography variant="h6" sx={{ mb: 2 }}>
@@ -347,7 +347,7 @@ const EmployeeQueuePage: React.FC = () => {
                             </Card>
                         </Grid>
 
-                        <Grid item xs={12} md={6}>
+                        <Grid xs={12} md={6}>
                             <Card>
                                 <CardContent>
                                     <Typography variant="h6" sx={{ mb: 2 }}>

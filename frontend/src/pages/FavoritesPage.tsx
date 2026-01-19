@@ -58,7 +58,7 @@ const FavoritesPage: React.FC = () => {
         ) : favorites.length > 0 ? (
           <Grid container spacing={3}>
             {favorites.map((haircut) => (
-              <Grid item xs={12} sm={6} md={4} key={haircut.id}>
+              <Grid xs={12} sm={6} md={4} key={haircut.id}>
                 <HaircutCard
                   haircut={haircut}
                   onFavoriteRemoved={handleFavoriteRemoved}

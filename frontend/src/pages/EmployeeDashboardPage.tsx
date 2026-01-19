@@ -87,7 +87,7 @@ const EmployeeDashboardPage: React.FC = () => {
             ) : (
                 <Grid container spacing={3}>
                     {shops.map((shop) => (
-                        <Grid item xs={12} md={6} key={shop.id}>
+                        <Grid xs={12} md={6} key={shop.id}>
                             <Card sx={{ height: '100%' }}>
                                 <CardContent>
                                     <Box sx={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', mb: 2 }}>

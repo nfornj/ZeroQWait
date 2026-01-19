@@ -100,7 +100,7 @@ const ShopRegistrationPage: React.FC = () => {
 
           <Box component="form" onSubmit={handleSubmit}>
             <Grid container spacing={3}>
-              <Grid item xs={12}>
+              <Grid xs={12}>
                 <TextField
                   fullWidth
                   required
@@ -111,7 +111,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Grid>
 
-              <Grid item xs={12}>
+              <Grid xs={12}>
                 <TextField
                   fullWidth
                   select
@@ -129,7 +129,7 @@ const ShopRegistrationPage: React.FC = () => {
                 </TextField>
               </Grid>
 
-              <Grid item xs={12}>
+              <Grid xs={12}>
                 <TextField
                   fullWidth
                   multiline
@@ -141,7 +141,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Grid>
 
-              <Grid item xs={12}>
+              <Grid xs={12}>
                 <TextField
                   fullWidth
                   required
@@ -152,7 +152,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid xs={12} sm={6}>
                 <TextField
                   fullWidth
                   required
@@ -163,7 +163,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={4}>
+              <Grid xs={12} sm={4}>
                 <TextField
                   fullWidth
                   required
@@ -175,7 +175,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={4}>
+              <Grid xs={12} sm={4}>
                 <TextField
                   fullWidth
                   required
@@ -186,7 +186,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={4}>
+              <Grid xs={12} sm={4}>
                 <TextField
                   fullWidth
                   select
@@ -215,7 +215,7 @@ const ShopRegistrationPage: React.FC = () => {
                 </TextField>
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid xs={12} sm={6}>
                 <TextField
                   fullWidth
                   required
@@ -226,7 +226,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid xs={12} sm={6}>
                 <TextField
                   fullWidth
                   label="Email"
@@ -237,7 +237,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid xs={12} sm={6}>
                 <TextField
                   fullWidth
                   label="Website"
@@ -247,7 +247,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid xs={12} sm={6}>
                 <TextField
                   fullWidth
                   required
@@ -260,7 +260,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Grid>
 
-              <Grid item xs={12}>
+              <Grid xs={12}>
                 <Button
                   type="submit"
                   variant="contained"

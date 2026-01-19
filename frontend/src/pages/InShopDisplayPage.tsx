@@ -162,7 +162,7 @@ const InShopDisplayPage: React.FC = () => {
                             />
                         )}
                     </Grid>
-                    <Grid item xs>
+                    <Grid xs>
                         <Typography variant="h3" fontWeight="bold">
                             {shop.name}
                         </Typography>
@@ -184,7 +184,7 @@ const InShopDisplayPage: React.FC = () => {
             {/* Main Content */}
             <Grid container spacing={4}>
                 {/* Now Serving Section */}
-                <Grid item xs={12} md={5}>
+                <Grid xs={12} md={5}>
                     <Card
                         elevation={3}
                         sx={{
@@ -248,14 +248,14 @@ const InShopDisplayPage: React.FC = () => {
                 </Grid>
 
                 {/* Queue Information Section */}
-                <Grid item xs={12} md={7}>
+                <Grid xs={12} md={7}>
                     <Grid container spacing={3}>
                         {/* Queue Stats */}
-                        <Grid item xs={12}>
+                        <Grid xs={12}>
                             <Card elevation={3}>
                                 <CardContent sx={{ p: 4 }}>
                                     <Grid container spacing={3}>
-                                        <Grid item xs={6}>
+                                        <Grid xs={6}>
                                             <Box display="flex" alignItems="center">
                                                 <PeopleIcon sx={{ fontSize: 60, mr: 2, color: primaryColor }} />
                                                 <Box>
@@ -268,7 +268,7 @@ const InShopDisplayPage: React.FC = () => {
                                                 </Box>
                                             </Box>
                                         </Grid>
-                                        <Grid item xs={6}>
+                                        <Grid xs={6}>
                                             <Box display="flex" alignItems="center">
                                                 <AccessTimeIcon sx={{ fontSize: 60, mr: 2, color: primaryColor }} />
                                                 <Box>
@@ -287,7 +287,7 @@ const InShopDisplayPage: React.FC = () => {
                         </Grid>
 
                         {/* Waiting List */}
-                        <Grid item xs={12}>
+                        <Grid xs={12}>
                             <Card elevation={3} sx={{ minHeight: 400 }}>
                                 <CardContent sx={{ p: 4 }}>
                                     <Typography variant="h4" fontWeight="bold" gutterBottom>
@@ -307,7 +307,7 @@ const InShopDisplayPage: React.FC = () => {
                                     ) : (
                                         <Grid container spacing={2}>
                                             {waitingCustomers.slice(0, 8).map((customer, index) => (
-                                                <Grid item xs={12} sm={6} key={customer.id}>
+                                                <Grid xs={12} sm={6} key={customer.id}>
                                                     <Paper
                                                         elevation={1}
                                                         sx={{
@@ -349,7 +349,7 @@ const InShopDisplayPage: React.FC = () => {
                                                 </Grid>
                                             ))}
                                             {waitingCustomers.length > 8 && (
-                                                <Grid item xs={12}>
+                                                <Grid xs={12}>
                                                     <Typography variant="h6" color="text.secondary" textAlign="center">
                                                         ... and {waitingCustomers.length - 8} more waiting
                                                     </Typography>

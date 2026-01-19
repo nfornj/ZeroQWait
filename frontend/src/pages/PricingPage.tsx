@@ -69,7 +69,7 @@ const PricingPage: React.FC = () => {
 
             <Grid container spacing={4} alignItems="stretch">
                 {tiers.map((tier) => (
-                    <Grid item xs={12} md={4} key={tier.name}>
+                    <Grid xs={12} md={4} key={tier.name}>
                         <Card
                             raised={tier.highlighted}
                             sx={{
@@ -166,7 +166,7 @@ const PricingPage: React.FC = () => {
                         "No setup fees",
                         "Cancel anytime",
                     ].map((feature) => (
-                        <Grid item xs={12} sm={6} md={4} key={feature}>
+                        <Grid xs={12} sm={6} md={4} key={feature}>
                             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                                 <CheckCircleIcon color="primary" sx={{ mr: 1 }} fontSize="small" />
                                 <Typography variant="body1">{feature}</Typography>

@@ -156,7 +156,7 @@ const ShopSettingsPage: React.FC = () => {
                 <Box component="form" onSubmit={handleSubmit}>
                     <Grid container spacing={4}>
                         {/* PERSONALIZATION SECTION */}
-                        <Grid item xs={12}>
+                        <Grid xs={12}>
                             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
                                 Dashboard Theme
                             </Typography>
@@ -166,7 +166,7 @@ const ShopSettingsPage: React.FC = () => {
 
                             <Grid container spacing={2}>
                                 {THEMES.map((theme) => (
-                                    <Grid item xs={6} sm={4} md={2} key={theme.id}>
+                                    <Grid xs={6} sm={4} md={2} key={theme.id}>
                                         <Card
                                             elevation={themePreset === theme.id ? 4 : 1}
                                             sx={{
@@ -214,9 +214,9 @@ const ShopSettingsPage: React.FC = () => {
                         </Grid>
 
 
-                        <Grid item xs={12}><Typography variant="h6" sx={{ fontWeight: 600 }}>Shop Identity</Typography></Grid>
+                        <Grid xs={12}><Typography variant="h6" sx={{ fontWeight: 600 }}>Shop Identity</Typography></Grid>
 
-                        <Grid item xs={12} md={6}>
+                        <Grid xs={12} md={6}>
                             <TextField
                                 fullWidth
                                 label="Shop Name"
@@ -238,7 +238,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Grid>
 
-                        <Grid item xs={12} md={6}>
+                        <Grid xs={12} md={6}>
                             <Paper
                                 variant="outlined"
                                 sx={{
@@ -302,7 +302,7 @@ const ShopSettingsPage: React.FC = () => {
                             </Paper>
                         </Grid>
 
-                        <Grid item xs={12}>
+                        <Grid xs={12}>
                             <Typography variant="h6" gutterBottom sx={{ mt: 2, fontWeight: 600 }}>
                                 Customer View Branding
                             </Typography>
@@ -311,7 +311,7 @@ const ShopSettingsPage: React.FC = () => {
                             </Typography>
                         </Grid>
 
-                        <Grid item xs={12} sm={6}>
+                        <Grid xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Primary Color"
@@ -323,7 +323,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Grid>
 
-                        <Grid item xs={12} sm={6}>
+                        <Grid xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Secondary Color"
@@ -335,7 +335,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Grid>
 
-                        <Grid item xs={12} sm={6}>
+                        <Grid xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Accent Color"
@@ -347,7 +347,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Grid>
 
-                        <Grid item xs={12} sm={6}>
+                        <Grid xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Queue Card Color"
@@ -359,13 +359,13 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Grid>
 
-                        <Grid item xs={12}>
+                        <Grid xs={12}>
                             <Typography variant="h6" gutterBottom sx={{ mt: 2, fontWeight: 600 }}>
                                 Contact Information
                             </Typography>
                         </Grid>
 
-                        <Grid item xs={12}>
+                        <Grid xs={12}>
                             <TextField
                                 fullWidth
                                 multiline
@@ -377,7 +377,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Grid>
 
-                        <Grid item xs={12} sm={6}>
+                        <Grid xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Phone"
@@ -387,7 +387,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Grid>
 
-                        <Grid item xs={12} sm={6}>
+                        <Grid xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Website"
@@ -397,7 +397,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Grid>
 
-                        <Grid item xs={12} sx={{ mt: 2 }}>
+                        <Grid xs={12} sx={{ mt: 2 }}>
                             <Button
                                 type="submit"
                                 variant="contained"

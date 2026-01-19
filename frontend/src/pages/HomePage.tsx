@@ -112,7 +112,7 @@ const HomePage: React.FC = () => {
 
             {/* Stats */}
             <Grid container spacing={4} sx={{ mt: 4 }}>
-              <Grid item xs={12} sm={4}>
+              <Grid xs={12} sm={4}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
                     500+
@@ -122,7 +122,7 @@ const HomePage: React.FC = () => {
                   </Typography>
                 </Box>
               </Grid>
-              <Grid item xs={12} sm={4}>
+              <Grid xs={12} sm={4}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'secondary.main' }}>
                     10k+
@@ -132,7 +132,7 @@ const HomePage: React.FC = () => {
                   </Typography>
                 </Box>
               </Grid>
-              <Grid item xs={12} sm={4}>
+              <Grid xs={12} sm={4}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
                     4.8★
@@ -176,7 +176,7 @@ const HomePage: React.FC = () => {
           </Box>
 
           <Grid container spacing={4}>
-            <Grid item xs={12} md={4}>
+            <Grid xs={12} md={4}>
               <Card
                 elevation={0}
                 sx={{
@@ -217,7 +217,7 @@ const HomePage: React.FC = () => {
               </Card>
             </Grid>
 
-            <Grid item xs={12} md={4}>
+            <Grid xs={12} md={4}>
               <Card
                 elevation={0}
                 sx={{
@@ -258,7 +258,7 @@ const HomePage: React.FC = () => {
               </Card>
             </Grid>
 
-            <Grid item xs={12} md={4}>
+            <Grid xs={12} md={4}>
               <Card
                 elevation={0}
                 sx={{
@@ -308,7 +308,7 @@ const HomePage: React.FC = () => {
       <Box sx={{ py: { xs: 8, md: 12 }, bgcolor: 'background.paper' }}>
         <Container maxWidth="lg">
           <Grid container spacing={6} alignItems="center">
-            <Grid item xs={12} md={6}>
+            <Grid xs={12} md={6}>
               <Box
                 sx={{
                   background: 'linear-gradient(135deg, #FF5A5F 0%, #00A699 100%)',
@@ -344,7 +344,7 @@ const HomePage: React.FC = () => {
               </Box>
             </Grid>
 
-            <Grid item xs={12} md={6}>
+            <Grid xs={12} md={6}>
               <Box sx={{ textAlign: 'center' }}>
                 <Box
                   sx={{

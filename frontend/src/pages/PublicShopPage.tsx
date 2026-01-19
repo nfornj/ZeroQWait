@@ -100,7 +100,7 @@ const PublicShopPage: React.FC = () => {
 
                 <Grid container spacing={3}>
                     {queues.map((queue) => (
-                        <Grid item xs={12} md={6} key={queue.id}>
+                        <Grid xs={12} md={6} key={queue.id}>
                             <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                                 <CardContent sx={{ flexGrow: 1 }}>
                                     <Typography variant="h5" gutterBottom>

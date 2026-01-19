@@ -310,7 +310,7 @@ const ShopDashboardPage: React.FC = () => {
 
                 {/* KPI Cards Row */}
                 <Grid container spacing={3} sx={{ mb: 4 }}>
-                    <Grid item xs={12} sm={6} md={3}>
+                    <Grid xs={12} sm={6} md={3}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Typography color="textSecondary" gutterBottom variant="overline">
@@ -326,7 +326,7 @@ const ShopDashboardPage: React.FC = () => {
                             </CardContent>
                         </Card>
                     </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
+                    <Grid xs={12} sm={6} md={3}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Typography color="textSecondary" gutterBottom variant="overline">
@@ -342,7 +342,7 @@ const ShopDashboardPage: React.FC = () => {
                             </CardContent>
                         </Card>
                     </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
+                    <Grid xs={12} sm={6} md={3}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Typography color="textSecondary" gutterBottom variant="overline">
@@ -359,7 +359,7 @@ const ShopDashboardPage: React.FC = () => {
                         </Card>
                     </Grid>
                     {/* Placeholder for future stat or quick action */}
-                    <Grid item xs={12} sm={6} md={3}>
+                    <Grid xs={12} sm={6} md={3}>
                         <Card sx={{ height: '100%', bgcolor: 'primary.main', color: 'primary.contrastText' }}>
                             <CardContent sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }}>
                                 <Button
@@ -378,7 +378,7 @@ const ShopDashboardPage: React.FC = () => {
 
                 <Grid container spacing={3}>
                     {/* Currently Being Served */}
-                    <Grid item xs={12} md={6}>
+                    <Grid xs={12} md={6}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -451,7 +451,7 @@ const ShopDashboardPage: React.FC = () => {
                     </Grid>
 
                     {/* Queue */}
-                    <Grid item xs={12} md={6}>
+                    <Grid xs={12} md={6}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
