@@ -57,15 +57,18 @@ const LoginPage: React.FC = () => {
       const token = localStorage.getItem("token");
       if (!token) return;
 
+      // Build API URL correctly
+      const apiBaseUrl = process.env.REACT_APP_API_URL || "/api";
+      const apiUrl = apiBaseUrl.startsWith("http") 
+        ? apiBaseUrl 
+        : `${window.location.origin}${apiBaseUrl}`;
+
       // Fetch user's shops
-      const response = await fetch(
-        `${process.env.REACT_APP_API_URL || "http://192.168.2.88.nip.io/api"}/shops/my-shops`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+      const response = await fetch(`${apiUrl}/shops/my-shops`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
         },
-      );
+      });
 
       if (response.ok) {
         const shops = await response.json();
