@@ -1,6 +1,1 @@
-import { IconButtonOwnProps } from '@mui/material/IconButton';
-
-export default function ColorModeIconDropdown(props: IconButtonOwnProps) {
-  // Temporary disable for v5 compatibility
-  return null;
-}
+import { IconButtonOwnProps } from '@mui/material/IconButton'; export default function ColorModeIconDropdown(props: IconButtonOwnProps) { // Temporary disable for v5 compatibility return null; } 
