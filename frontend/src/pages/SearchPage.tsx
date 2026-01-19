@@ -56,13 +56,37 @@ const SearchPage: React.FC = () => {
   const [selectedCountry, setSelectedCountry] = useState<string>('all');
   const navigate = useNavigate();
 
+  const fetchCountries = async () => {
+    try {
+      const response = await axios.get('/shops/countries');
+      setCountries(response.data || []);
+    } catch (err) {
+      // Silently fail - countries filter optional
+    }
+  };
+
+  const fetchAllShops = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const params = selectedCountry !== 'all' ? { country: selectedCountry } : {};
+      const response = await axios.get(`/shops/`, { params });
+      setShops(response.data);
+      setFilteredShops(response.data);
+    } catch (err) {
+      setError("Failed to load businesses. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedCountry]);
+
   useEffect(() => {
     fetchCountries();
   }, []);
 
   useEffect(() => {
     fetchAllShops();
-  }, [selectedCountry]);
+  }, [fetchAllShops]);
 
   useEffect(() => {
     if (searchTerm.trim() === '') {
@@ -80,29 +104,7 @@ const SearchPage: React.FC = () => {
     }
   }, [searchTerm, shops]);
 
-  const fetchCountries = async () => {
-    try {
-      const response = await axios.get('/shops/countries');
-      setCountries(response.data || []);
-    } catch (err) {
-      // Silently fail - countries filter optional
-    }
-  };
 
-  const fetchAllShops = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const params = selectedCountry !== 'all' ? { country: selectedCountry } : {};
-      const response = await axios.get(`/shops/`, { params });
-      setShops(response.data);
-      setFilteredShops(response.data);
-    } catch (err) {
-      setError("Failed to load businesses. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCountryChange = (event: SelectChangeEvent) => {
     setSelectedCountry(event.target.value);

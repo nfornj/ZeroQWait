@@ -61,7 +61,6 @@ const InShopDisplayPage: React.FC = () => {
     const [shop, setShop] = useState<Shop | null>(null);
     const [queue, setQueue] = useState<Queue | null>(null);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
     const [currentTime, setCurrentTime] = useState(new Date());
 
     useEffect(() => {
@@ -86,7 +85,6 @@ const InShopDisplayPage: React.FC = () => {
             setShop(response.data);
             setLoading(false);
         } catch (err) {
-            setError('Failed to load shop details');
             setLoading(false);
         }
     };

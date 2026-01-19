@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
     Container,
     Grid,
@@ -38,7 +38,6 @@ const ShopAnalyticsPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [data, setData] = useState<AnalyticsData | null>(null);
-    const [shopId, setShopId] = useState<number | null>(null);
 
     useEffect(() => {
         const fetchAnalytics = async () => {
@@ -61,7 +60,6 @@ const ShopAnalyticsPage: React.FC = () => {
                 }
 
                 const firstShopId = shopsResponse.data[0].id;
-                setShopId(firstShopId);
 
                 // Fetch analytics for the shop
                 const response = await axios.get(`/analytics/${firstShopId}`, {

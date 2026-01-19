@@ -16,7 +16,6 @@ import {
   CircularProgress,
   ToggleButton,
   ToggleButtonGroup,
-  Alert,
 } from '@mui/material';
 import {
   PlayArrow,
@@ -25,15 +24,10 @@ import {
   People,
   Timer,
   PanTool,
-  SwitchCamera,
 } from '@mui/icons-material';
 import { recognizeGesture, GestureResult } from '../utils/gestureRecognition';
 
-interface Detection {
-  bbox: [number, number, number, number];
-  class: string;
-  score: number;
-}
+
 
 type DetectionMode = 'people' | 'gestures' | 'both';
 

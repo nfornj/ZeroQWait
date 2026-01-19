@@ -18,7 +18,6 @@ import {
     MenuItem,
     useTheme,
     useMediaQuery,
-    Switch,
     Tooltip
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';

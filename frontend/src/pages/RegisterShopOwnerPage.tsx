@@ -25,8 +25,7 @@ const RegisterShopOwnerPage: React.FC = () => {
         confirmPassword: "",
     });
     const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
-    const [checkingUsername, setCheckingUsername] = useState(false);
-    const [checkingEmail, setCheckingEmail] = useState(false);
+    const [formSubmissionError, setFormSubmissionError] = useState('');
     const { register, loading, error, isAuthenticated } = useAuth();
     const navigate = useNavigate();
 
@@ -69,7 +68,7 @@ const RegisterShopOwnerPage: React.FC = () => {
     useEffect(() => {
         const checkUsername = async () => {
             if (formData.username && formData.username.length >= 3) {
-                setCheckingUsername(true);
+
                 try {
                     const response = await axios.get(`/check-username/${formData.username}`);
                     if (!response.data.available) {
@@ -83,7 +82,7 @@ const RegisterShopOwnerPage: React.FC = () => {
                 } catch (err) {
                     // Silently fail - user will get error on submit if needed
                 } finally {
-                    setCheckingUsername(false);
+                    // setCheckingUsername(false);
                 }
             }
         };
@@ -97,7 +96,7 @@ const RegisterShopOwnerPage: React.FC = () => {
         const checkEmail = async () => {
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             if (formData.email && emailRegex.test(formData.email)) {
-                setCheckingEmail(true);
+
                 try {
                     const response = await axios.get(`/check-email/${formData.email}`);
                     if (!response.data.available) {
@@ -111,7 +110,7 @@ const RegisterShopOwnerPage: React.FC = () => {
                 } catch (err) {
                     // Silently fail - user will get error on submit if needed
                 } finally {
-                    setCheckingEmail(false);
+                    // setCheckingEmail(false);
                 }
             }
         };
@@ -171,9 +170,9 @@ const RegisterShopOwnerPage: React.FC = () => {
                         </Box>
                     </Alert>
 
-                    {error && (
+                    {formSubmissionError && (
                         <Alert severity="error" sx={{ mt: 2 }}>
-                            {error}
+                            {formSubmissionError}
                         </Alert>
                     )}
 

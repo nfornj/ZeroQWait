@@ -34,12 +34,12 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const getSubdomainFromHost = (): string | null => {
     const hostname = window.location.hostname;
     const parts = hostname.split('.');
-    
+
     // Handle local development (localhost, 127.0.0.1)
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('127.0.0')) {
       return null;
     }
-    
+
     // Handle IP.nip.io format (e.g., shopname.192.168.2.88.nip.io)
     if (hostname.includes('nip.io')) {
       // For 192.168.2.88.nip.io, parts = ['shopname', '192', '168', '2', '88', 'nip', 'io']
@@ -48,12 +48,12 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return parts[0];
       }
     }
-    
+
     // Handle regular domain format (e.g., shopname.example.com)
     if (parts.length > 2 && !parts[0].match(/^(www|mail|ftp)$/)) {
       return parts[0];
     }
-    
+
     return null;
   };
 
@@ -62,15 +62,23 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setLoading(true);
       setError(null);
-      
+
       console.log("[ShopContext] Fetching shop by slug:", slug);
-      const response = await axios.get(`/shops/by-slug/${slug}`);
+      // Use /shops/s/{slug} endpoint which returns shop with queues and is confirmed to work
+      const response = await axios.get(`/shops/s/${slug}`);
       const shopData = response.data;
       console.log("[ShopContext] Shop fetched by slug:", shopData.name, shopData.slug);
       setShop(shopData);
       setShopSlug(slug);
       return shopData;
-    } catch (err) {
+    } catch (err: any) {
+      if (err.response && err.response.status === 404) {
+        console.log(`[ShopContext] Shop not found for slug: ${slug} (this is normal if the shop doesn't exist)`);
+        // Don't set global error for 404, just return null
+        setShop(null);
+        return null;
+      }
+
       const errorMsg = err instanceof Error ? err.message : 'Failed to fetch shop';
       console.log("[ShopContext] Slug fetch failed:", errorMsg);
       setError(errorMsg);
@@ -117,7 +125,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initializeShop = async () => {
       const subdomain = getSubdomainFromHost();
       console.log("[ShopContext] Subdomain detected:", subdomain);
-      
+
       if (subdomain && subdomain !== '192' && subdomain !== '168') {
         // This is a shop subdomain, fetch the shop data
         console.log("[ShopContext] Fetching shop by subdomain:", subdomain);
@@ -132,7 +140,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await fetchMyShop();
       }
     };
-    
+
     initializeShop();
   }, []);
 

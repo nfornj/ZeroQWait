@@ -35,7 +35,6 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
     currentPhotoUrl,
 }) => {
     const [tabValue, setTabValue] = useState(0);
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string>('');
     const [capturedImage, setCapturedImage] = useState<string>('');
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
@@ -47,7 +46,6 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
 
     useEffect(() => {
         if (!open) {
-            setSelectedFile(null);
             setPreviewUrl('');
             setCapturedImage('');
             setError('');
@@ -82,7 +80,7 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
             return;
         }
 
-        setSelectedFile(file);
+
         setError('');
 
         // Create preview
@@ -165,7 +163,6 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
                         setTabValue(newValue);
                         setCapturedImage('');
                         setPreviewUrl('');
-                        setSelectedFile(null);
                         setError('');
                     }}
                     variant="fullWidth"
