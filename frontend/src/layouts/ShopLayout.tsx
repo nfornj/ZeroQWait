@@ -91,26 +91,37 @@ const ShopLayout: React.FC = () => {
                 justifyContent: sidebarCollapsed ? 'center' : 'space-between',
                 minHeight: 64
             }}>
-                {(!sidebarCollapsed) && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, overflow: 'hidden' }}>
-                        {shop?.logo_url ? (
-                            <Avatar src={shop.logo_url} alt={shop.name} variant="rounded" sx={{ width: 32, height: 32 }} />
-                        ) : (
-                            <Avatar variant="rounded" sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: '1rem' }}>
-                                {shop?.name?.charAt(0).toUpperCase() || <StoreIcon fontSize="small" />}
-                            </Avatar>
-                        )}
-                        <Typography variant="subtitle1" fontWeight="bold" noWrap>
+                {/* Header/Logo Area */}
+                <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                    width: '100%',
+                    overflow: 'hidden'
+                }}>
+                    {shop?.logo_url ? (
+                        <Avatar
+                            src={shop.logo_url}
+                            alt={shop.name}
+                            variant="rounded"
+                            sx={{ width: 32, height: 32 }}
+                        />
+                    ) : (
+                        <Avatar
+                            variant="rounded"
+                            sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: '1rem' }}
+                        >
+                            {shop?.name?.charAt(0).toUpperCase() || <StoreIcon fontSize="small" />}
+                        </Avatar>
+                    )}
+
+                    {!sidebarCollapsed && (
+                        <Typography variant="subtitle1" fontWeight={700} noWrap sx={{ color: 'text.primary' }}>
                             {shop?.name || 'ZeroQwait'}
                         </Typography>
-                    </Box>
-                )}
-                {/* Logo only when collapsed */}
-                {(sidebarCollapsed) && (
-                    <Avatar variant="rounded" sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
-                        {shop?.name?.charAt(0).toUpperCase() || <StoreIcon fontSize="small" />}
-                    </Avatar>
-                )}
+                    )}
+                </Box>
 
                 {/* Collapse Toggle (Desktop only) */}
                 {!isMobile && !sidebarCollapsed && (
@@ -126,7 +137,7 @@ const ShopLayout: React.FC = () => {
             <List sx={{ px: 1.5, flexGrow: 1 }}>
                 {menuItems.map((item) => (
                     <Tooltip key={item.text} title={sidebarCollapsed ? item.text : ''} placement="right">
-                        <ListItem disablePadding sx={{ mb: 1 }}>
+                        <ListItem disablePadding sx={{ mb: 0.5 }}>
                             <ListItemButton
                                 selected={location.pathname.includes(item.path)}
                                 onClick={() => {
@@ -136,37 +147,45 @@ const ShopLayout: React.FC = () => {
                                 sx={{
                                     justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
                                     px: sidebarCollapsed ? 1 : 2,
-                                    minHeight: 48,
+                                    py: 1.2,
+                                    minHeight: 44,
+                                    borderRadius: 1, // Slight squircle, not pill
+                                    mx: 1,
+                                    width: 'auto',
                                     bgcolor: location.pathname.includes(item.path)
-                                        ? (theme.palette.mode === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)')
+                                        ? (theme.palette.mode === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.12)')
                                         : 'transparent',
-                                    color: location.pathname.includes(item.path) ? 'primary.main' : 'text.secondary',
+                                    color: location.pathname.includes(item.path)
+                                        ? 'primary.main'
+                                        : 'text.secondary',
+                                    transition: 'all 0.2s',
                                     '&.Mui-selected': {
-                                        bgcolor: 'primary.main',
-                                        color: 'primary.contrastText',
+                                        bgcolor: theme.palette.mode === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.12)',
+                                        color: 'primary.main',
                                         '&:hover': {
-                                            bgcolor: 'primary.dark',
+                                            bgcolor: theme.palette.mode === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)',
                                         },
+                                        // Keep icon color consistent with text
                                         '& .MuiListItemIcon-root': {
-                                            color: 'inherit',
+                                            color: 'primary.main',
                                         }
                                     },
                                     '&:hover': {
-                                        bgcolor: theme.palette.mode === 'light' ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)',
+                                        bgcolor: theme.palette.mode === 'light' ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)',
                                     }
                                 }}
                             >
                                 <ListItemIcon sx={{
-                                    minWidth: sidebarCollapsed ? 'auto' : 40,
+                                    minWidth: sidebarCollapsed ? 'auto' : 36,
                                     justifyContent: 'center',
-                                    color: 'inherit'
+                                    color: location.pathname.includes(item.path) ? 'primary.main' : 'text.secondary'
                                 }}>
                                     {item.icon}
                                 </ListItemIcon>
                                 {!sidebarCollapsed && (
                                     <ListItemText
                                         primary={item.text}
-                                        primaryTypographyProps={{ fontWeight: 500 }}
+                                        primaryTypographyProps={{ fontWeight: 500, fontSize: '0.9rem' }}
                                     />
                                 )}
                             </ListItemButton>
@@ -247,7 +266,7 @@ const ShopLayout: React.FC = () => {
                     bgcolor: 'background.paper',
                     borderBottom: '1px solid',
                     borderColor: 'divider',
-                    display: { md: 'none' } // Hide on desktop if we want a clean look, or keep it for the title
+                    display: { md: 'none' } // Hide on desktop, template uses sidebar + main content area
                 }}
             >
                 <Toolbar>

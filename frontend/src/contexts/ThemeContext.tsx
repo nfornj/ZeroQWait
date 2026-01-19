@@ -112,39 +112,39 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             },
             typography: {
                 fontFamily: '"Roboto", "Inter", "Helvetica", "Arial", sans-serif',
-                h1: { fontWeight: 400, fontSize: '3.5rem' }, // MD3 Display Large
-                h2: { fontWeight: 400, fontSize: '2.8rem' }, // MD3 Display Medium
-                h3: { fontWeight: 400, fontSize: '2.25rem' }, // MD3 Display Small
-                h4: { fontWeight: 400, fontSize: '2rem' }, // MD3 Headline Large
-                h5: { fontWeight: 400, fontSize: '1.75rem' }, // MD3 Headline Medium
-                h6: { fontWeight: 500, fontSize: '1.375rem' }, // MD3 Headline Small
-                button: { textTransform: 'none', fontWeight: 500, letterSpacing: '0.1px' },
+                h1: { fontWeight: 500, fontSize: '2.5rem' },
+                h2: { fontWeight: 500, fontSize: '2rem' },
+                h3: { fontWeight: 500, fontSize: '1.75rem' },
+                h4: { fontWeight: 500, fontSize: '1.5rem' },
+                h5: { fontWeight: 500, fontSize: '1.25rem' },
+                h6: { fontWeight: 600, fontSize: '1rem' },
+                button: { textTransform: 'none', fontWeight: 600, letterSpacing: '0.1px' },
             },
             shape: {
-                borderRadius: 24, // MD3 uses very round corners (e.g. 24px-28px for Large components)
+                borderRadius: 12, // More professional, less playful than 24px
             },
             components: {
                 MuiButton: {
                     styleOverrides: {
                         root: {
-                            borderRadius: 100, // MD3 pills for buttons
+                            borderRadius: 8, // Standard button curve
                             height: 40,
-                            padding: '0 24px',
+                            padding: '0 20px',
                             boxShadow: 'none',
                         },
                         contained: {
                             boxShadow: 'none',
                             '&:hover': {
-                                boxShadow: '0px 1px 2px rgba(0,0,0,0.3), 0px 1px 3px 1px rgba(0,0,0,0.15)', // MD3 Elevation 1 on hover
+                                boxShadow: '0px 2px 4px rgba(0,0,0,0.1)',
                             }
                         },
                         outlined: {
                             borderWidth: '1px',
-                            borderColor: mode === 'light' ? '#79747E' : '#938F99',
+                            borderRadius: 8,
+                            borderColor: mode === 'light' ? '#E0E0E0' : '#444',
                         },
                         text: {
-                            padding: '0 12px',
-                            borderRadius: 100,
+                            borderRadius: 8,
                         }
                     },
                 },
@@ -155,23 +155,26 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         },
                         elevation1: {
                             boxShadow: mode === 'light'
-                                ? '0px 1px 2px rgba(0,0,0,0.3), 0px 1px 3px 1px rgba(0,0,0,0.15)'
-                                : '0px 1px 2px rgba(0,0,0,0.3), 0px 1px 3px 1px rgba(0,0,0,0.15)', // MD3 Level 1
+                                ? '0px 2px 4px rgba(0,0,0,0.05)'
+                                : '0px 2px 4px rgba(0,0,0,0.2)',
                         },
                         elevation2: {
-                            boxShadow: '0px 1px 2px rgba(0,0,0,0.3), 0px 2px 6px 2px rgba(0,0,0,0.15)', // MD3 Level 2
+                            boxShadow: mode === 'light'
+                                ? '0px 4px 12px rgba(0,0,0,0.08)'
+                                : '0px 4px 12px rgba(0,0,0,0.3)',
                         },
                         rounded: {
-                            borderRadius: 24, // Consistent card rounding
+                            borderRadius: 12,
                         }
                     },
                 },
                 MuiCard: {
                     styleOverrides: {
                         root: {
-                            borderRadius: 24,
-                            backgroundColor: mode === 'light' ? '#F7F2FA' : '#25232A', // Surface Container Low/Lowest approximation
-                            border: 'none',
+                            borderRadius: 12,
+                            backgroundColor: mode === 'light' ? '#FFFFFF' : '#1E1E1E',
+                            border: mode === 'light' ? '1px solid #F0F0F0' : '1px solid #333',
+                            boxShadow: '0px 2px 4px rgba(0,0,0,0.03)',
                         }
                     }
                 },
@@ -179,7 +182,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     styleOverrides: {
                         root: {
                             '& .MuiOutlinedInput-root': {
-                                borderRadius: 8, // Text fields are usually less rounded (4px-8px) in MD3
+                                borderRadius: 8,
                             }
                         }
                     }
@@ -187,18 +190,19 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 MuiAppBar: {
                     styleOverrides: {
                         root: {
-                            backgroundColor: mode === 'light' ? '#F7F2FA' : '#141218',
+                            backgroundColor: mode === 'light' ? '#FFFFFF' : '#141218',
                             color: mode === 'light' ? '#1C1B1F' : '#E6E1E5',
                             boxShadow: 'none',
+                            borderBottom: mode === 'light' ? '1px solid #F0F0F0' : '1px solid #333',
                         }
                     }
                 },
                 MuiDrawer: {
                     styleOverrides: {
                         paper: {
-                            backgroundColor: mode === 'light' ? '#F7F2FA' : '#141218',
-                            borderRight: 'none',
-                            borderRadius: '0 24px 24px 0', // Rounded end of drawer
+                            backgroundColor: mode === 'light' ? '#F9FAFB' : '#121212',
+                            borderRight: mode === 'light' ? '1px solid #EAECF0' : '1px solid #333',
+                            borderRadius: 0,
                         }
                     }
                 }

@@ -15,15 +15,22 @@ import {
     Divider,
     Alert,
     CircularProgress,
-    Paper,
-    IconButton,
+    Stack,
+    MenuItem,
+    Select,
+    FormControl,
+    InputLabel,
+    ListItemAvatar,
     Avatar,
 } from '@mui/material';
 import LaunchIcon from '@mui/icons-material/Launch';
 import TvIcon from '@mui/icons-material/Tv';
 import PersonIcon from '@mui/icons-material/Person';
 import SettingsIcon from '@mui/icons-material/Settings';
-import StoreIcon from '@mui/icons-material/Store';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import PeopleIcon from '@mui/icons-material/People';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import axios from 'axios';
 import EmployeeSelector from '../components/EmployeeSelector';
 
@@ -255,133 +262,187 @@ const ShopDashboardPage: React.FC = () => {
 
     return (
         <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
-            {/* Dashboard Header & Actions */}
-            <Box sx={{ bgcolor: 'background.paper', borderBottom: '1px solid rgba(0,0,0,0.08)', py: 2, mb: 3 }}>
-                <Container maxWidth="lg">
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography variant="h5" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                            Overview
+            <Container maxWidth="xl" sx={{ pb: 4, pt: 2 }}>
+                {/* Header Section */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+                    <Box>
+                        <Typography variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>
+                            Dashboard
                         </Typography>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Button
-                                variant="outlined"
-                                startIcon={<LaunchIcon />}
-                                onClick={() => window.open(`/queue/${selectedShop?.id}`, '_blank')}
-                                disabled={!selectedShop}
-                                size="small"
-                            >
-                                Public View
-                            </Button>
-                            <Button
-                                variant="outlined"
-                                startIcon={<TvIcon />}
-                                onClick={() => window.open(`/display/${selectedShop?.id}`, '_blank')}
-                                disabled={!selectedShop}
-                                size="small"
-                            >
-                                TV Mode
-                            </Button>
-                            <Button
-                                variant="contained"
-                                startIcon={<SettingsIcon />}
-                                onClick={() => navigate('/settings')}
-                                disabled={!selectedShop}
-                                size="small"
-                                sx={{ bgcolor: selectedShop?.primary_color }}
-                            >
-                                Settings
-                            </Button>
-                        </Box>
+                        <Typography variant="body1" color="text.secondary">
+                            Overview for {selectedShop?.name} • {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                        </Typography>
                     </Box>
-                </Container>
-            </Box>
-
-            <Container maxWidth="lg" sx={{ pb: 4 }}>
-                {/* Mobile Actions (Visible only on small screens) */}
-                {selectedShop && (
-                    <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1, mb: 3, flexWrap: 'wrap' }}>
+                    <Stack direction="row" spacing={2}>
                         <Button
-                            fullWidth
                             variant="outlined"
                             startIcon={<LaunchIcon />}
-                            onClick={() => window.open(`/queue/${selectedShop.id}`, '_blank')}
+                            onClick={() => window.open(`/queue/${selectedShop?.id}`, '_blank')}
+                            disabled={!selectedShop}
                         >
                             Public View
                         </Button>
                         <Button
-                            fullWidth
                             variant="outlined"
                             startIcon={<TvIcon />}
-                            onClick={() => window.open(`/display/${selectedShop.id}`, '_blank')}
+                            onClick={() => window.open(`/display/${selectedShop?.id}`, '_blank')}
+                            disabled={!selectedShop}
                         >
                             TV Mode
                         </Button>
-                    </Box>
-                )}
+                        <Button
+                            variant="contained"
+                            startIcon={<SettingsIcon />}
+                            onClick={() => navigate('/settings')}
+                            disabled={!selectedShop}
+                            sx={{ bgcolor: selectedShop?.primary_color }}
+                        >
+                            Settings
+                        </Button>
+                    </Stack>
+                </Box>
 
                 {error && (
-                    <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+                    <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>
                         {error}
                     </Alert>
                 )}
 
+                {/* KPI Cards Row */}
+                <Grid container spacing={3} sx={{ mb: 4 }}>
+                    <Grid item xs={12} sm={6} md={3}>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography color="textSecondary" gutterBottom variant="overline">
+                                    Waiting Now
+                                </Typography>
+                                <Typography variant="h3" fontWeight="bold">
+                                    {waitingCustomers.length}
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', mt: 1, color: 'text.secondary' }}>
+                                    <PeopleIcon fontSize="small" sx={{ mr: 0.5 }} />
+                                    <Typography variant="body2">Customers in queue</Typography>
+                                </Box>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography color="textSecondary" gutterBottom variant="overline">
+                                    Being Served
+                                </Typography>
+                                <Typography variant="h3" fontWeight="bold">
+                                    {beingServed.length}
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', mt: 1, color: 'success.main' }}>
+                                    <CheckCircleIcon fontSize="small" sx={{ mr: 0.5 }} />
+                                    <Typography variant="body2">Currently active</Typography>
+                                </Box>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography color="textSecondary" gutterBottom variant="overline">
+                                    Staff Active
+                                </Typography>
+                                <Typography variant="h3" fontWeight="bold">
+                                    {employees.length}
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', mt: 1, color: 'info.main' }}>
+                                    <PersonIcon fontSize="small" sx={{ mr: 0.5 }} />
+                                    <Typography variant="body2">Clocked in</Typography>
+                                </Box>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                    {/* Placeholder for future stat or quick action */}
+                    <Grid item xs={12} sm={6} md={3}>
+                        <Card sx={{ height: '100%', bgcolor: 'primary.main', color: 'primary.contrastText' }}>
+                            <CardContent sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }}>
+                                <Button
+                                    color="inherit"
+                                    variant="outlined"
+                                    onClick={handleCallNext}
+                                    disabled={waitingCustomers.length === 0}
+                                    sx={{ borderColor: 'rgba(255,255,255,0.5)', borderWidth: 2, '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
+                                >
+                                    Call Next Customer
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                </Grid>
+
                 <Grid container spacing={3}>
                     {/* Currently Being Served */}
                     <Grid item xs={12} md={6}>
-                        <Card>
+                        <Card sx={{ height: '100%' }}>
                             <CardContent>
-                                <Typography variant="h6" gutterBottom>
-                                    Being Served
-                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                    <CheckCircleIcon color="success" sx={{ mr: 1 }} />
+                                    <Typography variant="h6" fontWeight={600}>
+                                        Being Served
+                                    </Typography>
+                                </Box>
                                 <Divider sx={{ mb: 2 }} />
                                 {beingServed.length === 0 ? (
-                                    <Typography color="textSecondary">No one being served</Typography>
+                                    <Box sx={{ py: 4, textAlign: 'center', color: 'text.secondary', bgcolor: 'action.hover', borderRadius: 2 }}>
+                                        <Typography>No one is currently being served</Typography>
+                                    </Box>
                                 ) : (
-                                    <List>
-                                        {beingServed.map((item) => (
-                                            <ListItem
-                                                key={item.id}
-                                                sx={{
-                                                    bgcolor: 'info.light',
-                                                    mb: 1,
-                                                }}
-                                            >
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
-                                                    {item.assigned_employee && (
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                            <Avatar
-                                                                src={item.assigned_employee.profile_photo_url}
-                                                                sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}
-                                                            >
-                                                                {item.assigned_employee.username.charAt(0).toUpperCase()}
-                                                            </Avatar>
-                                                        </Box>
-                                                    )}
+                                    <List disablePadding>
+                                        {beingServed.map((item, index) => (
+                                            <React.Fragment key={item.id}>
+                                                {index > 0 && <Divider component="li" />}
+                                                <ListItem
+                                                    sx={{
+                                                        py: 2,
+                                                        px: 0,
+                                                    }}
+                                                >
+                                                    <ListItemAvatar>
+                                                        <Avatar sx={{ bgcolor: 'success.light', color: 'success.dark' }}>
+                                                            {item.customer_name.charAt(0).toUpperCase()}
+                                                        </Avatar>
+                                                    </ListItemAvatar>
                                                     <ListItemText
-                                                        primary={item.customer_name}
+                                                        primary={
+                                                            <Typography variant="subtitle1" fontWeight={600}>
+                                                                {item.customer_name}
+                                                            </Typography>
+                                                        }
                                                         secondary={
-                                                            <>
-                                                                {item.customer_phone && <div>{item.customer_phone}</div>}
+                                                            <Box sx={{ mt: 0.5 }}>
+                                                                {item.customer_phone && (
+                                                                    <Typography variant="body2" color="text.secondary" component="span" display="block">
+                                                                        {item.customer_phone}
+                                                                    </Typography>
+                                                                )}
                                                                 {item.assigned_employee && (
                                                                     <Box display="flex" alignItems="center" gap={0.5} mt={0.5}>
-                                                                        <PersonIcon sx={{ fontSize: 14 }} />
-                                                                        <Typography variant="caption">
-                                                                            Served by {item.assigned_employee.username}
-                                                                        </Typography>
+                                                                        <Chip
+                                                                            avatar={<Avatar src={item.assigned_employee.profile_photo_url}>{item.assigned_employee.username.charAt(0)}</Avatar>}
+                                                                            label={`Served by ${item.assigned_employee.username}`}
+                                                                            size="small"
+                                                                            variant="outlined"
+                                                                        />
                                                                     </Box>
                                                                 )}
-                                                            </>
+                                                            </Box>
                                                         }
                                                     />
-                                                </Box>
-                                                <Button
-                                                    variant="contained"
-                                                    color="success"
-                                                    onClick={() => handleCompleteCustomer(item.id)}
-                                                >
-                                                    Complete
-                                                </Button>
-                                            </ListItem>
+                                                    <Button
+                                                        variant="text"
+                                                        color="success"
+                                                        onClick={() => handleCompleteCustomer(item.id)}
+                                                    >
+                                                        Complete
+                                                    </Button>
+                                                </ListItem>
+                                            </React.Fragment>
                                         ))}
                                     </List>
                                 )}
@@ -391,50 +452,73 @@ const ShopDashboardPage: React.FC = () => {
 
                     {/* Queue */}
                     <Grid item xs={12} md={6}>
-                        <Card>
+                        <Card sx={{ height: '100%' }}>
                             <CardContent>
-                                <Box display="flex" justifyContent="space-between" alignItems="center">
-                                    <Typography variant="h6">
-                                        Waiting Queue ({waitingCustomers.length})
-                                    </Typography>
-                                    <Button
-                                        variant="contained"
-                                        color="primary"
-                                        onClick={handleCallNext}
-                                        disabled={waitingCustomers.length === 0}
-                                    >
-                                        Call Next
-                                    </Button>
+                                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                        <PeopleIcon color="primary" sx={{ mr: 1 }} />
+                                        <Typography variant="h6" fontWeight={600}>
+                                            Waiting Queue
+                                        </Typography>
+                                        <Chip label={waitingCustomers.length} color="primary" size="small" sx={{ ml: 1.5, fontWeight: 'bold' }} />
+                                    </Box>
                                 </Box>
-                                <Divider sx={{ my: 2 }} />
+                                <Divider sx={{ mb: 2 }} />
                                 {waitingCustomers.length === 0 ? (
-                                    <Typography color="textSecondary">Queue is empty</Typography>
+                                    <Box sx={{ py: 4, textAlign: 'center', color: 'text.secondary', bgcolor: 'action.hover', borderRadius: 2 }}>
+                                        <Typography>Queue is empty</Typography>
+                                    </Box>
                                 ) : (
-                                    <List>
+                                    <List disablePadding>
                                         {waitingCustomers.map((item, index) => (
-                                            <ListItem
-                                                key={item.id}
-                                                sx={{
-                                                    bgcolor: index === 0 ? 'warning.light' : 'grey.100',
-                                                    mb: 1,
-                                                }}
-                                            >
-                                                <Box sx={{ mr: 2, fontWeight: 'bold' }}>#{item.position}</Box>
-                                                <ListItemText
-                                                    primary={item.customer_name}
-                                                    secondary={
-                                                        <>
-                                                            {item.customer_phone && <div>{item.customer_phone}</div>}
-                                                            {item.notes && <div>Note: {item.notes}</div>}
-                                                        </>
+                                            <React.Fragment key={item.id}>
+                                                {index > 0 && <Divider component="li" />}
+                                                <ListItem
+                                                    sx={{
+                                                        py: 2,
+                                                        px: 0,
+                                                    }}
+                                                    secondaryAction={
+                                                        <Box sx={{ textAlign: 'right' }}>
+                                                            <Typography variant="h6" color="primary.main" fontWeight="bold">
+                                                                #{item.position}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                Position
+                                                            </Typography>
+                                                        </Box>
                                                     }
-                                                />
-                                                <Chip
-                                                    label={item.status}
-                                                    color={getStatusColor(item.status) as any}
-                                                    size="small"
-                                                />
-                                            </ListItem>
+                                                >
+                                                    <ListItemText
+                                                        primary={
+                                                            <Typography variant="subtitle1" fontWeight={600}>
+                                                                {item.customer_name}
+                                                            </Typography>
+                                                        }
+                                                        secondary={
+                                                            <Box sx={{ mt: 0.5 }}>
+                                                                {item.customer_phone && (
+                                                                    <Typography variant="body2" color="text.secondary" noWrap>
+                                                                        {item.customer_phone}
+                                                                    </Typography>
+                                                                )}
+                                                                {item.notes && (
+                                                                    <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', mt: 0.5 }}>
+                                                                        "{item.notes}"
+                                                                    </Typography>
+                                                                )}
+                                                                <Box sx={{ mt: 1 }}>
+                                                                    <Chip
+                                                                        label="Waiting"
+                                                                        size="small"
+                                                                        sx={{ bgcolor: 'warning.light', color: 'warning.contrastText', fontWeight: 600, height: 24 }}
+                                                                    />
+                                                                </Box>
+                                                            </Box>
+                                                        }
+                                                    />
+                                                </ListItem>
+                                            </React.Fragment>
                                         ))}
                                     </List>
                                 )}
@@ -454,7 +538,7 @@ const ShopDashboardPage: React.FC = () => {
                     allowRandom={true}
                 />
             </Container>
-        </Box>
+        </Box >
     );
 };
 
