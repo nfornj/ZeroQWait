@@ -20,6 +20,10 @@ spec:
         env:
         - name: NODE_OPTIONS
           value: "--max-old-space-size=3072"
+        - name: GENERATE_SOURCEMAP
+          value: "false"
+        - name: DISABLE_ESLINT_PLUGIN
+          value: "true"
         - name: REACT_APP_API_URL
           value: "/api"
         command: ["/bin/sh", "-c"]
