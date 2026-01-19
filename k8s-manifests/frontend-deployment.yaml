@@ -19,7 +19,7 @@ spec:
         workingDir: /app
         env:
         - name: NODE_OPTIONS
-          value: "--max-old-space-size=1536 --openssl-legacy-provider"
+          value: "--max-old-space-size=1536"
         - name: REACT_APP_API_URL
           value: "/api"
         command: ["/bin/sh", "-c"]
@@ -44,7 +44,7 @@ spec:
             echo "Ensuring react-scripts is installed..."
             if [ ! -f "node_modules/.bin/react-scripts" ]; then
                 echo "react-scripts missing, forcing install..."
-                npm install react-scripts@4.0.3 --legacy-peer-deps --verbose
+                npm install react-scripts@5.0.1 --legacy-peer-deps --verbose
             fi
             
             echo "Verifying react-scripts..."
