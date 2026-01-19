@@ -19,7 +19,7 @@ spec:
         workingDir: /app
         env:
         - name: NODE_OPTIONS
-          value: "--max-old-space-size=1536"
+          value: "--max-old-space-size=3072"
         - name: REACT_APP_API_URL
           value: "/api"
         command: ["/bin/sh", "-c"]
