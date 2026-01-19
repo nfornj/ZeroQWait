@@ -1,1 +1,221 @@
-import React, { createContext, useState, useContext, useEffect, useMemo } from 'react'; import { ThemeProvider as MUIThemeProvider, createTheme, Theme } from '@mui/material/styles'; import CssBaseline from '@mui/material/CssBaseline'; // Define available themes export type ThemePreset = 'default' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'corporate'; export type ColorMode = 'light' | 'dark'; interface ThemeContextType { mode: ColorMode; toggleMode: () => void; themePreset: ThemePreset; setThemePreset: (preset: ThemePreset) => void; } const ThemeContext = createContext<ThemeContextType | undefined>(undefined); export const useThemeContext = () => { const context = useContext(ThemeContext); if (!context) { throw new Error('useThemeContext must be used within a ThemeProvider'); } return context; }; // Color palettes for different themes // Each preset defines a primary and potentially secondary color const themePalettes: Record<ThemePreset, { primary: string; secondary: string; background?: { paper: string, default: string } }> = { default: { primary: '#FF5A5F', // Coral (Airbnb-ish) secondary: '#00A699', // Teal }, ocean: { primary: '#0077B6', // Deep Ocean Blue secondary: '#48CAE4', // Light Blue }, forest: { primary: '#2D6A4F', // Deep Green secondary: '#D8F3DC', // Pale Green }, sunset: { primary: '#E07A5F', // Terracotta secondary: '#F2CC8F', // Gold }, midnight: { primary: '#7209B7', // Vibrant Purple secondary: '#4361EE', // Blue }, corporate: { primary: '#2B2D42', // Dark Slate secondary: '#8D99AE', // Greyish Blue }, }; export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => { // Load preferences from localStorage or default const [mode, setMode] = useState<ColorMode>(() => { const savedMode = localStorage.getItem('themeMode'); return (savedMode as ColorMode) || 'light'; }); const [themePreset, setThemePresetState] = useState<ThemePreset>(() => { const savedPreset = localStorage.getItem('themePreset'); return (savedPreset as ThemePreset) || 'default'; }); useEffect(() => { localStorage.setItem('themeMode', mode); }, [mode]); useEffect(() => { localStorage.setItem('themePreset', themePreset); }, [themePreset]); const toggleMode = () => { setMode((prev) => (prev === 'light' ? 'dark' : 'light')); }; const setThemePreset = (preset: ThemePreset) => { setThemePresetState(preset); }; const theme = useMemo(() => { const palette = themePalettes[themePreset]; // Custom background logic for specific themes in dark mode could go here // For now we stick to a standard dark/light background unless the theme overrides it strongly const lightBackground = { default: '#F7F7F7', paper: '#FFFFFF' }; const darkBackground = { default: '#121212', paper: '#1E1E1E' }; // Example: Midnight theme could have a slightly darker blue-ish background in dark mode if (themePreset === 'midnight' && mode === 'dark') { darkBackground.default = '#0f0c29'; // Deep dark blue/purple darkBackground.paper = '#24243e'; } return createTheme({ palette: { mode, primary: { main: palette.primary, }, secondary: { main: palette.secondary, }, background: mode === 'light' ? lightBackground : darkBackground, text: { primary: mode === 'light' ? '#1C1B1F' : '#E6E1E5', // MD3 Text Colors secondary: mode === 'light' ? '#49454F' : '#CAC4D0', }, }, typography: { fontFamily: '"Roboto", "Inter", "Helvetica", "Arial", sans-serif', h1: { fontWeight: 500, fontSize: '2.5rem' }, h2: { fontWeight: 500, fontSize: '2rem' }, h3: { fontWeight: 500, fontSize: '1.75rem' }, h4: { fontWeight: 500, fontSize: '1.5rem' }, h5: { fontWeight: 500, fontSize: '1.25rem' }, h6: { fontWeight: 600, fontSize: '1rem' }, button: { textTransform: 'none', fontWeight: 600, letterSpacing: '0.1px' }, }, shape: { borderRadius: 12, // More professional, less playful than 24px }, components: { MuiButton: { styleOverrides: { root: { borderRadius: 8, // Standard button curve height: 40, padding: '0 20px', boxShadow: 'none', }, contained: { boxShadow: 'none', '&:hover': { boxShadow: '0px 2px 4px rgba(0,0,0,0.1)', } }, outlined: { borderWidth: '1px', borderRadius: 8, borderColor: mode === 'light' ? '#E0E0E0' : '#444', }, text: { borderRadius: 8, } }, }, MuiPaper: { styleOverrides: { root: { backgroundImage: 'none', }, elevation1: { boxShadow: mode === 'light' ? '0px 2px 4px rgba(0,0,0,0.05)' : '0px 2px 4px rgba(0,0,0,0.2)', }, elevation2: { boxShadow: mode === 'light' ? '0px 4px 12px rgba(0,0,0,0.08)' : '0px 4px 12px rgba(0,0,0,0.3)', }, rounded: { borderRadius: 12, } }, }, MuiCard: { styleOverrides: { root: { borderRadius: 12, backgroundColor: mode === 'light' ? '#FFFFFF' : '#1E1E1E', border: mode === 'light' ? '1px solid #F0F0F0' : '1px solid #333', boxShadow: '0px 2px 4px rgba(0,0,0,0.03)', } } }, MuiTextField: { styleOverrides: { root: { '& .MuiOutlinedInput-root': { borderRadius: 8, } } } }, MuiAppBar: { styleOverrides: { root: { backgroundColor: mode === 'light' ? '#FFFFFF' : '#141218', color: mode === 'light' ? '#1C1B1F' : '#E6E1E5', boxShadow: 'none', borderBottom: mode === 'light' ? '1px solid #F0F0F0' : '1px solid #333', } } }, MuiDrawer: { styleOverrides: { paper: { backgroundColor: mode === 'light' ? '#F9FAFB' : '#121212', borderRight: mode === 'light' ? '1px solid #EAECF0' : '1px solid #333', borderRadius: 0, } } } }, }); }, [mode, themePreset]); return ( <ThemeContext.Provider value={{ mode, toggleMode, themePreset, setThemePreset }}> <MUIThemeProvider theme={theme}> <CssBaseline /> {children} </MUIThemeProvider> </ThemeContext.Provider> ); }; 
+import React, { createContext, useState, useContext, useEffect, useMemo } from 'react';
+import { ThemeProvider as MUIThemeProvider, createTheme, Theme } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+
+// Define available themes
+export type ThemePreset = 'default' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'corporate';
+export type ColorMode = 'light' | 'dark';
+
+interface ThemeContextType {
+    mode: ColorMode;
+    toggleMode: () => void;
+    themePreset: ThemePreset;
+    setThemePreset: (preset: ThemePreset) => void;
+}
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+export const useThemeContext = () => {
+    const context = useContext(ThemeContext);
+    if (!context) {
+        throw new Error('useThemeContext must be used within a ThemeProvider');
+    }
+    return context;
+};
+
+// Color palettes for different themes
+// Each preset defines a primary and potentially secondary color
+const themePalettes: Record<ThemePreset, { primary: string; secondary: string; background?: { paper: string, default: string } }> = {
+    default: {
+        primary: '#FF5A5F', // Coral (Airbnb-ish)
+        secondary: '#00A699', // Teal
+    },
+    ocean: {
+        primary: '#0077B6', // Deep Ocean Blue
+        secondary: '#48CAE4', // Light Blue
+    },
+    forest: {
+        primary: '#2D6A4F', // Deep Green
+        secondary: '#D8F3DC', // Pale Green
+    },
+    sunset: {
+        primary: '#E07A5F', // Terracotta
+        secondary: '#F2CC8F', // Gold
+    },
+    midnight: {
+        primary: '#7209B7', // Vibrant Purple
+        secondary: '#4361EE', // Blue
+    },
+    corporate: {
+        primary: '#2B2D42', // Dark Slate
+        secondary: '#8D99AE', // Greyish Blue
+    },
+};
+
+export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    // Load preferences from localStorage or default
+    const [mode, setMode] = useState<ColorMode>(() => {
+        const savedMode = localStorage.getItem('themeMode');
+        return (savedMode as ColorMode) || 'light';
+    });
+
+    const [themePreset, setThemePresetState] = useState<ThemePreset>(() => {
+        const savedPreset = localStorage.getItem('themePreset');
+        return (savedPreset as ThemePreset) || 'default';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('themeMode', mode);
+    }, [mode]);
+
+    useEffect(() => {
+        localStorage.setItem('themePreset', themePreset);
+    }, [themePreset]);
+
+    const toggleMode = () => {
+        setMode((prev) => (prev === 'light' ? 'dark' : 'light'));
+    };
+
+    const setThemePreset = (preset: ThemePreset) => {
+        setThemePresetState(preset);
+    };
+
+    const theme = useMemo(() => {
+        const palette = themePalettes[themePreset];
+
+        // Custom background logic for specific themes in dark mode could go here
+        // For now we stick to a standard dark/light background unless the theme overrides it strongly
+
+        const lightBackground = { default: '#F7F7F7', paper: '#FFFFFF' };
+        const darkBackground = { default: '#121212', paper: '#1E1E1E' };
+
+        // Example: Midnight theme could have a slightly darker blue-ish background in dark mode
+        if (themePreset === 'midnight' && mode === 'dark') {
+            darkBackground.default = '#0f0c29'; // Deep dark blue/purple
+            darkBackground.paper = '#24243e';
+        }
+
+        return createTheme({
+            palette: {
+                mode,
+                primary: {
+                    main: palette.primary,
+                },
+                secondary: {
+                    main: palette.secondary,
+                },
+                background: mode === 'light' ? lightBackground : darkBackground,
+                text: {
+                    primary: mode === 'light' ? '#1C1B1F' : '#E6E1E5', // MD3 Text Colors
+                    secondary: mode === 'light' ? '#49454F' : '#CAC4D0',
+                },
+            },
+            typography: {
+                fontFamily: '"Roboto", "Inter", "Helvetica", "Arial", sans-serif',
+                h1: { fontWeight: 500, fontSize: '2.5rem' },
+                h2: { fontWeight: 500, fontSize: '2rem' },
+                h3: { fontWeight: 500, fontSize: '1.75rem' },
+                h4: { fontWeight: 500, fontSize: '1.5rem' },
+                h5: { fontWeight: 500, fontSize: '1.25rem' },
+                h6: { fontWeight: 600, fontSize: '1rem' },
+                button: { textTransform: 'none', fontWeight: 600, letterSpacing: '0.1px' },
+            },
+            shape: {
+                borderRadius: 12, // More professional, less playful than 24px
+            },
+            components: {
+                MuiButton: {
+                    styleOverrides: {
+                        root: {
+                            borderRadius: 8, // Standard button curve
+                            height: 40,
+                            padding: '0 20px',
+                            boxShadow: 'none',
+                        },
+                        contained: {
+                            boxShadow: 'none',
+                            '&:hover': {
+                                boxShadow: '0px 2px 4px rgba(0,0,0,0.1)',
+                            }
+                        },
+                        outlined: {
+                            borderWidth: '1px',
+                            borderRadius: 8,
+                            borderColor: mode === 'light' ? '#E0E0E0' : '#444',
+                        },
+                        text: {
+                            borderRadius: 8,
+                        }
+                    },
+                },
+                MuiPaper: {
+                    styleOverrides: {
+                        root: {
+                            backgroundImage: 'none',
+                        },
+                        elevation1: {
+                            boxShadow: mode === 'light'
+                                ? '0px 2px 4px rgba(0,0,0,0.05)'
+                                : '0px 2px 4px rgba(0,0,0,0.2)',
+                        },
+                        elevation2: {
+                            boxShadow: mode === 'light'
+                                ? '0px 4px 12px rgba(0,0,0,0.08)'
+                                : '0px 4px 12px rgba(0,0,0,0.3)',
+                        },
+                        rounded: {
+                            borderRadius: 12,
+                        }
+                    },
+                },
+                MuiCard: {
+                    styleOverrides: {
+                        root: {
+                            borderRadius: 12,
+                            backgroundColor: mode === 'light' ? '#FFFFFF' : '#1E1E1E',
+                            border: mode === 'light' ? '1px solid #F0F0F0' : '1px solid #333',
+                            boxShadow: '0px 2px 4px rgba(0,0,0,0.03)',
+                        }
+                    }
+                },
+                MuiTextField: {
+                    styleOverrides: {
+                        root: {
+                            '& .MuiOutlinedInput-root': {
+                                borderRadius: 8,
+                            }
+                        }
+                    }
+                },
+                MuiAppBar: {
+                    styleOverrides: {
+                        root: {
+                            backgroundColor: mode === 'light' ? '#FFFFFF' : '#141218',
+                            color: mode === 'light' ? '#1C1B1F' : '#E6E1E5',
+                            boxShadow: 'none',
+                            borderBottom: mode === 'light' ? '1px solid #F0F0F0' : '1px solid #333',
+                        }
+                    }
+                },
+                MuiDrawer: {
+                    styleOverrides: {
+                        paper: {
+                            backgroundColor: mode === 'light' ? '#F9FAFB' : '#121212',
+                            borderRight: mode === 'light' ? '1px solid #EAECF0' : '1px solid #333',
+                            borderRadius: 0,
+                        }
+                    }
+                }
+            },
+        });
+    }, [mode, themePreset]);
+
+    return (
+        <ThemeContext.Provider value={{ mode, toggleMode, themePreset, setThemePreset }}>
+            <MUIThemeProvider theme={theme}>
+                <CssBaseline />
+                {children}
+            </MUIThemeProvider>
+        </ThemeContext.Provider>
+    );
+};
