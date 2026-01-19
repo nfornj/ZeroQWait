@@ -18,7 +18,9 @@ import {
     Menu,
     MenuItem,
     useTheme,
-    useMediaQuery
+    useMediaQuery,
+    CircularProgress,
+    Alert
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -30,6 +32,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import StoreIcon from '@mui/icons-material/Store';
 import LaunchIcon from '@mui/icons-material/Launch';
 import { useAuth } from '../contexts/AuthContext';
+import { useShop } from '../contexts/ShopContext';
 
 const drawerWidth = 240;
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
@@ -47,6 +50,7 @@ interface Shop {
 
 const ShopLayout: React.FC = () => {
     const { user, logout } = useAuth();
+    const { shop, loading, error } = useShop();
     const navigate = useNavigate();
     const location = useLocation();
     const theme = useTheme();
@@ -54,7 +58,6 @@ const ShopLayout: React.FC = () => {
     const [mobileOpen, setMobileOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const [shop, setShop] = useState<Shop | null>(null);
     const collapsedWidth = 72;
     const expandedWidth = 240;
 
@@ -74,27 +77,6 @@ const ShopLayout: React.FC = () => {
         logout();
         navigate('/login');
     };
-
-    useEffect(() => {
-        const fetchShop = async () => {
-            try {
-                const token = localStorage.getItem('token');
-                if (!token) return;
-
-                const response = await axios.get(`${API_URL}/shops/my-shops`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-
-                if (response.data.length > 0) {
-                    setShop(response.data[0]);
-                }
-            } catch (err) {
-                // Silently fail - non-critical data
-            }
-        };
-
-        fetchShop();
-    }, []);
 
     const menuItems = [
         { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },

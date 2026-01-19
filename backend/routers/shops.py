@@ -172,6 +172,19 @@ def get_shop_by_slug(slug: str, current_user: Optional[dict] = Depends(get_curre
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch shop: {str(e)}")
 
+@router.get("/by-slug/{slug}", response_model=Shop)
+def get_shop_by_slug_info(slug: str):
+    """Get shop info by slug (Public endpoint - returns basic shop info)"""
+    try:
+        shop = db_interface.get_shop_by_slug(slug)
+        if not shop:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        return shop
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch shop: {str(e)}")
+
 @router.put("/{shop_id}", response_model=Shop)
 def update_shop(
     shop_id: int,

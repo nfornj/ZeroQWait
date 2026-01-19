@@ -3,6 +3,9 @@ import { Routes, Route } from "react-router-dom";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 
+// Context
+import { ShopProvider } from "./contexts/ShopContext";
+
 // Components
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -190,9 +193,10 @@ const theme = createTheme({
 
 function App() {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Routes>
+    <ShopProvider>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Routes>
         {/* Public Routes with Navbar */}
         <Route element={<PublicLayout />}>
           <Route path="/" element={<HomePage />} />
@@ -237,7 +241,8 @@ function App() {
 
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
-    </ThemeProvider>
+      </ThemeProvider>
+    </ShopProvider>
   );
 }
 
