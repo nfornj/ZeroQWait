@@ -36,7 +36,7 @@ import PublicShopPage from "./pages/PublicShopPage";
 import PublicLayout from "./layouts/PublicLayout";
 import QueueCounterPage from "./pages/QueueCounterPage";
 
-import SignInSide from "./mui material-ui v7.3.7 docs-data_material_getting-started_templates_sign-in-side/SignInSide";
+import SignInSide from "./auth-sign-in/SignInSide";
 
 function App() {
   return (

@@ -1,7 +1,7 @@
 import CssBaseline from '@mui/material/CssBaseline';
 import Stack from '@mui/material/Stack';
-import AppTheme from '../mui material-ui v7.3.7 docs-data_material_getting-started_templates_shared-theme/AppTheme';
-import ColorModeSelect from '../mui material-ui v7.3.7 docs-data_material_getting-started_templates_shared-theme/ColorModeSelect';
+import AppTheme from '../auth-shared-theme/AppTheme';
+import ColorModeSelect from '../auth-shared-theme/ColorModeSelect';
 import SignInCard from './components/SignInCard';
 import Content from './components/Content';
 
