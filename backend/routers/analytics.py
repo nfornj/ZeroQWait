@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from supabase_client import supabase
+from db_interface import db_interface
 from auth_utils import get_current_user
 from analytics_processor import get_analytics_summary, get_peak_hours_analysis, AnalyticsProcessor
 from scheduler import trigger_maintenance_now
@@ -18,11 +18,10 @@ def get_shop_analytics(
 ):
     # Verify shop ownership
     try:
-        shop_response = supabase.table("shops").select("*").eq("id", shop_id).execute()
-        if not shop_response.data:
+        shop = db_interface.get_shop_by_id(shop_id)
+        if not shop:
             raise HTTPException(status_code=404, detail="Shop not found")
         
-        shop = shop_response.data[0]
         if shop["owner_id"] != current_user["id"]:
             raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
     except HTTPException:
@@ -35,8 +34,8 @@ def get_shop_analytics(
     start_date = end_date - timedelta(days=days)
 
     # Get all queues for the shop
-    queues_response = supabase.table("queues").select("id").eq("shop_id", shop_id).execute()
-    if not queues_response.data:
+    queues = db_interface.get_analytics_queues(shop_id)
+    if not queues:
         # No queues, return empty analytics
         return {
             "period_days": days,
@@ -46,16 +45,10 @@ def get_shop_analytics(
             "daily_stats": []
         }
     
-    queue_ids = [q["id"] for q in queues_response.data]
+    queue_ids = [q["id"] for q in queues]
     
     # Get completed items in date range
-    items_response = supabase.table("queue_items").select("*").in_(
-        "queue_id", queue_ids
-    ).eq("status", "completed").gte(
-        "completed_at", start_date.isoformat()
-    ).execute()
-    
-    completed_items = items_response.data if items_response.data else []
+    completed_items = db_interface.get_analytics_items(queue_ids, start_date)
 
     # 1. Total Customers Served
     total_customers = len(completed_items)
@@ -145,12 +138,12 @@ def get_daily_analytics(
     Much faster than calculating from raw queue_items
     """
     # Verify shop ownership
+    # Verify shop ownership
     try:
-        shop_response = supabase.table("shops").select("*").eq("id", shop_id).execute()
-        if not shop_response.data:
+        shop = db_interface.get_shop_by_id(shop_id)
+        if not shop:
             raise HTTPException(status_code=404, detail="Shop not found")
         
-        shop = shop_response.data[0]
         if shop["owner_id"] != current_user["id"]:
             raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
     except HTTPException:
@@ -189,12 +182,12 @@ def get_peak_hours(
     Shows which hours of the day are busiest
     """
     # Verify shop ownership
+    # Verify shop ownership
     try:
-        shop_response = supabase.table("shops").select("*").eq("id", shop_id).execute()
-        if not shop_response.data:
+        shop = db_interface.get_shop_by_id(shop_id)
+        if not shop:
             raise HTTPException(status_code=404, detail="Shop not found")
         
-        shop = shop_response.data[0]
         if shop["owner_id"] != current_user["id"]:
             raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
     except HTTPException:
@@ -239,12 +232,12 @@ def get_archive_stats(
     Shows how many items are in archive vs active table
     """
     # Verify shop ownership
+    # Verify shop ownership
     try:
-        shop_response = supabase.table("shops").select("*").eq("id", shop_id).execute()
-        if not shop_response.data:
+        shop = db_interface.get_shop_by_id(shop_id)
+        if not shop:
             raise HTTPException(status_code=404, detail="Shop not found")
         
-        shop = shop_response.data[0]
         if shop["owner_id"] != current_user["id"]:
             raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
     except HTTPException:

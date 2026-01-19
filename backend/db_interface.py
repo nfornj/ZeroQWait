@@ -520,3 +520,40 @@ db_interface = DatabaseInterface()
 def get_db_interface():
     """Dependency to get database interface instance"""
     return db_interface
+    # Analytics operations
+    def get_analytics_queues(self, shop_id: int) -> List[Dict]:
+        """Get all queues for a shop (active or not) for analytics"""
+        if self.use_supabase:
+            response = supabase.table("queues").select("id").eq("shop_id", shop_id).execute()
+            return response.data if response.data else []
+        else:
+            db = self.get_session()
+            try:
+                queues = db.query(Queue).filter(Queue.shop_id == shop_id).all()
+                return [{"id": q.id} for q in queues]
+            finally:
+                db.close()
+    
+    def get_analytics_items(self, queue_ids: List[int], start_date: datetime) -> List[Dict]:
+        """Get completed queue items for specified queues since start_date"""
+        if not queue_ids:
+            return []
+            
+        if self.use_supabase:
+            response = supabase.table("queue_items").select("*").in_(
+                "queue_id", queue_ids
+            ).eq("status", "completed").gte(
+                "completed_at", start_date.isoformat()
+            ).execute()
+            return response.data if response.data else []
+        else:
+            db = self.get_session()
+            try:
+                items = db.query(QueueItem).filter(
+                    QueueItem.queue_id.in_(queue_ids),
+                    QueueItem.status == "completed",
+                    QueueItem.completed_at >= start_date
+                ).all()
+                return [self._model_to_dict(item) for item in items]
+            finally:
+                db.close()
