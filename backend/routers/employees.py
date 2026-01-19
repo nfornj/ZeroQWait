@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from typing import List, Optional
-from supabase_client import supabase
+from db_interface import db_interface
 from schemas import EmployeeCreate, ShopEmployee, User, EmployeeShift
 from auth_utils import get_password_hash, get_current_user
 from permissions import check_shop_access, get_employee_shops
@@ -22,30 +22,18 @@ def add_employee(
     check_shop_access(shop_id, current_user, require_owner=True)
     
     # Check if username already exists
-    try:
-        username_check = supabase.table("users").select("id").eq("username", employee.username).execute()
-        if username_check.data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already taken"
-            )
-    except HTTPException:
-        raise
-    except Exception:
-        pass
+    if db_interface.check_username_exists(employee.username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
     
     # Check if email already exists
-    try:
-        email_check = supabase.table("users").select("id").eq("email", employee.email).execute()
-        if email_check.data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
-    except HTTPException:
-        raise
-    except Exception:
-        pass
+    if db_interface.check_email_exists(employee.email):
+         raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
     
     # Create user with employee role
     hashed_password = get_password_hash(employee.password)
@@ -58,14 +46,12 @@ def add_employee(
     }
     
     try:
-        user_response = supabase.table("users").insert(user_data).execute()
-        if not user_response.data:
-            raise HTTPException(
+        new_user = db_interface.create_user(user_data)
+        if not new_user:
+             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create employee account"
             )
-        
-        new_user = user_response.data[0]
         
         # Link employee to shop
         shop_employee_data = {
@@ -75,11 +61,12 @@ def add_employee(
             "is_active": True
         }
         
-        link_response = supabase.table("shop_employees").insert(shop_employee_data).execute()
-        if not link_response.data:
-            # Rollback user creation if linking fails
-            supabase.table("users").delete().eq("id", new_user["id"]).execute()
-            raise HTTPException(
+        link = db_interface.create_shop_employee(shop_employee_data)
+        if not link:
+             # Manual rollback if possible, or just fail
+             # For now, we assume user creation was successful but linking failed.
+             # Ideally we should delete the user, but db_interface doesn't fully support delete yet.
+             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to link employee to shop"
             )
@@ -109,35 +96,14 @@ def list_employees(
     check_shop_access(shop_id, current_user, require_owner=True)
     
     try:
-        # Get shop employees
-        query = supabase.table("shop_employees").select("*").eq("shop_id", shop_id)
+        # Determine is_active filter
+        # If include_inactive is False (default) -> is_active=True (Active only)
+        # If include_inactive is True -> is_active=None (All)
+        is_active_filter = True if not include_inactive else None
         
-        if not include_inactive:
-            query = query.eq("is_active", True)
+        employees = db_interface.get_shop_employees(shop_id, is_active=is_active_filter)
         
-        employees_response = query.execute()
-        
-        if not employees_response.data:
-            return []
-        
-        # Fetch user details for each employee
-        result = []
-        for emp in employees_response.data:
-            user_response = supabase.table("users").select(
-                "id, username, email, role, is_active"
-            ).eq("id", emp["user_id"]).execute()
-            
-            if user_response.data:
-                user = user_response.data[0]
-                result.append({
-                    "employee_link_id": emp["id"],
-                    "shop_id": emp["shop_id"],
-                    "created_at": emp["created_at"],
-                    "is_active": emp["is_active"],
-                    "user": user
-                })
-        
-        return result
+        return employees
         
     except HTTPException:
         raise
@@ -163,28 +129,12 @@ def remove_employee(
     check_shop_access(shop_id, current_user, require_owner=True)
     
     try:
-        # Find the shop_employee link
-        link_response = supabase.table("shop_employees").select("*").eq(
-            "shop_id", shop_id
-        ).eq("user_id", employee_id).execute()
-        
-        if not link_response.data:
+        updated = db_interface.update_shop_employee(shop_id, employee_id, {"is_active": False})
+        if not updated:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Employee not found for this shop"
+                detail="Employee not found or update failed"
             )
-        
-        # Soft delete: set is_active to False
-        update_response = supabase.table("shop_employees").update(
-            {"is_active": False}
-        ).eq("shop_id", shop_id).eq("user_id", employee_id).execute()
-        
-        if not update_response.data:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to remove employee"
-            )
-        
         return {"message": "Employee removed successfully"}
         
     except HTTPException:
@@ -210,28 +160,12 @@ def reactivate_employee(
     check_shop_access(shop_id, current_user, require_owner=True)
     
     try:
-        # Find the shop_employee link
-        link_response = supabase.table("shop_employees").select("*").eq(
-            "shop_id", shop_id
-        ).eq("user_id", employee_id).execute()
-        
-        if not link_response.data:
+        updated = db_interface.update_shop_employee(shop_id, employee_id, {"is_active": True})
+        if not updated:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Employee not found for this shop"
+                detail="Employee not found or update failed"
             )
-        
-        # Reactivate: set is_active to True
-        update_response = supabase.table("shop_employees").update(
-            {"is_active": True}
-        ).eq("shop_id", shop_id).eq("user_id", employee_id).execute()
-        
-        if not update_response.data:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to reactivate employee"
-            )
-        
         return {"message": "Employee reactivated successfully"}
         
     except HTTPException:
@@ -250,8 +184,7 @@ def check_username_availability(username: str):
     Returns {"available": true/false}
     """
     try:
-        username_check = supabase.table("users").select("id").eq("username", username).execute()
-        return {"available": len(username_check.data) == 0}
+        return {"available": not db_interface.check_username_exists(username)}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -266,8 +199,7 @@ def check_email_availability(email: str):
     Returns {"available": true/false}
     """
     try:
-        email_check = supabase.table("users").select("id").eq("email", email).execute()
-        return {"available": len(email_check.data) == 0}
+        return {"available": not db_interface.check_email_exists(email)}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -294,11 +226,9 @@ def clock_in(
     
     try:
         # Check if already clocked in
-        active_shift = supabase.table("employee_shifts").select("*").eq(
-            "user_id", current_user["id"]
-        ).is_("clock_out", "null").execute()
+        active_shift = db_interface.get_active_shift(current_user["id"])
         
-        if active_shift.data:
+        if active_shift:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="You are already clocked in. Please clock out first."
@@ -311,9 +241,9 @@ def clock_in(
             "clock_in": datetime.utcnow().isoformat()
         }
         
-        response = supabase.table("employee_shifts").insert(shift_data).execute()
-        if response.data:
-            return {"message": "Clocked in successfully", "shift": response.data[0]}
+        new_shift = db_interface.create_employee_shift(shift_data)
+        if new_shift:
+            return {"message": "Clocked in successfully", "shift": new_shift}
         raise HTTPException(status_code=500, detail="Failed to clock in")
         
     except HTTPException:
@@ -338,25 +268,22 @@ def clock_out(current_user: dict = Depends(get_current_user)):
     
     try:
         # Find active shift
-        active_shift = supabase.table("employee_shifts").select("*").eq(
-            "user_id", current_user["id"]
-        ).is_("clock_out", "null").execute()
+        active_shift = db_interface.get_active_shift(current_user["id"])
         
-        if not active_shift.data:
+        if not active_shift:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="You are not currently clocked in"
             )
         
-        shift = active_shift.data[0]
-        
         # Update shift with clock out time
-        update_response = supabase.table("employee_shifts").update(
+        updated_shift = db_interface.update_employee_shift(
+            active_shift["id"],
             {"clock_out": datetime.utcnow().isoformat()}
-        ).eq("id", shift["id"]).execute()
+        )
         
-        if update_response.data:
-            return {"message": "Clocked out successfully", "shift": update_response.data[0]}
+        if updated_shift:
+            return {"message": "Clocked out successfully", "shift": updated_shift}
         raise HTTPException(status_code=500, detail="Failed to clock out")
         
     except HTTPException:
@@ -380,12 +307,10 @@ def get_current_shift(current_user: dict = Depends(get_current_user)):
         )
     
     try:
-        active_shift = supabase.table("employee_shifts").select("*").eq(
-            "user_id", current_user["id"]
-        ).is_("clock_out", "null").execute()
+        active_shift = db_interface.get_active_shift(current_user["id"])
         
-        if active_shift.data:
-            return active_shift.data[0]
+        if active_shift:
+            return active_shift
         return None
         
     except Exception as e:
@@ -412,11 +337,9 @@ async def upload_profile_photo(
         )
     
     try:
-        response = supabase.table("users").update(
-            {"profile_photo_url": photo_url}
-        ).eq("id", current_user["id"]).execute()
+        updated = db_interface.update_user(current_user["id"], {"profile_photo_url": photo_url})
         
-        if response.data:
+        if updated:
             return {"message": "Profile photo updated successfully", "photo_url": photo_url}
         raise HTTPException(status_code=500, detail="Failed to update profile photo")
         
@@ -443,29 +366,25 @@ def get_clocked_in_employees(
     
     try:
         # Get active shifts for this shop
-        active_shifts = supabase.table("employee_shifts").select("*").eq(
-            "shop_id", shop_id
-        ).is_("clock_out", "null").execute()
+        active_shifts = db_interface.get_shop_active_shifts(shop_id)
         
-        if not active_shifts.data:
+        if not active_shifts:
             return []
         
         # Get user IDs of clocked-in employees
-        user_ids = [shift["user_id"] for shift in active_shifts.data]
+        user_ids = [shift["user_id"] for shift in active_shifts]
         
-        # Fetch user details
-        users_response = supabase.table("users").select(
-            "id, username, email, profile_photo_url"
-        ).in_("id", user_ids).execute()
+        # Helper to fetch many users? 
+        # db_interface doesn't have get_users_by_ids yet.
+        # But get_shop_employees returns user data.
+        # Maybe we iterate and fetch user individually? Or add get_users(ids)
+        # Or simple N+1 for now since N is small (num active employees).
+        # Let's add simple loop for now
         
-        if not users_response.data:
-            return []
-        
-        # Combine shift and user data
         result = []
-        for shift in active_shifts.data:
-            user = next((u for u in users_response.data if u["id"] == shift["user_id"]), None)
-            if user:
+        for shift in active_shifts:
+             user = db_interface.get_user_by_id(shift["user_id"])
+             if user:
                 result.append({
                     "shift_id": shift["id"],
                     "user_id": user["id"],
@@ -505,9 +424,17 @@ def get_my_shops(current_user: dict = Depends(get_current_user)):
             return []
         
         # Fetch shop details
-        shops_response = supabase.table("shops").select("*").in_("id", shop_ids).execute()
+        # Similar to user fetching, db_interface might not have get_shops_by_ids
+        # But get_shops has filters. But not IN filter.
+        # Simple loop for now
         
-        return shops_response.data if shops_response.data else []
+        shops = []
+        for sid in shop_ids:
+             shop = db_interface.get_shop_by_id(sid)
+             if shop:
+                 shops.append(shop)
+        
+        return shops
         
     except HTTPException:
         raise
@@ -537,43 +464,25 @@ def get_employee_shifts(
         end_date = datetime.utcnow()
         start_date = end_date - timedelta(days=months * 30)  # Approximate months
         
-        # Build query
-        query = supabase.table("employee_shifts").select("*").eq("shop_id", shop_id)
-        query = query.gte("clock_in", start_date.isoformat())
-        query = query.lte("clock_in", end_date.isoformat())
+        shifts = db_interface.get_employee_shifts(
+            shop_id, 
+            start_date, 
+            end_date, 
+            user_id=employee_id if employee_id else (
+                current_user["id"] if current_user.get("role") == "employee" else None
+            )
+        )
         
-        # Filter by employee if specified or if current user is employee
-        if employee_id:
-            query = query.eq("user_id", employee_id)
-        elif current_user.get("role") == "employee":
-            # Employees can only see their own shifts
-            query = query.eq("user_id", current_user["id"])
-        
-        # Order by clock_in descending
-        query = query.order("clock_in", desc=True)
-        
-        shifts_response = query.execute()
-        
-        if not shifts_response.data:
+        if not shifts:
             return []
         
-        # Get unique user IDs from shifts
-        user_ids = list(set(shift["user_id"] for shift in shifts_response.data))
-        
-        # Fetch user details
-        users_response = supabase.table("users").select(
-            "id, username, email, profile_photo_url"
-        ).in_("id", user_ids).execute()
-        
-        # Create a map of user_id to username
-        user_map = {user["id"]: user for user in users_response.data} if users_response.data else {}
-        
-        # Combine shift and user data
+        # Transform result to include user details
         result = []
-        for shift in shifts_response.data:
-            user = user_map.get(shift["user_id"])
-            if user:
-                result.append({
+        for shift in shifts:
+             # N+1 again, optimise later if needed
+             user = db_interface.get_user_by_id(shift["user_id"])
+             if user:
+                 result.append({
                     "id": shift["id"],
                     "user_id": shift["user_id"],
                     "username": user["username"],

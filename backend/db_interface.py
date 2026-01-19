@@ -94,7 +94,48 @@ class DatabaseInterface:
                 return self._model_to_dict(user)
             finally:
                 db.close()
-    
+    def update_user(self, user_id: int, user_data: Dict) -> Dict:
+        if self.use_supabase:
+            response = supabase.table("users").update(user_data).eq("id", user_id).execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                user = db.query(User).filter(User.id == user_id).first()
+                if user:
+                    for key, value in user_data.items():
+                        setattr(user, key, value)
+                    db.commit()
+                    db.refresh(user)
+                    return self._model_to_dict(user)
+                return None
+            finally:
+                db.close()
+
+    def check_username_exists(self, username: str) -> bool:
+        if self.use_supabase:
+            response = supabase.table("users").select("id").eq("username", username).execute()
+            return len(response.data) > 0
+        else:
+            db = self.get_session()
+            try:
+                user = db.query(User).filter(User.username == username).first()
+                return user is not None
+            finally:
+                db.close()
+
+    def check_email_exists(self, email: str) -> bool:
+        if self.use_supabase:
+            response = supabase.table("users").select("id").eq("email", email).execute()
+            return len(response.data) > 0
+        else:
+            db = self.get_session()
+            try:
+                user = db.query(User).filter(User.email == email).first()
+                return user is not None
+            finally:
+                db.close()
+
     # Shop operations
     def get_shop_by_id(self, shop_id: int) -> Optional[Dict]:
         if self.use_supabase:
@@ -276,17 +317,20 @@ class DatabaseInterface:
                 db.close()
     
     # Employee operations
-    def get_shop_employees(self, shop_id: int, is_active: bool = True) -> List[Dict]:
+    def get_shop_employees(self, shop_id: int, is_active: Optional[bool] = True) -> List[Dict]:
         if self.use_supabase:
-            response = supabase.table("shop_employees").select("*, user:users(*)").eq("shop_id", shop_id).eq("is_active", is_active).execute()
+            query = supabase.table("shop_employees").select("*, user:users(*)").eq("shop_id", shop_id)
+            if is_active is not None:
+                query = query.eq("is_active", is_active)
+            response = query.execute()
             return response.data if response.data else []
         else:
             db = self.get_session()
             try:
-                employees = db.query(ShopEmployee).filter(
-                    ShopEmployee.shop_id == shop_id,
-                    ShopEmployee.is_active == is_active
-                ).all()
+                query = db.query(ShopEmployee).filter(ShopEmployee.shop_id == shop_id)
+                if is_active is not None:
+                    query = query.filter(ShopEmployee.is_active == is_active)
+                employees = query.all()
                 result = []
                 for emp in employees:
                     emp_dict = self._model_to_dict(emp)
@@ -308,6 +352,147 @@ class DatabaseInterface:
                 db.commit()
                 db.refresh(employee)
                 return self._model_to_dict(employee)
+            finally:
+                db.close()
+
+    def get_shop_employee(self, shop_id: int, user_id: int) -> Optional[Dict]:
+        if self.use_supabase:
+            response = supabase.table("shop_employees").select("*").eq("shop_id", shop_id).eq("user_id", user_id).execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                employee = db.query(ShopEmployee).filter(
+                    ShopEmployee.shop_id == shop_id,
+                    ShopEmployee.user_id == user_id
+                ).first()
+                return self._model_to_dict(employee) if employee else None
+            finally:
+                db.close()
+
+    def update_shop_employee(self, shop_id: int, user_id: int, updates: Dict) -> Dict:
+        if self.use_supabase:
+            response = supabase.table("shop_employees").update(updates).eq("shop_id", shop_id).eq("user_id", user_id).execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                employee = db.query(ShopEmployee).filter(
+                    ShopEmployee.shop_id == shop_id,
+                    ShopEmployee.user_id == user_id
+                ).first()
+                if employee:
+                    for key, value in updates.items():
+                        setattr(employee, key, value)
+                    db.commit()
+                    db.refresh(employee)
+                    return self._model_to_dict(employee)
+                return None
+            finally:
+                db.close()
+
+    def get_employee_shops(self, user_id: int) -> List[int]:
+        if self.use_supabase:
+            response = supabase.table("shop_employees").select("shop_id").eq("user_id", user_id).eq("is_active", True).execute()
+            return [item["shop_id"] for item in response.data] if response.data else []
+        else:
+            db = self.get_session()
+            try:
+                employees = db.query(ShopEmployee).filter(
+                    ShopEmployee.user_id == user_id,
+                    ShopEmployee.is_active == True
+                ).all()
+                return [emp.shop_id for emp in employees]
+            finally:
+                db.close()
+
+    # Shift operations
+    def create_employee_shift(self, shift_data: Dict) -> Dict:
+        if self.use_supabase:
+            response = supabase.table("employee_shifts").insert(shift_data).execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                shift = EmployeeShift(**shift_data)
+                db.add(shift)
+                db.commit()
+                db.refresh(shift)
+                return self._model_to_dict(shift)
+            finally:
+                db.close()
+
+    def update_employee_shift(self, shift_id: int, updates: Dict) -> Dict:
+        if self.use_supabase:
+            response = supabase.table("employee_shifts").update(updates).eq("id", shift_id).execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                shift = db.query(EmployeeShift).filter(EmployeeShift.id == shift_id).first()
+                if shift:
+                    for key, value in updates.items():
+                        setattr(shift, key, value)
+                    db.commit()
+                    db.refresh(shift)
+                    return self._model_to_dict(shift)
+                return None
+            finally:
+                db.close()
+
+    def get_active_shift(self, user_id: int) -> Optional[Dict]:
+        if self.use_supabase:
+            response = supabase.table("employee_shifts").select("*").eq("user_id", user_id).is_("clock_out", "null").execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                shift = db.query(EmployeeShift).filter(
+                    EmployeeShift.user_id == user_id,
+                    EmployeeShift.clock_out == None
+                ).first()
+                return self._model_to_dict(shift) if shift else None
+            finally:
+                db.close()
+
+    def get_shop_active_shifts(self, shop_id: int) -> List[Dict]:
+        if self.use_supabase:
+            response = supabase.table("employee_shifts").select("*").eq("shop_id", shop_id).is_("clock_out", "null").execute()
+            return response.data if response.data else []
+        else:
+            db = self.get_session()
+            try:
+                shifts = db.query(EmployeeShift).filter(
+                    EmployeeShift.shop_id == shop_id,
+                    EmployeeShift.clock_out == None
+                ).all()
+                return [self._model_to_dict(shift) for shift in shifts]
+            finally:
+                db.close()
+
+    def get_employee_shifts(self, shop_id: int, start_date: datetime, end_date: datetime, user_id: Optional[int] = None) -> List[Dict]:
+        if self.use_supabase:
+            query = supabase.table("employee_shifts").select("*").eq("shop_id", shop_id)
+            query = query.gte("clock_in", start_date.isoformat())
+            query = query.lte("clock_in", end_date.isoformat())
+            if user_id:
+                query = query.eq("user_id", user_id)
+            query = query.order("clock_in", desc=True)
+            response = query.execute()
+            return response.data if response.data else []
+        else:
+            db = self.get_session()
+            try:
+                query = db.query(EmployeeShift).filter(
+                    EmployeeShift.shop_id == shop_id,
+                    EmployeeShift.clock_in >= start_date,
+                    EmployeeShift.clock_in <= end_date
+                )
+                if user_id:
+                    query = query.filter(EmployeeShift.user_id == user_id)
+                
+                shifts = query.order_by(EmployeeShift.clock_in.desc()).all()
+                return [self._model_to_dict(shift) for shift in shifts]
             finally:
                 db.close()
     
