@@ -46,10 +46,10 @@ spec:
             
             if [ -d "build" ] && [ -f "build/index.html" ]; then
               echo "✅ Build verification successful: index.html found."
-              echo "Installing 'serve' globally to ensure consistent behavior..."
-              npm install -g serve
-              echo "Starting server on port 3000 as SPA..."
-              serve -s build -l 3000
+              echo "Installing express for custom SPA server..."
+              npm install express
+              echo "Starting custom SPA server on port 3000..."
+              node spa-server.js
             else
               echo "❌ Build verification FAILED: No index.html found in /app/build"
               echo "Listing /app directory:"
