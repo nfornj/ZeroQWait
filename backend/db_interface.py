@@ -512,14 +512,6 @@ class DatabaseInterface:
         return result
 
 
-# Singleton instance
-db_interface = DatabaseInterface()
-
-
-# Dependency for FastAPI
-def get_db_interface():
-    """Dependency to get database interface instance"""
-    return db_interface
     # Analytics operations
     def get_analytics_queues(self, shop_id: int) -> List[Dict]:
         """Get all queues for a shop (active or not) for analytics"""
@@ -557,3 +549,13 @@ def get_db_interface():
                 return [self._model_to_dict(item) for item in items]
             finally:
                 db.close()
+
+
+# Singleton instance
+db_interface = DatabaseInterface()
+
+
+# Dependency for FastAPI
+def get_db_interface():
+    """Dependency to get database interface instance"""
+    return db_interface
