@@ -123,7 +123,7 @@ echo -e "${BLUE}Step 3️⃣  - Deploying to Kubernetes...${NC}"
 # Copy script to /tmp and run as sudo to avoid kubeconfig permission issues
 ssh "$DESTINATION_SERVER" bash <<'DEPLOY_SCRIPT'
 set -e
-DEST_PATH="/home/neekrishrichu/zeroqwait"
+DEST_PATH="/home/neekrishrichu/apps/zeroqwait"
 cd "$DEST_PATH/deployment"
 sudo bash scripts/deploy-k8s.sh
 DEPLOY_SCRIPT
