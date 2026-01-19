@@ -24,6 +24,7 @@ spec:
           value: "/api"
         command: ["/bin/sh", "-c"]
         args:
+          - |
             echo "Starting deployment process..."
             
             # Force clean install to fix permission/missing dependency issues
