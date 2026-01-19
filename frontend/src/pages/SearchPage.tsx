@@ -259,7 +259,7 @@ const SearchPage: React.FC = () => {
             ) : (
               <Box display="flex" flexWrap="wrap" gap={3}>
                 {filteredShops.map((shop) => (
-                  <Box xs={12} sm={6} lg={4} key={shop.id}>
+                  <Box sx={{ flex: 1, minWidth: '250px' }} key={shop.id}>
                     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                       <CardContent sx={{ flexGrow: 1 }}>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>

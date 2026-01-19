@@ -271,7 +271,7 @@ const EmployeeQueuePage: React.FC = () => {
             {!currentShift ? (
                 <Box display="flex" flexWrap="wrap" gap={3}>
                     {shops.map((shop) => (
-                        <Box xs={12} md={6} key={shop.id}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }} key={shop.id}>
                             <Card>
                                 <CardContent>
                                     <Typography variant="h6" sx={{ mb: 2 }}>
@@ -312,7 +312,7 @@ const EmployeeQueuePage: React.FC = () => {
                     </Paper>
 
                     <Box display="flex" flexWrap="wrap" gap={3}>
-                        <Box xs={12} md={6}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <Card>
                                 <CardContent>
                                     <Typography variant="h6" sx={{ mb: 2 }}>
@@ -346,7 +346,7 @@ const EmployeeQueuePage: React.FC = () => {
                             </Card>
                         </Box>
 
-                        <Box xs={12} md={6}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <Card>
                                 <CardContent>
                                     <Typography variant="h6" sx={{ mb: 2 }}>

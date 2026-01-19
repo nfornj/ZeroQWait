@@ -99,7 +99,7 @@ const PublicShopPage: React.FC = () => {
 
                 <Box display="flex" flexWrap="wrap" gap={3}>
                     {queues.map((queue) => (
-                        <Box xs={12} md={6} key={queue.id}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }} key={queue.id}>
                             <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                                 <CardContent sx={{ flexGrow: 1 }}>
                                     <Typography variant="h5" gutterBottom>

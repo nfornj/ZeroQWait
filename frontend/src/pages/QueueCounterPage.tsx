@@ -339,7 +339,7 @@ const QueueCounterPage: React.FC = () => {
 
       <Box display="flex" flexWrap="wrap" gap={3}>
         {/* Camera View */}
-        <Box xs={12} md={8}>
+        <Box sx={{ flex: 1, minWidth: '250px' }}>
           <Paper
             elevation={3}
             sx={{
@@ -419,7 +419,7 @@ const QueueCounterPage: React.FC = () => {
         </Box>
 
         {/* Stats Panel */}
-        <Box xs={12} md={4}>
+        <Box sx={{ flex: 1, minWidth: '250px' }}>
           <Card
             elevation={3}
             sx={{
@@ -537,70 +537,70 @@ const QueueCounterPage: React.FC = () => {
           👋 Gestures You Can Try:
         </Typography>
         <Box display="flex" flexWrap="wrap" gap={3} sx={{ mt: 1 }}>
-          <Box xs={6} sm={4} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>1️⃣-5️⃣</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Number Counting</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Show 1-5 fingers</Typography>
             </Box>
           </Box>
-          <Box xs={6} sm={4} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>👍</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Thumbs Up</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Point thumb up</Typography>
             </Box>
           </Box>
-          <Box xs={6} sm={4} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>👎</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Thumbs Down</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Point thumb down</Typography>
             </Box>
           </Box>
-          <Box xs={6} sm={4} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>✌️</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Peace Sign</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Two fingers up</Typography>
             </Box>
           </Box>
-          <Box xs={6} sm={4} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>👌</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>OK Sign</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Circle with thumb & index</Typography>
             </Box>
           </Box>
-          <Box xs={6} sm={4} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>🤘</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Rock On</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Index & pinky up</Typography>
             </Box>
           </Box>
-          <Box xs={6} sm={4} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>🤟</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>I Love You</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Thumb, index & pinky</Typography>
             </Box>
           </Box>
-          <Box xs={6} sm={4} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>✋</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Open Hand</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>All fingers extended</Typography>
             </Box>
           </Box>
-          <Box xs={6} sm={4} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>✊</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Fist</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>Closed hand</Typography>
             </Box>
           </Box>
-          <Box xs={6} sm={4} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ mb: 1 }}>☝️</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>Pointing</Typography>
@@ -624,7 +624,7 @@ const QueueCounterPage: React.FC = () => {
           🎯 Try These Fun Experiments:
         </Typography>
         <Box display="flex" flexWrap="wrap" gap={2} sx={{ mt: 1 }}>
-          <Box xs={12} sm={6} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>
                 1. Count with fingers
@@ -634,7 +634,7 @@ const QueueCounterPage: React.FC = () => {
               </Typography>
             </Box>
           </Box>
-          <Box xs={12} sm={6} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>
                 2. Give feedback
@@ -644,7 +644,7 @@ const QueueCounterPage: React.FC = () => {
               </Typography>
             </Box>
           </Box>
-          <Box xs={12} sm={6} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>
                 3. Try all gestures
@@ -654,7 +654,7 @@ const QueueCounterPage: React.FC = () => {
               </Typography>
             </Box>
           </Box>
-          <Box xs={12} sm={6} md={3}>
+          <Box sx={{ flex: 1, minWidth: '250px' }}>
             <Box>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>
                 4. Both hands

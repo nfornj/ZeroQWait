@@ -309,7 +309,7 @@ const ShopDashboardPage: React.FC = () => {
 
                 {/* KPI Cards Row */}
                 <Box display="flex" flexWrap="wrap" gap={3} sx={{ mb: 4 }}>
-                    <Box xs={12} sm={6} md={3}>
+                    <Box sx={{ flex: 1, minWidth: '250px' }}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Typography color="textSecondary" gutterBottom variant="overline">
@@ -325,7 +325,7 @@ const ShopDashboardPage: React.FC = () => {
                             </CardContent>
                         </Card>
                     </Box>
-                    <Box xs={12} sm={6} md={3}>
+                    <Box sx={{ flex: 1, minWidth: '250px' }}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Typography color="textSecondary" gutterBottom variant="overline">
@@ -341,7 +341,7 @@ const ShopDashboardPage: React.FC = () => {
                             </CardContent>
                         </Card>
                     </Box>
-                    <Box xs={12} sm={6} md={3}>
+                    <Box sx={{ flex: 1, minWidth: '250px' }}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Typography color="textSecondary" gutterBottom variant="overline">
@@ -358,7 +358,7 @@ const ShopDashboardPage: React.FC = () => {
                         </Card>
                     </Box>
                     {/* Placeholder for future stat or quick action */}
-                    <Box xs={12} sm={6} md={3}>
+                    <Box sx={{ flex: 1, minWidth: '250px' }}>
                         <Card sx={{ height: '100%', bgcolor: 'primary.main', color: 'primary.contrastText' }}>
                             <CardContent sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }}>
                                 <Button
@@ -377,7 +377,7 @@ const ShopDashboardPage: React.FC = () => {
 
                 <Box display="flex" flexWrap="wrap" gap={3}>
                     {/* Currently Being Served */}
-                    <Box xs={12} md={6}>
+                    <Box sx={{ flex: 1, minWidth: '250px' }}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -450,7 +450,7 @@ const ShopDashboardPage: React.FC = () => {
                     </Box>
 
                     {/* Queue */}
-                    <Box xs={12} md={6}>
+                    <Box sx={{ flex: 1, minWidth: '250px' }}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>

@@ -111,7 +111,7 @@ const HomePage: React.FC = () => {
 
             {/* Stats */}
             <Box display="flex" flexWrap="wrap" gap={4} sx={{ mt: 4 }}>
-              <Box xs={12} sm={4}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
                     500+
@@ -121,7 +121,7 @@ const HomePage: React.FC = () => {
                   </Typography>
                 </Box>
               </Box>
-              <Box xs={12} sm={4}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'secondary.main' }}>
                     10k+
@@ -131,7 +131,7 @@ const HomePage: React.FC = () => {
                   </Typography>
                 </Box>
               </Box>
-              <Box xs={12} sm={4}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
                     4.8★
@@ -175,7 +175,7 @@ const HomePage: React.FC = () => {
           </Box>
 
           <Box display="flex" flexWrap="wrap" gap={4}>
-            <Box xs={12} md={4}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <Card
                 elevation={0}
                 sx={{
@@ -216,7 +216,7 @@ const HomePage: React.FC = () => {
               </Card>
             </Box>
 
-            <Box xs={12} md={4}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <Card
                 elevation={0}
                 sx={{
@@ -257,7 +257,7 @@ const HomePage: React.FC = () => {
               </Card>
             </Box>
 
-            <Box xs={12} md={4}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <Card
                 elevation={0}
                 sx={{
@@ -307,7 +307,7 @@ const HomePage: React.FC = () => {
       <Box sx={{ py: { xs: 8, md: 12 }, bgcolor: 'background.paper' }}>
         <Container maxWidth="lg">
           <Box display="flex" flexWrap="wrap" gap={6} alignItems="center">
-            <Box xs={12} md={6}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <Box
                 sx={{
                   background: 'linear-gradient(135deg, #FF5A5F 0%, #00A699 100%)',
@@ -343,7 +343,7 @@ const HomePage: React.FC = () => {
               </Box>
             </Box>
 
-            <Box xs={12} md={6}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <Box sx={{ textAlign: 'center' }}>
                 <Box
                   sx={{

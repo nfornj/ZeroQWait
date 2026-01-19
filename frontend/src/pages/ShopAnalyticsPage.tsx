@@ -113,7 +113,7 @@ const ShopAnalyticsPage: React.FC = () => {
 
             {/* Summary Cards */}
             <Box display="flex" flexWrap="wrap" gap={3} mb={4}>
-                <Box xs={12} md={4}>
+                <Box sx={{ flex: 1, minWidth: '250px' }}>
                     <Card elevation={2}>
                         <CardContent>
                             <Box display="flex" alignItems="center" mb={1}>
@@ -130,7 +130,7 @@ const ShopAnalyticsPage: React.FC = () => {
                     </Card>
                 </Box>
 
-                <Box xs={12} md={4}>
+                <Box sx={{ flex: 1, minWidth: '250px' }}>
                     <Card elevation={2}>
                         <CardContent>
                             <Box display="flex" alignItems="center" mb={1}>
@@ -147,7 +147,7 @@ const ShopAnalyticsPage: React.FC = () => {
                     </Card>
                 </Box>
 
-                <Box xs={12} md={4}>
+                <Box sx={{ flex: 1, minWidth: '250px' }}>
                     <Card elevation={2}>
                         <CardContent>
                             <Box display="flex" alignItems="center" mb={1}>

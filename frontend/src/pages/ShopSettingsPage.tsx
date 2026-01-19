@@ -155,7 +155,7 @@ const ShopSettingsPage: React.FC = () => {
                 <Box component="form" onSubmit={handleSubmit}>
                     <Box display="flex" flexWrap="wrap" gap={4}>
                         {/* PERSONALIZATION SECTION */}
-                        <Box xs={12}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
                                 Dashboard Theme
                             </Typography>
@@ -165,7 +165,7 @@ const ShopSettingsPage: React.FC = () => {
 
                             <Box display="flex" flexWrap="wrap" gap={2}>
                                 {THEMES.map((theme) => (
-                                    <Box xs={6} sm={4} md={2} key={theme.id}>
+                                    <Box sx={{ flex: 1, minWidth: '250px' }} key={theme.id}>
                                         <Card
                                             elevation={themePreset === theme.id ? 4 : 1}
                                             sx={{
@@ -213,9 +213,9 @@ const ShopSettingsPage: React.FC = () => {
                         </Box>
 
 
-                        <Box xs={12}><Typography variant="h6" sx={{ fontWeight: 600 }}>Shop Identity</Typography></Box>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}><Typography variant="h6" sx={{ fontWeight: 600 }}>Shop Identity</Typography></Box>
 
-                        <Box xs={12} md={6}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <TextField
                                 fullWidth
                                 label="Shop Name"
@@ -237,7 +237,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Box>
 
-                        <Box xs={12} md={6}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <Paper
                                 variant="outlined"
                                 sx={{
@@ -301,7 +301,7 @@ const ShopSettingsPage: React.FC = () => {
                             </Paper>
                         </Box>
 
-                        <Box xs={12}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <Typography variant="h6" gutterBottom sx={{ mt: 2, fontWeight: 600 }}>
                                 Customer View Branding
                             </Typography>
@@ -310,7 +310,7 @@ const ShopSettingsPage: React.FC = () => {
                             </Typography>
                         </Box>
 
-                        <Box xs={12} sm={6}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <TextField
                                 fullWidth
                                 label="Primary Color"
@@ -322,7 +322,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Box>
 
-                        <Box xs={12} sm={6}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <TextField
                                 fullWidth
                                 label="Secondary Color"
@@ -334,7 +334,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Box>
 
-                        <Box xs={12} sm={6}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <TextField
                                 fullWidth
                                 label="Accent Color"
@@ -346,7 +346,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Box>
 
-                        <Box xs={12} sm={6}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <TextField
                                 fullWidth
                                 label="Queue Card Color"
@@ -358,13 +358,13 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Box>
 
-                        <Box xs={12}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <Typography variant="h6" gutterBottom sx={{ mt: 2, fontWeight: 600 }}>
                                 Contact Information
                             </Typography>
                         </Box>
 
-                        <Box xs={12}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <TextField
                                 fullWidth
                                 multiline
@@ -376,7 +376,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Box>
 
-                        <Box xs={12} sm={6}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <TextField
                                 fullWidth
                                 label="Phone"
@@ -386,7 +386,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Box>
 
-                        <Box xs={12} sm={6}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <TextField
                                 fullWidth
                                 label="Website"
@@ -396,7 +396,7 @@ const ShopSettingsPage: React.FC = () => {
                             />
                         </Box>
 
-                        <Box xs={12} sx={{ mt: 2 }}>
+                        <Box sx={{ mt: 2 }}>
                             <Button
                                 type="submit"
                                 variant="contained"

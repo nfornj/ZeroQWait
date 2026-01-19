@@ -114,7 +114,7 @@ const RegisterPage: React.FC = () => {
           sx={{ mt: 3, width: "100%" }}
         >
           <Box display="flex" flexWrap="wrap" gap={2}>
-            <Box xs={12}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <TextField
                 required
                 fullWidth
@@ -129,7 +129,7 @@ const RegisterPage: React.FC = () => {
                 disabled={loading}
               />
             </Box>
-            <Box xs={12}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <TextField
                 required
                 fullWidth
@@ -144,7 +144,7 @@ const RegisterPage: React.FC = () => {
                 disabled={loading}
               />
             </Box>
-            <Box xs={12}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <TextField
                 select
                 required
@@ -161,7 +161,7 @@ const RegisterPage: React.FC = () => {
                 <MenuItem value="shop_owner">Shop Owner</MenuItem>
               </TextField>
             </Box>
-            <Box xs={12}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <TextField
                 required
                 fullWidth
@@ -177,7 +177,7 @@ const RegisterPage: React.FC = () => {
                 disabled={loading}
               />
             </Box>
-            <Box xs={12}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <TextField
                 required
                 fullWidth

@@ -183,7 +183,7 @@ const InShopDisplayPage: React.FC = () => {
             {/* Main Content */}
             <Box display="flex" flexWrap="wrap" gap={4}>
                 {/* Now Serving Section */}
-                <Box xs={12} md={5}>
+                <Box sx={{ flex: 1, minWidth: '250px' }}>
                     <Card
                         elevation={3}
                         sx={{
@@ -247,14 +247,14 @@ const InShopDisplayPage: React.FC = () => {
                 </Box>
 
                 {/* Queue Information Section */}
-                <Box xs={12} md={7}>
+                <Box sx={{ flex: 1, minWidth: '250px' }}>
                     <Box display="flex" flexWrap="wrap" gap={3}>
                         {/* Queue Stats */}
-                        <Box xs={12}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <Card elevation={3}>
                                 <CardContent sx={{ p: 4 }}>
                                     <Box display="flex" flexWrap="wrap" gap={3}>
-                                        <Box xs={6}>
+                                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                                             <Box display="flex" alignItems="center">
                                                 <PeopleIcon sx={{ fontSize: 60, mr: 2, color: primaryColor }} />
                                                 <Box>
@@ -267,7 +267,7 @@ const InShopDisplayPage: React.FC = () => {
                                                 </Box>
                                             </Box>
                                         </Box>
-                                        <Box xs={6}>
+                                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                                             <Box display="flex" alignItems="center">
                                                 <AccessTimeIcon sx={{ fontSize: 60, mr: 2, color: primaryColor }} />
                                                 <Box>
@@ -286,7 +286,7 @@ const InShopDisplayPage: React.FC = () => {
                         </Box>
 
                         {/* Waiting List */}
-                        <Box xs={12}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
                             <Card elevation={3} sx={{ minHeight: 400 }}>
                                 <CardContent sx={{ p: 4 }}>
                                     <Typography variant="h4" fontWeight="bold" gutterBottom>
@@ -306,7 +306,7 @@ const InShopDisplayPage: React.FC = () => {
                                     ) : (
                                         <Box display="flex" flexWrap="wrap" gap={2}>
                                             {waitingCustomers.slice(0, 8).map((customer, index) => (
-                                                <Box xs={12} sm={6} key={customer.id}>
+                                                <Box sx={{ flex: 1, minWidth: '250px' }} key={customer.id}>
                                                     <Paper
                                                         elevation={1}
                                                         sx={{
@@ -348,7 +348,7 @@ const InShopDisplayPage: React.FC = () => {
                                                 </Box>
                                             ))}
                                             {waitingCustomers.length > 8 && (
-                                                <Box xs={12}>
+                                                <Box sx={{ flex: 1, minWidth: '250px' }}>
                                                     <Typography variant="h6" color="text.secondary" textAlign="center">
                                                         ... and {waitingCustomers.length - 8} more waiting
                                                     </Typography>

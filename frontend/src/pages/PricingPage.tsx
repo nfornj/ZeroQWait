@@ -68,7 +68,7 @@ const PricingPage: React.FC = () => {
 
             <Box display="flex" flexWrap="wrap" gap={4} alignItems="stretch">
                 {tiers.map((tier) => (
-                    <Box xs={12} md={4} key={tier.name}>
+                    <Box sx={{ flex: 1, minWidth: '250px' }} key={tier.name}>
                         <Card
                             raised={tier.highlighted}
                             sx={{
@@ -165,7 +165,7 @@ const PricingPage: React.FC = () => {
                         "No setup fees",
                         "Cancel anytime",
                     ].map((feature) => (
-                        <Box xs={12} sm={6} md={4} key={feature}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }} key={feature}>
                             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                                 <CheckCircleIcon color="primary" sx={{ mr: 1 }} fontSize="small" />
                                 <Typography variant="body1">{feature}</Typography>

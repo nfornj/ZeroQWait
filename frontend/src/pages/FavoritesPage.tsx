@@ -57,7 +57,7 @@ const FavoritesPage: React.FC = () => {
         ) : favorites.length > 0 ? (
           <Box display="flex" flexWrap="wrap" gap={3}>
             {favorites.map((haircut) => (
-              <Box xs={12} sm={6} md={4} key={haircut.id}>
+              <Box sx={{ flex: 1, minWidth: '250px' }} key={haircut.id}>
                 <HaircutCard
                   haircut={haircut}
                   onFavoriteRemoved={handleFavoriteRemoved}

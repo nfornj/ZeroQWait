@@ -99,7 +99,7 @@ const ShopRegistrationPage: React.FC = () => {
 
           <Box component="form" onSubmit={handleSubmit}>
             <Box display="flex" flexWrap="wrap" gap={3}>
-              <Box xs={12}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -110,7 +110,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Box>
 
-              <Box xs={12}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   select
@@ -128,7 +128,7 @@ const ShopRegistrationPage: React.FC = () => {
                 </TextField>
               </Box>
 
-              <Box xs={12}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   multiline
@@ -140,7 +140,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Box>
 
-              <Box xs={12}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -151,7 +151,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Box>
 
-              <Box xs={12} sm={6}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -162,7 +162,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Box>
 
-              <Box xs={12} sm={4}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -174,7 +174,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Box>
 
-              <Box xs={12} sm={4}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -185,7 +185,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Box>
 
-              <Box xs={12} sm={4}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   select
@@ -214,7 +214,7 @@ const ShopRegistrationPage: React.FC = () => {
                 </TextField>
               </Box>
 
-              <Box xs={12} sm={6}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -225,7 +225,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Box>
 
-              <Box xs={12} sm={6}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   label="Email"
@@ -236,7 +236,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Box>
 
-              <Box xs={12} sm={6}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   label="Website"
@@ -246,7 +246,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Box>
 
-              <Box xs={12} sm={6}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -259,7 +259,7 @@ const ShopRegistrationPage: React.FC = () => {
                 />
               </Box>
 
-              <Box xs={12}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <Button
                   type="submit"
                   variant="contained"
