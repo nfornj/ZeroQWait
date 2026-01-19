@@ -7,7 +7,7 @@ set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-K8S_MANIFESTS="$PROJECT_ROOT/deployment/kubernetes"
+K8S_MANIFESTS="$PROJECT_ROOT/k8s-manifests"
 
 # Set KUBECONFIG for k3s
 export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
