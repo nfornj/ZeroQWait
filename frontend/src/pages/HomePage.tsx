@@ -185,7 +185,6 @@ const HomePage: React.FC = () => {
                   p: 4,
                   border: '1px solid',
                   borderColor: 'divider',
-                  borderRadius: 4,
                   transition: 'all 0.3s ease-in-out',
                   '&:hover': {
                     transform: 'translateY(-8px)',
@@ -227,7 +226,6 @@ const HomePage: React.FC = () => {
                   p: 4,
                   border: '1px solid',
                   borderColor: 'divider',
-                  borderRadius: 4,
                   transition: 'all 0.3s ease-in-out',
                   '&:hover': {
                     transform: 'translateY(-8px)',
@@ -269,7 +267,6 @@ const HomePage: React.FC = () => {
                   p: 4,
                   border: '1px solid',
                   borderColor: 'divider',
-                  borderRadius: 4,
                   transition: 'all 0.3s ease-in-out',
                   '&:hover': {
                     transform: 'translateY(-8px)',
@@ -315,7 +312,6 @@ const HomePage: React.FC = () => {
               <Box
                 sx={{
                   background: 'linear-gradient(135deg, #FF5A5F 0%, #00A699 100%)',
-                  borderRadius: 4,
                   p: 4,
                   color: 'white',
                   height: '100%',

@@ -72,7 +72,7 @@ const InShopDisplayPage: React.FC = () => {
             const queueInterval = setInterval(fetchQueue, 3000);
             // Update clock every second
             const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
-            
+
             return () => {
                 clearInterval(queueInterval);
                 clearInterval(clockInterval);
@@ -99,7 +99,7 @@ const InShopDisplayPage: React.FC = () => {
             const config = token ? {
                 headers: { Authorization: `Bearer ${token}` }
             } : {};
-            
+
             const response = await axios.get(`/queues/shop/${shopId}/active`, config);
             setQueue(response.data);
         } catch (err) {
@@ -153,7 +153,6 @@ const InShopDisplayPage: React.FC = () => {
                     mb: 3,
                     bgcolor: primaryColor,
                     color: 'white',
-                    borderRadius: 2,
                 }}
             >
                 <Grid container alignItems="center" spacing={2}>
@@ -204,7 +203,7 @@ const InShopDisplayPage: React.FC = () => {
                                 </Typography>
                             </Box>
                             <Divider sx={{ my: 3, bgcolor: servingCustomers.length > 0 ? 'white' : 'grey.500' }} />
-                            
+
                             {servingCustomers.length > 0 ? (
                                 <Box textAlign="center" py={4}>
                                     {servingCustomers.map((customer) => (
@@ -297,7 +296,7 @@ const InShopDisplayPage: React.FC = () => {
                                         Waiting List
                                     </Typography>
                                     <Divider sx={{ mb: 3 }} />
-                                    
+
                                     {waitingCustomers.length === 0 ? (
                                         <Box textAlign="center" py={6}>
                                             <Typography variant="h5" color="text.secondary">
@@ -371,13 +370,12 @@ const InShopDisplayPage: React.FC = () => {
             <Paper
                 elevation={3}
                 sx={
-{
-                    mt: 3,
-                    p: 2,
-                    bgcolor: 'white',
-                    textAlign: 'center',
-                    borderRadius: 2,
-                }}
+                    {
+                        mt: 3,
+                        p: 2,
+                        bgcolor: 'white',
+                        textAlign: 'center',
+                    }}
             >
                 <Typography variant="h6" color="text.secondary">
                     📱 Join online at <strong style={{ color: primaryColor }}>nowait.app/{shop.id}</strong>

@@ -66,7 +66,7 @@ const PublicShopPage: React.FC = () => {
     );
 
     return (
-        <Box sx={{ bgcolor: '#f5f5f5', minHeight: '100vh', pb: 8 }}>
+        <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', pb: 8 }}>
             {/* Hero Section with Branding */}
             <Box
                 sx={{

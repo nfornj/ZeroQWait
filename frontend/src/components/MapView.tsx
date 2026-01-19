@@ -131,7 +131,6 @@ const MapView: React.FC<MapViewProps> = ({ shops }) => {
           alignItems: "center",
           justifyContent: "center",
           bgcolor: "background.paper",
-          borderRadius: 2,
         }}
       >
         <Box sx={{ textAlign: "center" }}>
@@ -153,7 +152,6 @@ const MapView: React.FC<MapViewProps> = ({ shops }) => {
           alignItems: "center",
           justifyContent: "center",
           bgcolor: "background.paper",
-          borderRadius: 2,
           border: "1px solid #EBEBEB",
         }}
       >
@@ -165,7 +163,7 @@ const MapView: React.FC<MapViewProps> = ({ shops }) => {
   }
 
   return (
-    <Box sx={{ height: "600px", borderRadius: 2, overflow: "hidden" }}>
+    <Box sx={{ height: "600px", overflow: "hidden" }}>
       <MapContainer
         center={[37.7749, -122.4194]} // Default to San Francisco
         zoom={13}

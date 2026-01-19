@@ -116,7 +116,6 @@ const Navbar = () => {
                       fontWeight: 500,
                       px: 2,
                       py: 1.5,
-                      borderRadius: '50px',
                       '&:hover': {
                         backgroundColor: 'rgba(0, 0, 0, 0.04)'
                       }
@@ -132,7 +131,6 @@ const Navbar = () => {
                       fontWeight: 500,
                       px: 2,
                       py: 1.5,
-                      borderRadius: '50px',
                       '&:hover': {
                         backgroundColor: 'rgba(0, 0, 0, 0.04)'
                       }
@@ -151,7 +149,6 @@ const Navbar = () => {
                         fontWeight: 500,
                         px: 2,
                         py: 1.5,
-                        borderRadius: '50px',
                         '&:hover': {
                           backgroundColor: 'rgba(0, 0, 0, 0.04)'
                         }
@@ -201,7 +198,6 @@ const Navbar = () => {
                       sx={{ mt: 1 }}
                       PaperProps={{
                         sx: {
-                          borderRadius: 2,
                           boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.1)',
                           border: '1px solid #EBEBEB'
                         }
@@ -229,7 +225,6 @@ const Navbar = () => {
                         fontWeight: 500,
                         px: 2,
                         py: 1.5,
-                        borderRadius: '50px',
                         '&:hover': {
                           backgroundColor: 'rgba(0, 0, 0, 0.04)'
                         }
@@ -245,7 +240,6 @@ const Navbar = () => {
                         fontWeight: 600,
                         px: 3,
                         py: 1.5,
-                        borderRadius: '50px',
                         background: 'linear-gradient(135deg, #FF5A5F 0%, #FF385C 100%)',
                         '&:hover': {
                           background: 'linear-gradient(135deg, #FF385C 0%, #E00007 100%)',
@@ -268,7 +262,6 @@ const Navbar = () => {
                 ml: 2,
                 p: 1,
                 border: '1px solid #DDDDDD',
-                borderRadius: 1
               }}
             >
               <MenuIcon />
@@ -282,7 +275,6 @@ const Navbar = () => {
             sx={{ display: { xs: 'block', md: 'none' } }}
             PaperProps={{
               sx: {
-                borderRadius: 2,
                 boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.1)',
                 border: '1px solid #EBEBEB',
                 minWidth: 200

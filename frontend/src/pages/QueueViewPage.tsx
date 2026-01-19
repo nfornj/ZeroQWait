@@ -386,8 +386,7 @@ const QueueViewPage: React.FC = () => {
                                         <ListItem
                                             key={item.id}
                                             sx={{
-                                                bgcolor: 'grey.100',
-                                                borderRadius: 2,
+                                                bgcolor: 'action.hover',
                                                 mb: 1,
                                             }}
                                         >

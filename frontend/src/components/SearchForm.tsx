@@ -84,23 +84,21 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
   };
 
   return (
-    <Paper 
-      component="form" 
-      onSubmit={handleSubmit} 
+    <Paper
+      component="form"
+      onSubmit={handleSubmit}
       elevation={0}
-      sx={{ 
+      sx={{
         p: { xs: 3, md: 4 },
-        borderRadius: 3,
         border: '1px solid #EBEBEB',
         background: 'linear-gradient(135deg, rgba(255, 90, 95, 0.02) 0%, rgba(0, 166, 153, 0.02) 100%)',
       }}
     >
       {error && (
-        <Alert 
-          severity="error" 
-          sx={{ 
+        <Alert
+          severity="error"
+          sx={{
             mb: 3,
-            borderRadius: 2,
             border: '1px solid #FFEBEE'
           }}
         >
@@ -110,9 +108,9 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
 
       {/* Search Input Section */}
       <Box sx={{ mb: 4 }}>
-        <Typography 
-          variant="h6" 
-          sx={{ 
+        <Typography
+          variant="h6"
+          sx={{
             fontWeight: 600,
             mb: 2,
             color: 'text.primary'
@@ -120,9 +118,9 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
         >
           Where do you want to find a haircut?
         </Typography>
-        
-        <Box sx={{ 
-          display: 'flex', 
+
+        <Box sx={{
+          display: 'flex',
           flexDirection: { xs: 'column', md: 'row' },
           gap: 2,
           alignItems: { md: 'flex-end' }
@@ -137,7 +135,6 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
             variant="outlined"
             sx={{
               '& .MuiOutlinedInput-root': {
-                borderRadius: 2,
                 backgroundColor: 'white',
                 fontSize: '1rem',
                 '& fieldset': {
@@ -174,7 +171,6 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
               minWidth: { xs: '100%', md: 'auto' },
               py: 1.75,
               px: 3,
-              borderRadius: 2,
               borderWidth: 2,
               fontWeight: 600,
               '&:hover': {
@@ -189,9 +185,9 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
 
       {/* Radius Selection */}
       <Box sx={{ mb: 4 }}>
-        <Typography 
-          variant="h6" 
-          sx={{ 
+        <Typography
+          variant="h6"
+          sx={{
             fontWeight: 600,
             mb: 2,
             color: 'text.primary'
@@ -255,7 +251,6 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
           px: 4,
           fontSize: '1.125rem',
           fontWeight: 600,
-          borderRadius: 2,
           background: 'linear-gradient(135deg, #FF5A5F 0%, #FF385C 100%)',
           boxShadow: '0 4px 16px rgba(255, 90, 95, 0.3)',
           '&:hover': {

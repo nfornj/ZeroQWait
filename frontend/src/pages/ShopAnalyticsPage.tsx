@@ -224,7 +224,6 @@ const ShopAnalyticsPage: React.FC = () => {
                                         bgcolor: 'rgba(0,0,0,0.8)',
                                         color: 'white',
                                         padding: '4px 8px',
-                                        borderRadius: 1,
                                         fontSize: '0.75rem',
                                         opacity: 0,
                                         transition: 'opacity 0.2s',

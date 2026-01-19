@@ -297,164 +297,162 @@ const ShopDashboardPage: React.FC = () => {
             </Box>
 
             <Container maxWidth="lg" sx={{ pb: 4 }}>
-            {/* Mobile Actions (Visible only on small screens) */}
-            {selectedShop && (
-                <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1, mb: 3, flexWrap: 'wrap' }}>
-                    <Button
-                        fullWidth
-                        variant="outlined"
-                        startIcon={<LaunchIcon />}
-                        onClick={() => window.open(`/queue/${selectedShop.id}`, '_blank')}
-                    >
-                        Public View
-                    </Button>
-                    <Button
-                        fullWidth
-                        variant="outlined"
-                        startIcon={<TvIcon />}
-                        onClick={() => window.open(`/display/${selectedShop.id}`, '_blank')}
-                    >
-                        TV Mode
-                    </Button>
-                </Box>
-            )}
+                {/* Mobile Actions (Visible only on small screens) */}
+                {selectedShop && (
+                    <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1, mb: 3, flexWrap: 'wrap' }}>
+                        <Button
+                            fullWidth
+                            variant="outlined"
+                            startIcon={<LaunchIcon />}
+                            onClick={() => window.open(`/queue/${selectedShop.id}`, '_blank')}
+                        >
+                            Public View
+                        </Button>
+                        <Button
+                            fullWidth
+                            variant="outlined"
+                            startIcon={<TvIcon />}
+                            onClick={() => window.open(`/display/${selectedShop.id}`, '_blank')}
+                        >
+                            TV Mode
+                        </Button>
+                    </Box>
+                )}
 
-            {error && (
-                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
-                    {error}
-                </Alert>
-            )}
+                {error && (
+                    <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+                        {error}
+                    </Alert>
+                )}
 
-            <Grid container spacing={3}>
-                {/* Currently Being Served */}
-                <Grid item xs={12} md={6}>
-                    <Card>
-                        <CardContent>
-                            <Typography variant="h6" gutterBottom>
-                                Being Served
-                            </Typography>
-                            <Divider sx={{ mb: 2 }} />
-                            {beingServed.length === 0 ? (
-                                <Typography color="textSecondary">No one being served</Typography>
-                            ) : (
-                                <List>
-                                    {beingServed.map((item) => (
-                                        <ListItem
-                                            key={item.id}
-                                            sx={{
-                                                bgcolor: 'info.light',
-                                                borderRadius: 2,
-                                                mb: 1,
-                                            }}
-                                        >
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
-                                                {item.assigned_employee && (
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <Avatar
-                                                            src={item.assigned_employee.profile_photo_url}
-                                                            sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}
-                                                        >
-                                                            {item.assigned_employee.username.charAt(0).toUpperCase()}
-                                                        </Avatar>
-                                                    </Box>
-                                                )}
+                <Grid container spacing={3}>
+                    {/* Currently Being Served */}
+                    <Grid item xs={12} md={6}>
+                        <Card>
+                            <CardContent>
+                                <Typography variant="h6" gutterBottom>
+                                    Being Served
+                                </Typography>
+                                <Divider sx={{ mb: 2 }} />
+                                {beingServed.length === 0 ? (
+                                    <Typography color="textSecondary">No one being served</Typography>
+                                ) : (
+                                    <List>
+                                        {beingServed.map((item) => (
+                                            <ListItem
+                                                key={item.id}
+                                                sx={{
+                                                    bgcolor: 'info.light',
+                                                    mb: 1,
+                                                }}
+                                            >
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                                                    {item.assigned_employee && (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <Avatar
+                                                                src={item.assigned_employee.profile_photo_url}
+                                                                sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}
+                                                            >
+                                                                {item.assigned_employee.username.charAt(0).toUpperCase()}
+                                                            </Avatar>
+                                                        </Box>
+                                                    )}
+                                                    <ListItemText
+                                                        primary={item.customer_name}
+                                                        secondary={
+                                                            <>
+                                                                {item.customer_phone && <div>{item.customer_phone}</div>}
+                                                                {item.assigned_employee && (
+                                                                    <Box display="flex" alignItems="center" gap={0.5} mt={0.5}>
+                                                                        <PersonIcon sx={{ fontSize: 14 }} />
+                                                                        <Typography variant="caption">
+                                                                            Served by {item.assigned_employee.username}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                )}
+                                                            </>
+                                                        }
+                                                    />
+                                                </Box>
+                                                <Button
+                                                    variant="contained"
+                                                    color="success"
+                                                    onClick={() => handleCompleteCustomer(item.id)}
+                                                >
+                                                    Complete
+                                                </Button>
+                                            </ListItem>
+                                        ))}
+                                    </List>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </Grid>
+
+                    {/* Queue */}
+                    <Grid item xs={12} md={6}>
+                        <Card>
+                            <CardContent>
+                                <Box display="flex" justifyContent="space-between" alignItems="center">
+                                    <Typography variant="h6">
+                                        Waiting Queue ({waitingCustomers.length})
+                                    </Typography>
+                                    <Button
+                                        variant="contained"
+                                        color="primary"
+                                        onClick={handleCallNext}
+                                        disabled={waitingCustomers.length === 0}
+                                    >
+                                        Call Next
+                                    </Button>
+                                </Box>
+                                <Divider sx={{ my: 2 }} />
+                                {waitingCustomers.length === 0 ? (
+                                    <Typography color="textSecondary">Queue is empty</Typography>
+                                ) : (
+                                    <List>
+                                        {waitingCustomers.map((item, index) => (
+                                            <ListItem
+                                                key={item.id}
+                                                sx={{
+                                                    bgcolor: index === 0 ? 'warning.light' : 'grey.100',
+                                                    mb: 1,
+                                                }}
+                                            >
+                                                <Box sx={{ mr: 2, fontWeight: 'bold' }}>#{item.position}</Box>
                                                 <ListItemText
                                                     primary={item.customer_name}
                                                     secondary={
                                                         <>
                                                             {item.customer_phone && <div>{item.customer_phone}</div>}
-                                                            {item.assigned_employee && (
-                                                                <Box display="flex" alignItems="center" gap={0.5} mt={0.5}>
-                                                                    <PersonIcon sx={{ fontSize: 14 }} />
-                                                                    <Typography variant="caption">
-                                                                        Served by {item.assigned_employee.username}
-                                                                    </Typography>
-                                                                </Box>
-                                                            )}
+                                                            {item.notes && <div>Note: {item.notes}</div>}
                                                         </>
                                                     }
                                                 />
-                                            </Box>
-                                            <Button
-                                                variant="contained"
-                                                color="success"
-                                                onClick={() => handleCompleteCustomer(item.id)}
-                                            >
-                                                Complete
-                                            </Button>
-                                        </ListItem>
-                                    ))}
-                                </List>
-                            )}
-                        </CardContent>
-                    </Card>
+                                                <Chip
+                                                    label={item.status}
+                                                    color={getStatusColor(item.status) as any}
+                                                    size="small"
+                                                />
+                                            </ListItem>
+                                        ))}
+                                    </List>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </Grid>
                 </Grid>
 
-                {/* Queue */}
-                <Grid item xs={12} md={6}>
-                    <Card>
-                        <CardContent>
-                            <Box display="flex" justifyContent="space-between" alignItems="center">
-                                <Typography variant="h6">
-                                    Waiting Queue ({waitingCustomers.length})
-                                </Typography>
-                                <Button
-                                    variant="contained"
-                                    color="primary"
-                                    onClick={handleCallNext}
-                                    disabled={waitingCustomers.length === 0}
-                                >
-                                    Call Next
-                                </Button>
-                            </Box>
-                            <Divider sx={{ my: 2 }} />
-                            {waitingCustomers.length === 0 ? (
-                                <Typography color="textSecondary">Queue is empty</Typography>
-                            ) : (
-                                <List>
-                                    {waitingCustomers.map((item, index) => (
-                                        <ListItem
-                                            key={item.id}
-                                            sx={{
-                                                bgcolor: index === 0 ? 'warning.light' : 'grey.100',
-                                                borderRadius: 2,
-                                                mb: 1,
-                                            }}
-                                        >
-                                            <Box sx={{ mr: 2, fontWeight: 'bold' }}>#{item.position}</Box>
-                                            <ListItemText
-                                                primary={item.customer_name}
-                                                secondary={
-                                                    <>
-                                                        {item.customer_phone && <div>{item.customer_phone}</div>}
-                                                        {item.notes && <div>Note: {item.notes}</div>}
-                                                    </>
-                                                }
-                                            />
-                                            <Chip
-                                                label={item.status}
-                                                color={getStatusColor(item.status) as any}
-                                                size="small"
-                                            />
-                                        </ListItem>
-                                    ))}
-                                </List>
-                            )}
-                        </CardContent>
-                    </Card>
-                </Grid>
-            </Grid>
-
-            {/* Employee Selector Dialog */}
-            <EmployeeSelector
-                open={employeeSelectorOpen}
-                employees={employees}
-                loading={loadingEmployees}
-                onClose={() => setEmployeeSelectorOpen(false)}
-                onSelect={handleEmployeeSelected}
-                title="Assign Employee to Customer"
-                allowRandom={true}
-            />
+                {/* Employee Selector Dialog */}
+                <EmployeeSelector
+                    open={employeeSelectorOpen}
+                    employees={employees}
+                    loading={loadingEmployees}
+                    onClose={() => setEmployeeSelectorOpen(false)}
+                    onSelect={handleEmployeeSelected}
+                    title="Assign Employee to Customer"
+                    allowRandom={true}
+                />
             </Container>
         </Box>
     );

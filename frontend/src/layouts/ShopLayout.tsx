@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
 import {
     Box,
     Drawer,
@@ -19,8 +18,8 @@ import {
     MenuItem,
     useTheme,
     useMediaQuery,
-    CircularProgress,
-    Alert
+    Switch,
+    Tooltip
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -31,35 +30,30 @@ import PeopleIcon from '@mui/icons-material/People';
 import LogoutIcon from '@mui/icons-material/Logout';
 import StoreIcon from '@mui/icons-material/Store';
 import LaunchIcon from '@mui/icons-material/Launch';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
+import LightModeIcon from '@mui/icons-material/LightMode';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+
 import { useAuth } from '../contexts/AuthContext';
 import { useShop } from '../contexts/ShopContext';
+import { useThemeContext } from '../contexts/ThemeContext';
 
-const drawerWidth = 240;
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
-
-interface Shop {
-    id: number;
-    name: string;
-    logo_url?: string;
-    primary_color?: string;
-    secondary_color?: string;
-    city?: string;
-    state?: string;
-    shop_type?: string;
-}
+const collapsedWidth = 72;
+const expandedWidth = 260; // Wider for better aesthetics
 
 const ShopLayout: React.FC = () => {
     const { user, logout } = useAuth();
-    const { shop, loading, error } = useShop();
+    const { shop } = useShop();
     const navigate = useNavigate();
     const location = useLocation();
     const theme = useTheme();
+    const { mode, toggleMode } = useThemeContext();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
     const [mobileOpen, setMobileOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const collapsedWidth = 72;
-    const expandedWidth = 240;
 
     const handleDrawerToggle = () => {
         setMobileOpen(!mobileOpen);
@@ -88,110 +82,173 @@ const ShopLayout: React.FC = () => {
 
     const currentDrawerWidth = sidebarCollapsed ? collapsedWidth : expandedWidth;
 
-    const drawer = (
-        <div>
-            <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', px: sidebarCollapsed ? 1 : 2, py: 2, minHeight: 64 }}>
-                {shop?.logo_url ? (
-                    <Avatar 
-                        src={shop.logo_url} 
-                        alt={shop.name} 
-                        sx={{ 
-                            width: sidebarCollapsed ? 36 : 48, 
-                            height: sidebarCollapsed ? 36 : 48, 
-                            transition: 'all 0.3s ease'
-                        }} 
-                    />
-                ) : (
-                    <Avatar sx={{ 
-                        width: sidebarCollapsed ? 36 : 48, 
-                        height: sidebarCollapsed ? 36 : 48, 
-                        bgcolor: shop?.primary_color || 'primary.main', 
-                        fontSize: '1.2rem',
-                        transition: 'all 0.3s ease'
-                    }}>
-                        {shop?.name?.charAt(0).toUpperCase() || <StoreIcon />}
+    const drawerContent = (
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {/* Sidebar Header / Branding */}
+            <Box sx={{
+                p: 2,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: sidebarCollapsed ? 'center' : 'space-between',
+                minHeight: 64
+            }}>
+                {(!sidebarCollapsed) && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, overflow: 'hidden' }}>
+                        {shop?.logo_url ? (
+                            <Avatar src={shop.logo_url} alt={shop.name} variant="rounded" sx={{ width: 32, height: 32 }} />
+                        ) : (
+                            <Avatar variant="rounded" sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: '1rem' }}>
+                                {shop?.name?.charAt(0).toUpperCase() || <StoreIcon fontSize="small" />}
+                            </Avatar>
+                        )}
+                        <Typography variant="subtitle1" fontWeight="bold" noWrap>
+                            {shop?.name || 'ZeroQwait'}
+                        </Typography>
+                    </Box>
+                )}
+                {/* Logo only when collapsed */}
+                {(sidebarCollapsed) && (
+                    <Avatar variant="rounded" sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
+                        {shop?.name?.charAt(0).toUpperCase() || <StoreIcon fontSize="small" />}
                     </Avatar>
                 )}
-            </Toolbar>
-            <Divider />
-            <List sx={{ px: sidebarCollapsed ? 0.5 : 1 }}>
+
+                {/* Collapse Toggle (Desktop only) */}
+                {!isMobile && !sidebarCollapsed && (
+                    <IconButton size="small" onClick={() => setSidebarCollapsed(true)}>
+                        <ChevronLeftIcon />
+                    </IconButton>
+                )}
+            </Box>
+
+            <Divider sx={{ mb: 2 }} />
+
+            {/* Navigation Links */}
+            <List sx={{ px: 1.5, flexGrow: 1 }}>
                 {menuItems.map((item) => (
-                    <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
-                        <ListItemButton
-                            selected={location.pathname.includes(item.path)}
-                            onClick={() => {
-                                if (item.path === '/dashboard') navigate('/dashboard');
-                                else navigate(item.path);
-                            }}
-                            sx={{
-                                borderRadius: 2,
-                                justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                                px: sidebarCollapsed ? 1 : 2,
-                                minHeight: 48
-                            }}
-                        >
-                            <ListItemIcon sx={{ 
-                                color: location.pathname.includes(item.path) ? (shop?.primary_color || 'primary.main') : 'inherit',
-                                minWidth: sidebarCollapsed ? 'auto' : 40,
-                                justifyContent: 'center'
-                            }}>
-                                {item.icon}
-                            </ListItemIcon>
-                            {!sidebarCollapsed && <ListItemText primary={item.text} />}
-                        </ListItemButton>
-                    </ListItem>
+                    <Tooltip key={item.text} title={sidebarCollapsed ? item.text : ''} placement="right">
+                        <ListItem disablePadding sx={{ mb: 1 }}>
+                            <ListItemButton
+                                selected={location.pathname.includes(item.path)}
+                                onClick={() => {
+                                    navigate(item.path === '/dashboard' ? '/dashboard' : item.path);
+                                    if (isMobile) setMobileOpen(false);
+                                }}
+                                sx={{
+                                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                                    px: sidebarCollapsed ? 1 : 2,
+                                    minHeight: 48,
+                                    bgcolor: location.pathname.includes(item.path)
+                                        ? (theme.palette.mode === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)')
+                                        : 'transparent',
+                                    color: location.pathname.includes(item.path) ? 'primary.main' : 'text.secondary',
+                                    '&.Mui-selected': {
+                                        bgcolor: 'primary.main',
+                                        color: 'primary.contrastText',
+                                        '&:hover': {
+                                            bgcolor: 'primary.dark',
+                                        },
+                                        '& .MuiListItemIcon-root': {
+                                            color: 'inherit',
+                                        }
+                                    },
+                                    '&:hover': {
+                                        bgcolor: theme.palette.mode === 'light' ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)',
+                                    }
+                                }}
+                            >
+                                <ListItemIcon sx={{
+                                    minWidth: sidebarCollapsed ? 'auto' : 40,
+                                    justifyContent: 'center',
+                                    color: 'inherit'
+                                }}>
+                                    {item.icon}
+                                </ListItemIcon>
+                                {!sidebarCollapsed && (
+                                    <ListItemText
+                                        primary={item.text}
+                                        primaryTypographyProps={{ fontWeight: 500 }}
+                                    />
+                                )}
+                            </ListItemButton>
+                        </ListItem>
+                    </Tooltip>
                 ))}
             </List>
+
             <Divider />
-            <List sx={{ px: sidebarCollapsed ? 0.5 : 1 }}>
-                <ListItem disablePadding>
-                    <ListItemButton 
+
+            {/* Bottom Actions */}
+            <Box sx={{ p: 1.5 }}>
+                {/* Public Site Link */}
+                <Tooltip title={sidebarCollapsed ? "View Public Site" : ""} placement="right">
+                    <ListItemButton
                         onClick={() => window.open('/s/my-shop', '_blank')}
                         sx={{
-                            borderRadius: 2,
                             justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
                             px: sidebarCollapsed ? 1 : 2,
-                            minHeight: 48
+                            minHeight: 48,
+                            mb: 1,
+                            color: 'text.secondary'
                         }}
                     >
-                        <ListItemIcon sx={{ minWidth: sidebarCollapsed ? 'auto' : 40, justifyContent: 'center' }}>
+                        <ListItemIcon sx={{ minWidth: sidebarCollapsed ? 'auto' : 40, justifyContent: 'center', color: 'inherit' }}>
                             <LaunchIcon />
                         </ListItemIcon>
-                        {!sidebarCollapsed && <ListItemText primary="View Public Site" />}
+                        {!sidebarCollapsed && <ListItemText primary="Public Site" />}
                     </ListItemButton>
-                </ListItem>
-                {!isMobile && (
-                    <ListItem disablePadding>
-                        <ListItemButton 
-                            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                            sx={{
-                                borderRadius: 2,
-                                justifyContent: 'center',
-                                px: 1,
-                                minHeight: 48,
-                                mt: 1
-                            }}
-                        >
-                            <ListItemIcon sx={{ minWidth: 'auto', justifyContent: 'center' }}>
-                                {sidebarCollapsed ? <MenuIcon /> : <MenuIcon sx={{ transform: 'rotate(180deg)' }} />}
-                            </ListItemIcon>
-                        </ListItemButton>
-                    </ListItem>
+                </Tooltip>
+
+                {/* Theme Toggle */}
+                <Tooltip title={sidebarCollapsed ? `Switch to ${mode === 'light' ? 'Dark' : 'Light'} Mode` : ""} placement="right">
+                    <ListItemButton
+                        onClick={toggleMode}
+                        sx={{
+                            justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                            px: sidebarCollapsed ? 1 : 2,
+                            minHeight: 48,
+                            color: 'text.secondary'
+                        }}
+                    >
+                        <ListItemIcon sx={{ minWidth: sidebarCollapsed ? 'auto' : 40, justifyContent: 'center', color: 'inherit' }}>
+                            {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
+                        </ListItemIcon>
+                        {!sidebarCollapsed && <ListItemText primary={`${mode === 'light' ? 'Dark' : 'Light'} Mode`} />}
+                    </ListItemButton>
+                </Tooltip>
+
+                {/* Footer / Copyright */}
+                {!sidebarCollapsed && (
+                    <Box sx={{ mt: 2, textAlign: 'center', opacity: 0.5 }}>
+                        <Typography variant="caption" display="block">
+                            Built by ZeroQwait
+                        </Typography>
+                    </Box>
                 )}
-            </List>
-        </div>
+                {/* Expand Button for collapsed state */}
+                {!isMobile && sidebarCollapsed && (
+                    <IconButton onClick={() => setSidebarCollapsed(false)} sx={{ mt: 1, mx: 'auto', display: 'flex' }}>
+                        <ChevronRightIcon />
+                    </IconButton>
+                )}
+            </Box>
+        </Box>
     );
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+        <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+            {/* Top Bar for Mobile */}
             <AppBar
                 position="fixed"
+                color="inherit"
+                elevation={0}
                 sx={{
-                    width: '100%',
-                    bgcolor: shop?.primary_color || '#1976d2',
-                    color: 'white',
-                    boxShadow: 2,
-                    zIndex: (theme) => theme.zIndex.drawer + 1
+                    width: { md: `calc(100% - ${currentDrawerWidth}px)` },
+                    ml: { md: `${currentDrawerWidth}px` },
+                    bgcolor: 'background.paper',
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                    display: { md: 'none' } // Hide on desktop if we want a clean look, or keep it for the title
                 }}
             >
                 <Toolbar>
@@ -204,136 +261,159 @@ const ShopLayout: React.FC = () => {
                     >
                         <MenuIcon />
                     </IconButton>
-                    
-                    {/* Shop Logo and Name */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        {shop?.logo_url ? (
-                            <Avatar 
-                                src={shop.logo_url} 
-                                alt={shop.name}
-                                sx={{ width: 40, height: 40 }}
-                            />
-                        ) : (
-                            <Avatar 
-                                sx={{ 
-                                    width: 40, 
-                                    height: 40, 
-                                    bgcolor: 'rgba(255,255,255,0.2)',
-                                    fontWeight: 700
-                                }}
-                            >
-                                <StoreIcon />
-                            </Avatar>
-                        )}
-                        <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-                            <Typography variant="h6" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
-                                {shop?.name || 'Shop Portal'}
-                            </Typography>
-                            <Typography variant="caption" sx={{ opacity: 0.9, fontSize: '0.7rem' }}>
-                                {shop?.city && shop?.state ? `${shop.city}, ${shop.state}` : 'Business Dashboard'}
-                            </Typography>
-                        </Box>
-                    </Box>
-                    
-                    <Box sx={{ flexGrow: 1 }} />
-                    
-                    {/* User Menu */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Box sx={{ display: { xs: 'none', md: 'block' }, textAlign: 'right' }}>
-                            <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.875rem' }}>
-                                {user?.username}
-                            </Typography>
-                            <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '0.7rem' }}>
-                                {user?.email}
-                            </Typography>
-                        </Box>
-                        <IconButton
-                            size="large"
-                            aria-label="account of current user"
-                            aria-controls="menu-appbar"
-                            aria-haspopup="true"
-                            onClick={handleMenu}
-                            color="inherit"
-                        >
-                            <Avatar sx={{ width: 36, height: 36, bgcolor: 'rgba(255,255,255,0.2)', fontWeight: 600 }}>
-                                {user?.username?.charAt(0).toUpperCase()}
-                            </Avatar>
-                        </IconButton>
-                        <Menu
-                            id="menu-appbar"
-                            anchorEl={anchorEl}
-                            anchorOrigin={{
-                                vertical: 'bottom',
-                                horizontal: 'right',
-                            }}
-                            keepMounted
-                            transformOrigin={{
-                                vertical: 'top',
-                                horizontal: 'right',
-                            }}
-                            open={Boolean(anchorEl)}
-                            onClose={handleClose}
-                        >
-                            <MenuItem onClick={handleLogout}>
-                                <ListItemIcon>
-                                    <LogoutIcon fontSize="small" />
-                                </ListItemIcon>
-                                Logout
-                            </MenuItem>
-                        </Menu>
-                    </Box>
+                    <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
+                        {shop?.name || 'Dashboard'}
+                    </Typography>
+
+                    <Avatar
+                        src={user?.profile_photo_url}
+                        alt={user?.username}
+                        onClick={handleMenu}
+                        sx={{ cursor: 'pointer', width: 32, height: 32 }}
+                    />
                 </Toolbar>
             </AppBar>
-            <Box sx={{ display: 'flex', flexGrow: 1, mt: 8 }}>
+
+            {/* User Menu (Absolute positioned for Desktop) */}
+            <Box
+                sx={{
+                    position: 'fixed',
+                    top: 16,
+                    right: 24,
+                    zIndex: 1200,
+                    display: { xs: 'none', md: 'flex' },
+                    alignItems: 'center',
+                    gap: 2
+                }}
+            >
+                {/* We could put global search or notifications here */}
+
+                {/* User Profile */}
                 <Box
-                    component="nav"
-                    sx={{ width: { md: currentDrawerWidth }, flexShrink: { md: 0 } }}
-                    aria-label="mailbox folders"
-                >
-                    <Drawer
-                        variant="temporary"
-                        open={mobileOpen}
-                        onClose={handleDrawerToggle}
-                        ModalProps={{
-                            keepMounted: true,
-                        }}
-                        sx={{
-                            display: { xs: 'block', md: 'none' },
-                            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: expandedWidth, mt: 8 },
-                        }}
-                    >
-                        {drawer}
-                    </Drawer>
-                    <Drawer
-                        variant="permanent"
-                        sx={{
-                            display: { xs: 'none', md: 'block' },
-                            '& .MuiDrawer-paper': { 
-                                boxSizing: 'border-box', 
-                                width: currentDrawerWidth,
-                                transition: 'width 0.3s ease',
-                                overflowX: 'hidden',
-                                mt: 8,
-                                height: 'calc(100vh - 64px)'
-                            },
-                        }}
-                        open
-                    >
-                        {drawer}
-                    </Drawer>
-                </Box>
-                <Box
-                    component="main"
-                    sx={{ 
-                        flexGrow: 1, 
-                        p: 3,
-                        width: { md: `calc(100% - ${currentDrawerWidth}px)` },
-                        transition: 'all 0.3s ease',
-                        overflow: 'auto'
+                    onClick={handleMenu}
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1.5,
+                        cursor: 'pointer',
+                        bgcolor: 'background.paper',
+                        py: 0.5,
+                        px: 1.5,
+                        borderRadius: '50px', // Explicit pill for profile
+                        boxShadow: '0px 2px 8px rgba(0,0,0,0.05)',
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        transition: 'all 0.2s',
+                        '&:hover': {
+                            bgcolor: 'action.hover',
+                            boxShadow: '0px 4px 12px rgba(0,0,0,0.1)',
+                        }
                     }}
                 >
-                    <Outlet />
+                    <Avatar
+                        src={user?.profile_photo_url}
+                        sx={{ width: 32, height: 32, bgcolor: 'secondary.main', fontSize: '0.875rem' }}
+                    >
+                        {user?.username?.charAt(0).toUpperCase()}
+                    </Avatar>
+                    <Typography variant="body2" fontWeight={600} color="text.primary">
+                        {user?.username}
+                    </Typography>
                 </Box>
+
+                <Menu
+                    id="menu-appbar"
+                    anchorEl={anchorEl}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                    keepMounted
+                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                    open={Boolean(anchorEl)}
+                    onClose={handleClose}
+                    PaperProps={{
+                        elevation: 0,
+                        sx: {
+                            overflow: 'visible',
+                            filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.32))',
+                            mt: 1.5,
+                            '&:before': {
+                                content: '""',
+                                display: 'block',
+                                position: 'absolute',
+                                top: 0,
+                                right: 14,
+                                width: 10,
+                                height: 10,
+                                bgcolor: 'background.paper',
+                                transform: 'translateY(-50%) rotate(45deg)',
+                                zIndex: 0,
+                            },
+                        },
+                    }}
+                >
+                    <MenuItem onClick={handleLogout}>
+                        <ListItemIcon>
+                            <LogoutIcon fontSize="small" />
+                        </ListItemIcon>
+                        Logout
+                    </MenuItem>
+                </Menu>
+            </Box>
+
+
+            <Box
+                component="nav"
+                sx={{ width: { md: currentDrawerWidth }, flexShrink: { md: 0 } }}
+            >
+                {/* Mobile Drawer */}
+                <Drawer
+                    variant="temporary"
+                    open={mobileOpen}
+                    onClose={handleDrawerToggle}
+                    ModalProps={{ keepMounted: true }}
+                    sx={{
+                        display: { xs: 'block', md: 'none' },
+                        '& .MuiDrawer-paper': { boxSizing: 'border-box', width: expandedWidth },
+                    }}
+                >
+                    {drawerContent}
+                </Drawer>
+
+                {/* Desktop Sidebar */}
+                <Drawer
+                    variant="permanent"
+                    sx={{
+                        display: { xs: 'none', md: 'block' },
+                        '& .MuiDrawer-paper': {
+                            boxSizing: 'border-box',
+                            width: currentDrawerWidth,
+                            borderRight: '1px solid',
+                            borderColor: 'divider',
+                            bgcolor: 'background.paper',
+                            transition: 'width 0.3s ease',
+                            overflowX: 'hidden'
+                        },
+                    }}
+                    open
+                >
+                    {drawerContent}
+                </Drawer>
+            </Box>
+
+            {/* Main Content Area */}
+            <Box
+                component="main"
+                sx={{
+                    flexGrow: 1,
+                    p: 3,
+                    mt: { xs: 8, md: 0 },
+                    width: { md: `calc(100% - ${currentDrawerWidth}px)` },
+                    transition: 'all 0.3s ease',
+                    overflow: 'auto'
+                }}
+            >
+                {/* Add top padding on desktop to account for the absolute User Menu */}
+                <Box sx={{ height: { xs: 0, md: 60 } }} />
+                <Outlet />
             </Box>
         </Box>
     );

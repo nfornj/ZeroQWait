@@ -7,6 +7,7 @@ interface User {
   username: string;
   email: string;
   role: "customer" | "shop_owner" | "employee";
+  profile_photo_url?: string;
 }
 
 interface AuthContextType {

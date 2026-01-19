@@ -58,7 +58,7 @@ const QueueCounterPage: React.FC = () => {
     const loadModels = async () => {
       try {
         setLoading(true);
-        
+
         // Load COCO-SSD for person detection
         const loadedModel = await cocoSsd.load();
         setModel(loadedModel);
@@ -79,7 +79,7 @@ const QueueCounterPage: React.FC = () => {
 
         handsInstance.onResults(onHandsResults);
         setHands(handsInstance);
-        
+
         setLoading(false);
       } catch (err) {
         setError('Failed to load AI models. Please refresh the page.');
@@ -107,11 +107,11 @@ const QueueCounterPage: React.FC = () => {
       if (results.multiHandLandmarks && results.multiHandedness) {
         results.multiHandLandmarks.forEach((landmarks, index) => {
           const handLabel = results.multiHandedness[index].label;
-          
+
           // Recognize gesture
           const gesture = recognizeGesture(landmarks, handLabel);
           setCurrentGesture(gesture);
-          
+
           // Add to history (keep last 5)
           setGestureHistory(prev => {
             const newHistory = [gesture, ...prev.slice(0, 4)];
@@ -120,7 +120,7 @@ const QueueCounterPage: React.FC = () => {
 
           // Draw hand landmarks
           drawHandLandmarks(ctx, landmarks, canvas.width, canvas.height);
-          
+
           // Draw gesture label
           const wrist = landmarks[0];
           ctx.fillStyle = '#00A699';
@@ -128,11 +128,11 @@ const QueueCounterPage: React.FC = () => {
           const text = `${gesture.emoji} ${gesture.gesture}`;
           const x = wrist.x * canvas.width;
           const y = wrist.y * canvas.height - 30;
-          
+
           // Background for text
           const textWidth = ctx.measureText(text).width;
           ctx.fillRect(x - 5, y - 25, textWidth + 10, 35);
-          
+
           // Text
           ctx.fillStyle = '#FFFFFF';
           ctx.fillText(text, x, y);
@@ -166,7 +166,7 @@ const QueueCounterPage: React.FC = () => {
     connections.forEach(([start, end]) => {
       const startPoint = landmarks[start];
       const endPoint = landmarks[end];
-      
+
       ctx.beginPath();
       ctx.moveTo(startPoint.x * width, startPoint.y * height);
       ctx.lineTo(endPoint.x * width, endPoint.y * height);
@@ -353,7 +353,6 @@ const QueueCounterPage: React.FC = () => {
               p: 2,
               position: 'relative',
               bgcolor: '#000',
-              borderRadius: 3,
               overflow: 'hidden',
             }}
           >
@@ -434,7 +433,6 @@ const QueueCounterPage: React.FC = () => {
               bgcolor: 'primary.main',
               color: 'white',
               mb: 2,
-              borderRadius: 3,
             }}
           >
             <CardContent sx={{ textAlign: 'center', py: 4 }}>
@@ -446,7 +444,7 @@ const QueueCounterPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Card elevation={3} sx={{ mb: 2, borderRadius: 3 }}>
+          <Card elevation={3} sx={{ mb: 2 }}>
             <CardContent sx={{ textAlign: 'center', py: 3 }}>
               <Timer sx={{ fontSize: 50, color: 'secondary.main', mb: 1 }} />
               <Typography variant="h3" component="div" color="primary">
@@ -462,7 +460,7 @@ const QueueCounterPage: React.FC = () => {
           </Card>
 
           {/* Detection Mode Selector */}
-          <Paper elevation={1} sx={{ p: 2, mb: 2, borderRadius: 3 }}>
+          <Paper elevation={1} sx={{ p: 2, mb: 2 }}>
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
               Mode
             </Typography>
@@ -480,7 +478,7 @@ const QueueCounterPage: React.FC = () => {
           </Paper>
 
           {/* Current Gesture Panel */}
-          <Card elevation={3} sx={{ mb: 2, borderRadius: 3 }}>
+          <Card elevation={3} sx={{ mb: 2 }}>
             <CardContent sx={{ py: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <PanTool sx={{ fontSize: 40, color: 'secondary.main' }} />
@@ -497,7 +495,7 @@ const QueueCounterPage: React.FC = () => {
           </Card>
 
           {/* Gesture History */}
-          <Paper elevation={1} sx={{ p: 2, borderRadius: 3 }}>
+          <Paper elevation={1} sx={{ p: 2 }}>
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
               Recent Gestures
             </Typography>
@@ -515,7 +513,7 @@ const QueueCounterPage: React.FC = () => {
           </Paper>
 
           {/* How it works */}
-          <Paper elevation={1} sx={{ p: 3, borderRadius: 3, mt: 2 }}>
+          <Paper elevation={1} sx={{ p: 3, mt: 2 }}>
             <Typography variant="h6" gutterBottom>
               💡 How It Works
             </Typography>
@@ -538,7 +536,6 @@ const QueueCounterPage: React.FC = () => {
         sx={{
           mt: 4,
           p: 3,
-          borderRadius: 3,
           background: 'linear-gradient(135deg, #00A699 0%, #4DB6AC 100%)',
           color: 'white',
         }}
@@ -626,7 +623,6 @@ const QueueCounterPage: React.FC = () => {
         sx={{
           mt: 4,
           p: 3,
-          borderRadius: 3,
           bgcolor: 'primary.light',
           color: 'white',
         }}

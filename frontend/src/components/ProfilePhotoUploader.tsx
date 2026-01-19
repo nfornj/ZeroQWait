@@ -99,11 +99,11 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
         try {
             setUploading(true);
             setError('');
-            
+
             // In a real app, you would upload to a storage service (S3, Cloudinary, etc.)
             // For now, we'll use the base64 data URL
             await onUpload(previewUrl);
-            
+
             onClose();
         } catch (err: any) {
             setError(err.message || 'Failed to upload photo');
@@ -118,9 +118,9 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
         try {
             setUploading(true);
             setError('');
-            
+
             await onUpload(capturedImage);
-            
+
             onClose();
         } catch (err: any) {
             setError(err.message || 'Failed to upload photo');
@@ -134,13 +134,13 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
     };
 
     return (
-        <Dialog 
-            open={open} 
-            onClose={onClose} 
-            maxWidth="sm" 
+        <Dialog
+            open={open}
+            onClose={onClose}
+            maxWidth="sm"
             fullWidth
             PaperProps={{
-                sx: { borderRadius: 2 }
+                sx: {}
             }}
         >
             <DialogTitle>
@@ -159,8 +159,8 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
                     </Alert>
                 )}
 
-                <Tabs 
-                    value={tabValue} 
+                <Tabs
+                    value={tabValue}
                     onChange={(_, newValue) => {
                         setTabValue(newValue);
                         setCapturedImage('');
@@ -211,7 +211,6 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
                                 sx={{
                                     border: '2px dashed',
                                     borderColor: 'divider',
-                                    borderRadius: 2,
                                     p: 4,
                                     textAlign: 'center',
                                     cursor: 'pointer',
@@ -238,7 +237,7 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
                 {tabValue === 1 && (
                     <Box>
                         {!capturedImage && (
-                            <Box position="relative" sx={{ aspectRatio: '4/3', bgcolor: 'black', borderRadius: 2, overflow: 'hidden' }}>
+                            <Box position="relative" sx={{ aspectRatio: '4/3', bgcolor: 'black', overflow: 'hidden' }}>
                                 <Webcam
                                     ref={webcamRef}
                                     audio={false}
@@ -285,7 +284,6 @@ const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
                                             bgcolor: '#FF5A5F',
                                             px: 2,
                                             py: 1,
-                                            borderRadius: 2,
                                             whiteSpace: 'nowrap',
                                             fontWeight: 600,
                                         }}
