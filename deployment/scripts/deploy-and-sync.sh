@@ -119,7 +119,7 @@ echo ""
 
 # Step 3: Deploy
 echo -e "${BLUE}Step 3️⃣  - Deploying to Kubernetes...${NC}"
-ssh "$DESTINATION_SERVER" "cd $DESTINATION_PATH/deployment && sudo bash scripts/deploy-k8s.sh" || {
+ssh "$DESTINATION_SERVER" "cd $DESTINATION_PATH/deployment && bash scripts/deploy-k8s.sh" || {
     echo -e "${RED}❌ Deployment failed${NC}"
     exit 1
 }
