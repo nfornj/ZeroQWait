@@ -9,10 +9,10 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 K8S_MANIFESTS="$PROJECT_ROOT/deployment/kubernetes"
 
-# Fix kubeconfig access for k3s
+# Set KUBECONFIG for k3s and try to fix permissions if needed
 export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 if [ ! -r "$KUBECONFIG" ]; then
-    # Try to fix permissions with sudo
+    echo "Attempting to fix kubeconfig permissions..."
     sudo chmod 644 "$KUBECONFIG" 2>/dev/null || true
 fi
 
@@ -39,54 +39,49 @@ echo "  Namespace: $NAMESPACE"
 echo ""
 
 # Check kubectl
-if ! command -v run_kubectl &> /dev/null; then
-    echo -e "${RED}❌ run_kubectl not found!${NC}"
+if ! command -v kubectl &> /dev/null; then
+    echo -e "${RED}❌ kubectl not found!${NC}"
     exit 1
 fi
-echo -e "${BLUE}✓ kubectl: installed${NC}"
+echo -e "${BLUE}✓ kubectl: $(kubectl version --short 2>/dev/null | head -1 || echo 'installed')${NC}"
 echo ""
-
-# Try kubectl, if permission denied try with sudo
-run_kubectl() {
-    run_kubectl "$@" 2>/dev/null || sudo run_kubectl "$@"
-}
 
 # Create namespace
 echo -e "${BLUE}📋 Creating namespace...${NC}"
-run_kubectl create namespace $NAMESPACE --dry-run=client -o yaml | run_kubectl apply -f -
+kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 echo "✓ Namespace ready"
 echo ""
 
 # Create secrets & config
 echo -e "${BLUE}📋 Setting up secrets and configuration...${NC}"
-run_kubectl apply -f "$K8S_MANIFESTS/postgres-secret.yaml"
-run_kubectl apply -f "$K8S_MANIFESTS/backend-secret.yaml"
-run_kubectl apply -f "$K8S_MANIFESTS/backend-configmap.yaml"
+kubectl apply -f "$K8S_MANIFESTS/postgres-secret.yaml"
+kubectl apply -f "$K8S_MANIFESTS/backend-secret.yaml"
+kubectl apply -f "$K8S_MANIFESTS/backend-configmap.yaml"
 echo "✓ Secrets and ConfigMaps created"
 echo ""
 
 # Database
 echo -e "${BLUE}📋 Setting up database...${NC}"
-run_kubectl apply -f "$K8S_MANIFESTS/postgres-statefulset.yaml"
-run_kubectl apply -f "$K8S_MANIFESTS/postgres-pvc.yaml"
+kubectl apply -f "$K8S_MANIFESTS/postgres-statefulset.yaml"
+kubectl apply -f "$K8S_MANIFESTS/postgres-pvc.yaml"
 echo "⏳ Waiting for PostgreSQL..."
-run_kubectl wait --for=condition=ready pod -l app=postgres -n $NAMESPACE --timeout=300s 2>/dev/null || echo "⚠️  PostgreSQL initializing..."
+kubectl wait --for=condition=ready pod -l app=postgres -n $NAMESPACE --timeout=300s 2>/dev/null || echo "⚠️  PostgreSQL initializing..."
 echo ""
 
 # Deploy backend & frontend
 echo -e "${BLUE}📋 Deploying backend...${NC}"
-run_kubectl apply -f "$K8S_MANIFESTS/backend-deployment.yaml"
+kubectl apply -f "$K8S_MANIFESTS/backend-deployment.yaml"
 
 echo -e "${BLUE}📋 Deploying frontend...${NC}"
-run_kubectl apply -f "$K8S_MANIFESTS/frontend-deployment.yaml"
+kubectl apply -f "$K8S_MANIFESTS/frontend-deployment.yaml"
 
 echo "⏳ Waiting for deployments..."
-run_kubectl wait --for=condition=available --timeout=300s deployment/backend -n $NAMESPACE 2>/dev/null || echo "⚠️  Backend deploying..."
+kubectl wait --for=condition=available --timeout=300s deployment/backend -n $NAMESPACE 2>/dev/null || echo "⚠️  Backend deploying..."
 echo ""
 
 # Ingress
 echo -e "${BLUE}📋 Setting up Traefik Ingress...${NC}"
-run_kubectl apply -f "$K8S_MANIFESTS/ingress-traefik.yaml"
+kubectl apply -f "$K8S_MANIFESTS/ingress-traefik.yaml"
 echo "✓ Ingress configured"
 echo ""
 
@@ -110,13 +105,13 @@ echo ""
 
 echo -e "${YELLOW}🐛 Debugging:${NC}"
 echo "  Check pod status:"
-echo "    sudo run_kubectl get pods -n $NAMESPACE"
+echo "    kubectl get pods -n $NAMESPACE"
 echo ""
 echo "  View logs:"
-echo "    sudo run_kubectl logs -n $NAMESPACE -l app=backend -f"
+echo "    kubectl logs -n $NAMESPACE -l app=backend -f"
 echo ""
 echo "  Check ingress:"
-echo "    sudo run_kubectl get ingress -n $NAMESPACE"
+echo "    kubectl get ingress -n $NAMESPACE"
 echo ""
 
 echo -e "${YELLOW}📊 Monitoring:${NC}"
