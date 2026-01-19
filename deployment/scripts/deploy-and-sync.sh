@@ -119,23 +119,31 @@ echo ""
 
 # Step 3: Deploy
 echo -e "${BLUE}Step 3️⃣  - Deploying to Kubernetes...${NC}"
+echo -e "${YELLOW}Note: The deployment script on remote server may need sudo for kubectl.${NC}"
+echo -e "${YELLOW}Setting up passwordless sudo on remote server first...${NC}"
+echo ""
 
-# Try deployment
-if ! ssh "$DESTINATION_SERVER" "cd $DESTINATION_PATH/deployment && bash scripts/deploy-k8s.sh"; then
+# Setup passwordless sudo if not already done
+ssh "$DESTINATION_SERVER" bash <<'SUDO_SETUP'
+# Check if kubectl path is correct
+KUBECTL_PATH=$(which kubectl)
+SUDOERS_FILE="/etc/sudoers.d/zeroqwait-kubectl"
+
+# Create sudoers entry with correct kubectl path
+echo "Setting up sudoers for: $KUBECTL_PATH"
+echo "neekrishrichu ALL=(ALL) NOPASSWD: $KUBECTL_PATH" | sudo tee "$SUDOERS_FILE" >/dev/null
+sudo chmod 440 "$SUDOERS_FILE"
+echo "✅ Sudoers configured"
+SUDO_SETUP
+
+echo ""
+echo -e "${BLUE}Running deployment...${NC}"
+
+# Now run deployment
+ssh "$DESTINATION_SERVER" "cd $DESTINATION_PATH/deployment && bash scripts/deploy-k8s.sh" || {
     echo -e "${RED}❌ Deployment failed${NC}"
-    echo ""
-    echo -e "${YELLOW}If you see 'sudo: a terminal is required' error, setup passwordless sudo:${NC}"
-    echo ""
-    echo "  ssh $DESTINATION_SERVER"
-    echo "  # Then on remote server:"
-    echo "  echo 'neekrishrichu ALL=(ALL) NOPASSWD: /usr/bin/kubectl' | sudo tee /etc/sudoers.d/kubectl-nopass"
-    echo "  sudo chmod 440 /etc/sudoers.d/kubectl-nopass"
-    echo "  exit"
-    echo ""
-    echo "  Then retry:"
-    echo "  bash scripts/deploy-and-sync.sh"
     exit 1
-fi
+}
 
 echo ""
 echo -e "${GREEN}✅ Deploy & Sync Complete!${NC}"
