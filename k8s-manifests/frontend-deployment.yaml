@@ -24,16 +24,14 @@ spec:
           value: "/api"
         command: ["/bin/sh", "-c"]
         args:
-          - |
             echo "Starting deployment process..."
             
-            # Use existing node_modules if possible to speed up restart
-            if [ -d "node_modules" ]; then
-              echo "Found existing node_modules, attempting to use them..."
-            else
-              echo "Installing dependencies..."
-              npm install --legacy-peer-deps
-            fi
+            # Force clean install to fix permission/missing dependency issues
+            echo "Cleaning node_modules to ensure clean state..."
+            rm -rf node_modules
+            
+            echo "Installing dependencies..."
+            npm install --legacy-peer-deps
             
             echo "Building frontend..."
             # Capture build output to log
