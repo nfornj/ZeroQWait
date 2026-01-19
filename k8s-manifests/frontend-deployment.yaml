@@ -64,6 +64,8 @@ spec:
         volumeMounts:
         - name: app-code
           mountPath: /app
+        - name: node-modules
+          mountPath: /app/node_modules
         resources:
           requests:
             memory: "2Gi"
@@ -89,6 +91,8 @@ spec:
         hostPath:
           path: /home/neekrishrichu/apps/zeroqwait/frontend
           type: Directory
+      - name: node-modules
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
