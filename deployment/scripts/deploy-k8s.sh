@@ -9,6 +9,13 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 K8S_MANIFESTS="$PROJECT_ROOT/deployment/kubernetes"
 
+# Fix kubeconfig access for k3s
+export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+if [ ! -r "$KUBECONFIG" ]; then
+    # Try to fix permissions with sudo
+    sudo chmod 644 "$KUBECONFIG" 2>/dev/null || true
+fi
+
 echo "🚀 Starting ZeroQwait Kubernetes Deployment"
 echo "=========================================================="
 echo ""
