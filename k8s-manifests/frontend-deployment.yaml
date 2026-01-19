@@ -27,20 +27,28 @@ spec:
           - |
             echo "Starting deployment process..."
             
-            # Force clean install. Note: node_modules is a mount point, so we clean contents, not the dir.
-            echo "Cleaning node_modules contents and package-lock.json..."
-            rm -rf node_modules/* package-lock.json
+            # Debugging: Check what files we are seeing
+            echo "Listing /app contents..."
+            ls -la /app
+            echo "Checking package.json..."
+            cat /app/package.json | head -n 10
             
-            echo "Installing dependencies..."
-            npm install --legacy-peer-deps
+            echo "Cleaning node_modules contents..."
+            rm -rf node_modules/* 
+            # We skip deleting package-lock.json as it might fail due to host permissions
+            
+            echo "Installing dependencies (ignoring lockfile)..."
+            # Use --no-package-lock to force resolution from package.json
+            npm install --no-package-lock --legacy-peer-deps
             
             echo "Ensuring react-scripts is installed..."
             if [ ! -f "node_modules/.bin/react-scripts" ]; then
                 echo "react-scripts missing, forcing install..."
-                npm install react-scripts@4.0.3 --legacy-peer-deps
+                npm install react-scripts@4.0.3 --legacy-peer-deps --verbose
             fi
             
             echo "Verifying react-scripts..."
+            ls -la node_modules/.bin/ || echo "node_modules/.bin listing failed"
             ls -la node_modules/.bin/react-scripts || echo "react-scripts STILL not found"
             
             echo "Building frontend..."
