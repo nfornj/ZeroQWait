@@ -17,17 +17,12 @@ def get_shop_analytics(
     current_user: dict = Depends(get_current_user)
 ):
     # Verify shop ownership
-    try:
-        shop = db_interface.get_shop_by_id(shop_id)
-        if not shop:
-            raise HTTPException(status_code=404, detail="Shop not found")
-        
-        if shop["owner_id"] != current_user["id"]:
-            raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
-    except HTTPException:
-        raise
-    except Exception:
+    shop = db_interface.get_shop_by_id(shop_id)
+    if not shop:
         raise HTTPException(status_code=404, detail="Shop not found")
+    
+    if shop["owner_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
 
     # Calculate date range
     end_date = datetime.utcnow()
