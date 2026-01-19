@@ -5,7 +5,6 @@ import {
   Typography,
   Box,
   Button,
-  Grid,
   Card,
   CardContent,
   alpha,
@@ -111,8 +110,8 @@ const HomePage: React.FC = () => {
             </Box>
 
             {/* Stats */}
-            <Grid container spacing={4} sx={{ mt: 4 }}>
-              <Grid xs={12} sm={4}>
+            <Box display="flex" flexWrap="wrap" gap={4} sx={{ mt: 4 }}>
+              <Box xs={12} sm={4}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
                     500+
@@ -121,8 +120,8 @@ const HomePage: React.FC = () => {
                     Service Providers
                   </Typography>
                 </Box>
-              </Grid>
-              <Grid xs={12} sm={4}>
+              </Box>
+              <Box xs={12} sm={4}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'secondary.main' }}>
                     10k+
@@ -131,8 +130,8 @@ const HomePage: React.FC = () => {
                     Active Customers
                   </Typography>
                 </Box>
-              </Grid>
-              <Grid xs={12} sm={4}>
+              </Box>
+              <Box xs={12} sm={4}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
                     4.8★
@@ -141,8 +140,8 @@ const HomePage: React.FC = () => {
                     Average Rating
                   </Typography>
                 </Box>
-              </Grid>
-            </Grid>
+              </Box>
+            </Box>
           </Box>
         </Container>
       </Box>
@@ -175,8 +174,8 @@ const HomePage: React.FC = () => {
             </Typography>
           </Box>
 
-          <Grid container spacing={4}>
-            <Grid xs={12} md={4}>
+          <Box display="flex" flexWrap="wrap" gap={4}>
+            <Box xs={12} md={4}>
               <Card
                 elevation={0}
                 sx={{
@@ -215,9 +214,9 @@ const HomePage: React.FC = () => {
                   with flexible settings for wait times and capacity management.
                 </Typography>
               </Card>
-            </Grid>
+            </Box>
 
-            <Grid xs={12} md={4}>
+            <Box xs={12} md={4}>
               <Card
                 elevation={0}
                 sx={{
@@ -256,9 +255,9 @@ const HomePage: React.FC = () => {
                   process check-ins, and keep customers informed automatically.
                 </Typography>
               </Card>
-            </Grid>
+            </Box>
 
-            <Grid xs={12} md={4}>
+            <Box xs={12} md={4}>
               <Card
                 elevation={0}
                 sx={{
@@ -299,16 +298,16 @@ const HomePage: React.FC = () => {
                   }
                 </Typography>
               </Card>
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
         </Container>
       </Box>
 
       {/* AI Demo Section */}
       <Box sx={{ py: { xs: 8, md: 12 }, bgcolor: 'background.paper' }}>
         <Container maxWidth="lg">
-          <Grid container spacing={6} alignItems="center">
-            <Grid xs={12} md={6}>
+          <Box display="flex" flexWrap="wrap" gap={6} alignItems="center">
+            <Box xs={12} md={6}>
               <Box
                 sx={{
                   background: 'linear-gradient(135deg, #FF5A5F 0%, #00A699 100%)',
@@ -342,9 +341,9 @@ const HomePage: React.FC = () => {
                   </Typography>
                 </Box>
               </Box>
-            </Grid>
+            </Box>
 
-            <Grid xs={12} md={6}>
+            <Box xs={12} md={6}>
               <Box sx={{ textAlign: 'center' }}>
                 <Box
                   sx={{
@@ -395,8 +394,8 @@ const HomePage: React.FC = () => {
                   Launch AI Demo
                 </Button>
               </Box>
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
         </Container>
       </Box>
 

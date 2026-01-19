@@ -8,7 +8,6 @@ import {
   TextField,
   Button,
   Link,
-  Grid,
   Paper,
   Avatar,
   Alert,
@@ -249,8 +248,8 @@ const LoginPage: React.FC = () => {
           >
             {loading ? <CircularProgress size={24} /> : "Sign In"}
           </Button>
-          <Grid container justifyContent="space-between">
-            <Grid item>
+          <Box container justifyContent="space-between">
+            <Box item>
               <Link
                 component={RouterLink}
                 to="/forgot-password"
@@ -258,13 +257,13 @@ const LoginPage: React.FC = () => {
               >
                 Forgot password?
               </Link>
-            </Grid>
-            <Grid item>
+            </Box>
+            <Box item>
               <Link component={RouterLink} to="/pricing" variant="body2">
                 {"Don't have an account? Sign Up"}
               </Link>
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
         </Box>
       </Paper>
     </Container>

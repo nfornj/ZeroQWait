@@ -12,7 +12,6 @@ import {
     ListItem,
     ListItemText,
     Chip,
-    Grid,
     Divider,
     Alert,
     CircularProgress,
@@ -241,10 +240,10 @@ const QueueViewPage: React.FC = () => {
                 </Alert>
             )}
 
-            <Grid container spacing={3}>
+            <Box display="flex" flexWrap="wrap" gap={3}>
                 {/* My Queue Status */}
                 {myQueueItem ? (
-                    <Grid xs={12} md={6}>
+                    <Box xs={12} md={6}>
                         <Card sx={{ bgcolor: 'primary.light', color: 'white' }}>
                             <CardContent>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -281,8 +280,8 @@ const QueueViewPage: React.FC = () => {
                                 </Box>
                                 {waitEstimate && (
                                     <Box mt={3}>
-                                        <Grid container spacing={2}>
-                                            <Grid xs={6}>
+                                        <Box display="flex" flexWrap="wrap" gap={2}>
+                                            <Box xs={6}>
                                                 <Box display="flex" alignItems="center">
                                                     <PeopleIcon sx={{ mr: 1 }} />
                                                     <Box>
@@ -290,8 +289,8 @@ const QueueViewPage: React.FC = () => {
                                                         <Typography variant="caption">People Ahead</Typography>
                                                     </Box>
                                                 </Box>
-                                            </Grid>
-                                            <Grid xs={6}>
+                                            </Box>
+                                            <Box xs={6}>
                                                 <Box display="flex" alignItems="center">
                                                     <AccessTimeIcon sx={{ mr: 1 }} />
                                                     <Box>
@@ -301,15 +300,15 @@ const QueueViewPage: React.FC = () => {
                                                         <Typography variant="caption">Est. Wait Time</Typography>
                                                     </Box>
                                                 </Box>
-                                            </Grid>
-                                        </Grid>
+                                            </Box>
+                                        </Box>
                                     </Box>
                                 )}
                             </CardContent>
                         </Card>
-                    </Grid>
+                    </Box>
                 ) : (
-                    <Grid xs={12} md={6}>
+                    <Box xs={12} md={6}>
                         <Card>
                             <CardContent>
                                 <Typography variant="h5" gutterBottom>
@@ -361,11 +360,11 @@ const QueueViewPage: React.FC = () => {
                                 </Box>
                             </CardContent>
                         </Card>
-                    </Grid>
+                    </Box>
                 )}
 
                 {/* Current Queue Status */}
-                <Grid xs={12} md={6}>
+                <Box xs={12} md={6}>
                     <Card>
                         <CardContent>
                             <Typography variant="h5" gutterBottom>
@@ -406,8 +405,8 @@ const QueueViewPage: React.FC = () => {
                             )}
                         </CardContent>
                     </Card>
-                </Grid>
-            </Grid>
+                </Box>
+            </Box>
         </Container>
     );
 };

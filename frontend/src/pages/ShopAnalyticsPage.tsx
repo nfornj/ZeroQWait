@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Container,
-    Grid,
     Paper,
     Typography,
     Box,
@@ -113,8 +112,8 @@ const ShopAnalyticsPage: React.FC = () => {
             </Box>
 
             {/* Summary Cards */}
-            <Grid container spacing={3} mb={4}>
-                <Grid xs={12} md={4}>
+            <Box display="flex" flexWrap="wrap" gap={3} mb={4}>
+                <Box xs={12} md={4}>
                     <Card elevation={2}>
                         <CardContent>
                             <Box display="flex" alignItems="center" mb={1}>
@@ -129,9 +128,9 @@ const ShopAnalyticsPage: React.FC = () => {
                             </Typography>
                         </CardContent>
                     </Card>
-                </Grid>
+                </Box>
 
-                <Grid xs={12} md={4}>
+                <Box xs={12} md={4}>
                     <Card elevation={2}>
                         <CardContent>
                             <Box display="flex" alignItems="center" mb={1}>
@@ -146,9 +145,9 @@ const ShopAnalyticsPage: React.FC = () => {
                             </Typography>
                         </CardContent>
                     </Card>
-                </Grid>
+                </Box>
 
-                <Grid xs={12} md={4}>
+                <Box xs={12} md={4}>
                     <Card elevation={2}>
                         <CardContent>
                             <Box display="flex" alignItems="center" mb={1}>
@@ -163,8 +162,8 @@ const ShopAnalyticsPage: React.FC = () => {
                             </Typography>
                         </CardContent>
                     </Card>
-                </Grid>
-            </Grid>
+                </Box>
+            </Box>
 
             {/* Daily Stats Chart */}
             <Paper elevation={2} sx={{ p: 3 }}>

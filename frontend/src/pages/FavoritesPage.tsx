@@ -3,7 +3,6 @@ import {
   Container,
   Typography,
   Box,
-  Grid,
   CircularProgress,
   Alert,
 } from "@mui/material";
@@ -56,16 +55,16 @@ const FavoritesPage: React.FC = () => {
             <CircularProgress />
           </Box>
         ) : favorites.length > 0 ? (
-          <Grid container spacing={3}>
+          <Box display="flex" flexWrap="wrap" gap={3}>
             {favorites.map((haircut) => (
-              <Grid xs={12} sm={6} md={4} key={haircut.id}>
+              <Box xs={12} sm={6} md={4} key={haircut.id}>
                 <HaircutCard
                   haircut={haircut}
                   onFavoriteRemoved={handleFavoriteRemoved}
                 />
-              </Grid>
+              </Box>
             ))}
-          </Grid>
+          </Box>
         ) : (
           <Typography variant="body1" color="text.secondary" align="center">
             You haven't saved any favorites yet. Start by searching for haircut

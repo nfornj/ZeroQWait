@@ -7,7 +7,6 @@ import {
   TextField,
   Button,
   Link,
-  Grid,
   Paper,
   Avatar,
   Alert,
@@ -114,8 +113,8 @@ const RegisterPage: React.FC = () => {
           onSubmit={handleSubmit}
           sx={{ mt: 3, width: "100%" }}
         >
-          <Grid container spacing={2}>
-            <Grid xs={12}>
+          <Box display="flex" flexWrap="wrap" gap={2}>
+            <Box xs={12}>
               <TextField
                 required
                 fullWidth
@@ -129,8 +128,8 @@ const RegisterPage: React.FC = () => {
                 helperText={formErrors.username}
                 disabled={loading}
               />
-            </Grid>
-            <Grid xs={12}>
+            </Box>
+            <Box xs={12}>
               <TextField
                 required
                 fullWidth
@@ -144,8 +143,8 @@ const RegisterPage: React.FC = () => {
                 helperText={formErrors.email}
                 disabled={loading}
               />
-            </Grid>
-            <Grid xs={12}>
+            </Box>
+            <Box xs={12}>
               <TextField
                 select
                 required
@@ -161,8 +160,8 @@ const RegisterPage: React.FC = () => {
                 <MenuItem value="customer">Customer</MenuItem>
                 <MenuItem value="shop_owner">Shop Owner</MenuItem>
               </TextField>
-            </Grid>
-            <Grid xs={12}>
+            </Box>
+            <Box xs={12}>
               <TextField
                 required
                 fullWidth
@@ -177,8 +176,8 @@ const RegisterPage: React.FC = () => {
                 helperText={formErrors.password}
                 disabled={loading}
               />
-            </Grid>
-            <Grid xs={12}>
+            </Box>
+            <Box xs={12}>
               <TextField
                 required
                 fullWidth
@@ -192,8 +191,8 @@ const RegisterPage: React.FC = () => {
                 helperText={formErrors.confirmPassword}
                 disabled={loading}
               />
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
           <Button
             type="submit"
             fullWidth
@@ -203,13 +202,13 @@ const RegisterPage: React.FC = () => {
           >
             {loading ? <CircularProgress size={24} /> : "Sign Up"}
           </Button>
-          <Grid container justifyContent="flex-end">
-            <Grid item>
+          <Box container justifyContent="flex-end">
+            <Box item>
               <Link component={RouterLink} to="/login" variant="body2">
                 Already have an account? Sign in
               </Link>
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
         </Box>
       </Paper>
     </Container>

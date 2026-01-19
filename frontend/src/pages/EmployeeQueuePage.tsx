@@ -19,7 +19,6 @@ import {
     DialogContent,
     DialogActions,
     TextField,
-    Grid,
     Paper
 } from '@mui/material';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -270,9 +269,9 @@ const EmployeeQueuePage: React.FC = () => {
             {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
 
             {!currentShift ? (
-                <Grid container spacing={3}>
+                <Box display="flex" flexWrap="wrap" gap={3}>
                     {shops.map((shop) => (
-                        <Grid xs={12} md={6} key={shop.id}>
+                        <Box xs={12} md={6} key={shop.id}>
                             <Card>
                                 <CardContent>
                                     <Typography variant="h6" sx={{ mb: 2 }}>
@@ -288,9 +287,9 @@ const EmployeeQueuePage: React.FC = () => {
                                     </Button>
                                 </CardContent>
                             </Card>
-                        </Grid>
+                        </Box>
                     ))}
-                </Grid>
+                </Box>
             ) : (
                 <Box>
                     <Paper sx={{ p: 3, mb: 3 }}>
@@ -312,8 +311,8 @@ const EmployeeQueuePage: React.FC = () => {
                         </Box>
                     </Paper>
 
-                    <Grid container spacing={3}>
-                        <Grid xs={12} md={6}>
+                    <Box display="flex" flexWrap="wrap" gap={3}>
+                        <Box xs={12} md={6}>
                             <Card>
                                 <CardContent>
                                     <Typography variant="h6" sx={{ mb: 2 }}>
@@ -345,9 +344,9 @@ const EmployeeQueuePage: React.FC = () => {
                                     </Button>
                                 </CardContent>
                             </Card>
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12} md={6}>
+                        <Box xs={12} md={6}>
                             <Card>
                                 <CardContent>
                                     <Typography variant="h6" sx={{ mb: 2 }}>
@@ -401,8 +400,8 @@ const EmployeeQueuePage: React.FC = () => {
                                     )}
                                 </CardContent>
                             </Card>
-                        </Grid>
-                    </Grid>
+                        </Box>
+                    </Box>
                 </Box>
             )}
 

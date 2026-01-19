@@ -6,7 +6,6 @@ import {
     Typography,
     Card,
     CardContent,
-    Grid,
     Chip,
     Avatar,
     CircularProgress,
@@ -153,38 +152,38 @@ const InShopDisplayPage: React.FC = () => {
                     color: 'white',
                 }}
             >
-                <Grid container alignItems="center" spacing={2}>
-                    <Grid item>
+                <Box container alignItems="center" spacing={2}>
+                    <Box item>
                         {shop.logo_url && (
                             <Avatar
                                 src={shop.logo_url}
                                 sx={{ width: 70, height: 70, border: '2px solid white' }}
                             />
                         )}
-                    </Grid>
-                    <Grid xs>
+                    </Box>
+                    <Box xs>
                         <Typography variant="h3" fontWeight="bold">
                             {shop.name}
                         </Typography>
                         <Typography variant="h6" sx={{ opacity: 0.9, mt: 0.5 }}>
                             Queue Status
                         </Typography>
-                    </Grid>
-                    <Grid item>
+                    </Box>
+                    <Box item>
                         <Typography variant="h4" fontWeight="bold" textAlign="right">
                             {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </Typography>
                         <Typography variant="caption" textAlign="right" display="block">
                             {currentTime.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
                         </Typography>
-                    </Grid>
-                </Grid>
+                    </Box>
+                </Box>
             </Paper>
 
             {/* Main Content */}
-            <Grid container spacing={4}>
+            <Box display="flex" flexWrap="wrap" gap={4}>
                 {/* Now Serving Section */}
-                <Grid xs={12} md={5}>
+                <Box xs={12} md={5}>
                     <Card
                         elevation={3}
                         sx={{
@@ -245,17 +244,17 @@ const InShopDisplayPage: React.FC = () => {
                             )}
                         </CardContent>
                     </Card>
-                </Grid>
+                </Box>
 
                 {/* Queue Information Section */}
-                <Grid xs={12} md={7}>
-                    <Grid container spacing={3}>
+                <Box xs={12} md={7}>
+                    <Box display="flex" flexWrap="wrap" gap={3}>
                         {/* Queue Stats */}
-                        <Grid xs={12}>
+                        <Box xs={12}>
                             <Card elevation={3}>
                                 <CardContent sx={{ p: 4 }}>
-                                    <Grid container spacing={3}>
-                                        <Grid xs={6}>
+                                    <Box display="flex" flexWrap="wrap" gap={3}>
+                                        <Box xs={6}>
                                             <Box display="flex" alignItems="center">
                                                 <PeopleIcon sx={{ fontSize: 60, mr: 2, color: primaryColor }} />
                                                 <Box>
@@ -267,8 +266,8 @@ const InShopDisplayPage: React.FC = () => {
                                                     </Typography>
                                                 </Box>
                                             </Box>
-                                        </Grid>
-                                        <Grid xs={6}>
+                                        </Box>
+                                        <Box xs={6}>
                                             <Box display="flex" alignItems="center">
                                                 <AccessTimeIcon sx={{ fontSize: 60, mr: 2, color: primaryColor }} />
                                                 <Box>
@@ -280,14 +279,14 @@ const InShopDisplayPage: React.FC = () => {
                                                     </Typography>
                                                 </Box>
                                             </Box>
-                                        </Grid>
-                                    </Grid>
+                                        </Box>
+                                    </Box>
                                 </CardContent>
                             </Card>
-                        </Grid>
+                        </Box>
 
                         {/* Waiting List */}
-                        <Grid xs={12}>
+                        <Box xs={12}>
                             <Card elevation={3} sx={{ minHeight: 400 }}>
                                 <CardContent sx={{ p: 4 }}>
                                     <Typography variant="h4" fontWeight="bold" gutterBottom>
@@ -305,9 +304,9 @@ const InShopDisplayPage: React.FC = () => {
                                             </Typography>
                                         </Box>
                                     ) : (
-                                        <Grid container spacing={2}>
+                                        <Box display="flex" flexWrap="wrap" gap={2}>
                                             {waitingCustomers.slice(0, 8).map((customer, index) => (
-                                                <Grid xs={12} sm={6} key={customer.id}>
+                                                <Box xs={12} sm={6} key={customer.id}>
                                                     <Paper
                                                         elevation={1}
                                                         sx={{
@@ -346,23 +345,23 @@ const InShopDisplayPage: React.FC = () => {
                                                             )}
                                                         </Box>
                                                     </Paper>
-                                                </Grid>
+                                                </Box>
                                             ))}
                                             {waitingCustomers.length > 8 && (
-                                                <Grid xs={12}>
+                                                <Box xs={12}>
                                                     <Typography variant="h6" color="text.secondary" textAlign="center">
                                                         ... and {waitingCustomers.length - 8} more waiting
                                                     </Typography>
-                                                </Grid>
+                                                </Box>
                                             )}
-                                        </Grid>
+                                        </Box>
                                     )}
                                 </CardContent>
                             </Card>
-                        </Grid>
-                    </Grid>
-                </Grid>
-            </Grid>
+                        </Box>
+                    </Box>
+                </Box>
+            </Box>
 
             {/* Footer */}
             <Paper

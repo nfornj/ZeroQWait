@@ -3,7 +3,6 @@ import {
     Container,
     Typography,
     Paper,
-    Grid,
     TextField,
     Button,
     Box,
@@ -154,9 +153,9 @@ const ShopSettingsPage: React.FC = () => {
 
             <Paper sx={{ p: 4 }}>
                 <Box component="form" onSubmit={handleSubmit}>
-                    <Grid container spacing={4}>
+                    <Box display="flex" flexWrap="wrap" gap={4}>
                         {/* PERSONALIZATION SECTION */}
-                        <Grid xs={12}>
+                        <Box xs={12}>
                             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
                                 Dashboard Theme
                             </Typography>
@@ -164,9 +163,9 @@ const ShopSettingsPage: React.FC = () => {
                                 Personalize your dashboard experience. This only affects your view.
                             </Typography>
 
-                            <Grid container spacing={2}>
+                            <Box display="flex" flexWrap="wrap" gap={2}>
                                 {THEMES.map((theme) => (
-                                    <Grid xs={6} sm={4} md={2} key={theme.id}>
+                                    <Box xs={6} sm={4} md={2} key={theme.id}>
                                         <Card
                                             elevation={themePreset === theme.id ? 4 : 1}
                                             sx={{
@@ -208,15 +207,15 @@ const ShopSettingsPage: React.FC = () => {
                                                 </CardContent>
                                             </CardActionArea>
                                         </Card>
-                                    </Grid>
+                                    </Box>
                                 ))}
-                            </Grid>
-                        </Grid>
+                            </Box>
+                        </Box>
 
 
-                        <Grid xs={12}><Typography variant="h6" sx={{ fontWeight: 600 }}>Shop Identity</Typography></Grid>
+                        <Box xs={12}><Typography variant="h6" sx={{ fontWeight: 600 }}>Shop Identity</Typography></Box>
 
-                        <Grid xs={12} md={6}>
+                        <Box xs={12} md={6}>
                             <TextField
                                 fullWidth
                                 label="Shop Name"
@@ -236,9 +235,9 @@ const ShopSettingsPage: React.FC = () => {
                                 helperText="Or paste a direct link to your logo image"
                                 size="small"
                             />
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12} md={6}>
+                        <Box xs={12} md={6}>
                             <Paper
                                 variant="outlined"
                                 sx={{
@@ -300,18 +299,18 @@ const ShopSettingsPage: React.FC = () => {
                                     Recommended size: 200x200px
                                 </Typography>
                             </Paper>
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12}>
+                        <Box xs={12}>
                             <Typography variant="h6" gutterBottom sx={{ mt: 2, fontWeight: 600 }}>
                                 Customer View Branding
                             </Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                                 Customize your brand colors. These colors will be used on the public queue page and widget.
                             </Typography>
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12} sm={6}>
+                        <Box xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Primary Color"
@@ -321,9 +320,9 @@ const ShopSettingsPage: React.FC = () => {
                                 onChange={handleChange}
                                 helperText="Main buttons, headers"
                             />
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12} sm={6}>
+                        <Box xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Secondary Color"
@@ -333,9 +332,9 @@ const ShopSettingsPage: React.FC = () => {
                                 onChange={handleChange}
                                 helperText="Backgrounds"
                             />
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12} sm={6}>
+                        <Box xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Accent Color"
@@ -345,9 +344,9 @@ const ShopSettingsPage: React.FC = () => {
                                 onChange={handleChange}
                                 helperText="Highlights"
                             />
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12} sm={6}>
+                        <Box xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Queue Card Color"
@@ -357,15 +356,15 @@ const ShopSettingsPage: React.FC = () => {
                                 onChange={handleChange}
                                 helperText="Color for waiting queue cards"
                             />
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12}>
+                        <Box xs={12}>
                             <Typography variant="h6" gutterBottom sx={{ mt: 2, fontWeight: 600 }}>
                                 Contact Information
                             </Typography>
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12}>
+                        <Box xs={12}>
                             <TextField
                                 fullWidth
                                 multiline
@@ -375,9 +374,9 @@ const ShopSettingsPage: React.FC = () => {
                                 value={formData.description}
                                 onChange={handleChange}
                             />
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12} sm={6}>
+                        <Box xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Phone"
@@ -385,9 +384,9 @@ const ShopSettingsPage: React.FC = () => {
                                 value={formData.phone}
                                 onChange={handleChange}
                             />
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12} sm={6}>
+                        <Box xs={12} sm={6}>
                             <TextField
                                 fullWidth
                                 label="Website"
@@ -395,9 +394,9 @@ const ShopSettingsPage: React.FC = () => {
                                 value={formData.website}
                                 onChange={handleChange}
                             />
-                        </Grid>
+                        </Box>
 
-                        <Grid xs={12} sx={{ mt: 2 }}>
+                        <Box xs={12} sx={{ mt: 2 }}>
                             <Button
                                 type="submit"
                                 variant="contained"
@@ -407,8 +406,8 @@ const ShopSettingsPage: React.FC = () => {
                             >
                                 {saving ? 'Saving...' : 'Save Settings'}
                             </Button>
-                        </Grid>
-                    </Grid>
+                        </Box>
+                    </Box>
                 </Box>
             </Paper>
         </Container>

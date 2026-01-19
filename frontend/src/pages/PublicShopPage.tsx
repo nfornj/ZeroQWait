@@ -7,7 +7,6 @@ import {
     Card,
     CardContent,
     Button,
-    Grid,
     Chip,
     Avatar,
     CircularProgress,
@@ -98,9 +97,9 @@ const PublicShopPage: React.FC = () => {
                     Join a Queue
                 </Typography>
 
-                <Grid container spacing={3}>
+                <Box display="flex" flexWrap="wrap" gap={3}>
                     {queues.map((queue) => (
-                        <Grid xs={12} md={6} key={queue.id}>
+                        <Box xs={12} md={6} key={queue.id}>
                             <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                                 <CardContent sx={{ flexGrow: 1 }}>
                                     <Typography variant="h5" gutterBottom>
@@ -132,9 +131,9 @@ const PublicShopPage: React.FC = () => {
                                     </Button>
                                 </CardContent>
                             </Card>
-                        </Grid>
+                        </Box>
                     ))}
-                </Grid>
+                </Box>
 
                 <Box mt={6}>
                     <Typography variant="h5" gutterBottom>

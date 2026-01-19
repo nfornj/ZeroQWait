@@ -11,7 +11,6 @@ import {
     ListItem,
     ListItemText,
     Chip,
-    Grid,
     Divider,
     Alert,
     CircularProgress,
@@ -309,8 +308,8 @@ const ShopDashboardPage: React.FC = () => {
                 )}
 
                 {/* KPI Cards Row */}
-                <Grid container spacing={3} sx={{ mb: 4 }}>
-                    <Grid xs={12} sm={6} md={3}>
+                <Box display="flex" flexWrap="wrap" gap={3} sx={{ mb: 4 }}>
+                    <Box xs={12} sm={6} md={3}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Typography color="textSecondary" gutterBottom variant="overline">
@@ -325,8 +324,8 @@ const ShopDashboardPage: React.FC = () => {
                                 </Box>
                             </CardContent>
                         </Card>
-                    </Grid>
-                    <Grid xs={12} sm={6} md={3}>
+                    </Box>
+                    <Box xs={12} sm={6} md={3}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Typography color="textSecondary" gutterBottom variant="overline">
@@ -341,8 +340,8 @@ const ShopDashboardPage: React.FC = () => {
                                 </Box>
                             </CardContent>
                         </Card>
-                    </Grid>
-                    <Grid xs={12} sm={6} md={3}>
+                    </Box>
+                    <Box xs={12} sm={6} md={3}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Typography color="textSecondary" gutterBottom variant="overline">
@@ -357,9 +356,9 @@ const ShopDashboardPage: React.FC = () => {
                                 </Box>
                             </CardContent>
                         </Card>
-                    </Grid>
+                    </Box>
                     {/* Placeholder for future stat or quick action */}
-                    <Grid xs={12} sm={6} md={3}>
+                    <Box xs={12} sm={6} md={3}>
                         <Card sx={{ height: '100%', bgcolor: 'primary.main', color: 'primary.contrastText' }}>
                             <CardContent sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }}>
                                 <Button
@@ -373,12 +372,12 @@ const ShopDashboardPage: React.FC = () => {
                                 </Button>
                             </CardContent>
                         </Card>
-                    </Grid>
-                </Grid>
+                    </Box>
+                </Box>
 
-                <Grid container spacing={3}>
+                <Box display="flex" flexWrap="wrap" gap={3}>
                     {/* Currently Being Served */}
-                    <Grid xs={12} md={6}>
+                    <Box xs={12} md={6}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -448,10 +447,10 @@ const ShopDashboardPage: React.FC = () => {
                                 )}
                             </CardContent>
                         </Card>
-                    </Grid>
+                    </Box>
 
                     {/* Queue */}
-                    <Grid xs={12} md={6}>
+                    <Box xs={12} md={6}>
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
@@ -524,8 +523,8 @@ const ShopDashboardPage: React.FC = () => {
                                 )}
                             </CardContent>
                         </Card>
-                    </Grid>
-                </Grid>
+                    </Box>
+                </Box>
 
                 {/* Employee Selector Dialog */}
                 <EmployeeSelector

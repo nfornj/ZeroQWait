@@ -4,7 +4,6 @@ import {
   Container,
   Typography,
   Box,
-  Grid,
   CircularProgress,
   Alert,
   Card,
@@ -258,9 +257,9 @@ const SearchPage: React.FC = () => {
             {viewMode === 'map' ? (
               <MapView shops={filteredShops} />
             ) : (
-              <Grid container spacing={3}>
+              <Box display="flex" flexWrap="wrap" gap={3}>
                 {filteredShops.map((shop) => (
-                  <Grid xs={12} sm={6} lg={4} key={shop.id}>
+                  <Box xs={12} sm={6} lg={4} key={shop.id}>
                     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                       <CardContent sx={{ flexGrow: 1 }}>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
@@ -299,9 +298,9 @@ const SearchPage: React.FC = () => {
                         </Button>
                       </CardActions>
                     </Card>
-                  </Grid>
+                  </Box>
                 ))}
-              </Grid>
+              </Box>
             )}
           </Box>
         ) : (
