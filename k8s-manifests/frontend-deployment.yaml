@@ -28,11 +28,16 @@ spec:
             echo "Starting deployment process..."
             
             # Force clean install to fix permission/missing dependency issues
-            echo "Cleaning node_modules to ensure clean state..."
-            rm -rf node_modules
+            echo "Cleaning node_modules and package-lock.json to ensure clean state..."
+            rm -rf node_modules package-lock.json
             
             echo "Installing dependencies..."
+            # Force development install to ensure all binaries are present
+            npm install --legacy-peer-deps --only=development
             npm install --legacy-peer-deps
+            
+            echo "Verifying react-scripts..."
+            ls -la node_modules/.bin/react-scripts || echo "react-scripts not found in .bin"
             
             echo "Building frontend..."
             # Capture build output to log
