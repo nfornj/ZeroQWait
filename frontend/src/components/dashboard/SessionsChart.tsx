@@ -117,11 +117,6 @@ export default function SessionsChart() {
                             fill: "url('#appointment')",
                         },
                     }}
-                    slotProps={{
-                        legend: {
-                            hidden: true,
-                        },
-                    }}
                 >
                     <AreaGradient color={theme.palette.primary.dark} id="appointment" />
                     <AreaGradient color={theme.palette.primary.main} id="walk-in" />
