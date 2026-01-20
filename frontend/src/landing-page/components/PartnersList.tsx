@@ -28,7 +28,7 @@ const logoStyle = {
   opacity: 0.7,
 };
 
-export default function LogoCollection() {
+export default function PartnersList() {
   const { mode, systemMode } = useColorScheme();
   let logos: string[] = darkModeLogos; // Default to dark mode logos
   if (mode === 'system') {
