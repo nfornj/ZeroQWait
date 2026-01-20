@@ -44,17 +44,19 @@ function App() {
     <ShopProvider>
       <ThemeProvider>
         <Routes>
-          {/* Public Routes with Navbar */}
+          {/* Auth Pages (No Navbar) */}
           <Route path="/signin" element={<SignInSide />} />
           <Route path="/login" element={<SignInSide />} />
           <Route path="/signup" element={<SignUp />} />
           <Route path="/register" element={<SignUp />} />
+          <Route path="/register/shop-owner" element={<SignUp />} />
+          <Route path="/register/customer" element={<SignUp />} />
+
+          {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>
             <Route path="/" element={<HomePage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
-            <Route path="/register/customer" element={<RegisterCustomerPage />} />
-            <Route path="/register/shop-owner" element={<RegisterShopOwnerPage />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/queue/:shopId" element={<QueueViewPage />} />
