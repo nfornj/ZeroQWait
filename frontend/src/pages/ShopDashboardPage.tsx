@@ -244,11 +244,11 @@ const ShopDashboardPage: React.FC = () => {
             </Typography>
             <Grid container spacing={2} columns={12} sx={{ mb: 4 }}>
                 {statCards.map((card, index) => (
-                    <Grid item xs={12} sm={6} lg={3} key={index}>
+                    <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={index}>
                         <StatCard {...card} />
                     </Grid>
                 ))}
-                <Grid item xs={12} sm={6} lg={3}>
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
                     <HighlightedCard />
                 </Grid>
             </Grid>
