@@ -24,6 +24,7 @@ echo "⬆️  Pushing to local registry..."
 docker push $REGISTRY/$IMAGE_NAME:$TAG
 
 echo "🔄 Applying Kubernetes Manifests..."
+cd $APP_DIR
 sudo kubectl apply -f k8s-manifests/frontend-deployment.yaml
 
 echo "🔄 Restarting Kubernetes Deployment..."
