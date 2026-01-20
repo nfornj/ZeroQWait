@@ -13,7 +13,7 @@ import Footer from './components/Footer';
 
 export default function MarketingPage(props: { disableCustomTheme?: boolean }) {
   return (
-    <AppTheme {...props} mode="dark">
+    <AppTheme {...props}>
       <CssBaseline enableColorScheme />
 
       <AppAppBar />

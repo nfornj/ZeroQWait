@@ -13,6 +13,8 @@ import MenuIcon from '@mui/icons-material/Menu';
 import Typography from '@mui/material/Typography';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 
+import ColorModeIconDropdown from '../../auth-shared-theme/ColorModeIconDropdown';
+
 const StyledToolbar = styled(Toolbar)(({ theme }) => ({
   display: 'flex',
   alignItems: 'center',
@@ -87,6 +89,7 @@ export default function AppAppBar() {
             <Button color="primary" variant="contained" size="small" href="/signup">
               Sign up
             </Button>
+            <ColorModeIconDropdown />
           </Box>
           <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1 }}>
             <IconButton aria-label="Menu button" onClick={toggleDrawer(true)}>

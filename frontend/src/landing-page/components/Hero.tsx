@@ -43,7 +43,7 @@ export default function Hero() {
         backgroundRepeat: 'no-repeat',
 
         backgroundImage:
-          'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 50%, 25%), transparent)',
+          'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 60%, 85%), transparent)',
         ...theme.applyStyles('dark', {
           backgroundImage:
             'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 50%, 25%), transparent)',
