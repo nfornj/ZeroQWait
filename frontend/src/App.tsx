@@ -45,9 +45,9 @@ function App() {
         <Routes>
           {/* Public Routes with Navbar */}
           <Route path="/signin" element={<SignInSide />} />
+          <Route path="/login" element={<SignInSide />} />
           <Route element={<PublicLayout />}>
             <Route path="/" element={<HomePage />} />
-            <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/register/customer" element={<RegisterCustomerPage />} />
