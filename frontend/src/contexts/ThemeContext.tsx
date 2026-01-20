@@ -30,7 +30,7 @@ export const useThemeContext = () => {
 
 export const gradientPresets: Record<GradientPreset, string> = {
     minimal: 'none',
-    violet: 'linear-gradient(135deg, #E0C3FC 0%, #8EC5FC 100%)',
+    violet: 'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 60%, 85%), transparent)',
     ocean: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
     sunset: 'linear-gradient(135deg, #f6d365 0%, #fda085 100%)',
 };
