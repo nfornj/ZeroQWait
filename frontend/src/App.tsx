@@ -37,7 +37,7 @@ import PublicLayout from "./layouts/PublicLayout";
 import QueueCounterPage from "./pages/QueueCounterPage";
 
 import SignInSide from "./auth-sign-in/SignInSide";
-import SignUp from "./auth-sign-up/SignUp";
+import ShopOwnerSignUp from "./auth-sign-up/ShopOwnerSignUp";
 
 function App() {
   return (
@@ -47,10 +47,10 @@ function App() {
           {/* Auth Pages (No Navbar) */}
           <Route path="/signin" element={<SignInSide />} />
           <Route path="/login" element={<SignInSide />} />
-          <Route path="/signup" element={<SignUp />} />
-          <Route path="/register" element={<SignUp />} />
-          <Route path="/register/shop-owner" element={<SignUp />} />
-          <Route path="/register/customer" element={<SignUp />} />
+          <Route path="/signup" element={<ShopOwnerSignUp />} />
+          <Route path="/register" element={<ShopOwnerSignUp />} />
+          <Route path="/register/shop-owner" element={<ShopOwnerSignUp />} />
+          <Route path="/register/customer" element={<ShopOwnerSignUp />} />
 
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>
