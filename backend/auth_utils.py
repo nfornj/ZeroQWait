@@ -30,7 +30,13 @@ def get_password_hash(password):
 
 def authenticate_user(username: str, password: str):
     try:
+        # Try finding by username first
         user = db_interface.get_user_by_username(username)
+        
+        # If not found, try finding by email (since username param might be an email)
+        if not user:
+            user = db_interface.get_user_by_email(username)
+            
         if not user:
             return False
         if not verify_password(password, user["hashed_password"]):
