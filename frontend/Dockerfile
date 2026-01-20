@@ -10,6 +10,9 @@ ENV REACT_APP_API_URL=$REACT_APP_API_URL
 # Copy package files
 COPY package*.json ./
 
+# Set memory limit for node process to avoid OOM
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+
 # Install dependencies
 RUN npm install
 
