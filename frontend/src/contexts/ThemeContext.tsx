@@ -38,16 +38,16 @@ const themePalettes: Record<ThemePreset, { primary: string; secondary: string }>
 export const gradientPresets: Record<GradientPreset, { light: string; dark: string }> = {
     minimal: { light: 'none', dark: 'none' },
     violet: {
-        light: 'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 60%, 85%), transparent)',
-        dark: 'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 50%, 25%), transparent)',
+        light: 'radial-gradient(ellipse 80% 80% at 50% -20%, hsl(270, 80%, 78%), hsl(280, 70%, 92%))',
+        dark: 'radial-gradient(ellipse 80% 80% at 50% -20%, hsl(270, 60%, 20%), hsl(280, 50%, 10%))',
     },
     ocean: {
-        light: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
-        dark: 'linear-gradient(135deg, #153e40 0%, #2a1b1f 100%)',
+        light: 'linear-gradient(135deg, #67E8F9 0%, #FB7185 100%)',
+        dark: 'linear-gradient(135deg, #0E7490 0%, #881337 100%)',
     },
     sunset: {
-        light: 'linear-gradient(135deg, #f6d365 0%, #fda085 100%)',
-        dark: 'linear-gradient(135deg, #3e2b02 0%, #4a1f15 100%)',
+        light: 'linear-gradient(135deg, #FCD34D 0%, #FB923C 100%)',
+        dark: 'linear-gradient(135deg, #78350F 0%, #7C2D12 100%)',
     },
 };
 

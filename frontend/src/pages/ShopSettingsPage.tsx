@@ -28,7 +28,7 @@ const THEMES: { id: ThemePreset; name: string; primary: string; secondary: strin
 ];
 
 const ShopSettingsPage: React.FC = () => {
-    const { themePreset, setThemePreset } = useThemeContext();
+    const { themePreset, setThemePreset, setDashboardGradient } = useThemeContext();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
@@ -46,7 +46,8 @@ const ShopSettingsPage: React.FC = () => {
         accent_color: '',
         background_color: '',
         logo_url: '',
-        slug: ''
+        slug: '',
+        dashboard_gradient: 'violet' as string
     });
 
     useEffect(() => {
@@ -73,7 +74,8 @@ const ShopSettingsPage: React.FC = () => {
                     accent_color: shopData.accent_color || '',
                     background_color: shopData.background_color || '',
                     logo_url: shopData.logo_url || '',
-                    slug: shopData.slug || ''
+                    slug: shopData.slug || '',
+                    dashboard_gradient: shopData.dashboard_gradient || 'violet'
                 });
                 if (shopData.logo_url) setLogoPreview(shopData.logo_url);
             }
@@ -99,6 +101,7 @@ const ShopSettingsPage: React.FC = () => {
 
         try {
             const token = localStorage.getItem('token');
+            // Ensure dashboard_gradient is included in the payload
             await axios.put(`/shops/${shop.id}`, formData, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -116,12 +119,7 @@ const ShopSettingsPage: React.FC = () => {
             // Reload shop data to reflect changes
             await fetchShop();
 
-            // Trigger a page reload after a short delay to update all components
-            // We removed the full reload here because the theme updates instantly via Context
-            // But if shop data (logo etc) changed, other components might need to know. 
-            // For now, let's keep it but make it optional or smoother if possible.
-            // Actually, for theme change we don't need reload. For shop data we might.
-            // Keeping it simple:
+            // Trigger a page reload after a short delay
             setTimeout(() => {
                 window.location.reload();
             }, 1000);
@@ -160,7 +158,7 @@ const ShopSettingsPage: React.FC = () => {
                                 Dashboard Theme
                             </Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                Personalize your dashboard experience. This only affects your view.
+                                Personalize your dashboard experience. This affects your view and the public shop colors.
                             </Typography>
 
                             <Box display="flex" flexWrap="wrap" gap={2}>
@@ -212,6 +210,39 @@ const ShopSettingsPage: React.FC = () => {
                             </Box>
                         </Box>
 
+                        <Box sx={{ flex: 1, minWidth: '250px' }}>
+                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                                Background Gradient
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                Choose the background style for your dashboard and public pages.
+                            </Typography>
+                            <Box display="flex" flexWrap="wrap" gap={2}>
+                                {['violet', 'ocean', 'sunset', 'minimal'].map((gradient) => (
+                                    <Box sx={{ flex: 1, minWidth: '100px' }} key={gradient}>
+                                        <Card
+                                            elevation={formData.dashboard_gradient === gradient ? 4 : 1}
+                                            sx={{
+                                                border: formData.dashboard_gradient === gradient ? '2px solid #1976d2' : '2px solid transparent',
+                                                cursor: 'pointer'
+                                            }}
+                                            onClick={() => {
+                                                setFormData({ ...formData, dashboard_gradient: gradient });
+                                                setDashboardGradient(gradient as any);
+                                            }}
+                                        >
+                                            <Box sx={{
+                                                height: 50,
+                                                background: gradient === 'minimal' ? '#f5f5f5' : (gradient === 'violet' ? 'linear-gradient(to right, #e0c3fc, #8ec5fc)' : (gradient === 'ocean' ? 'linear-gradient(to right, #4facfe, #00f2fe)' : 'linear-gradient(to right, #fa709a, #fee140)'))
+                                            }} />
+                                            <CardContent sx={{ p: 1, textAlign: 'center', '&:last-child': { pb: 1 } }}>
+                                                <Typography variant="caption" sx={{ textTransform: 'capitalize' }}>{gradient}</Typography>
+                                            </CardContent>
+                                        </Card>
+                                    </Box>
+                                ))}
+                            </Box>
+                        </Box>
 
                         <Box sx={{ flex: 1, minWidth: '250px' }}><Typography variant="h6" sx={{ fontWeight: 600 }}>Shop Identity</Typography></Box>
 
