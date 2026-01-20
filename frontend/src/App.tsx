@@ -73,9 +73,7 @@ function App() {
           <Route path="/s/:slug" element={<PublicShopPage />} />
 
           {/* Shop Registration (Standalone or Public?) - Let's keep it Public for now */}
-          <Route element={<PublicLayout />}>
-            <Route path="/register-shop" element={<ShopRegistrationPage />} />
-          </Route>
+          <Route path="/register-shop" element={<ShopOwnerSignUp />} />
 
           {/* Employee Queue Management (Public Layout) */}
           <Route element={<PublicLayout />}>
