@@ -15,110 +15,32 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: node:18-alpine
-        workingDir: /app
-        env:
-        - name: NODE_OPTIONS
-          value: "--max-old-space-size=3072"
-        - name: GENERATE_SOURCEMAP
-          value: "false"
-        - name: DISABLE_ESLINT_PLUGIN
-          value: "true"
-        - name: REACT_APP_API_URL
-          value: "/api"
-        command: ["/bin/sh", "-c"]
-        args:
-          - |
-            echo "Starting deployment process..."
-            
-            # Debugging: Check what files we are seeing
-            echo "Listing /app contents..."
-            ls -la /app
-            echo "Checking package.json..."
-            cat /app/package.json | head -n 10
-            
-            echo "Cleaning node_modules contents..."
-            rm -rf node_modules/* 
-            # We skip deleting package-lock.json as it might fail due to host permissions
-            
-            echo "Installing dependencies (using lockfile)..."
-            # Use npm ci for clean, deterministic install based on package-lock.json
-            npm ci --legacy-peer-deps
-            
-            echo "Ensuring react-scripts is installed..."
-            if [ ! -f "node_modules/.bin/react-scripts" ]; then
-                echo "react-scripts missing, forcing install..."
-                npm install react-scripts@5.0.1 --legacy-peer-deps --verbose
-            fi
-            
-            echo "Verifying react-scripts..."
-            ls -la node_modules/.bin/ || echo "node_modules/.bin listing failed"
-            ls -la node_modules/.bin/react-scripts || echo "react-scripts STILL not found"
-            
-            echo "Patching react-scripts memory limit..."
-            # Force increase memory limit for ForkTsCheckerWebpackPlugin (default is 2048MB)
-            # Must be inside typescript: { ... } object
-            sed -i "s/mode: 'write-references',/mode: 'write-references', memoryLimit: 3072,/" node_modules/react-scripts/config/webpack.config.js
-            
-            echo "Building frontend..."
-            # Capture build output to log
-            if npm run build; then
-              echo "Build command finished successfully."
-            else
-              echo "❌ Build command FAILED!"
-              exit 1
-            fi
-            
-            if [ -d "build" ] && [ -f "build/index.html" ]; then
-              echo "✅ Build verification successful: index.html found."
-              echo "Installing express for custom SPA server..."
-              npm install express
-              echo "Starting custom SPA server on port 3000..."
-              node spa-server.js
-            else
-              echo "❌ Build verification FAILED: No index.html found in /app/build"
-              echo "Listing /app directory:"
-              ls -la /app
-              if [ -d "/app/build" ]; then
-                 echo "Listing /app/build directory:"
-                 ls -la /app/build
-              fi
-              exit 1
-            fi
+        image: 192.168.2.88:5000/frontend:latest
+        imagePullPolicy: Always
         ports:
-        - containerPort: 3000
-        volumeMounts:
-        - name: app-code
-          mountPath: /app
-        - name: node-modules
-          mountPath: /app/node_modules
-        resources:
-          requests:
-            memory: "2Gi"
-            cpu: "1000m"
-          limits:
-            memory: "6Gi"
-            cpu: "2000m"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 600
-          periodSeconds: 20
-          timeoutSeconds: 10
+        - containerPort: 80
         readinessProbe:
           httpGet:
             path: /
-            port: 3000
-          initialDelaySeconds: 180
+            port: 80
+          initialDelaySeconds: 10
           periodSeconds: 5
-      volumes:
-      - name: app-code
-        hostPath:
-          path: /home/neekrishrichu/apps/zeroqwait/frontend
-          type: Directory
-      - name: node-modules
-        emptyDir: {}
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+      # We don't need the heavy host volumes anymore for a production-style build
+      # But if you want hot-reloading in dev, we'd keep them. 
+      # Since this is a "deployment" pipeline, we assume immutable images.
 ---
 apiVersion: v1
 kind: Service
