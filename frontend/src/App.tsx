@@ -38,6 +38,7 @@ import QueueCounterPage from "./pages/QueueCounterPage";
 
 import SignInSide from "./auth-sign-in/SignInSide";
 import ShopOwnerSignUp from "./auth-sign-up/ShopOwnerSignUp";
+import LandingPage from "./landing-page/LandingPage";
 
 function App() {
   return (
@@ -54,7 +55,8 @@ function App() {
 
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>
-            <Route path="/" element={<HomePage />} />
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/home" element={<HomePage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/pricing" element={<PricingPage />} />
