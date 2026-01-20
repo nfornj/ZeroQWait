@@ -33,13 +33,15 @@ const Card = styled(MuiCard)(({ theme }) => ({
 }));
 
 const SignUpContainer = styled(Stack)(({ theme }) => ({
-  height: '100vh',
-  minHeight: '100%',
+  minHeight: '100vh',
   padding: theme.spacing(2),
+  paddingTop: theme.spacing(4),
+  paddingBottom: theme.spacing(4),
   backgroundImage:
     'radial-gradient(ellipse at 50% 50%, hsl(270, 50%, 25%), hsl(260, 60%, 8%))',
   backgroundRepeat: 'no-repeat',
-  overflowY: 'auto',
+  backgroundSize: 'cover',
+  position: 'relative',
 }));
 
 const shopTypes = [
@@ -55,7 +57,7 @@ export default function ShopOwnerSignUp() {
   const navigate = useNavigate();
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
-  
+
   const [formData, setFormData] = React.useState({
     // User fields
     username: '',
@@ -84,13 +86,13 @@ export default function ShopOwnerSignUp() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
-    
+
     // Validation
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
     }
-    
+
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters');
       return;
@@ -111,11 +113,11 @@ export default function ShopOwnerSignUp() {
       const loginFormData = new URLSearchParams();
       loginFormData.append('username', formData.username);
       loginFormData.append('password', formData.password);
-      
+
       const tokenResponse = await axios.post('/auth/token', loginFormData, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
-      
+
       const token = tokenResponse.data.access_token;
       localStorage.setItem('token', token);
 
@@ -149,7 +151,7 @@ export default function ShopOwnerSignUp() {
   return (
     <AppTheme mode="dark">
       <CssBaseline enableColorScheme />
-      <SignUpContainer direction="column" justifyContent="center">
+      <SignUpContainer direction="column" alignItems="center">
         <Card variant="outlined">
           <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main', fontSize: '2.5rem', mb: 1 }}>
             ZeroQwait
@@ -170,7 +172,7 @@ export default function ShopOwnerSignUp() {
           <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {/* Account Section */}
             <Typography variant="h6" sx={{ mt: 2, color: 'primary.main' }}>Account Information</Typography>
-            
+
             <Box display="flex" gap={2} flexWrap="wrap">
               <FormControl sx={{ flex: 1, minWidth: '200px' }}>
                 <FormLabel htmlFor="username">Username *</FormLabel>
@@ -232,7 +234,7 @@ export default function ShopOwnerSignUp() {
 
             {/* Shop Section */}
             <Typography variant="h6" sx={{ mt: 3, color: 'primary.main' }}>Business Information</Typography>
-            
+
             <Box display="flex" gap={2} flexWrap="wrap">
               <FormControl sx={{ flex: 1, minWidth: '200px' }}>
                 <FormLabel htmlFor="shopName">Shop Name *</FormLabel>
@@ -281,7 +283,7 @@ export default function ShopOwnerSignUp() {
 
             {/* Location Section */}
             <Typography variant="h6" sx={{ mt: 3, color: 'primary.main' }}>Location</Typography>
-            
+
             <FormControl>
               <FormLabel htmlFor="address">Street Address *</FormLabel>
               <TextField
@@ -334,7 +336,7 @@ export default function ShopOwnerSignUp() {
 
             {/* Contact Section */}
             <Typography variant="h6" sx={{ mt: 3, color: 'primary.main' }}>Contact Information</Typography>
-            
+
             <Box display="flex" gap={2} flexWrap="wrap">
               <FormControl sx={{ flex: 1, minWidth: '200px' }}>
                 <FormLabel htmlFor="phone">Phone *</FormLabel>
