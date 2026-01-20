@@ -12,6 +12,8 @@ COPY package*.json ./
 
 # Set memory limit for node process to avoid OOM
 ENV NODE_OPTIONS="--max-old-space-size=4096"
+ENV GENERATE_SOURCEMAP=false
+ENV DISABLE_ESLINT_PLUGIN=true
 
 # Install dependencies
 RUN npm install
