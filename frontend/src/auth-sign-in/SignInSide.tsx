@@ -19,7 +19,7 @@ export default function SignInSide(props: { disableCustomTheme?: boolean }) {
           },
           (theme) => ({
             backgroundImage:
-              'radial-gradient(ellipse at 50% 50%, hsl(210, 100%, 16%), hsl(220, 30%, 5%))',
+              'radial-gradient(ellipse at 50% 50%, hsl(270, 50%, 25%), hsl(260, 60%, 8%))',
             backgroundRepeat: 'no-repeat',
             ...theme.applyStyles('light', {
               backgroundImage:

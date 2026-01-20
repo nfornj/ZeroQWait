@@ -39,7 +39,7 @@ export default function Content() {
       sx={{ flexDirection: 'column', alignSelf: 'center', gap: 4, maxWidth: 450 }}
     >
       <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 1 }}>
-        <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+        <Typography variant="h3" component="div" sx={{ fontWeight: 'bold', color: 'primary.main', fontSize: '2.5rem' }}>
           ZeroQwait
         </Typography>
       </Box>
