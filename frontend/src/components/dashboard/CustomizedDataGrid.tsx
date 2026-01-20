@@ -61,7 +61,7 @@ const columns: GridColDef[] = [
                 plotType="bar"
                 showHighlight={true}
                 showTooltip={true}
-                colors={['hsl(210, 98%, 42%)']}
+                color="hsl(210, 98%, 42%)"
                 sx={{ p: 1 }}
             />
         ),
