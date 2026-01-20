@@ -6,7 +6,7 @@ import Content from './components/Content';
 
 export default function SignInSide(props: { disableCustomTheme?: boolean }) {
   return (
-    <AppTheme {...props} defaultMode="dark">
+    <AppTheme {...props} mode="dark">
       <CssBaseline enableColorScheme />
       <Stack
         direction="column"
