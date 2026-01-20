@@ -53,9 +53,10 @@ function App() {
           <Route path="/register/shop-owner" element={<ShopOwnerSignUp />} />
           <Route path="/register/customer" element={<ShopOwnerSignUp />} />
 
+          <Route path="/" element={<LandingPage />} />
+
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>
-            <Route path="/" element={<LandingPage />} />
             <Route path="/home" element={<HomePage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
