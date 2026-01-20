@@ -76,7 +76,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const storedToken = localStorage.getItem('token');
       if (storedToken && isTokenExpired(storedToken)) {
         logout();
-        window.location.href = '/login';
+
+        // Smart redirect based on current location
+        const currentHost = window.location.hostname;
+        const currentPath = window.location.pathname;
+
+        // Check if we're on a shop subdomain
+        const isShopSubdomain = () => {
+          if (currentHost === 'localhost') return false;
+          if (currentHost.match(/^\d+\.\d+\.\d+\.\d+\.(nip|np)\.io$/)) return false;
+          if (currentHost.match(/^www\./)) return false;
+
+          const parts = currentHost.split('.');
+          if (currentHost.includes('nip.io') || currentHost.includes('np.io')) {
+            return parts.length > 4;
+          } else {
+            return parts.length > 2;
+          }
+        };
+
+        // Extract shop slug from subdomain if present
+        const getShopSlug = () => {
+          const parts = currentHost.split('.');
+          return parts[0]; // First part is the shop slug
+        };
+
+        if (isShopSubdomain()) {
+          // Redirect to public shop page to maintain context
+          const shopSlug = getShopSlug();
+          console.log('[AuthContext] Token expired on shop subdomain, redirecting to public shop page:', `/s/${shopSlug}`);
+          window.location.href = `/s/${shopSlug}`;
+        } else {
+          // Redirect to marketing page on main domain
+          console.log('[AuthContext] Token expired on main domain, redirecting to marketing page');
+          window.location.href = '/';
+        }
       }
     };
 
@@ -173,6 +207,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setUser(userResponse.data);
       setIsAuthenticated(true);
     } catch (err: any) {
+      console.error("[AuthContext] Login error:", err);
+      if (err.response) {
+        console.error("[AuthContext] Response status:", err.response.status);
+        console.error("[AuthContext] Response data:", err.response.data);
+      }
       setError(err.response?.data?.detail || "Login failed");
     } finally {
       setLoading(false);

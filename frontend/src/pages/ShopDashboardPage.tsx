@@ -9,6 +9,7 @@ import {
     Alert,
     CircularProgress,
     Button,
+    useTheme,
 } from '@mui/material';
 import LaunchIcon from '@mui/icons-material/Launch';
 import TvIcon from '@mui/icons-material/Tv';
@@ -190,13 +191,19 @@ const ShopDashboardPage: React.FC = () => {
         }
     ];
 
+    const theme = useTheme();
+
+    // Explicitly handle mode selection to fix TS indexing error
+    const currentMode = theme.palette.mode === 'dark' ? 'dark' : 'light';
+    const activeGradient = gradientPresets[dashboardGradient]?.[currentMode] || gradientPresets.violet[currentMode];
+
     const backgroundStyle = {
         width: '100%',
         minHeight: '100vh',
-        background: gradientPresets[dashboardGradient] !== 'none' ? gradientPresets[dashboardGradient] : undefined,
-        bgcolor: gradientPresets[dashboardGradient] === 'none' ? 'background.default' : undefined,
+        backgroundImage: activeGradient,
+        backgroundRepeat: 'no-repeat',
         backgroundAttachment: 'fixed',
-        transition: 'background 0.5s ease',
+        transition: 'background-image 0.5s ease',
         p: 3
     };
 

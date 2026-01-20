@@ -1,32 +1,47 @@
 import CssBaseline from '@mui/material/CssBaseline';
 import Stack from '@mui/material/Stack';
+import Box from '@mui/material/Box';
 import AppTheme from '../auth-shared-theme/AppTheme';
 import SignInCard from './components/SignInCard';
 import Content from './components/Content';
+import { useThemeContext, gradientPresets } from '../contexts/ThemeContext';
+import { useTheme } from '@mui/material/styles';
 
 export default function SignInSide(props: { disableCustomTheme?: boolean }) {
   return (
-    <AppTheme {...props} mode="dark">
+    <AppTheme {...props}>
       <CssBaseline enableColorScheme />
+      <SignInSideContent />
+    </AppTheme>
+  );
+}
+
+function SignInSideContent() {
+  const { dashboardGradient } = useThemeContext();
+  const theme = useTheme();
+
+  // Use the same gradient logic as the marketing page (Hero.tsx)
+  const currentMode = theme.palette.mode === 'dark' ? 'dark' : 'light';
+  const activeGradient = gradientPresets[dashboardGradient]?.[currentMode] || gradientPresets.violet[currentMode];
+
+  return (
+    <Box
+      sx={{
+        width: '100%',
+        minHeight: '100vh',
+        backgroundImage: activeGradient,
+        backgroundRepeat: 'no-repeat',
+        backgroundAttachment: 'fixed',
+        transition: 'background 0.5s ease',
+      }}
+    >
       <Stack
         direction="column"
         component="main"
-        sx={[
-          {
-            justifyContent: 'center',
-            height: '100vh',
-            minHeight: '100%',
-          },
-          (theme) => ({
-            backgroundImage:
-              'radial-gradient(ellipse at 50% 50%, hsl(270, 50%, 25%), hsl(260, 60%, 8%))',
-            backgroundRepeat: 'no-repeat',
-            ...theme.applyStyles('light', {
-              backgroundImage:
-                'radial-gradient(ellipse at 50% 50%, hsl(210, 100%, 97%), hsl(0, 0%, 100%))',
-            }),
-          }),
-        ]}
+        sx={{
+          justifyContent: 'center',
+          minHeight: '100vh',
+        }}
       >
         <Stack
           direction={{ xs: 'column-reverse', md: 'row' }}
@@ -42,6 +57,6 @@ export default function SignInSide(props: { disableCustomTheme?: boolean }) {
           <SignInCard />
         </Stack>
       </Stack>
-    </AppTheme>
+    </Box>
   );
 }

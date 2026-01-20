@@ -52,6 +52,93 @@ export default function AppAppBar() {
     }
   };
 
+  const handleSignIn = () => {
+    const currentHost = window.location.hostname;
+    const protocol = window.location.protocol;
+
+    // Check if we're on a shop subdomain (anything other than bare domain or www)
+    const isShopSubdomain = () => {
+      if (currentHost === 'localhost') return false;
+      if (currentHost.match(/^\d+\.\d+\.\d+\.\d+\.(nip|np)\.io$/)) return false; // bare nip.io
+      if (currentHost.match(/^www\./)) return false; // www subdomain
+
+      // If hostname has more than 2 parts (excluding nip.io which has 4), it's a subdomain
+      const parts = currentHost.split('.');
+      if (currentHost.includes('nip.io') || currentHost.includes('np.io')) {
+        // For nip.io: shop.192.168.1.1.nip.io has 5 parts
+        return parts.length > 4;
+      } else {
+        // For normal domains: shop.example.com has 3 parts
+        return parts.length > 2;
+      }
+    };
+
+    if (isShopSubdomain()) {
+      // Redirect to main domain
+      let mainDomainUrl;
+      if (currentHost.includes('nip.io') || currentHost.includes('np.io')) {
+        // Extract IP and redirect to bare IP domain
+        const ipMatch = currentHost.match(/(\d+\.\d+\.\d+\.\d+\.(nip|np)\.io)$/);
+        if (ipMatch) {
+          mainDomainUrl = `${protocol}//${ipMatch[1]}/login`;
+        } else {
+          mainDomainUrl = '/login'; // fallback
+        }
+      } else {
+        // Extract main domain (last 2 parts)
+        const parts = currentHost.split('.');
+        const mainDomain = parts.slice(-2).join('.');
+        mainDomainUrl = `${protocol}//${mainDomain}/login`;
+      }
+
+      console.log('[AppAppBar] Redirecting from shop subdomain to main domain:', mainDomainUrl);
+      window.location.href = mainDomainUrl;
+    } else {
+      // Already on main domain, use relative navigation
+      window.location.href = '/login';
+    }
+  };
+
+  const handleSignUp = () => {
+    const currentHost = window.location.hostname;
+    const protocol = window.location.protocol;
+
+    // Same subdomain detection logic
+    const isShopSubdomain = () => {
+      if (currentHost === 'localhost') return false;
+      if (currentHost.match(/^\d+\.\d+\.\d+\.\d+\.(nip|np)\.io$/)) return false;
+      if (currentHost.match(/^www\./)) return false;
+
+      const parts = currentHost.split('.');
+      if (currentHost.includes('nip.io') || currentHost.includes('np.io')) {
+        return parts.length > 4;
+      } else {
+        return parts.length > 2;
+      }
+    };
+
+    if (isShopSubdomain()) {
+      let mainDomainUrl;
+      if (currentHost.includes('nip.io') || currentHost.includes('np.io')) {
+        const ipMatch = currentHost.match(/(\d+\.\d+\.\d+\.\d+\.(nip|np)\.io)$/);
+        if (ipMatch) {
+          mainDomainUrl = `${protocol}//${ipMatch[1]}/signup`;
+        } else {
+          mainDomainUrl = '/signup';
+        }
+      } else {
+        const parts = currentHost.split('.');
+        const mainDomain = parts.slice(-2).join('.');
+        mainDomainUrl = `${protocol}//${mainDomain}/signup`;
+      }
+
+      console.log('[AppAppBar] Redirecting from shop subdomain to main domain:', mainDomainUrl);
+      window.location.href = mainDomainUrl;
+    } else {
+      window.location.href = '/signup';
+    }
+  };
+
   return (
     <AppBar
       position="fixed"
@@ -103,10 +190,10 @@ export default function AppAppBar() {
               alignItems: 'center',
             }}
           >
-            <Button color="primary" variant="text" size="small" href="/login">
+            <Button color="primary" variant="text" size="small" onClick={handleSignIn}>
               Sign in
             </Button>
-            <Button color="primary" variant="contained" size="small" href="/signup">
+            <Button color="primary" variant="contained" size="small" onClick={handleSignUp}>
               Sign up
             </Button>
             <ColorModeIconDropdown />
@@ -145,12 +232,12 @@ export default function AppAppBar() {
                 <MenuItem>Blog</MenuItem>
                 <Divider sx={{ my: 3 }} />
                 <MenuItem>
-                  <Button color="primary" variant="contained" fullWidth href="/signup">
+                  <Button color="primary" variant="contained" fullWidth onClick={handleSignUp}>
                     Sign up
                   </Button>
                 </MenuItem>
                 <MenuItem>
-                  <Button color="primary" variant="outlined" fullWidth href="/login">
+                  <Button color="primary" variant="outlined" fullWidth onClick={handleSignIn}>
                     Sign in
                   </Button>
                 </MenuItem>

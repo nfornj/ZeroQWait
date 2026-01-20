@@ -95,7 +95,8 @@ const ThemeCustomizer: React.FC = () => {
                                     width: 20,
                                     height: 20,
                                     borderRadius: '50%',
-                                    background: gradientPresets[preset.id] === 'none' ? '#f5f5f5' : gradientPresets[preset.id],
+                                    // Default to light mode for preview, or could extract mode from context if needed
+                                    background: gradientPresets[preset.id].light === 'none' ? '#f5f5f5' : gradientPresets[preset.id].light,
                                     border: '1px solid rgba(0,0,0,0.1)'
                                 }}
                             />

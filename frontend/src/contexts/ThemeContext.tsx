@@ -26,13 +26,29 @@ export const useThemeContext = () => {
     return context;
 };
 
-// ... (themePalettes kept as is) ...
+const themePalettes: Record<ThemePreset, { primary: string; secondary: string }> = {
+    default: { primary: '#1976d2', secondary: '#9c27b0' },
+    ocean: { primary: '#0288d1', secondary: '#26c6da' },
+    forest: { primary: '#2e7d32', secondary: '#66bb6a' },
+    sunset: { primary: '#ed6c02', secondary: '#ff9800' },
+    midnight: { primary: '#311b92', secondary: '#673ab7' },
+    corporate: { primary: '#1565c0', secondary: '#42a5f5' },
+};
 
-export const gradientPresets: Record<GradientPreset, string> = {
-    minimal: 'none',
-    violet: 'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 60%, 85%), transparent)',
-    ocean: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
-    sunset: 'linear-gradient(135deg, #f6d365 0%, #fda085 100%)',
+export const gradientPresets: Record<GradientPreset, { light: string; dark: string }> = {
+    minimal: { light: 'none', dark: 'none' },
+    violet: {
+        light: 'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 60%, 85%), transparent)',
+        dark: 'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 50%, 25%), transparent)',
+    },
+    ocean: {
+        light: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
+        dark: 'linear-gradient(135deg, #153e40 0%, #2a1b1f 100%)',
+    },
+    sunset: {
+        light: 'linear-gradient(135deg, #f6d365 0%, #fda085 100%)',
+        dark: 'linear-gradient(135deg, #3e2b02 0%, #4a1f15 100%)',
+    },
 };
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

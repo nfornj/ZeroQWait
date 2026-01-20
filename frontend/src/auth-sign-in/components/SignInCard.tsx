@@ -46,6 +46,10 @@ export default function SignInCard() {
   const { login, loading, error, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
 
+  // Add refs to read values directly if FormData fails
+  const emailRef = React.useRef<HTMLInputElement>(null);
+  const passwordRef = React.useRef<HTMLInputElement>(null);
+
   const handleClickOpen = () => {
     setOpen(true);
   };
@@ -157,53 +161,67 @@ export default function SignInCard() {
   }, [isAuthenticated, loading, error, user, navigate]);
 
 
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); // Always prevent default first
-    if (emailError || passwordError) {
-      return;
-    }
+
+    // Reset errors
+    setEmailError(false);
+    setEmailErrorMessage('');
+    setPasswordError(false);
+    setPasswordErrorMessage('');
+
+    // HYBRID APPROACH: Try FormData first, fall back to ref values
     const data = new FormData(event.currentTarget);
-    const email = data.get('email') as string;
-    const password = data.get('password') as string;
+    let email = data.get('email') as string;
+    let password = data.get('password') as string;
 
-    // Call existing login function
-    await login(email, password);
-  };
+    console.log("[SignInCard] FormData values:", { email, passwordLength: password?.length || 0 });
 
-  const validateInputs = () => {
-    const email = document.getElementById('email') as HTMLInputElement;
-    const password = document.getElementById('password') as HTMLInputElement;
+    // Fallback to ref values if FormData is empty (can happen with certain autofill behaviors)
+    if ((!email || email.trim() === '') && emailRef.current) {
+      email = emailRef.current.value;
+      console.log("[SignInCard] FormData empty, using ref value for email:", email);
+    }
 
+    if ((!password || password.trim() === '') && passwordRef.current) {
+      password = passwordRef.current.value;
+      console.log("[SignInCard] FormData empty, using ref value for password (length):", password?.length || 0);
+    }
+
+    // Debugging: Log what we ended up with
+    console.log("[SignInCard] Final values to validate:", { email, passwordLength: password ? password.length : 0 });
+
+    // Validate
     let isValid = true;
 
-    if (!email.value || email.value.trim().length === 0) {
+    if (!email || email.trim().length === 0) {
       setEmailError(true);
       setEmailErrorMessage('Please enter your email or username.');
       isValid = false;
-    } else {
-      setEmailError(false);
-      setEmailErrorMessage('');
+      console.warn("[SignInCard] Validation failed: email is empty");
     }
 
-    if (!password.value || password.value.length < 3) { // Changed to 3 as previously it was 6 but some dev passwords might be short
+    if (!password || password.length < 3) {
       setPasswordError(true);
       setPasswordErrorMessage('Password must be at least 3 characters long.');
       isValid = false;
-    } else {
-      setPasswordError(false);
-      setPasswordErrorMessage('');
+      console.warn("[SignInCard] Validation failed: password is too short or empty");
     }
 
-    return isValid;
+    if (!isValid) {
+      console.warn("[SignInCard] Validation failed, stopping submission");
+      return;
+    }
+
+    // Call existing login function
+    console.log("[SignInCard] Attempting login for:", email);
+    await login(email, password);
   };
 
   return (
     <Card variant="outlined">
-      <Box sx={{ display: { xs: 'flex', md: 'none' } }}>
-        <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-          ZeroQwait
-        </Typography>
-      </Box>
+      {/* ... (header content) ... */}
       <Typography
         component="h1"
         variant="h4"
@@ -237,6 +255,7 @@ export default function SignInCard() {
             fullWidth
             variant="outlined"
             color={emailError ? 'error' : 'primary'}
+            inputRef={emailRef}
           />
         </FormControl>
         <FormControl>
@@ -264,6 +283,7 @@ export default function SignInCard() {
             fullWidth
             variant="outlined"
             color={passwordError ? 'error' : 'primary'}
+            inputRef={passwordRef}
           />
         </FormControl>
         <FormControlLabel
@@ -271,7 +291,7 @@ export default function SignInCard() {
           label="Remember me"
         />
         <ForgotPassword open={open} handleClose={handleClose} />
-        <Button type="submit" fullWidth variant="contained" onClick={validateInputs} disabled={loading}>
+        <Button type="submit" fullWidth variant="contained" disabled={loading}>
           {loading ? 'Signing in...' : 'Sign in'}
         </Button>
         <Typography sx={{ textAlign: 'center' }}>
