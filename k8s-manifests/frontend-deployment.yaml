@@ -54,17 +54,4 @@ spec:
     port: 3000
     targetPort: 80
     nodePort: 30001
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: frontend
-  namespace: zeroqwait
-spec:
-  selector:
-    app: frontend
-  type: NodePort
-  ports:
-  - port: 3000
-    targetPort: 3000
-    nodePort: 30001
+
