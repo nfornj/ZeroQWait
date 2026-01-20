@@ -11,45 +11,45 @@ import { useColorScheme } from '@mui/material/styles';
 const userTestimonials = [
   {
     avatar: <Avatar alt="Remy Sharp" src="/static/images/avatar/1.jpg" />,
-    name: 'Remy Sharp',
-    occupation: 'Senior Engineer',
+    name: 'Sarah Jenkins',
+    occupation: 'Salon Owner',
     testimonial:
-      "I absolutely love how versatile this product is! Whether I'm tackling work projects or indulging in my favorite hobbies, it seamlessly adapts to my changing needs. Its intuitive design has truly enhanced my daily routine, making tasks more efficient and enjoyable.",
+      "Since switching to ZeroQwait, our lobby is no longer crowded and chaotic. Clients love being able to wait from their cars or nearby coffee shops. It's transformed our atmosphere completely.",
   },
   {
     avatar: <Avatar alt="Travis Howard" src="/static/images/avatar/2.jpg" />,
-    name: 'Travis Howard',
-    occupation: 'Lead Product Designer',
+    name: 'Mark Thompson',
+    occupation: 'Barber',
     testimonial:
-      "One of the standout features of this product is the exceptional customer support. In my experience, the team behind this product has been quick to respond and incredibly helpful. It's reassuring to know that they stand firmly behind their product.",
+      "The mobile check-in feature is a game changer. I enter the shop and already have a lineup ready to go. The analytics help me schedule my staff better during busy hours.",
   },
   {
     avatar: <Avatar alt="Cindy Baker" src="/static/images/avatar/3.jpg" />,
-    name: 'Cindy Baker',
-    occupation: 'CTO',
+    name: 'Dr. Emily Chen',
+    occupation: 'Clinic Manager',
     testimonial:
-      'The level of simplicity and user-friendliness in this product has significantly simplified my life. I appreciate the creators for delivering a solution that not only meets but exceeds user expectations.',
+      "Managing patient flow has never been easier. We've reduced complaints about wait times by 80% since implementing this system. The notifications keep everyone informed.",
   },
   {
     avatar: <Avatar alt="Remy Sharp" src="/static/images/avatar/4.jpg" />,
-    name: 'Julia Stewart',
-    occupation: 'Senior Engineer',
+    name: 'Michael Ross',
+    occupation: 'Repair Shop Owner',
     testimonial:
-      "I appreciate the attention to detail in the design of this product. The small touches make a big difference, and it's evident that the creators focused on delivering a premium experience.",
+      "Simple to set up and easy to use. My technicians can focus on repairs instead of managing the front desk. The free tier was perfect for us to get started.",
   },
   {
     avatar: <Avatar alt="Travis Howard" src="/static/images/avatar/5.jpg" />,
-    name: 'John Smith',
-    occupation: 'Product Designer',
+    name: 'Lisa Wong',
+    occupation: 'Retail Manager',
     testimonial:
-      "I've tried other similar products, but this one stands out for its innovative features. It's clear that the makers put a lot of thought into creating a solution that truly addresses user needs.",
+      "We use ZeroQwait for our fitting rooms during peak sales. It eliminated the long lines blocking the aisles and improved our customers' shopping experience significantly.",
   },
   {
     avatar: <Avatar alt="Cindy Baker" src="/static/images/avatar/6.jpg" />,
-    name: 'Daniel Wolf',
-    occupation: 'CDO',
+    name: 'David Miller',
+    occupation: 'Gov. Office Admin',
     testimonial:
-      "The quality of this product exceeded my expectations. It's durable, well-designed, and built to last. Definitely worth the investment!",
+      "Efficiency is key for us. ZeroQwait gives us the data we need to justify staffing levels and serves the public much faster than our old paper ticket system.",
   },
 ];
 
@@ -120,9 +120,8 @@ export default function Testimonials() {
           Testimonials
         </Typography>
         <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-          See what our customers love about our products. Discover how we excel in
-          efficiency, durability, and satisfaction. Join us for quality, innovation,
-          and reliable support.
+          See what shop owners and customers love about ZeroQwait. Discover how we
+          eliminate waiting lines and improve customer satisfaction across industries.
         </Typography>
       </Box>
       <Grid container spacing={2}>

@@ -16,9 +16,10 @@ const tiers = [
     title: 'Free',
     price: '0',
     description: [
-      '10 users included',
-      '2 GB of storage',
-      'Help center access',
+      'Up to 1 shop',
+      '50 customers per queue',
+      'Basic queue management',
+      'Shared database',
       'Email support',
     ],
     buttonText: 'Sign up for free',
@@ -26,16 +27,16 @@ const tiers = [
     buttonColor: 'primary',
   },
   {
-    title: 'Professional',
-    subheader: 'Recommended',
-    price: '15',
+    title: 'Premium',
+    subheader: 'Most Popular',
+    price: '29',
     description: [
-      '20 users included',
-      '10 GB of storage',
-      'Help center access',
-      'Priority email support',
-      'Dedicated team',
-      'Best deals',
+      'Up to 5 shops',
+      '200 customers per queue',
+      'Dedicated database (isolated data)',
+      'Advanced analytics & reports',
+      'Priority support (24/7)',
+      'Custom branding & colors',
     ],
     buttonText: 'Start now',
     buttonVariant: 'contained',
@@ -43,12 +44,13 @@ const tiers = [
   },
   {
     title: 'Enterprise',
-    price: '30',
+    price: 'Contact',
     description: [
-      '50 users included',
-      '30 GB of storage',
-      'Help center access',
-      'Phone & email support',
+      'Unlimited shops',
+      'Unlimited queues',
+      'Custom SLA & Support',
+      'On-premise deployment options',
+      'Dedicated account manager',
     ],
     buttonText: 'Contact us',
     buttonVariant: 'outlined',
@@ -110,17 +112,17 @@ export default function Pricing() {
                   gap: 4,
                 },
                 tier.title === 'Professional' &&
-                  ((theme) => ({
-                    border: 'none',
+                ((theme) => ({
+                  border: 'none',
+                  background:
+                    'radial-gradient(circle at 50% 0%, hsl(220, 20%, 35%), hsl(220, 30%, 6%))',
+                  boxShadow: `0 8px 12px hsla(220, 20%, 42%, 0.2)`,
+                  ...theme.applyStyles('dark', {
                     background:
-                      'radial-gradient(circle at 50% 0%, hsl(220, 20%, 35%), hsl(220, 30%, 6%))',
-                    boxShadow: `0 8px 12px hsla(220, 20%, 42%, 0.2)`,
-                    ...theme.applyStyles('dark', {
-                      background:
-                        'radial-gradient(circle at 50% 0%, hsl(220, 20%, 20%), hsl(220, 30%, 16%))',
-                      boxShadow: `0 8px 12px hsla(0, 0%, 0%, 0.8)`,
-                    }),
-                  })),
+                      'radial-gradient(circle at 50% 0%, hsl(220, 20%, 20%), hsl(220, 30%, 16%))',
+                    boxShadow: `0 8px 12px hsla(0, 0%, 0%, 0.8)`,
+                  }),
+                })),
               ]}
             >
               <CardContent>
@@ -183,7 +185,7 @@ export default function Pricing() {
                       variant="subtitle2"
                       component={'span'}
                       sx={[
-                        tier.title === 'Professional'
+                        tier.title === 'Premium'
                           ? { color: 'grey.50' }
                           : { color: null },
                       ]}

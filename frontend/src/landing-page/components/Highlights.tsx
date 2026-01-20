@@ -14,39 +14,39 @@ import ThumbUpAltRoundedIcon from '@mui/icons-material/ThumbUpAltRounded';
 const items = [
   {
     icon: <SettingsSuggestRoundedIcon />,
-    title: 'Adaptable performance',
+    title: 'Automated Notifications',
     description:
-      'Our product effortlessly adjusts to your needs, boosting efficiency and simplifying your tasks.',
+      'Keep customers informed with automated SMS and email updates about their queue status.',
   },
   {
     icon: <ConstructionRoundedIcon />,
-    title: 'Built to last',
+    title: 'Customizable Queues',
     description:
-      'Experience unmatched durability that goes above and beyond with lasting investment.',
+      'Configure service types, estimated times, and queue rules to match your specific business needs.',
   },
   {
     icon: <ThumbUpAltRoundedIcon />,
-    title: 'Great user experience',
+    title: 'Customer Satisfaction',
     description:
-      'Integrate our product into your routine with an intuitive and easy-to-use interface.',
+      'Reduce perceived wait times and let customers wait from anywhere, improving their overall experience.',
   },
   {
     icon: <AutoFixHighRoundedIcon />,
-    title: 'Innovative functionality',
+    title: 'Staff Management',
     description:
-      'Stay ahead with features that set new standards, addressing your evolving needs better than the rest.',
+      'Assign staff to specific queues and track their efficiency in serving customers.',
   },
   {
     icon: <SupportAgentRoundedIcon />,
-    title: 'Reliable support',
+    title: 'Dedicated Support',
     description:
-      'Count on our responsive customer support, offering assistance that goes beyond the purchase.',
+      'Our team is ready to help you set up and optimize your queue system for maximum efficiency.',
   },
   {
     icon: <QueryStatsRoundedIcon />,
-    title: 'Precision in every detail',
+    title: 'Data-Driven Insights',
     description:
-      'Enjoy a meticulously crafted product where small touches make a significant impact on your overall experience.',
+      'Make informed business decisions with detailed reports on peak times and service duration.',
   },
 ];
 
@@ -80,9 +80,8 @@ export default function Highlights() {
             Highlights
           </Typography>
           <Typography variant="body1" sx={{ color: 'grey.400' }}>
-            Explore why our product stands out: adaptability, durability,
-            user-friendly design, and innovation. Enjoy reliable customer support and
-            precision in every detail.
+            Discover how ZeroQwait transforms your waiting experience: automated updates,
+            customizable workflows, improved satisfaction, and powerful insights.
           </Typography>
         </Box>
         <Grid container spacing={2}>
