@@ -37,6 +37,7 @@ import PublicLayout from "./layouts/PublicLayout";
 import QueueCounterPage from "./pages/QueueCounterPage";
 
 import SignInSide from "./auth-sign-in/SignInSide";
+import SignUp from "./auth-sign-up/SignUp";
 
 function App() {
   return (
@@ -46,6 +47,8 @@ function App() {
           {/* Public Routes with Navbar */}
           <Route path="/signin" element={<SignInSide />} />
           <Route path="/login" element={<SignInSide />} />
+          <Route path="/signup" element={<SignUp />} />
+          <Route path="/register" element={<SignUp />} />
           <Route element={<PublicLayout />}>
             <Route path="/" element={<HomePage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
