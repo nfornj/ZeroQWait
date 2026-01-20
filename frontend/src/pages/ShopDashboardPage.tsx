@@ -16,6 +16,9 @@ import axios from 'axios';
 import EmployeeSelector from '../components/EmployeeSelector';
 import StatCard, { StatCardProps } from '../components/dashboard/StatCard';
 import HighlightedCard from '../components/dashboard/HighlightedCard';
+import SessionsChart from '../components/dashboard/SessionsChart';
+import PageViewsBarChart from '../components/dashboard/PageViewsBarChart';
+import CustomizedDataGrid from '../components/dashboard/CustomizedDataGrid';
 import { useThemeContext, gradientPresets } from '../contexts/ThemeContext';
 import ThemeCustomizer from '../components/dashboard/ThemeCustomizer';
 
