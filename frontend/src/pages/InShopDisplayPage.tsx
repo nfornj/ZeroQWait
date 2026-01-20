@@ -11,9 +11,10 @@ import {
     Alert,
     Paper,
     Divider,
-    Grid,
     Stack,
     keyframes,
+    useMediaQuery,
+    useTheme
 } from '@mui/material';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PeopleIcon from '@mui/icons-material/People';
@@ -78,6 +79,8 @@ const InShopDisplayPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [currentTime, setCurrentTime] = useState(new Date());
     const [error, setError] = useState<string | null>(null);
+    const theme = useTheme();
+    const isMdUp = useMediaQuery(theme.breakpoints.up('md'));
 
     useEffect(() => {
         fetchShopData();
@@ -229,11 +232,11 @@ const InShopDisplayPage: React.FC = () => {
                 </Stack>
             </Paper>
 
-            {/* Main Grid Content */}
-            <Grid container spacing={3} sx={{ flex: 1, overflow: 'hidden' }}>
+            {/* Main Content Flex Layout (Replacing Grid) */}
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3, flex: 1, overflow: 'hidden' }}>
 
                 {/* Left Column: Now Serving */}
-                <Grid item xs={12} md={5} lg={4} sx={{ height: '100%' }}>
+                <Box sx={{ width: { xs: '100%', md: '40%' }, height: '100%' }}>
                     <Card
                         elevation={6}
                         sx={{
@@ -308,14 +311,14 @@ const InShopDisplayPage: React.FC = () => {
                             )}
                         </CardContent>
                     </Card>
-                </Grid>
+                </Box>
 
                 {/* Right Column: Queue Stats and List */}
-                <Grid item xs={12} md={7} lg={8} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ width: { xs: '100%', md: '60%' }, height: '100%', display: 'flex', flexDirection: 'column' }}>
 
                     {/* Stats Row */}
-                    <Grid container spacing={3} sx={{ mb: 3 }}>
-                        <Grid item xs={6}>
+                    <Box sx={{ display: 'flex', gap: 3, mb: 3 }}>
+                        <Box sx={{ flex: 1 }}>
                             <Card elevation={2} sx={{ borderRadius: 3, bgcolor: 'rgba(255, 255, 255, 0.9)' }}>
                                 <CardContent sx={{ display: 'flex', alignItems: 'center', py: 3 }}>
                                     <Box sx={{ p: 2, borderRadius: '50%', bgcolor: `${primaryColor}22`, mr: 3 }}>
@@ -331,8 +334,8 @@ const InShopDisplayPage: React.FC = () => {
                                     </Box>
                                 </CardContent>
                             </Card>
-                        </Grid>
-                        <Grid item xs={6}>
+                        </Box>
+                        <Box sx={{ flex: 1 }}>
                             <Card elevation={2} sx={{ borderRadius: 3, bgcolor: 'rgba(255, 255, 255, 0.9)' }}>
                                 <CardContent sx={{ display: 'flex', alignItems: 'center', py: 3 }}>
                                     <Box sx={{ p: 2, borderRadius: '50%', bgcolor: 'warning.light', mr: 3, color: 'warning.dark' }}>
@@ -348,8 +351,8 @@ const InShopDisplayPage: React.FC = () => {
                                     </Box>
                                 </CardContent>
                             </Card>
-                        </Grid>
-                    </Grid>
+                        </Box>
+                    </Box>
 
                     {/* Waiting List */}
                     <Card elevation={4} sx={{ flex: 1, borderRadius: 4, bgcolor: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(10px)', overflow: 'hidden' }}>
@@ -359,17 +362,17 @@ const InShopDisplayPage: React.FC = () => {
                             </Box>
 
                             <Box sx={{ flex: 1, overflowY: 'auto', p: 3 }}>
-                                <Grid container spacing={2}>
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                                     {waitingCustomers.length === 0 ? (
-                                        <Grid item xs={12}>
+                                        <Box width="100%">
                                             <Box textAlign="center" py={8} sx={{ opacity: 0.5 }}>
                                                 <Typography variant="h4" gutterBottom>Queue is Empty</Typography>
                                                 <Typography variant="h6">We are ready to serve you!</Typography>
                                             </Box>
-                                        </Grid>
+                                        </Box>
                                     ) : (
                                         waitingCustomers.map((customer, index) => (
-                                            <Grid item xs={12} sm={6} lg={4} key={customer.id}>
+                                            <Box key={customer.id} sx={{ width: { xs: '100%', sm: '48%', lg: '31%' } }}>
                                                 <Paper
                                                     elevation={index < 3 ? 3 : 1}
                                                     sx={{
@@ -405,10 +408,10 @@ const InShopDisplayPage: React.FC = () => {
                                                         )}
                                                     </Stack>
                                                 </Paper>
-                                            </Grid>
+                                            </Box>
                                         ))
                                     )}
-                                </Grid>
+                                </Box>
                             </Box>
                         </CardContent>
                     </Card>
@@ -424,8 +427,8 @@ const InShopDisplayPage: React.FC = () => {
                         </Paper>
                     </Box>
 
-                </Grid>
-            </Grid>
+                </Box>
+            </Box>
         </Box>
     );
 };
