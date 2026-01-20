@@ -121,6 +121,11 @@ export default function SignInCard() {
               }
             }
 
+            // Append token to URL to persist session across subdomains
+            if (newUrl.startsWith("http")) {
+              newUrl += `?token=${token}`;
+            }
+
             console.log(`[LoginPage] Redirecting to: ${newUrl}`);
             if (newUrl.startsWith("http")) {
               window.location.href = newUrl;
