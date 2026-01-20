@@ -38,10 +38,16 @@ export const brand = {
   300: '#ff8a8d',
   400: '#ff5a5f', // Main Coral
   500: '#ff2e35',
-  600: '#fa1119',
-  700: '#d70a11',
-  800: '#b10d13',
-  900: '#921116',
+  50: '#FFE8E9',   // Very light coral
+  100: '#FFCFD1', // Light coral
+  200: '#FFB0B4', // Lighter coral
+  300: '#FF8C91', // Light-medium coral
+  400: '#FF6B70', // Medium coral
+  500: '#FF5A5F', // ZeroQwait primary coral
+  600: '#E64F54', // Darker coral
+  700: '#CC4449', // Dark coral
+  800: '#B33A3E', // Very dark coral
+  900: '#992F33', // Deepest coral
 };
 
 export const gray = {

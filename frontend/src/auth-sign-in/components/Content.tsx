@@ -1,36 +1,35 @@
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded';
-import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded';
-import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
-import ThumbUpAltRoundedIcon from '@mui/icons-material/ThumbUpAltRounded';
-import { SitemarkIcon } from './CustomIcons';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import QueueIcon from '@mui/icons-material/Queue';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import PhoneAndroidIcon from '@mui/icons-material/PhoneAndroid';
 
 const items = [
   {
-    icon: <SettingsSuggestRoundedIcon sx={{ color: 'text.secondary' }} />,
-    title: 'Smart Queue Management',
+    icon: <AccessTimeIcon sx={{ color: 'primary.main' }} />,
+    title: 'Real-time Queue Management',
     description:
-      'Effortlessly manage your customer flow with our intelligent queuing algorithm.',
+      'Monitor your queue in real-time. Customers can check wait times instantly and join remotely.',
   },
   {
-    icon: <ConstructionRoundedIcon sx={{ color: 'text.secondary' }} />,
-    title: 'Reliable & Robust',
+    icon: <NotificationsActiveIcon sx={{ color: 'primary.main' }} />,
+    title: 'Smart Notifications',
     description:
-      'Built for high-volume shops, ensuring stability during your busiest hours.',
+      'Automated SMS and email alerts keep your customers informed about their queue position.',
   },
   {
-    icon: <ThumbUpAltRoundedIcon sx={{ color: 'text.secondary' }} />,
-    title: 'Customer Satisfaction',
+    icon: <PhoneAndroidIcon sx={{ color: 'primary.main' }} />,
+    title: 'Mobile-First Experience',
     description:
-      'Let your customers check wait times and join the line remotely.',
+      'Your customers can join queues, track wait times, and receive updates from anywhere.',
   },
   {
-    icon: <AutoFixHighRoundedIcon sx={{ color: 'text.secondary' }} />,
-    title: 'Insights & Analytics',
+    icon: <QueueIcon sx={{ color: 'primary.main' }} />,
+    title: 'Multi-Location Support',
     description:
-      'Gain valuable insights into service times and peak hours to optimize your staff.',
+      'Manage queues across multiple shop locations with a unified dashboard and analytics.',
   },
 ];
 
@@ -39,8 +38,8 @@ export default function Content() {
     <Stack
       sx={{ flexDirection: 'column', alignSelf: 'center', gap: 4, maxWidth: 450 }}
     >
-      <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
-        <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 1 }}>
+        <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
           ZeroQwait
         </Typography>
       </Box>
