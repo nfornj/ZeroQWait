@@ -75,74 +75,73 @@ export default function Hero() {
           >
             ZeroQwait
           </Typography>
-        </Typography>
-        <Typography
-          variant="h2"
-          sx={{
-            textAlign: "center",
-            fontSize: "clamp(2rem, 8vw, 2.5rem)",
-            mt: 2
-          }}
-        >
-          Wait Less, Live More
-        </Typography>
-        <Typography
-          sx={{
-            textAlign: 'center',
-            color: 'text.secondary',
-            width: { sm: '100%', md: '80%' },
-          }}
-        >
-          The smartest way to manage queues and appointments.
-          Join thousands of businesses saving time and delighting customers.
-        </Typography>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1}
-          useFlexGap
-          sx={{ pt: 2, width: { xs: '100%', sm: '350px' } }}
-        >
-          <InputLabel htmlFor="email-hero" sx={visuallyHidden}>
-            Email
-          </InputLabel>
-          <TextField
-            id="email-hero"
-            hiddenLabel
-            size="small"
-            variant="outlined"
-            aria-label="Enter your email address"
-            placeholder="Your email address"
-            fullWidth
-            slotProps={{
-              htmlInput: {
-                autoComplete: 'off',
-                'aria-label': 'Enter your email address',
-              },
+          <Typography
+            variant="h2"
+            sx={{
+              textAlign: "center",
+              fontSize: "clamp(2rem, 8vw, 2.5rem)",
+              mt: 2
             }}
-          />
-          <Button
-            variant="contained"
-            color="primary"
-            size="small"
-            sx={{ minWidth: 'fit-content' }}
           >
-            Start now
-          </Button>
+            Wait Less, Live More
+          </Typography>
+          <Typography
+            sx={{
+              textAlign: 'center',
+              color: 'text.secondary',
+              width: { sm: '100%', md: '80%' },
+            }}
+          >
+            The smartest way to manage queues and appointments.
+            Join thousands of businesses saving time and delighting customers.
+          </Typography>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1}
+            useFlexGap
+            sx={{ pt: 2, width: { xs: '100%', sm: '350px' } }}
+          >
+            <InputLabel htmlFor="email-hero" sx={visuallyHidden}>
+              Email
+            </InputLabel>
+            <TextField
+              id="email-hero"
+              hiddenLabel
+              size="small"
+              variant="outlined"
+              aria-label="Enter your email address"
+              placeholder="Your email address"
+              fullWidth
+              slotProps={{
+                htmlInput: {
+                  autoComplete: 'off',
+                  'aria-label': 'Enter your email address',
+                },
+              }}
+            />
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              sx={{ minWidth: 'fit-content' }}
+            >
+              Start now
+            </Button>
+          </Stack>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ textAlign: 'center' }}
+          >
+            By clicking &quot;Start now&quot; you agree to our&nbsp;
+            <Link href="#" color="primary">
+              Terms & Conditions
+            </Link>
+            .
+          </Typography>
         </Stack>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ textAlign: 'center' }}
-        >
-          By clicking &quot;Start now&quot; you agree to our&nbsp;
-          <Link href="#" color="primary">
-            Terms & Conditions
-          </Link>
-          .
-        </Typography>
-      </Stack>
-      <StyledBox id="image" />
-    </Container>
+        <StyledBox id="image" />
+      </Container>
     </Box >
   );
 }
