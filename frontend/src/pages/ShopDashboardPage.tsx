@@ -16,8 +16,10 @@ import axios from 'axios';
 import EmployeeSelector from '../components/EmployeeSelector';
 import StatCard, { StatCardProps } from '../components/dashboard/StatCard';
 import HighlightedCard from '../components/dashboard/HighlightedCard';
+import { useThemeContext, gradientPresets } from '../contexts/ThemeContext';
+import ThemeCustomizer from '../components/dashboard/ThemeCustomizer';
 
-// Interfaces (Successively kept from original file)
+// Interfaces
 interface Shop {
     id: number;
     name: string;
@@ -58,6 +60,7 @@ interface Queue {
 
 const ShopDashboardPage: React.FC = () => {
     const navigate = useNavigate();
+    const { dashboardGradient } = useThemeContext();
     const [shops, setShops] = useState<Shop[]>([]);
     const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
     const [queue, setQueue] = useState<Queue | null>(null);
@@ -165,8 +168,8 @@ const ShopDashboardPage: React.FC = () => {
             title: 'Waiting Now',
             value: waitingCustomers.length.toString(),
             interval: 'Real-time',
-            trend: 'neutral', // Logic can be added to detect trend
-            data: [4, 3, 5, 2, 8, 6, waitingCustomers.length] // Placeholder trend data
+            trend: 'neutral',
+            data: [4, 3, 5, 2, 8, 6, waitingCustomers.length]
         },
         {
             title: 'Being Served',
@@ -183,6 +186,16 @@ const ShopDashboardPage: React.FC = () => {
             data: [2, 2, 3, 2, 3, 3, employees.length]
         }
     ];
+
+    const backgroundStyle = {
+        width: '100%',
+        minHeight: '100vh',
+        background: gradientPresets[dashboardGradient] !== 'none' ? gradientPresets[dashboardGradient] : undefined,
+        bgcolor: gradientPresets[dashboardGradient] === 'none' ? 'background.default' : undefined,
+        backgroundAttachment: 'fixed',
+        transition: 'background 0.5s ease',
+        p: 3
+    };
 
     if (loading) {
         return (
@@ -206,76 +219,80 @@ const ShopDashboardPage: React.FC = () => {
     }
 
     return (
-        <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' }, mx: 'auto', p: 3 }}>
+        <Box sx={backgroundStyle}>
+            <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' }, mx: 'auto' }}>
 
-            {/* Header Section */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-                <Box>
-                    <Typography component="h1" variant="h4" fontWeight={600}>
-                        Dashboard
-                    </Typography>
-                    <Typography variant="body1" color="text.secondary">
-                        Overview for {selectedShop?.name}
-                    </Typography>
+                {/* Header Section */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+                    <Box>
+                        <Typography component="h1" variant="h4" fontWeight={600}>
+                            Dashboard
+                        </Typography>
+                        <Typography variant="body1" color="text.secondary">
+                            Overview for {selectedShop?.name}
+                        </Typography>
+                    </Box>
+                    <Stack direction="row" spacing={2} alignItems="center">
+                        <Button
+                            variant="outlined"
+                            startIcon={<LaunchIcon />}
+                            onClick={() => window.open(`/queue/${selectedShop?.id}`, '_blank')}
+                            disabled={!selectedShop}
+                            sx={{ bgcolor: 'background.paper' }}
+                        >
+                            Live Public View
+                        </Button>
+                        <Button
+                            variant="outlined"
+                            startIcon={<TvIcon />}
+                            onClick={() => window.open(`/display/${selectedShop?.id}`, '_blank')}
+                            disabled={!selectedShop}
+                            sx={{ bgcolor: 'background.paper' }}
+                        >
+                            TV Mode
+                        </Button>
+                        <ThemeCustomizer />
+                    </Stack>
                 </Box>
-                <Stack direction="row" spacing={2}>
+
+                {/* Stat Cards Grid */}
+                <Typography component="h2" variant="h6" sx={{ mb: 2 }}>
+                    Overview
+                </Typography>
+                <Grid container spacing={2} columns={12} sx={{ mb: 4 }}>
+                    {statCards.map((card, index) => (
+                        <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={index}>
+                            <StatCard {...card} />
+                        </Grid>
+                    ))}
+                    <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                        <HighlightedCard />
+                    </Grid>
+                </Grid>
+
+                {/* Quick Actions (Call Next) */}
+                <Stack direction="row" spacing={2} sx={{ mb: 4 }}>
                     <Button
-                        variant="outlined"
-                        startIcon={<LaunchIcon />}
-                        onClick={() => window.open(`/queue/${selectedShop?.id}`, '_blank')}
-                        disabled={!selectedShop}
+                        variant="contained"
+                        size="large"
+                        onClick={handleCallNext}
+                        disabled={waitingCustomers.length === 0}
+                        sx={{ px: 4, py: 1.5, borderRadius: 2 }}
                     >
-                        Live Public View
-                    </Button>
-                    <Button
-                        variant="outlined"
-                        startIcon={<TvIcon />}
-                        onClick={() => window.open(`/display/${selectedShop?.id}`, '_blank')}
-                        disabled={!selectedShop}
-                    >
-                        TV Mode
+                        Call Next Customer
                     </Button>
                 </Stack>
+
+                <EmployeeSelector
+                    open={employeeSelectorOpen}
+                    employees={employees}
+                    loading={loadingEmployees}
+                    onClose={() => setEmployeeSelectorOpen(false)}
+                    onSelect={handleEmployeeSelected}
+                    title="Assign Employee to Customer"
+                    allowRandom={true}
+                />
             </Box>
-
-            {/* Stat Cards Grid */}
-            <Typography component="h2" variant="h6" sx={{ mb: 2 }}>
-                Overview
-            </Typography>
-            <Grid container spacing={2} columns={12} sx={{ mb: 4 }}>
-                {statCards.map((card, index) => (
-                    <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={index}>
-                        <StatCard {...card} />
-                    </Grid>
-                ))}
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <HighlightedCard />
-                </Grid>
-            </Grid>
-
-            {/* Quick Actions (Call Next) */}
-            {/* We can put the 'Call Next' button inside a prominent card or keep it simple */}
-            <Stack direction="row" spacing={2} sx={{ mb: 4 }}>
-                <Button
-                    variant="contained"
-                    size="large"
-                    onClick={handleCallNext}
-                    disabled={waitingCustomers.length === 0}
-                    sx={{ px: 4, py: 1.5, borderRadius: 2 }}
-                >
-                    Call Next Customer
-                </Button>
-            </Stack>
-
-            <EmployeeSelector
-                open={employeeSelectorOpen}
-                employees={employees}
-                loading={loadingEmployees}
-                onClose={() => setEmployeeSelectorOpen(false)}
-                onSelect={handleEmployeeSelected}
-                title="Assign Employee to Customer"
-                allowRandom={true}
-            />
         </Box>
     );
 };
