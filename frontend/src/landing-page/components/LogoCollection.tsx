@@ -30,7 +30,7 @@ const logoStyle = {
 
 export default function LogoCollection() {
   const { mode, systemMode } = useColorScheme();
-  let logos;
+  let logos: string[] = darkModeLogos; // Default to dark mode logos
   if (mode === 'system') {
     if (systemMode === 'light') {
       logos = lightModeLogos;
