@@ -32,12 +32,6 @@ const defaultTheme = createTheme();
 const customShadows: Shadows = [...defaultTheme.shadows];
 
 export const brand = {
-  50: '#fff0f1',
-  100: '#ffdbdc',
-  200: '#ffb8ba',
-  300: '#ff8a8d',
-  400: '#ff5a5f', // Main Coral
-  500: '#ff2e35',
   50: '#FFE8E9',   // Very light coral
   100: '#FFCFD1', // Light coral
   200: '#FFB0B4', // Lighter coral
