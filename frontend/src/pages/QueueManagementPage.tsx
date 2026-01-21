@@ -3,10 +3,7 @@ import {
     Container,
     Typography,
     Paper,
-    List,
-    ListItem,
-    ListItemText,
-    ListItemSecondaryAction,
+
     IconButton,
     Button,
     Dialog,
@@ -22,6 +19,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import TvIcon from '@mui/icons-material/Tv';
 import axios from 'axios';
+import QueueDataGrid from '../components/dashboard/QueueDataGrid';
 
 
 const QueueManagementPage: React.FC = () => {
@@ -113,31 +111,17 @@ const QueueManagementPage: React.FC = () => {
                 </Alert>
             )}
 
-            <Paper>
-                <List>
-                    {queues.map((queue) => (
-                        <ListItem key={queue.id} divider>
-                            <ListItemText
-                                primary={queue.name || "Main Queue"}
-                                secondary={`ID: ${queue.id} • ${queue.is_active ? 'Active' : 'Inactive'}`}
-                            />
-                            <ListItemSecondaryAction>
-                                <Chip
-                                    label={queue.is_active ? "Active" : "Inactive"}
-                                    color={queue.is_active ? "success" : "default"}
-                                    size="small"
-                                    sx={{ mr: 1 }}
-                                />
-                                {/* Delete/Deactivate button could go here */}
-                            </ListItemSecondaryAction>
-                        </ListItem>
-                    ))}
-                    {queues.length === 0 && (
-                        <ListItem>
-                            <ListItemText primary="No active queues found" />
-                        </ListItem>
-                    )}
-                </List>
+            <Paper sx={{ width: '100%', overflow: 'hidden' }}>
+                <QueueDataGrid
+                    rows={queues}
+                    onEdit={(queue) => {
+                        // For now just allow editing name via same dialog logic if we want, 
+                        // or just keep it simple. The original code didn't have edit.
+                        // We'll treat "Create" as the only action for now or repurpose.
+                        // Let's just log or ignore for this step as backend might not support update yet.
+                        console.log('Edit queue', queue);
+                    }}
+                />
             </Paper>
 
             <Dialog open={open} onClose={() => setOpen(false)}>
