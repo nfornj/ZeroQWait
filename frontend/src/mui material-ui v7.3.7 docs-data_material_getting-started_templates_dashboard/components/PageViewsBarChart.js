@@ -13,6 +13,7 @@ export default function PageViewsBarChart() {
     (theme.vars || theme).palette.primary.main,
     (theme.vars || theme).palette.primary.light,
   ];
+
   return (
     <Card variant="outlined" sx={{ width: '100%' }}>
       <CardContent>

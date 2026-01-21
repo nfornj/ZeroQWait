@@ -1,4 +1,5 @@
 import { useTheme } from '@mui/material/styles';
+import PropTypes from 'prop-types';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Chip from '@mui/material/Chip';
@@ -6,7 +7,7 @@ import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
 import { LineChart } from '@mui/x-charts/LineChart';
 
-function AreaGradient({ color, id }: { color: string; id: string }) {
+function AreaGradient({ color, id }) {
   return (
     <defs>
       <linearGradient id={id} x1="50%" y1="0%" x2="50%" y2="100%">
@@ -17,7 +18,12 @@ function AreaGradient({ color, id }: { color: string; id: string }) {
   );
 }
 
-function getDaysInMonth(month: number, year: number) {
+AreaGradient.propTypes = {
+  color: PropTypes.string.isRequired,
+  id: PropTypes.string.isRequired,
+};
+
+function getDaysInMonth(month, year) {
   const date = new Date(year, month, 0);
   const monthName = date.toLocaleDateString('en-US', {
     month: 'short',
