@@ -97,15 +97,45 @@ def create_historical_data(shop_id, days=30):
         db.close()
 
 if __name__ == "__main__":
-    # Ensure raw sample data exists first
     from create_sample_data import create_sample_data
-    if create_sample_data():
-        # Add history to "Downtown Barbershop" (Assuming ID 1 based on create_sample_data logic)
-        # We need to find the shop ID dynamically to be safe
-        db = SessionLocal()
-        shop = db.query(Shop).filter(Shop.slug == "downtown-barbershop").first()
-        if shop:
-            create_historical_data(shop.id)
+    # Run sample data creation to ensure base users exist
+    create_sample_data()
+    
+    db = SessionLocal()
+    # Find any shop owned by a shop_owner
+    shops = db.query(Shop).all()
+    
+    if not shops:
+        logger.warning("No shops found. Creating a default shop...")
+        # Create a shop manually if create_sample_data skipped it
+        owner = db.query(User).filter(User.role == UserRole.SHOP_OWNER).first()
+        if not owner:
+            logger.error("No shop owner found. Please reset database or check create_sample_data.")
         else:
-            logger.error("Downtown Barbershop not found")
-        db.close()
+            shop1 = Shop(
+                owner_id=owner.id,
+                name="Downtown Barbershop",
+                description="Professional haircuts",
+                shop_type="barbershop",
+                address="123 Main St",
+                city="San Francisco",
+                state="CA",
+                zip_code="94103",
+                country="US",
+                phone="555-0101",
+                slug="downtown-barbershop",
+                is_active=True
+            )
+            db.add(shop1)
+            db.commit()
+            db.refresh(shop1)
+            shops = [shop1]
+
+    if shops:
+        for shop in shops:
+            logger.info(f"Populating data for shop: {shop.name} ({shop.id})")
+            create_historical_data(shop.id, days=30)
+    else:
+        logger.error("Could not find or create any shops.")
+        
+    db.close()
