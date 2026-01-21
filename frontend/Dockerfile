@@ -23,6 +23,7 @@ COPY . .
 
 # Patch react-scripts to fix OOM in ForkTsCheckerWebpackPlugin
 RUN sed -i "s/mode: 'write-references',/mode: 'write-references', memoryLimit: 2048,/" node_modules/react-scripts/config/webpack.config.js
+RUN sed -i "s/useTypeScript &&/false \&\&/g" node_modules/react-scripts/config/webpack.config.js
 
 # Build the application
 RUN npm run build
