@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Container,
     Typography,
     Paper,
 
@@ -74,8 +73,8 @@ const QueueManagementPage: React.FC = () => {
     };
 
     return (
-        <Container maxWidth="md">
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} mt={2}>
                 <Typography variant="h4">
                     Queue Management
                 </Typography>
@@ -142,7 +141,7 @@ const QueueManagementPage: React.FC = () => {
                     <Button onClick={handleCreateQueue} variant="contained">Create</Button>
                 </DialogActions>
             </Dialog>
-        </Container>
+        </Box>
     );
 };
 
