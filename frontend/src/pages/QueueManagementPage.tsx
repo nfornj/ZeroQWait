@@ -18,6 +18,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import TvIcon from '@mui/icons-material/Tv';
 import axios from 'axios';
+import Header from '../components/dashboard/Header';
 import QueueDataGrid from '../components/dashboard/QueueDataGrid';
 
 
@@ -74,10 +75,8 @@ const QueueManagementPage: React.FC = () => {
 
     return (
         <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} mt={2}>
-                <Typography variant="h4">
-                    Queue Management
-                </Typography>
+            <Header />
+            <Box display="flex" justifyContent="flex-end" alignItems="center" mb={3} mt={2}>
                 <Button
                     variant="contained"
                     startIcon={<AddIcon />}

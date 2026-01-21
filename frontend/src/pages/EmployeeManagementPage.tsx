@@ -24,6 +24,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import AttendanceCalendar from '../components/AttendanceCalendar';
 import TeamDataGrid from '../components/dashboard/TeamDataGrid';
+import Header from '../components/dashboard/Header';
 
 
 interface Employee {
@@ -267,13 +268,8 @@ const EmployeeManagementPage: React.FC = () => {
 
     return (
         <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} mt={2}>
-                <Box display="flex" alignItems="center" gap={2}>
-                    <PeopleIcon sx={{ fontSize: 32 }} />
-                    <Typography variant="h4" component="h1">
-                        Team Management
-                    </Typography>
-                </Box>
+            <Header />
+            <Box display="flex" justifyContent="flex-end" alignItems="center" mb={3} mt={2}>
                 {currentTab === 0 && (
                     <Button
                         variant="contained"

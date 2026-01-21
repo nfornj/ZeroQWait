@@ -14,7 +14,21 @@ const StyledBreadcrumbs = styled(Breadcrumbs)(({ theme }) => ({
   },
 }));
 
+import { useLocation } from 'react-router-dom';
+
+const routeNameMap: { [key: string]: string } = {
+  '/dashboard': 'Home',
+  '/queues': 'Queues',
+  '/employees': 'Team',
+  '/analytics': 'Analytics',
+  '/settings': 'Settings',
+};
+
 export default function NavbarBreadcrumbs() {
+  const location = useLocation();
+  const currentPath = location.pathname;
+  const pageName = routeNameMap[currentPath] || 'Overview';
+
   return (
     <StyledBreadcrumbs
       aria-label="breadcrumb"
@@ -22,7 +36,7 @@ export default function NavbarBreadcrumbs() {
     >
       <Typography variant="body1">Dashboard</Typography>
       <Typography variant="body1" sx={{ color: 'text.primary', fontWeight: 600 }}>
-        Home
+        {pageName}
       </Typography>
     </StyledBreadcrumbs>
   );
