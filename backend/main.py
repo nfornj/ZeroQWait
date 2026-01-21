@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from contextlib import asynccontextmanager
-from routers import users, auth, shops, queues, subscriptions, analytics, uploads, employees
+from routers import users, auth, shops, queues, subscriptions, analytics, uploads, employees, data_generation
 from scheduler import start_scheduler, stop_scheduler
 import logging
 
@@ -82,6 +82,7 @@ app.include_router(queues.router, prefix="/api/queues", tags=["Queues"])
 app.include_router(uploads.router, prefix="/api", tags=["Uploads"])
 app.include_router(subscriptions.router, prefix="/api/subscriptions", tags=["Subscriptions"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(data_generation.router, prefix="/api", tags=["Data Generation"])
 
 @app.get("/")
 async def root():

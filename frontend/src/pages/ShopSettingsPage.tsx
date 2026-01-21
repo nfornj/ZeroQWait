@@ -31,6 +31,7 @@ const ShopSettingsPage: React.FC = () => {
     const { themePreset, setThemePreset, setDashboardGradient } = useThemeContext();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [generatingData, setGeneratingData] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [shop, setShop] = useState<any>(null);
@@ -127,6 +128,29 @@ const ShopSettingsPage: React.FC = () => {
             setError('Failed to save settings');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleGenerateData = async () => {
+        if (!window.confirm('This will generate 30 days of sample data. Proceed?')) return;
+        setGeneratingData(true);
+        setError('');
+        setSuccess('');
+
+        try {
+            const token = localStorage.getItem('token');
+            await axios.post(`/api/shops/${shop.id}/generate-sample-data`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setSuccess('Sample data generated successfully! Please refresh dashboard.');
+            setTimeout(() => {
+                window.location.href = '/dashboard';
+            }, 1500);
+        } catch (err) {
+            console.error(err);
+            setError('Failed to generate sample data');
+        } finally {
+            setGeneratingData(false);
         }
     };
 
@@ -425,6 +449,23 @@ const ShopSettingsPage: React.FC = () => {
                                 value={formData.website}
                                 onChange={handleChange}
                             />
+                        </Box>
+
+                        <Box sx={{ flex: 1, minWidth: '100%' }}>
+                            <Typography variant="h6" gutterBottom sx={{ mt: 2, fontWeight: 600 }}>
+                                Data Management (Demo)
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                Populate your shop with realistic sample data for testing.
+                            </Typography>
+                            <Button
+                                variant="outlined"
+                                color="warning"
+                                onClick={handleGenerateData}
+                                disabled={generatingData}
+                            >
+                                {generatingData ? 'Generating Data...' : 'Generate 30 Days of Sample Data'}
+                            </Button>
                         </Box>
 
                         <Box sx={{ mt: 2 }}>

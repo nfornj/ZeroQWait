@@ -41,6 +41,13 @@ export default function TeamDataGrid({ rows, onDelete, onReactivate }: TeamDataG
             valueGetter: (value, row) => row.user.email,
         },
         {
+            field: 'role',
+            headerName: 'Role',
+            flex: 1,
+            minWidth: 120,
+            valueGetter: (value, row) => row.user.role.charAt(0).toUpperCase() + row.user.role.slice(1),
+        },
+        {
             field: 'status',
             headerName: 'Status',
             width: 120,

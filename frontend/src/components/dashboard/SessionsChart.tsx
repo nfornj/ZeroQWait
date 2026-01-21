@@ -17,36 +17,30 @@ function AreaGradient({ color, id }: { color: string; id: string }) {
   );
 }
 
-function getDaysInMonth(month: number, year: number) {
-  const date = new Date(year, month, 0);
-  const monthName = date.toLocaleDateString('en-US', {
-    month: 'short',
-  });
-  const daysInMonth = date.getDate();
-  const days = [];
-  let i = 1;
-  while (days.length < daysInMonth) {
-    days.push(`${monthName} ${i}`);
-    i += 1;
-  }
-  return days;
-}
+export type SessionsChartProps = {
+  seriesData?: number[];
+  xLabels?: string[];
+};
 
-export default function SessionsChart() {
+export default function SessionsChart({ seriesData = [], xLabels = [] }: SessionsChartProps) {
   const theme = useTheme();
-  const data = getDaysInMonth(4, 2024);
+
+  // Use passed data or fallback to empty
+  const data = xLabels.length > 0 ? xLabels : [];
+  const visits = seriesData.length > 0 ? seriesData : [];
+
+  // Calculate total visits
+  const totalVisits = visits.reduce((a, b) => a + b, 0);
 
   const colorPalette = [
-    theme.palette.primary.light,
     theme.palette.primary.main,
-    theme.palette.primary.dark,
   ];
 
   return (
     <Card variant="outlined" sx={{ width: '100%' }}>
       <CardContent>
         <Typography component="h2" variant="subtitle2" gutterBottom>
-          Sessions
+          Daily Visits
         </Typography>
         <Stack sx={{ justifyContent: 'space-between' }}>
           <Stack
@@ -58,12 +52,12 @@ export default function SessionsChart() {
             }}
           >
             <Typography variant="h4" component="p">
-              13,277
+              {totalVisits.toLocaleString()}
             </Typography>
-            <Chip size="small" color="success" label="+35%" />
+            <Chip size="small" color="success" label="Last 30 Days" />
           </Stack>
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            Sessions per day for the last 30 days
+            Number of users per day visited
           </Typography>
         </Stack>
         <LineChart
@@ -73,73 +67,30 @@ export default function SessionsChart() {
               scaleType: 'point',
               data,
               tickInterval: (index, i) => (i + 1) % 5 === 0,
-              height: 24,
             },
           ]}
-          yAxis={[{ width: 50 }]}
           series={[
             {
-              id: 'direct',
-              label: 'Direct',
+              id: 'visits',
+              label: 'Visits',
               showMark: false,
               curve: 'linear',
               stack: 'total',
               area: true,
               stackOrder: 'ascending',
-              data: [
-                300, 900, 600, 1200, 1500, 1800, 2400, 2100, 2700, 3000, 1800, 3300,
-                3600, 3900, 4200, 4500, 3900, 4800, 5100, 5400, 4800, 5700, 6000,
-                6300, 6600, 6900, 7200, 7500, 7800, 8100,
-              ],
-            },
-            {
-              id: 'referral',
-              label: 'Referral',
-              showMark: false,
-              curve: 'linear',
-              stack: 'total',
-              area: true,
-              stackOrder: 'ascending',
-              data: [
-                500, 900, 700, 1400, 1100, 1700, 2300, 2000, 2600, 2900, 2300, 3200,
-                3500, 3800, 4100, 4400, 2900, 4700, 5000, 5300, 5600, 5900, 6200,
-                6500, 5600, 6800, 7100, 7400, 7700, 8000,
-              ],
-            },
-            {
-              id: 'organic',
-              label: 'Organic',
-              showMark: false,
-              curve: 'linear',
-              stack: 'total',
-              stackOrder: 'ascending',
-              data: [
-                1000, 1500, 1200, 1700, 1300, 2000, 2400, 2200, 2600, 2800, 2500,
-                3000, 3400, 3700, 3200, 3900, 4100, 3500, 4300, 4500, 4000, 4700,
-                5000, 5200, 4800, 5400, 5600, 5900, 6100, 6300,
-              ],
-              area: true,
+              data: visits,
             },
           ]}
           height={250}
-          margin={{ left: 0, right: 20, top: 20, bottom: 0 }}
+          margin={{ left: 50, right: 20, top: 20, bottom: 20 }}
           grid={{ horizontal: true }}
           sx={{
-            '& .MuiAreaElement-series-organic': {
-              fill: "url('#organic')",
-            },
-            '& .MuiAreaElement-series-referral': {
-              fill: "url('#referral')",
-            },
-            '& .MuiAreaElement-series-direct': {
-              fill: "url('#direct')",
+            '& .MuiAreaElement-series-visits': {
+              fill: "url('#visits')",
             },
           }}
-          hideLegend
         >
-          <AreaGradient color={theme.palette.primary.dark} id="organic" />
-          <AreaGradient color={theme.palette.primary.main} id="referral" />
-          <AreaGradient color={theme.palette.primary.light} id="direct" />
+          <AreaGradient color={theme.palette.primary.main} id="visits" />
         </LineChart>
       </CardContent>
     </Card>

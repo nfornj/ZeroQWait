@@ -7,6 +7,7 @@ from enum import Enum
 class UserRole(str, Enum):
     CUSTOMER = "customer"
     SHOP_OWNER = "shop_owner"
+    MANAGER = "manager"
     EMPLOYEE = "employee"
 
 class QueueStatus(str, Enum):

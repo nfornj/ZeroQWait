@@ -13,6 +13,7 @@ Base = declarative_base()
 class UserRole(str, enum.Enum):
     CUSTOMER = "customer"
     SHOP_OWNER = "shop_owner"
+    MANAGER = "manager"
     EMPLOYEE = "employee"
 
 class QueueStatus(str, enum.Enum):

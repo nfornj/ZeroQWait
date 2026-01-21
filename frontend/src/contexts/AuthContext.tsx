@@ -6,7 +6,7 @@ interface User {
   id: number;
   username: string;
   email: string;
-  role: "customer" | "shop_owner" | "employee";
+  role: "customer" | "shop_owner" | "employee" | "manager";
   profile_photo_url?: string;
 }
 

@@ -45,8 +45,8 @@ def check_shop_access(shop_id: int, user: dict, require_owner: bool = False) -> 
         if is_owner:
             return True
         
-        # Check if user is an active employee
-        if user.get("role") == "employee":
+        # Check if user is an active employee or manager
+        if user.get("role") in ["employee", "manager"]:
             employee = db_interface.get_shop_employee(shop_id, user["id"])
             
             if employee and employee.get("is_active"):
