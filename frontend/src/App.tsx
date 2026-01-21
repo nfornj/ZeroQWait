@@ -21,6 +21,7 @@ import FavoritesPage from "./pages/FavoritesPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import ShopRegistrationPage from "./pages/ShopRegistrationPage";
 import ShopDashboardPage from "./pages/ShopDashboardPage";
+import ShopAnalyticsPage from "./pages/ShopAnalyticsPage";
 import ShopSettingsPage from "./pages/ShopSettingsPage";
 import EmployeeManagementPage from "./pages/EmployeeManagementPage";
 import EmployeeQueuePage from "./pages/EmployeeQueuePage";
@@ -88,6 +89,7 @@ function App() {
             <Route path="/employees" element={<EmployeeManagementPage />} />
             <Route path="/settings" element={<ShopSettingsPage />} />
             <Route path="/queues" element={<QueueManagementPage />} />
+            <Route path="/analytics" element={<ShopAnalyticsPage />} />
           </Route>
 
           <Route path="*" element={<NotFoundPage />} />

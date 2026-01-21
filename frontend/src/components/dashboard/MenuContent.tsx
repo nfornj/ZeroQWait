@@ -5,6 +5,7 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Stack from '@mui/material/Stack';
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded';
+import AnalyticsRoundedIcon from '@mui/icons-material/AnalyticsRounded';
 import QueueRoundedIcon from '@mui/icons-material/QueueRounded';
 import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
@@ -15,6 +16,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 const mainListItems = [
   { text: 'Dashboard', icon: <DashboardRoundedIcon />, path: '/dashboard' },
   { text: 'Queues', icon: <QueueRoundedIcon />, path: '/queues' },
+  { text: 'Analytics', icon: <AnalyticsRoundedIcon />, path: '/analytics' },
   { text: 'Team', icon: <PeopleRoundedIcon />, path: '/employees' },
 ];
 
