@@ -24,19 +24,90 @@ class AnalyticsProcessor:
         
         Returns: True if successful, False otherwise
         """
+        from models import QueueItem, DailyAnalytics, Queue, QueueStatus, Shop
+        from sqlalchemy import func, extract
+        
         if target_date is None:
             target_date = date.today() - timedelta(days=1)
         
         try:
             logger.info(f"Aggregating analytics for {target_date}")
             
-            # Call PostgreSQL function to aggregate data
-            result = self.db.execute(
-                text("SELECT aggregate_daily_analytics(:target_date)"),
-                {"target_date": target_date}
-            )
-            self.db.commit()
+            # Find all shops
+            shops = self.db.query(Shop.id).all()
             
+            for (shop_id,) in shops:
+                # Get items for this shop on this date
+                # Note: We need to filter by checked_in_at date
+                items = self.db.query(QueueItem).join(Queue).filter(
+                    Queue.shop_id == shop_id,
+                    func.date(QueueItem.checked_in_at) == target_date
+                ).all()
+                
+                if not items:
+                    continue
+                    
+                total_customers = len(items)
+                completed_items = [i for i in items if i.status == QueueStatus.COMPLETED and i.service_started_at and i.completed_at]
+                completed_count = len(completed_items)
+                cancelled_count = len([i for i in items if i.status == QueueStatus.CANCELLED])
+                
+                # Calculate times
+                total_wait_sec = 0
+                total_service_sec = 0
+                
+                req_hours = {} # For peak hour
+                
+                for item in completed_items:
+                    # Wait time
+                    if item.checked_in_at and item.service_started_at:
+                        wait = (item.service_started_at - item.checked_in_at).total_seconds()
+                        total_wait_sec += max(0, wait)
+                    
+                    # Service time
+                    if item.service_started_at and item.completed_at:
+                        service = (item.completed_at - item.service_started_at).total_seconds()
+                        total_service_sec += max(0, service)
+                        
+                    # Peak hour tracking (based on check-in)
+                    hour = item.checked_in_at.hour
+                    req_hours[hour] = req_hours.get(hour, 0) + 1
+
+                avg_wait_min = (total_wait_sec / completed_count / 60) if completed_count > 0 else 0
+                avg_service_min = (total_service_sec / completed_count / 60) if completed_count > 0 else 0
+                
+                peak_hour = max(req_hours, key=req_hours.get) if req_hours else None
+                peak_count = req_hours[peak_hour] if peak_hour is not None else 0
+                
+                # Upsert DailyAnalytics
+                existing = self.db.query(DailyAnalytics).filter(
+                    DailyAnalytics.shop_id == shop_id,
+                    func.date(DailyAnalytics.date) == target_date
+                ).first()
+                
+                if existing:
+                    existing.total_customers = total_customers
+                    existing.completed_services = completed_count
+                    existing.cancelled_services = cancelled_count
+                    existing.avg_wait_time_minutes = avg_wait_min
+                    existing.avg_service_time_minutes = avg_service_min
+                    existing.peak_hour_start = peak_hour
+                    existing.peak_hour_customers = peak_count
+                else:
+                    daily = DailyAnalytics(
+                        shop_id=shop_id,
+                        date=target_date,
+                        total_customers=total_customers,
+                        completed_services=completed_count,
+                        cancelled_services=cancelled_count,
+                        avg_wait_time_minutes=avg_wait_min,
+                        avg_service_time_minutes=avg_service_min,
+                        peak_hour_start=peak_hour,
+                        peak_hour_customers=peak_count
+                    )
+                    self.db.add(daily)
+            
+            self.db.commit()
             logger.info(f"Successfully aggregated analytics for {target_date}")
             return True
             

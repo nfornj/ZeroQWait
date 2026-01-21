@@ -275,3 +275,78 @@ def get_archive_stats(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching archive stats: {str(e)}")
+
+
+@router.get("/services/{shop_id}")
+def get_service_popularity(
+    shop_id: int,
+    days: int = 30,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get service popularity based on notes field
+    """
+    # Verify shop ownership
+    try:
+        shop = db_interface.get_shop_by_id(shop_id)
+        if not shop:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        
+        if shop["owner_id"] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    try:
+        from sqlalchemy import text
+        
+        start_date = date.today() - timedelta(days=days)
+        
+        # Simple grouping by notes
+        # In a real app, you'd likely normalize this or use a proper Service model
+        query = text("""
+            SELECT 
+                qi.notes as service_name,
+                COUNT(*) as count
+            FROM queue_items qi
+            JOIN queues q ON qi.queue_id = q.id
+            WHERE q.shop_id = :shop_id
+              AND qi.created_at >= :start_date
+              AND qi.notes IS NOT NULL
+            GROUP BY qi.notes
+            ORDER BY count DESC
+            LIMIT 10
+        """) # Note: using created_at in query but python uses checked_in_at typically. 
+             # QueueItem doesn't have created_at in models.py shown earlier, checking models.py...
+             # QueueItem has checked_in_at. Let's use that.
+        
+        # Re-verify schema... QueueItem has checked_in_at.
+        
+        query = text("""
+            SELECT 
+                qi.notes as service_name,
+                COUNT(*) as count
+            FROM queue_items qi
+            JOIN queues q ON qi.queue_id = q.id
+            WHERE q.shop_id = :shop_id
+              AND qi.checked_in_at >= :start_date
+              AND qi.notes IS NOT NULL
+            GROUP BY qi.notes
+            ORDER BY count DESC
+            LIMIT 10
+        """)
+
+        results = db.execute(query, {"shop_id": shop_id, "start_date": start_date}).fetchall()
+        
+        return [
+            {"name": row[0], "value": row[1]} 
+            for row in results
+        ]
+        
+    except Exception as e:
+        logger.error(f"Error analyzing services: {e}")
+        # Return empty list on error to gracefully degrade
+        return []
