@@ -11,17 +11,17 @@ import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
 import HelpRoundedIcon from '@mui/icons-material/HelpRounded';
+import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const mainListItems = [
   { text: 'Dashboard', icon: <DashboardRoundedIcon />, path: '/dashboard' },
   { text: 'Queues', icon: <QueueRoundedIcon />, path: '/queues' },
-  { text: 'Analytics', icon: <AnalyticsRoundedIcon />, path: '/analytics' },
+  { text: 'Shop Setup', icon: <SettingsRoundedIcon />, path: '/settings' },
   { text: 'Team', icon: <PeopleRoundedIcon />, path: '/employees' },
 ];
 
 const secondaryListItems = [
-  { text: 'Settings', icon: <SettingsRoundedIcon />, path: '/settings' },
   { text: 'About', icon: <InfoRoundedIcon />, path: '/about' },
   { text: 'Feedback', icon: <HelpRoundedIcon />, path: '/feedback' },
 ];

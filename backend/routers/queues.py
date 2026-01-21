@@ -281,6 +281,14 @@ def join_queue(
         queue_item_data["position"] = position
         queue_item_data["status"] = QUEUE_STATUS_WAITING
         
+        # Handle Service Selection
+        if queue_item.service_id:
+            service = db_interface.get_shop_service_by_id(queue_item.service_id)
+            if service and service["shop_id"] == shop_id:
+                queue_item_data["service_cost"] = service["cost"]
+            else:
+                queue_item_data["service_id"] = None # Reset if invalid
+        
         new_item = db_interface.create_queue_item(queue_item_data)
         if new_item:
             # Calculate the actual display position (sequential for active customers)

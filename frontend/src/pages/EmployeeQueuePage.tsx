@@ -28,6 +28,10 @@ import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import IconButton from '@mui/material/IconButton';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
@@ -66,6 +70,14 @@ const EmployeeQueuePage: React.FC = () => {
     const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
     const [selectedCustomer, setSelectedCustomer] = useState<QueueItem | null>(null);
     const [removeReason, setRemoveReason] = useState('');
+
+    // Add Walk-in State
+    const [addDialogOpen, setAddDialogOpen] = useState(false);
+    const [newCustomerName, setNewCustomerName] = useState('');
+    const [newCustomerPhone, setNewCustomerPhone] = useState('');
+    const [services, setServices] = useState<any[]>([]);
+    const [selectedServiceId, setSelectedServiceId] = useState<number | ''>('');
+
     const { user } = useAuth();
     const navigate = useNavigate();
 
@@ -84,7 +96,7 @@ const EmployeeQueuePage: React.FC = () => {
         try {
             setLoading(true);
             const token = localStorage.getItem('token');
-            
+
             // Fetch shops
             const shopsResponse = await axios.get(`/employees/my-shops`, {
                 headers: { Authorization: `Bearer ${token}` }
@@ -95,13 +107,23 @@ const EmployeeQueuePage: React.FC = () => {
             const shiftResponse = await axios.get(`/current-shift`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            
+
             if (shiftResponse.data) {
                 setCurrentShift(shiftResponse.data);
                 const currentShop = shopsResponse.data.find((s: Shop) => s.id === shiftResponse.data.shop_id);
                 if (currentShop) {
                     setSelectedShop(currentShop);
                     await fetchQueue(currentShop.id);
+
+                    // Fetch services
+                    try {
+                        const servicesRes = await axios.get(`/services/shop/${currentShop.id}`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        });
+                        setServices(servicesRes.data.filter((s: any) => s.is_active));
+                    } catch (e) {
+                        console.error("Failed to fetch services", e);
+                    }
                 }
             }
         } catch (err: any) {
@@ -165,13 +187,13 @@ const EmployeeQueuePage: React.FC = () => {
             const response = await axios.get(`/queues/shop/${selectedShop.id}/active`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            
+
             const queueId = response.data.id;
-            
+
             await axios.post(`/queues/${queueId}/call-next`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            
+
             setSuccess('Called next customer!');
             fetchQueue();
         } catch (err: any) {
@@ -218,10 +240,10 @@ const EmployeeQueuePage: React.FC = () => {
     const handleUploadPhoto = async (photoDataUrl: string) => {
         try {
             const token = localStorage.getItem('token');
-            await axios.post(`/upload-profile-photo`, 
+            await axios.post(`/upload-profile-photo`,
                 { photo_url: photoDataUrl },
                 {
-                    headers: { 
+                    headers: {
                         Authorization: `Bearer ${token}`,
                         'Content-Type': 'application/json'
                     },
@@ -231,6 +253,30 @@ const EmployeeQueuePage: React.FC = () => {
             setSuccess('Profile photo updated!');
         } catch (err: any) {
             throw new Error(err.response?.data?.detail || 'Failed to upload photo');
+        }
+    };
+
+    const handleAddWalkIn = async () => {
+        if (!selectedShop || !newCustomerName.trim()) return;
+
+        try {
+            setError(null);
+
+            await axios.post(`/queues/shop/${selectedShop.id}/join`, {
+                customer_name: newCustomerName,
+                customer_phone: newCustomerPhone,
+                service_id: selectedServiceId || undefined,
+                notes: "[Walk-in]"
+            });
+
+            setSuccess('Customer added to queue');
+            setAddDialogOpen(false);
+            setNewCustomerName('');
+            setNewCustomerPhone('');
+            setSelectedServiceId('');
+            fetchQueue();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to add customer');
         }
     };
 
@@ -352,6 +398,15 @@ const EmployeeQueuePage: React.FC = () => {
                                     <Typography variant="h6" sx={{ mb: 2 }}>
                                         Waiting Queue ({waitingCustomers.length})
                                     </Typography>
+                                    <Button
+                                        variant="outlined"
+                                        fullWidth
+                                        sx={{ mb: 2 }}
+                                        startIcon={<PersonAddIcon />}
+                                        onClick={() => setAddDialogOpen(true)}
+                                    >
+                                        Add Walk-in Customer
+                                    </Button>
                                     {waitingCustomers.length === 0 ? (
                                         <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
                                             No customers waiting
@@ -359,13 +414,13 @@ const EmployeeQueuePage: React.FC = () => {
                                     ) : (
                                         <List>
                                             {waitingCustomers.slice(0, 10).map((item) => (
-                                                <ListItem 
-                                                    key={item.id} 
+                                                <ListItem
+                                                    key={item.id}
                                                     sx={{ borderBottom: '1px solid #eee' }}
                                                     secondaryAction={
                                                         <Box>
-                                                            <IconButton 
-                                                                edge="end" 
+                                                            <IconButton
+                                                                edge="end"
                                                                 aria-label="serve"
                                                                 onClick={() => handleServeSpecific(item)}
                                                                 sx={{ mr: 1 }}
@@ -374,8 +429,8 @@ const EmployeeQueuePage: React.FC = () => {
                                                             >
                                                                 <SkipNextIcon />
                                                             </IconButton>
-                                                            <IconButton 
-                                                                edge="end" 
+                                                            <IconButton
+                                                                edge="end"
                                                                 aria-label="remove"
                                                                 onClick={() => {
                                                                     setSelectedCustomer(item);
@@ -412,6 +467,49 @@ const EmployeeQueuePage: React.FC = () => {
                 onUpload={handleUploadPhoto}
             />
 
+            {/* Add Walk-in Dialog */}
+            <Dialog open={addDialogOpen} onClose={() => setAddDialogOpen(false)}>
+                <DialogTitle>Add Walk-in Customer</DialogTitle>
+                <DialogContent>
+                    <TextField
+                        autoFocus
+                        margin="dense"
+                        label="Customer Name"
+                        fullWidth
+                        value={newCustomerName}
+                        onChange={(e) => setNewCustomerName(e.target.value)}
+                        placeholder="e.g. John Doe"
+                    />
+                    <TextField
+                        margin="dense"
+                        label="Phone (Optional)"
+                        fullWidth
+                        value={newCustomerPhone}
+                        onChange={(e) => setNewCustomerPhone(e.target.value)}
+                    />
+                    <FormControl fullWidth margin="dense" sx={{ mt: 2 }}>
+                        <InputLabel id="walkin-service-label">Service (Optional)</InputLabel>
+                        <Select
+                            labelId="walkin-service-label"
+                            value={selectedServiceId}
+                            label="Service (Optional)"
+                            onChange={(e) => setSelectedServiceId(e.target.value as number)}
+                        >
+                            <MenuItem value=""><em>None</em></MenuItem>
+                            {services.map((s) => (
+                                <MenuItem key={s.id} value={s.id}>
+                                    {s.name} - ${s.cost}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setAddDialogOpen(false)}>Cancel</Button>
+                    <Button onClick={handleAddWalkIn} variant="contained" disabled={!newCustomerName.trim()}>Add</Button>
+                </DialogActions>
+            </Dialog>
+
             {/* Remove Customer Dialog */}
             <Dialog open={removeDialogOpen} onClose={() => setRemoveDialogOpen(false)}>
                 <DialogTitle>Remove Customer from Queue</DialogTitle>
@@ -436,9 +534,9 @@ const EmployeeQueuePage: React.FC = () => {
                         setSelectedCustomer(null);
                         setRemoveReason('');
                     }}>Cancel</Button>
-                    <Button 
-                        onClick={handleRemoveCustomer} 
-                        variant="contained" 
+                    <Button
+                        onClick={handleRemoveCustomer}
+                        variant="contained"
                         color="error"
                         disabled={!removeReason.trim()}
                     >

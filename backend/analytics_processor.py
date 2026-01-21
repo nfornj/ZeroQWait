@@ -52,9 +52,10 @@ class AnalyticsProcessor:
                 completed_count = len(completed_items)
                 cancelled_count = len([i for i in items if i.status == QueueStatus.CANCELLED])
                 
-                # Calculate times
+                # Calculate times & revenue
                 total_wait_sec = 0
                 total_service_sec = 0
+                total_revenue = sum(item.service_cost or 0.0 for item in completed_items)
                 
                 req_hours = {} # For peak hour
                 
@@ -93,6 +94,7 @@ class AnalyticsProcessor:
                     existing.avg_service_time_minutes = avg_service_min
                     existing.peak_hour_start = peak_hour
                     existing.peak_hour_customers = peak_count
+                    existing.total_revenue = total_revenue
                 else:
                     daily = DailyAnalytics(
                         shop_id=shop_id,
@@ -103,7 +105,8 @@ class AnalyticsProcessor:
                         avg_wait_time_minutes=avg_wait_min,
                         avg_service_time_minutes=avg_service_min,
                         peak_hour_start=peak_hour,
-                        peak_hour_customers=peak_count
+                        peak_hour_customers=peak_count,
+                        total_revenue=total_revenue
                     )
                     self.db.add(daily)
             
@@ -195,6 +198,7 @@ def get_analytics_summary(db: Session, shop_id: int, start_date: date, end_date:
                 SUM(total_cancelled) as total_cancelled,
                 AVG(avg_wait_time_minutes) as avg_wait_time,
                 AVG(avg_service_time_minutes) as avg_service_time,
+                SUM(total_revenue) as total_revenue,
                 COUNT(*) as days_count
             FROM queue_analytics_daily
             WHERE shop_id = :shop_id
@@ -217,7 +221,8 @@ def get_analytics_summary(db: Session, shop_id: int, start_date: date, end_date:
                 "total_cancelled": result[2] or 0,
                 "avg_wait_time_minutes": round(result[3] or 0, 2),
                 "avg_service_time_minutes": round(result[4] or 0, 2),
-                "days_count": result[5] or 0
+                "total_revenue": round(result[5] or 0.0, 2),
+                "days_count": result[6] or 0
             }
         
         return {

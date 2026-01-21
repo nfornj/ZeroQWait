@@ -6,18 +6,19 @@ import Typography from '@mui/material/Typography';
 import axios from 'axios';
 import { useShop } from '../../contexts/ShopContext';
 import Copyright from './Copyright';
-import ChartUserByCountry from './ChartUserByCountry'; // TO-DO: Rename/Refactor to ServicePreferences
-import PageViewsBarChart from './PageViewsBarChart';
+import ChartUserByCountry from './ChartUserByCountry';
+import StackedRevenueChart from './StackedRevenueChart';
 import SessionsChart from './SessionsChart';
+import PageViewsBarChart from './PageViewsBarChart';
 import StatCard, { StatCardProps } from './StatCard';
 import RecentVisitsDataGrid from './RecentVisitsDataGrid';
 import TeamHierarchy from './TeamHierarchy';
 
-// Default empty stats to show whilst loading
 const defaultStats: StatCardProps[] = [
   { title: 'Total Visits', value: '-', interval: 'Last 30 days', trend: 'neutral', data: [] },
   { title: 'Avg Wait Time', value: '-', interval: 'Last 30 days', trend: 'neutral', data: [] },
   { title: 'Avg Service Time', value: '-', interval: 'Last 30 days', trend: 'neutral', data: [] },
+  { title: 'Total Revenue', value: '-', interval: 'Last 30 days', trend: 'neutral', data: [] },
 ];
 
 export default function MainGrid() {
@@ -37,7 +38,6 @@ export default function MainGrid() {
         const response = await axios.get(`/analytics/${shop.id}?days=30`, { headers });
         const data = response.data;
 
-        // Transform daily stats for charts
         const dailyCounts = data.daily_stats.map((d: any) => d.count);
         const dayLabels = data.daily_stats.map((d: any) => {
           const date = new Date(d.date);
@@ -68,6 +68,13 @@ export default function MainGrid() {
             interval: 'Last 30 days',
             trend: 'neutral',
             data: dailyCounts.map(() => data.avg_service_minutes)
+          },
+          {
+            title: 'Total Revenue',
+            value: data.total_revenue !== undefined ? `$${data.total_revenue}` : '$0.00',
+            interval: 'Last 30 days',
+            trend: 'up',
+            data: data.daily_stats.map((d: any) => d.revenue || 0)
           }
         ]);
 
@@ -91,7 +98,7 @@ export default function MainGrid() {
         sx={{ mb: (theme) => theme.spacing(2) }}
       >
         {stats.map((card, index) => (
-          <Grid key={index} size={{ xs: 12, sm: 6, lg: 4 }}>
+          <Grid key={index} size={{ xs: 12, sm: 6, lg: 3 }}>
             <StatCard {...card} />
           </Grid>
         ))}
@@ -100,7 +107,7 @@ export default function MainGrid() {
           <SessionsChart seriesData={dailyVisits} xLabels={dates} />
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
-          <PageViewsBarChart />
+          <StackedRevenueChart />
         </Grid>
       </Grid>
 

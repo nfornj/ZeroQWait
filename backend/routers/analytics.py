@@ -7,6 +7,10 @@ from analytics_processor import get_analytics_summary, get_peak_hours_analysis, 
 from scheduler import trigger_maintenance_now
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, date
+import logging
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -56,8 +60,10 @@ def get_shop_analytics(
     total_service_seconds = 0
     service_count = 0
 
-    # 4. Customers Per Day
+    # 4. Customers Per Day & Revenue
     daily_counts = {}
+    daily_revenue = {}
+    total_revenue = 0.0
 
     for item in completed_items:
         # Wait Time
@@ -93,6 +99,11 @@ def get_shop_analytics(
                 completed_dt = datetime.fromisoformat(completed.replace("Z", "+00:00"))
                 date_str = completed_dt.strftime("%Y-%m-%d")
                 daily_counts[date_str] = daily_counts.get(date_str, 0) + 1
+                
+                # Revenue
+                cost = float(item.get("service_cost") or 0.0)
+                total_revenue += cost
+                daily_revenue[date_str] = daily_revenue.get(date_str, 0.0) + cost
             except Exception:
                 pass
 
@@ -107,13 +118,15 @@ def get_shop_analytics(
         date_str = current.strftime("%Y-%m-%d")
         chart_data.append({
             "date": date_str,
-            "count": daily_counts.get(date_str, 0)
+            "count": daily_counts.get(date_str, 0),
+            "revenue": daily_revenue.get(date_str, 0.0)
         })
         current += timedelta(days=1)
 
     return {
         "period_days": days,
         "total_customers": total_customers,
+        "total_revenue": total_revenue,
         "avg_wait_minutes": avg_wait_minutes,
         "avg_service_minutes": avg_service_minutes,
         "daily_stats": chart_data
@@ -349,4 +362,100 @@ def get_service_popularity(
     except Exception as e:
         logger.error(f"Error analyzing services: {e}")
         # Return empty list on error to gracefully degrade
+        return []
+
+@router.get("/revenue/monthly-by-service/{shop_id}")
+def get_monthly_revenue_by_service(
+    shop_id: int,
+    months: int = 6,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get monthly revenue broken down by service for stacked bar chart
+    """
+    # Verify shop ownership
+    try:
+        shop = db_interface.get_shop_by_id(shop_id)
+        if not shop:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        
+        if shop["owner_id"] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    try:
+        from sqlalchemy import text
+        from datetime import date
+        from dateutil.relativedelta import relativedelta
+
+        end_date = date.today()
+        # Go back 'months' months, start from the 1st
+        start_date = (end_date - relativedelta(months=months-1)).replace(day=1)
+        
+        # Query to get sum of cost grouped by month and service name
+        # Using to_char for month formatting (Postgres specific)
+        query = text("""
+            SELECT 
+                to_char(qi.completed_at, 'Mon') as month_name,
+                EXTRACT(MONTH FROM qi.completed_at) as month_num,
+                EXTRACT(YEAR FROM qi.completed_at) as year_num,
+                COALESCE(s.name, 'Other') as service_name,
+                SUM(qi.service_cost) as revenue
+            FROM queue_items qi
+            JOIN queues q ON qi.queue_id = q.id
+            LEFT JOIN shop_services s ON qi.service_id = s.id
+            WHERE q.shop_id = :shop_id
+              AND qi.completed_at >= :start_date
+              AND qi.status = 'COMPLETED'
+            GROUP BY 1, 2, 3, 4
+            ORDER BY year_num, month_num
+        """)
+
+        results = db.execute(query, {"shop_id": shop_id, "start_date": start_date}).fetchall()
+        
+        # Process results into chart format
+        # structure: {month: "Jan", "Haircut": 100, "Shave": 50, ...}
+        
+        # Initialize map with all months in range to ensure continuity
+        month_map = {}
+        curr = start_date
+        while curr <= end_date:
+            key = curr.strftime("%b") # Jan, Feb...
+            month_map[key] = {"month": key}
+            # Increment month
+            curr += relativedelta(months=1)
+            
+        # Fill data
+        all_services = set()
+        for row in results:
+            month_name = row[0]
+            service_name = row[3]
+            revenue = float(row[4])
+            
+            if month_name in month_map:
+                month_map[month_name][service_name] = revenue
+                all_services.add(service_name)
+                
+        # Convert to list ensuring order based on original time range
+        final_data = []
+        curr = start_date
+        while curr <= end_date:
+            key = curr.strftime("%b")
+            if key in month_map:
+                # Ensure all services serve as keys (default 0) for stacked chart safety
+                item = month_map[key]
+                for s in all_services:
+                    if s not in item:
+                        item[s] = 0
+                final_data.append(item)
+            curr += relativedelta(months=1)
+            
+        return final_data
+
+    except Exception as e:
+        logger.error(f"Error fetching monthly revenue: {e}")
         return []

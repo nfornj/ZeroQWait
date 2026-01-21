@@ -62,6 +62,14 @@ export default function RecentVisitsDataGrid() {
             valueGetter: (params, row) => row.assigned_employee?.username || 'Shop Owner'
         },
         {
+            field: 'cost',
+            headerName: 'Paid',
+            type: 'number',
+            width: 80,
+            valueGetter: (params, row) => row.service_cost || 0,
+            valueFormatter: (value) => `$${Number(value).toFixed(2)}`,
+        },
+        {
             field: 'completed_at',
             headerName: 'Date',
             flex: 1,

@@ -26,7 +26,9 @@ RUN pip install --no-cache-dir \
 
 # Copy only the application code (no tests, dev files)
 COPY main.py auth_utils.py database.py email_utils.py permissions.py \
-     scheduler.py schemas.py supabase_client.py tier_limits.py ./
+     scheduler.py schemas.py supabase_client.py tier_limits.py \
+     models.py db_interface.py analytics_processor.py \
+     update_db.py create_sample_data.py ./
 COPY routers ./routers/
 
 # Expose port

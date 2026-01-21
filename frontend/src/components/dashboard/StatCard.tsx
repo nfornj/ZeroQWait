@@ -74,7 +74,8 @@ export default function StatCard({
   };
 
   const color = labelColors[trend];
-  const chartColor = trendColors[trend];
+  // Force graph color to be theme primary color
+  const chartColor = theme.palette.primary.main;
   const trendValues = { up: '+25%', down: '-25%', neutral: '+5%' };
 
   return (

@@ -21,6 +21,10 @@ import axios from 'axios';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PeopleIcon from '@mui/icons-material/People';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
 
 
 interface Shop {
@@ -66,6 +70,8 @@ const QueueViewPage: React.FC = () => {
     const [notes, setNotes] = useState('');
     const [myQueueItem, setMyQueueItem] = useState<QueueItem | null>(null);
     const [waitEstimate, setWaitEstimate] = useState<WaitEstimate | null>(null);
+    const [services, setServices] = useState<any[]>([]);
+    const [selectedServiceId, setSelectedServiceId] = useState<number | ''>('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -91,6 +97,11 @@ const QueueViewPage: React.FC = () => {
         try {
             const response = await axios.get(`/shops/${shopId}`);
             setShop(response.data);
+
+            // Fetch Services
+            const servicesRes = await axios.get(`/services/shop/${shopId}`);
+            setServices(servicesRes.data.filter((s: any) => s.is_active));
+
             setLoading(false);
         } catch (err) {
             setError('Failed to load shop details');
@@ -150,6 +161,7 @@ const QueueViewPage: React.FC = () => {
                 customer_phone: customerPhone,
                 customer_email: customerEmail,
                 notes: notes,
+                service_id: selectedServiceId || undefined,
             });
 
             setMyQueueItem(response.data);
@@ -346,8 +358,27 @@ const QueueViewPage: React.FC = () => {
                                         label="Notes (optional)"
                                         value={notes}
                                         onChange={(e) => setNotes(e.target.value)}
-                                        sx={{ mb: 3 }}
+                                        sx={{ mb: 2 }}
                                     />
+
+                                    <FormControl fullWidth sx={{ mb: 3 }}>
+                                        <InputLabel id="service-select-label">Service (Optional)</InputLabel>
+                                        <Select
+                                            labelId="service-select-label"
+                                            value={selectedServiceId}
+                                            label="Service (Optional)"
+                                            onChange={(e) => setSelectedServiceId(e.target.value as number)}
+                                        >
+                                            <MenuItem value="">
+                                                <em>None</em>
+                                            </MenuItem>
+                                            {services.map((service) => (
+                                                <MenuItem key={service.id} value={service.id}>
+                                                    {service.name} - ${service.cost} ({service.duration_minutes} min)
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
                                     <Button
                                         type="submit"
                                         variant="contained"

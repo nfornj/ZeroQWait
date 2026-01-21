@@ -12,7 +12,7 @@ import {
   useSplitFieldProps,
 } from '@mui/x-date-pickers';
 
-interface ButtonFieldProps extends DatePickerFieldProps {}
+interface ButtonFieldProps extends DatePickerFieldProps { }
 
 function ButtonField(props: ButtonFieldProps) {
   const { forwardedProps } = useSplitFieldProps(props, 'date');
@@ -40,7 +40,7 @@ function ButtonField(props: ButtonFieldProps) {
 }
 
 export default function CustomDatePicker() {
-  const [value, setValue] = React.useState<Dayjs | null>(dayjs('2023-04-17'));
+  const [value, setValue] = React.useState<Dayjs | null>(dayjs());
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>

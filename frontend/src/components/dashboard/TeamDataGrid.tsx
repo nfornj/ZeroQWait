@@ -27,6 +27,12 @@ interface TeamDataGridProps {
 export default function TeamDataGrid({ rows, onDelete, onReactivate }: TeamDataGridProps) {
     const columns: GridColDef<Employee>[] = [
         {
+            field: 'id',
+            headerName: 'ID',
+            width: 70,
+            valueGetter: (value, row) => row.user.id,
+        },
+        {
             field: 'username',
             headerName: 'Username',
             flex: 1,

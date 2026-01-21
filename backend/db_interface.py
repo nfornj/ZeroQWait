@@ -16,7 +16,7 @@ if USE_SUPABASE:
 else:
     # SQLAlchemy mode
     from database import SessionLocal, engine
-    from models import Base, User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, DailyAnalytics
+    from models import Base, User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, DailyAnalytics, ShopService
     import models
     supabase = None
 
@@ -388,6 +388,73 @@ class DatabaseInterface:
                     db.refresh(employee)
                     return self._model_to_dict(employee)
                 return None
+            finally:
+                db.close()
+
+    # Shop Service operations
+    def create_shop_service(self, service_data: Dict) -> Dict:
+        if self.use_supabase:
+            response = supabase.table("shop_services").insert(service_data).execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                service = ShopService(**service_data)
+                db.add(service)
+                db.commit()
+                db.refresh(service)
+                return self._model_to_dict(service)
+            finally:
+                db.close()
+
+    def get_shop_services(self, shop_id: int, include_inactive: bool = False) -> List[Dict]:
+        if self.use_supabase:
+            query = supabase.table("shop_services").select("*").eq("shop_id", shop_id)
+            if not include_inactive:
+                query = query.eq("is_active", True)
+            response = query.execute()
+            return response.data if response.data else []
+        else:
+            db = self.get_session()
+            try:
+                query = db.query(ShopService).filter(ShopService.shop_id == shop_id)
+                if not include_inactive:
+                    query = query.filter(ShopService.is_active == True)
+                services = query.all()
+                return [self._model_to_dict(s) for s in services]
+            finally:
+                db.close()
+
+    def update_shop_service(self, shop_id: int, service_id: int, updates: Dict) -> Dict:
+        if self.use_supabase:
+            response = supabase.table("shop_services").update(updates).eq("id", service_id).eq("shop_id", shop_id).execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                service = db.query(ShopService).filter(
+                    ShopService.id == service_id,
+                    ShopService.shop_id == shop_id
+                ).first()
+                if service:
+                    for key, value in updates.items():
+                        setattr(service, key, value)
+                    db.commit()
+                    db.refresh(service)
+                    return self._model_to_dict(service)
+                return None
+            finally:
+                db.close()
+
+    def get_shop_service_by_id(self, service_id: int) -> Optional[Dict]:
+        if self.use_supabase:
+            response = supabase.table("shop_services").select("*").eq("id", service_id).execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                service = db.query(ShopService).filter(ShopService.id == service_id).first()
+                return self._model_to_dict(service) if service else None
             finally:
                 db.close()
 

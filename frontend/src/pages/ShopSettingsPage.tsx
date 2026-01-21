@@ -11,12 +11,31 @@ import {
     Avatar,
     Card,
     CardActionArea,
-    CardContent
+    CardContent,
+    Tabs,
+    Tab,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    InputAdornment,
+    IconButton,
+    List,
+    ListItem,
+    ListItemText,
+    ListItemSecondaryAction,
+    Divider
 } from '@mui/material';
+import Header from '../components/dashboard/Header';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import AddIcon from '@mui/icons-material/Add';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EventBusyIcon from '@mui/icons-material/EventBusy';
 import axios from 'axios';
 import { useThemeContext, ThemePreset } from '../contexts/ThemeContext';
+import { DataGrid, GridColDef, GridActionsCellItem } from '@mui/x-data-grid';
 
 const THEMES: { id: ThemePreset; name: string; primary: string; secondary: string }[] = [
     { id: 'default', name: 'Coral (Default)', primary: '#FF5A5F', secondary: '#00A699' },
@@ -27,29 +46,59 @@ const THEMES: { id: ThemePreset; name: string; primary: string; secondary: strin
     { id: 'corporate', name: 'Corporate', primary: '#2B2D42', secondary: '#8D99AE' },
 ];
 
+interface TabPanelProps {
+    children?: React.ReactNode;
+    index: number;
+    value: number;
+}
+
+function CustomTabPanel(props: TabPanelProps) {
+    const { children, value, index, ...other } = props;
+    return (
+        <div
+            role="tabpanel"
+            hidden={value !== index}
+            id={`shop-setup-tabpanel-${index}`}
+            {...other}
+        >
+            {value === index && <Box sx={{ p: 0, pt: 3 }}>{children}</Box>}
+        </div>
+    );
+}
+
 const ShopSettingsPage: React.FC = () => {
+    // Shared State
     const { themePreset, setThemePreset, setDashboardGradient } = useThemeContext();
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [generatingData, setGeneratingData] = useState(false);
-    const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
     const [shop, setShop] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+    const [tabValue, setTabValue] = useState(0);
+    const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<string | null>(null);
+
+    // General Settings State
+    const [saving, setSaving] = useState(false);
     const [logoFile, setLogoFile] = useState<File | null>(null);
     const [logoPreview, setLogoPreview] = useState<string>('');
     const [formData, setFormData] = useState({
-        name: '',
-        description: '',
-        phone: '',
-        website: '',
-        primary_color: '#1976d2',
-        secondary_color: '',
-        accent_color: '',
-        background_color: '',
-        logo_url: '',
-        slug: '',
-        dashboard_gradient: 'violet' as string
+        name: '', description: '', phone: '', website: '',
+        primary_color: '#1976d2', secondary_color: '', accent_color: '', background_color: '',
+        logo_url: '', slug: '', dashboard_gradient: 'violet' as string
     });
+
+    // Services State
+    const [services, setServices] = useState<any[]>([]);
+    const [serviceLoading, setServiceLoading] = useState(false);
+    const [openServiceDialog, setOpenServiceDialog] = useState(false);
+    const [serviceFormData, setServiceFormData] = useState({
+        id: undefined as number | undefined,
+        name: '', description: '', duration_minutes: 30, cost: 0.0
+    });
+
+    // Close Days State
+    const [closeDays, setCloseDays] = useState<any[]>([]);
+    const [closeDaysLoading, setCloseDaysLoading] = useState(false);
+    const [newCloseDate, setNewCloseDate] = useState('');
+    const [newCloseReason, setNewCloseReason] = useState('');
 
     useEffect(() => {
         fetchShop();
@@ -79,6 +128,10 @@ const ShopSettingsPage: React.FC = () => {
                     dashboard_gradient: shopData.dashboard_gradient || 'violet'
                 });
                 if (shopData.logo_url) setLogoPreview(shopData.logo_url);
+
+                // Fetch related data
+                fetchServices(shopData.id);
+                fetchCloseDays(shopData.id);
             }
             setLoading(false);
         } catch (err) {
@@ -87,27 +140,50 @@ const ShopSettingsPage: React.FC = () => {
         }
     };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setFormData({
-            ...formData,
-            [e.target.name]: e.target.value
-        });
+    const fetchServices = async (shopId: number) => {
+        try {
+            setServiceLoading(true);
+            const token = localStorage.getItem('token');
+            const response = await axios.get(`/shops/${shopId}/services`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setServices(response.data);
+            setServiceLoading(false);
+        } catch (err) {
+            console.error("Failed to fetch services", err);
+            setServiceLoading(false);
+        }
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const fetchCloseDays = async (shopId: number) => {
+        try {
+            setCloseDaysLoading(true);
+            const token = localStorage.getItem('token');
+            const response = await axios.get(`/shops/${shopId}/close-days`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setCloseDays(response.data);
+            setCloseDaysLoading(false);
+        } catch (err) {
+            console.error("Failed to fetch close days", err);
+            setCloseDaysLoading(false);
+        }
+    };
+
+    // --- General Settings Handlers ---
+
+    const handleGeneralSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
-        setError('');
-        setSuccess('');
+        setError(null);
+        setSuccess(null);
 
         try {
             const token = localStorage.getItem('token');
-            // Ensure dashboard_gradient is included in the payload
             await axios.put(`/shops/${shop.id}`, formData, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            // Upload logo to DB if selected
             if (logoFile) {
                 const fd = new FormData();
                 fd.append('file', logoFile);
@@ -116,14 +192,7 @@ const ShopSettingsPage: React.FC = () => {
                 });
             }
             setSuccess('Settings saved successfully');
-
-            // Reload shop data to reflect changes
-            await fetchShop();
-
-            // Trigger a page reload after a short delay
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
+            setTimeout(() => window.location.reload(), 1000); // Reload to apply themes globally
         } catch (err) {
             setError('Failed to save settings');
         } finally {
@@ -133,355 +202,287 @@ const ShopSettingsPage: React.FC = () => {
 
     const handleGenerateData = async () => {
         if (!window.confirm('This will generate 30 days of sample data. Proceed?')) return;
-        setGeneratingData(true);
-        setError('');
-        setSuccess('');
-
         try {
             const token = localStorage.getItem('token');
             await axios.post(`/shops/${shop.id}/generate-sample-data`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setSuccess('Sample data generated successfully! Please refresh dashboard.');
-            setTimeout(() => {
-                window.location.href = '/dashboard';
-            }, 1500);
-        } catch (err) {
-            console.error(err);
-            setError('Failed to generate sample data');
-        } finally {
-            setGeneratingData(false);
+            setSuccess('Sample data generated! Refreshing...');
+            setTimeout(() => window.location.reload(), 1500);
+        } catch (e) {
+            setError('Failed to generate data');
         }
     };
 
-    const handleThemeSelect = (preset: ThemePreset) => {
-        setThemePreset(preset);
-        // Note: We're not saving this to the backend currently, it's a local preference
-        // managed by ThemeContext (localStorage)
+    // --- Services Handlers ---
+
+    const handleServiceSubmit = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const headers = { Authorization: `Bearer ${token}` };
+            if (serviceFormData.id) {
+                await axios.put(`/shops/${shop.id}/services/${serviceFormData.id}`, serviceFormData, { headers });
+            } else {
+                await axios.post(`/shops/${shop.id}/services`, serviceFormData, { headers });
+            }
+            setOpenServiceDialog(false);
+            fetchServices(shop.id);
+            setSuccess('Service saved');
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to save service');
+        }
+    };
+
+    const deleteService = async (id: number) => {
+        if (!window.confirm("Delete this service?")) return;
+        try {
+            const token = localStorage.getItem('token');
+            await axios.delete(`/shops/${shop.id}/services/${id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            fetchServices(shop.id);
+        } catch (e) { setError('Failed to delete service'); }
+    }
+
+    // --- Close Days Handlers ---
+
+    const addCloseDay = async () => {
+        if (!newCloseDate) return;
+        try {
+            const token = localStorage.getItem('token');
+            await axios.post(`/shops/${shop.id}/close-days`, null, {
+                params: { date_str: newCloseDate, reason: newCloseReason },
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setNewCloseDate('');
+            setNewCloseReason('');
+            fetchCloseDays(shop.id);
+            setSuccess('Close day added');
+        } catch (e: any) {
+            setError('Failed to add close day');
+        }
+    };
+
+    const deleteCloseDay = async (id: number) => {
+        try {
+            const token = localStorage.getItem('token');
+            await axios.delete(`/shops/${shop.id}/close-days/${id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            fetchCloseDays(shop.id);
+        } catch (e) {
+            setError('Failed to remove close day');
+        }
     };
 
     if (loading) return <CircularProgress />;
-
     if (!shop) return <Alert severity="warning">No shop found</Alert>;
 
+    const serviceColumns: GridColDef[] = [
+        { field: 'name', headerName: 'Name', flex: 1 },
+        { field: 'cost', headerName: 'Cost', width: 100, valueFormatter: (v) => `$${Number(v).toFixed(2)}` },
+        { field: 'duration_minutes', headerName: 'Duration', width: 100, valueFormatter: (v) => `${v} min` },
+        {
+            field: 'actions', type: 'actions', width: 100,
+            getActions: (params) => [
+                <GridActionsCellItem icon={<EditIcon />} label="Edit" onClick={() => {
+                    setServiceFormData({
+                        id: params.row.id,
+                        name: params.row.name,
+                        description: params.row.description,
+                        duration_minutes: params.row.duration_minutes,
+                        cost: params.row.cost
+                    });
+                    setOpenServiceDialog(true);
+                }} />,
+                <GridActionsCellItem icon={<DeleteIcon color="error" />} label="Delete" onClick={() => deleteService(params.row.id)} />
+            ]
+        }
+    ];
+
     return (
-        <Container maxWidth="md">
-            <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
-                Shop Settings
-            </Typography>
+        <Container maxWidth="lg">
+            <Box sx={{ width: '100%', mb: 4 }}>
+                <Header />
+            </Box>
 
-            {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-            {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                <Typography variant="h4" sx={{ fontWeight: 'bold' }}>Shop Setup</Typography>
+            </Box>
 
-            <Paper sx={{ p: 4 }}>
-                <Box component="form" onSubmit={handleSubmit}>
-                    <Box display="flex" flexWrap="wrap" gap={4}>
-                        {/* PERSONALIZATION SECTION */}
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                                Dashboard Theme
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                Personalize your dashboard experience. This affects your view and the public shop colors.
-                            </Typography>
+            {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>{error}</Alert>}
+            {success && <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>{success}</Alert>}
 
-                            <Box display="flex" flexWrap="wrap" gap={2}>
-                                {THEMES.map((theme) => (
-                                    <Box sx={{ flex: 1, minWidth: '250px' }} key={theme.id}>
-                                        <Card
-                                            elevation={themePreset === theme.id ? 4 : 1}
-                                            sx={{
-                                                border: themePreset === theme.id ? `2px solid ${theme.primary}` : '2px solid transparent',
-                                                transition: 'all 0.2s',
-                                                transform: themePreset === theme.id ? 'scale(1.05)' : 'scale(1)'
-                                            }}
-                                        >
-                                            <CardActionArea onClick={() => handleThemeSelect(theme.id)}>
-                                                <Box sx={{ height: 60, bgcolor: theme.primary, position: 'relative' }}>
-                                                    <Box sx={{
-                                                        position: 'absolute',
-                                                        bottom: 0,
-                                                        right: 0,
-                                                        width: '50%',
-                                                        height: '100%',
-                                                        bgcolor: theme.secondary,
-                                                        clipPath: 'polygon(100% 0, 0% 100%, 100% 100%)'
-                                                    }} />
-                                                    {themePreset === theme.id && (
-                                                        <Box sx={{
-                                                            position: 'absolute',
-                                                            top: '50%',
-                                                            left: '50%',
-                                                            transform: 'translate(-50%, -50%)',
-                                                            bgcolor: 'white',
-                                                            borderRadius: '50%',
-                                                            p: 0.5,
-                                                            display: 'flex'
-                                                        }}>
-                                                            <CheckCircleIcon color="primary" fontSize="small" />
-                                                        </Box>
-                                                    )}
-                                                </Box>
-                                                <CardContent sx={{ p: 1, textAlign: 'center', '&:last-child': { pb: 1 } }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 600, display: 'block' }}>
-                                                        {theme.name}
-                                                    </Typography>
-                                                </CardContent>
-                                            </CardActionArea>
+            <Paper sx={{ width: '100%' }}>
+                <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+                    <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
+                        <Tab label="General Settings" />
+                        <Tab label="Services" />
+                        <Tab label="Schedule & Close Days" />
+                    </Tabs>
+                </Box>
+
+                {/* TAB 1: GENERAL SETTINGS */}
+                <CustomTabPanel value={tabValue} index={0}>
+                    <Box component="form" onSubmit={handleGeneralSubmit} p={3}>
+                        <Box display="flex" flexWrap="wrap" gap={4}>
+                            {/* THEME SECTION */}
+                            <Box sx={{ flex: 1, minWidth: '300px' }}>
+                                <Typography variant="h6" gutterBottom>Theme & Branding</Typography>
+                                <Typography variant="body2" color="text.secondary" mb={2}>Select a preset.</Typography>
+                                <Box display="flex" gap={1} mb={3} flexWrap="wrap">
+                                    {THEMES.map((theme) => (
+                                        <Card key={theme.id} sx={{
+                                            border: themePreset === theme.id ? `2px solid ${theme.primary}` : 'none',
+                                            transform: themePreset === theme.id ? 'scale(1.05)' : 'none',
+                                            width: 80, cursor: 'pointer'
+                                        }} onClick={() => setThemePreset(theme.id)}>
+                                            <Box height={40} bgcolor={theme.primary} />
+                                            <Typography variant="caption" align="center" display="block">{theme.name}</Typography>
                                         </Card>
-                                    </Box>
-                                ))}
+                                    ))}
+                                </Box>
+
+                                <TextField fullWidth label="Shop Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} sx={{ mb: 2 }} />
+                                <TextField fullWidth multiline rows={2} label="Description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} sx={{ mb: 2 }} />
+
+                                <Box display="flex" gap={2}>
+                                    <TextField label="Phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} fullWidth />
+                                    <TextField label="Website" value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} fullWidth />
+                                </Box>
+                            </Box>
+
+                            {/* LOGO Only - Removed Manual Colors */}
+                            <Box sx={{ flex: 1, minWidth: '300px' }}>
+                                <Typography variant="h6" gutterBottom>Logo</Typography>
+                                <Paper variant="outlined" sx={{ p: 2, textAlign: 'center', mb: 3 }}>
+                                    {logoPreview ? (
+                                        <Avatar src={logoPreview} sx={{ width: 80, height: 80, mx: 'auto', mb: 1 }} />
+                                    ) : <CloudUploadIcon sx={{ fontSize: 40, color: 'text.secondary' }} />}
+                                    <Button component="label" size="small">
+                                        Upload Logo <input type="file" hidden accept="image/*" onChange={(e) => {
+                                            const f = e.target.files?.[0];
+                                            if (f) { setLogoFile(f); setLogoPreview(URL.createObjectURL(f)); }
+                                        }} />
+                                    </Button>
+                                </Paper>
                             </Box>
                         </Box>
 
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                                Background Gradient
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                Choose the background style for your dashboard and public pages.
-                            </Typography>
-                            <Box display="flex" flexWrap="wrap" gap={2}>
-                                {['violet', 'ocean', 'sunset', 'minimal'].map((gradient) => (
-                                    <Box sx={{ flex: 1, minWidth: '100px' }} key={gradient}>
-                                        <Card
-                                            elevation={formData.dashboard_gradient === gradient ? 4 : 1}
-                                            sx={{
-                                                border: formData.dashboard_gradient === gradient ? '2px solid #1976d2' : '2px solid transparent',
-                                                cursor: 'pointer'
-                                            }}
-                                            onClick={() => {
-                                                setFormData({ ...formData, dashboard_gradient: gradient });
-                                                setDashboardGradient(gradient as any);
-                                            }}
-                                        >
-                                            <Box sx={{
-                                                height: 50,
-                                                background: gradient === 'minimal' ? '#f5f5f5' : (gradient === 'violet' ? 'linear-gradient(to right, #e0c3fc, #8ec5fc)' : (gradient === 'ocean' ? 'linear-gradient(to right, #4facfe, #00f2fe)' : 'linear-gradient(to right, #fa709a, #fee140)'))
-                                            }} />
-                                            <CardContent sx={{ p: 1, textAlign: 'center', '&:last-child': { pb: 1 } }}>
-                                                <Typography variant="caption" sx={{ textTransform: 'capitalize' }}>{gradient}</Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Box>
-                                ))}
-                            </Box>
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}><Typography variant="h6" sx={{ fontWeight: 600 }}>Shop Identity</Typography></Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <TextField
-                                fullWidth
-                                label="Shop Name"
-                                name="name"
-                                value={formData.name}
-                                onChange={handleChange}
-                                variant="outlined"
-                                sx={{ mb: 3 }}
-                            />
-
-                            <TextField
-                                fullWidth
-                                label="Logo URL"
-                                name="logo_url"
-                                value={formData.logo_url}
-                                onChange={handleChange}
-                                helperText="Or paste a direct link to your logo image"
-                                size="small"
-                            />
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <Paper
-                                variant="outlined"
-                                sx={{
-                                    p: 3,
-                                    textAlign: 'center',
-                                    borderStyle: 'dashed',
-                                    borderColor: 'divider',
-                                    bgcolor: 'background.default',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    minHeight: 200
-                                }}
-                            >
-                                {logoPreview ? (
-                                    <Box sx={{ mb: 2, position: 'relative' }}>
-                                        <Avatar
-                                            src={logoPreview}
-                                            sx={{ width: 100, height: 100, boxShadow: 2, mb: 1 }}
-                                        />
-                                        <Button
-                                            size="small"
-                                            color="error"
-                                            onClick={() => {
-                                                setLogoFile(null);
-                                                setLogoPreview('');
-                                                setFormData({ ...formData, logo_url: '' });
-                                            }}
-                                        >
-                                            Remove
-                                        </Button>
-                                    </Box>
-                                ) : (
-                                    <Box sx={{ mb: 2, opacity: 0.5 }}>
-                                        <CloudUploadIcon sx={{ fontSize: 48, mb: 1 }} />
-                                        <Typography variant="body2">No logo uploaded</Typography>
-                                    </Box>
-                                )}
-
-                                <Button
-                                    variant="contained"
-                                    component="label"
-                                    size="small"
-                                >
-                                    Choose File
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        hidden
-                                        onChange={(e) => {
-                                            const f = e.target.files?.[0] || null;
-                                            setLogoFile(f || null);
-                                            if (f) setLogoPreview(URL.createObjectURL(f));
-                                        }}
-                                    />
-                                </Button>
-                                <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.secondary' }}>
-                                    Recommended size: 200x200px
-                                </Typography>
-                            </Paper>
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <Typography variant="h6" gutterBottom sx={{ mt: 2, fontWeight: 600 }}>
-                                Customer View Branding
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                Customize your brand colors. These colors will be used on the public queue page and widget.
-                            </Typography>
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <TextField
-                                fullWidth
-                                label="Primary Color"
-                                name="primary_color"
-                                type="color"
-                                value={formData.primary_color}
-                                onChange={handleChange}
-                                helperText="Main buttons, headers"
-                            />
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <TextField
-                                fullWidth
-                                label="Secondary Color"
-                                name="secondary_color"
-                                type="color"
-                                value={formData.secondary_color || '#f5f5f5'}
-                                onChange={handleChange}
-                                helperText="Backgrounds"
-                            />
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <TextField
-                                fullWidth
-                                label="Accent Color"
-                                name="accent_color"
-                                type="color"
-                                value={formData.accent_color || '#ff5722'}
-                                onChange={handleChange}
-                                helperText="Highlights"
-                            />
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <TextField
-                                fullWidth
-                                label="Queue Card Color"
-                                name="background_color"
-                                type="color"
-                                value={formData.background_color || '#fff3e0'}
-                                onChange={handleChange}
-                                helperText="Color for waiting queue cards"
-                            />
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <Typography variant="h6" gutterBottom sx={{ mt: 2, fontWeight: 600 }}>
-                                Contact Information
-                            </Typography>
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <TextField
-                                fullWidth
-                                multiline
-                                rows={3}
-                                label="Description"
-                                name="description"
-                                value={formData.description}
-                                onChange={handleChange}
-                            />
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <TextField
-                                fullWidth
-                                label="Phone"
-                                name="phone"
-                                value={formData.phone}
-                                onChange={handleChange}
-                            />
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <TextField
-                                fullWidth
-                                label="Website"
-                                name="website"
-                                value={formData.website}
-                                onChange={handleChange}
-                            />
-                        </Box>
-
-                        <Box sx={{ flex: 1, minWidth: '100%' }}>
-                            <Typography variant="h6" gutterBottom sx={{ mt: 2, fontWeight: 600 }}>
-                                Data Management (Demo)
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                Populate your shop with realistic sample data for testing.
-                            </Typography>
-                            <Button
-                                variant="outlined"
-                                color="warning"
-                                onClick={handleGenerateData}
-                                disabled={generatingData}
-                            >
-                                {generatingData ? 'Generating Data...' : 'Generate 30 Days of Sample Data'}
-                            </Button>
-                        </Box>
-
-                        <Box sx={{ mt: 2 }}>
-                            <Button
-                                type="submit"
-                                variant="contained"
-                                size="large"
-                                disabled={saving}
-                                sx={{ px: 4, py: 1.5 }}
-                            >
-                                {saving ? 'Saving...' : 'Save Settings'}
-                            </Button>
+                        <Box mt={3} display="flex" justifyContent="flex-end" gap={2}>
+                            <Button variant="outlined" color="warning" onClick={handleGenerateData}>Generate Sample Data</Button>
+                            <Button type="submit" variant="contained" disabled={saving}>{saving ? 'Saving...' : 'Save General Settings'}</Button>
                         </Box>
                     </Box>
-                </Box>
+                </CustomTabPanel>
+
+                {/* TAB 2: SERVICES */}
+                <CustomTabPanel value={tabValue} index={1}>
+                    <Box p={3}>
+                        <Box display="flex" justifyContent="space-between" mb={2}>
+                            <Typography variant="h6">Manage Services</Typography>
+                            <Button startIcon={<AddIcon />} variant="contained" onClick={() => {
+                                setServiceFormData({ id: undefined, name: '', description: '', duration_minutes: 30, cost: 0.0 });
+                                setOpenServiceDialog(true);
+                            }}>Add Service</Button>
+                        </Box>
+                        <Box height={400} width="100%">
+                            <DataGrid rows={services} columns={serviceColumns} loading={serviceLoading} disableRowSelectionOnClick />
+                        </Box>
+                    </Box>
+                </CustomTabPanel>
+
+                {/* TAB 3: SCHEDULE */}
+                <CustomTabPanel value={tabValue} index={2}>
+                    <Box p={3}>
+                        <Typography variant="h6" gutterBottom>Operating Schedule</Typography>
+                        <Alert severity="info" sx={{ mb: 3 }}>
+                            We're working on advanced weekly scheduling. For now, you can manage your shop's off-days below.
+                        </Alert>
+
+                        <Box display="flex" gap={4} flexWrap="wrap">
+                            <Box sx={{ flex: 1, minWidth: '300px' }}>
+                                <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>Add Close Date</Typography>
+                                <Card variant="outlined">
+                                    <CardContent>
+                                        <TextField
+                                            type="date"
+                                            fullWidth
+                                            label="Select Date"
+                                            InputLabelProps={{ shrink: true }}
+                                            value={newCloseDate}
+                                            onChange={(e) => setNewCloseDate(e.target.value)}
+                                            sx={{ mb: 2 }}
+                                        />
+                                        <TextField
+                                            fullWidth
+                                            label="Reason (Optional)"
+                                            placeholder="e.g. Public Holiday, Renovation"
+                                            value={newCloseReason}
+                                            onChange={(e) => setNewCloseReason(e.target.value)}
+                                            sx={{ mb: 2 }}
+                                        />
+                                        <Button
+                                            variant="contained"
+                                            startIcon={<EventBusyIcon />}
+                                            fullWidth
+                                            onClick={addCloseDay}
+                                            disabled={!newCloseDate}
+                                        >
+                                            Mark as Closed
+                                        </Button>
+                                    </CardContent>
+                                </Card>
+                            </Box>
+
+                            <Box sx={{ flex: 1, minWidth: '300px' }}>
+                                <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>Upcoming Close Dates</Typography>
+                                <Paper variant="outlined" sx={{ maxHeight: 300, overflow: 'auto' }}>
+                                    {closeDaysLoading ? <CircularProgress sx={{ m: 2 }} /> : closeDays.length === 0 ? (
+                                        <Box p={3} textAlign="center"><Typography color="text.secondary">No upcoming off-days.</Typography></Box>
+                                    ) : (
+                                        <List>
+                                            {closeDays.map((day) => (
+                                                <React.Fragment key={day.id}>
+                                                    <ListItem>
+                                                        <ListItemText
+                                                            primary={new Date(day.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                                            secondary={day.reason || 'No reason provided'}
+                                                        />
+                                                        <ListItemSecondaryAction>
+                                                            <IconButton edge="end" color="error" onClick={() => deleteCloseDay(day.id)}>
+                                                                <DeleteIcon />
+                                                            </IconButton>
+                                                        </ListItemSecondaryAction>
+                                                    </ListItem>
+                                                    <Divider />
+                                                </React.Fragment>
+                                            ))}
+                                        </List>
+                                    )}
+                                </Paper>
+                            </Box>
+                        </Box>
+                    </Box>
+                </CustomTabPanel>
             </Paper>
+
+            {/* Service Dialog */}
+            <Dialog open={openServiceDialog} onClose={() => setOpenServiceDialog(false)}>
+                <DialogTitle>{serviceFormData.id ? 'Edit Service' : 'New Service'}</DialogTitle>
+                <DialogContent>
+                    <Box pt={1} display="flex" flexDirection="column" gap={2} minWidth={300}>
+                        <TextField label="Name" fullWidth value={serviceFormData.name} onChange={(e) => setServiceFormData({ ...serviceFormData, name: e.target.value })} />
+                        <TextField label="Cost" type="number" fullWidth value={serviceFormData.cost} onChange={(e) => setServiceFormData({ ...serviceFormData, cost: parseFloat(e.target.value) })} InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }} />
+                        <TextField label="Duration (min)" type="number" fullWidth value={serviceFormData.duration_minutes} onChange={(e) => setServiceFormData({ ...serviceFormData, duration_minutes: parseInt(e.target.value) })} />
+                        <TextField label="Description" fullWidth multiline rows={2} value={serviceFormData.description} onChange={(e) => setServiceFormData({ ...serviceFormData, description: e.target.value })} />
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setOpenServiceDialog(false)}>Cancel</Button>
+                    <Button variant="contained" onClick={handleServiceSubmit} disabled={!serviceFormData.name}>Save</Button>
+                </DialogActions>
+            </Dialog>
         </Container>
     );
 };

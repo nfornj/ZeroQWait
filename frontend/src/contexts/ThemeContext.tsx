@@ -14,6 +14,8 @@ interface ThemeContextType {
     setThemePreset: (preset: ThemePreset) => void;
     dashboardGradient: GradientPreset;
     setDashboardGradient: (preset: GradientPreset) => void;
+    timeZone: string;
+    setTimeZone: (tz: string) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -111,8 +113,16 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
     }, [mode, themePreset]); // Re-create theme only when these change
 
+    const [timeZone, setTimeZone] = useState<string>(() => {
+        return localStorage.getItem('appTimeZone') || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('appTimeZone', timeZone);
+    }, [timeZone]);
+
     return (
-        <ThemeContext.Provider value={{ mode, toggleMode, themePreset, setThemePreset, dashboardGradient, setDashboardGradient }}>
+        <ThemeContext.Provider value={{ mode, toggleMode, themePreset, setThemePreset, dashboardGradient, setDashboardGradient, timeZone, setTimeZone }}>
             <MUIThemeProvider theme={theme}>
                 <CssBaseline />
                 {children}

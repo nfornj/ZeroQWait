@@ -1,5 +1,11 @@
 import React from "react";
 import { Routes, Route } from "react-router-dom";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 // ThemeProvider is now imported from our context which handles dynamic theming
 import { ThemeProvider } from "./contexts/ThemeContext";
 
@@ -23,6 +29,7 @@ import ShopRegistrationPage from "./pages/ShopRegistrationPage";
 import ShopDashboardPage from "./pages/ShopDashboardPage";
 import ShopAnalyticsPage from "./pages/ShopAnalyticsPage";
 import ShopSettingsPage from "./pages/ShopSettingsPage";
+import ServicesManagementPage from "./pages/ServicesManagementPage";
 import EmployeeManagementPage from "./pages/EmployeeManagementPage";
 import EmployeeQueuePage from "./pages/EmployeeQueuePage";
 import QueueManagementPage from "./pages/QueueManagementPage";
@@ -87,6 +94,7 @@ function App() {
           <Route element={<ShopLayout />}>
             <Route path="/dashboard" element={<ShopDashboardPage />} />
             <Route path="/employees" element={<EmployeeManagementPage />} />
+            <Route path="/services" element={<ServicesManagementPage />} />
             <Route path="/settings" element={<ShopSettingsPage />} />
             <Route path="/queues" element={<QueueManagementPage />} />
             <Route path="/analytics" element={<ShopAnalyticsPage />} />

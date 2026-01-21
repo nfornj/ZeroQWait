@@ -323,7 +323,107 @@ def get_shop_logo(shop_id: int):
             content=db_shop["logo_data"],
             media_type=db_shop.get("logo_mime_type") or "image/png"
         )
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get logo: {str(e)}")
+
+# Close Days Management
+
+@router.get("/{shop_id}/close-days")
+def get_close_days(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all future close days for a shop"""
+    try:
+        shop = db_interface.get_shop_by_id(shop_id)
+        if not shop or shop["owner_id"] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+            
+        db = db_interface.get_session()
+        try:
+            from models import ShopCloseDay
+            from datetime import date
+            
+            close_days = db.query(ShopCloseDay).filter(
+                ShopCloseDay.shop_id == shop_id,
+                ShopCloseDay.date >= date.today()
+            ).order_by(ShopCloseDay.date).all()
+            
+            return [db_interface._model_to_dict(day) for day in close_days]
+        finally:
+            db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{shop_id}/close-days")
+def add_close_day(
+    shop_id: int,
+    date_str: str, # Format YYYY-MM-DD
+    reason: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Add a close day"""
+    try:
+        shop = db_interface.get_shop_by_id(shop_id)
+        if not shop or shop["owner_id"] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+            
+        db = db_interface.get_session()
+        try:
+            from models import ShopCloseDay
+            from datetime import datetime
+            
+            close_date = datetime.strptime(date_str, "%Y-%m-%d")
+            
+            # Check existing
+            existing = db.query(ShopCloseDay).filter(
+                ShopCloseDay.shop_id == shop_id,
+                ShopCloseDay.date == close_date
+            ).first()
+            
+            if existing:
+                return db_interface._model_to_dict(existing)
+                
+            new_day = ShopCloseDay(
+                shop_id=shop_id,
+                date=close_date,
+                reason=reason
+            )
+            db.add(new_day)
+            db.commit()
+            db.refresh(new_day)
+            return db_interface._model_to_dict(new_day)
+        finally:
+            db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{shop_id}/close-days/{day_id}")
+def delete_close_day(
+    shop_id: int,
+    day_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a close day"""
+    try:
+        shop = db_interface.get_shop_by_id(shop_id)
+        if not shop or shop["owner_id"] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+            
+        db = db_interface.get_session()
+        try:
+            from models import ShopCloseDay
+            
+            day = db.query(ShopCloseDay).filter(
+                ShopCloseDay.id == day_id,
+                ShopCloseDay.shop_id == shop_id
+            ).first()
+            
+            if day:
+                db.delete(day)
+                db.commit()
+            return {"success": True}
+        finally:
+            db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -4,7 +4,7 @@ Run this to populate the database with test users and shops
 """
 import sys
 from database import SessionLocal
-from models import User, Shop, Queue, QueueItem, UserRole, QueueStatus, SubscriptionTier
+from models import User, Shop, Queue, QueueItem, UserRole, QueueStatus, SubscriptionTier, ShopService
 from auth_utils import get_password_hash
 from datetime import datetime
 
@@ -140,9 +140,49 @@ def create_sample_data():
         db.refresh(queue1)
         
         print("   ✓ Created 2 queues")
+
+        # Create shop services
+        print("\n4. Creating shop services...")
+
+        # Services for Shop 1 (Barbershop)
+        service1 = ShopService(
+            shop_id=shop1.id,
+            name="Regular Haircut",
+            description="Standard haircut with scissors/clippers",
+            duration_minutes=30,
+            cost=25.00,
+            is_active=True
+        )
+        db.add(service1)
+
+        service2 = ShopService(
+            shop_id=shop1.id,
+            name="Beard Trim",
+            description="Razor shave and beard sculpting",
+            duration_minutes=15,
+            cost=15.00,
+            is_active=True
+        )
+        db.add(service2)
+
+        # Services for Shop 2 (Salon)
+        service3 = ShopService(
+            shop_id=shop2.id,
+            name="Women's Cut & Style",
+            description="Wash, cut, and blowdry",
+            duration_minutes=60,
+            cost=65.00,
+            is_active=True
+        )
+        db.add(service3)
+
+        db.commit()
+        db.refresh(service1)
+        db.refresh(service2)
+        print("   ✓ Created 3 shop services")
         
         # Create queue items
-        print("\n4. Creating queue items...")
+        print("\n5. Creating queue items...")
         
         item1 = QueueItem(
             queue_id=queue1.id,
@@ -152,7 +192,9 @@ def create_sample_data():
             customer_email="john@example.com",
             position=1,
             status=QueueStatus.WAITING,
-            notes="Regular haircut"
+            notes="Regular haircut",
+            service_id=service1.id,
+            service_cost=service1.cost
         )
         db.add(item1)
         
@@ -162,7 +204,9 @@ def create_sample_data():
             customer_phone="+1-415-555-5678",
             position=2,
             status=QueueStatus.WAITING,
-            notes="Haircut and beard trim"
+            notes="Haircut and beard trim",
+            service_id=service2.id,
+            service_cost=service2.cost
         )
         db.add(item2)
         

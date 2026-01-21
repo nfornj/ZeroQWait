@@ -80,6 +80,7 @@ class Shop(Base):
     owner = relationship("User", back_populates="owned_shops", foreign_keys=[owner_id])
     queues = relationship("Queue", back_populates="shop", cascade="all, delete-orphan")
     employees = relationship("ShopEmployee", back_populates="shop", cascade="all, delete-orphan")
+    services = relationship("ShopService", back_populates="shop", cascade="all, delete-orphan")
 
 
 class Queue(Base):
@@ -113,10 +114,15 @@ class QueueItem(Base):
     completed_at = Column(DateTime)
     assigned_employee_id = Column(Integer, ForeignKey("users.id"))
     
+    # Service Link
+    service_id = Column(Integer, ForeignKey("shop_services.id"), nullable=True)
+    service_cost = Column(Float, default=0.0)  # Snapshot of cost at time of service
+    
     # Relationships
     queue = relationship("Queue", back_populates="queue_items")
     user = relationship("User", foreign_keys=[user_id], back_populates="queue_items")
     assigned_employee = relationship("User", foreign_keys=[assigned_employee_id], post_update=True)
+    service = relationship("ShopService", back_populates="queue_items")
 
 
 class ShopEmployee(Base):
@@ -128,6 +134,7 @@ class ShopEmployee(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     created_by = Column(Integer, ForeignKey("users.id"))
     is_active = Column(Boolean, default=True, index=True)
+    employee_code = Column(String, nullable=True) # Visible ID for shop use
     
     # Relationships
     shop = relationship("Shop", back_populates="employees")
@@ -149,6 +156,25 @@ class EmployeeShift(Base):
     shop = relationship("Shop")
 
 
+
+class ShopService(Base):
+    __tablename__ = "shop_services"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    duration_minutes = Column(Integer, default=30)
+    cost = Column(Float, default=0.0)
+    currency = Column(String, default="USD")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    shop = relationship("Shop", back_populates="services")
+    queue_items = relationship("QueueItem", back_populates="service")
+
+
 class DailyAnalytics(Base):
     __tablename__ = "daily_analytics"
     
@@ -158,11 +184,27 @@ class DailyAnalytics(Base):
     total_customers = Column(Integer, default=0)
     completed_services = Column(Integer, default=0)
     cancelled_services = Column(Integer, default=0)
+    total_revenue = Column(Float, default=0.0)
     avg_wait_time_minutes = Column(Float)
     avg_service_time_minutes = Column(Float)
     peak_hour_start = Column(Integer)
     peak_hour_customers = Column(Integer)
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    # Relationships
     shop = relationship("Shop")
+
+
+class ShopCloseDay(Base):
+    __tablename__ = "shop_close_days"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    date = Column(DateTime, nullable=False)
+    reason = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    shop = relationship("Shop", back_populates="close_days")
+
+# Update Shop relationship
+Shop.close_days = relationship("ShopCloseDay", back_populates="shop", cascade="all, delete-orphan")
