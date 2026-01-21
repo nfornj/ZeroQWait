@@ -193,11 +193,10 @@ def update_shop(
 ):
     """Update shop details (Owner only)"""
     try:
-        shop_response = supabase.table("shops").select("*").eq("id", shop_id).execute()
-        if not shop_response.data:
+        # Check ownership
+        db_shop = db_interface.get_shop_by_id(shop_id)
+        if not db_shop:
             raise HTTPException(status_code=404, detail="Shop not found")
-        
-        db_shop = shop_response.data[0]
         
         if db_shop["owner_id"] != current_user["id"]:
             raise HTTPException(
@@ -210,10 +209,12 @@ def update_shop(
         if not update_data:
             return db_shop
         
-        response = supabase.table("shops").update(update_data).eq("id", shop_id).execute()
-        if response.data:
-            return response.data[0]
-        return db_shop
+        updated_shop = db_interface.update_shop(shop_id, update_data)
+        if not updated_shop:
+            # Should not happen if shop exists content
+            raise HTTPException(status_code=500, detail="Failed to limit update shop")
+            
+        return updated_shop
     except HTTPException:
         raise
     except Exception as e:

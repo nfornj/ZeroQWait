@@ -336,7 +336,15 @@ const ShopSettingsPage: React.FC = () => {
                                             border: themePreset === theme.id ? `2px solid ${theme.primary}` : 'none',
                                             transform: themePreset === theme.id ? 'scale(1.05)' : 'none',
                                             width: 80, cursor: 'pointer'
-                                        }} onClick={() => setThemePreset(theme.id)}>
+                                        }} onClick={() => {
+                                            setThemePreset(theme.id);
+                                            // Also update the form data so it saves to the backend
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                primary_color: theme.primary,
+                                                secondary_color: theme.secondary
+                                            }));
+                                        }}>
                                             <Box height={40} bgcolor={theme.primary} />
                                             <Typography variant="caption" align="center" display="block">{theme.name}</Typography>
                                         </Card>
