@@ -41,7 +41,7 @@ def add_employee(
         "email": employee.email,
         "username": employee.username,
         "hashed_password": hashed_password,
-        "role": "employee",
+        "role": employee.role.value if employee.role else "employee",
         "is_active": True
     }
     

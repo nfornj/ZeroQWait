@@ -49,7 +49,8 @@ const EmployeeManagementPage: React.FC = () => {
     const [formData, setFormData] = useState({
         username: '',
         email: '',
-        password: ''
+        password: '',
+        role: 'employee'
     });
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
@@ -202,7 +203,7 @@ const EmployeeManagementPage: React.FC = () => {
             );
 
             setSuccess('Employee added successfully!');
-            setFormData({ username: '', email: '', password: '' });
+            setFormData({ username: '', email: '', password: '', role: 'employee' });
             setOpenDialog(false);
 
             // Refresh employee list
@@ -376,6 +377,20 @@ const EmployeeManagementPage: React.FC = () => {
                             required
                             helperText="Temporary password - employee can change it later"
                         />
+                        <TextField
+                            select
+                            label="Role"
+                            value={formData.role}
+                            onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                            fullWidth
+                            required
+                            SelectProps={{
+                                native: true,
+                            }}
+                        >
+                            <option value="employee">Employee</option>
+                            <option value="manager">Manager</option>
+                        </TextField>
                     </Box>
                 </DialogContent>
                 <DialogActions>

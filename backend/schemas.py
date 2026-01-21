@@ -154,6 +154,7 @@ class EmployeeCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
+    role: Optional[UserRole] = UserRole.EMPLOYEE
 
 class ShopEmployee(BaseModel):
     id: int
