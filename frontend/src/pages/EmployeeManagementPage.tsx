@@ -5,12 +5,6 @@ import {
     Typography,
     Button,
     Paper,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
     Dialog,
     DialogTitle,
     DialogContent,
@@ -29,6 +23,7 @@ import RestoreIcon from '@mui/icons-material/Restore';
 import PeopleIcon from '@mui/icons-material/People';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import AttendanceCalendar from '../components/AttendanceCalendar';
+import TeamDataGrid from '../components/dashboard/TeamDataGrid';
 
 
 interface Employee {
@@ -302,67 +297,12 @@ const EmployeeManagementPage: React.FC = () => {
             </Paper>
 
             {currentTab === 0 && (
-                <Paper>
-                    <TableContainer>
-                        <Table>
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell><strong>Username</strong></TableCell>
-                                    <TableCell><strong>Email</strong></TableCell>
-                                    <TableCell><strong>Status</strong></TableCell>
-                                    <TableCell><strong>Added On</strong></TableCell>
-                                    <TableCell align="right"><strong>Actions</strong></TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {employees.length === 0 ? (
-                                    <TableRow>
-                                        <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
-                                            <Typography color="text.secondary">
-                                                No employees yet. Add your first employee to get started!
-                                            </Typography>
-                                        </TableCell>
-                                    </TableRow>
-                                ) : (
-                                    employees.map((employee) => (
-                                        <TableRow key={employee.user.id}>
-                                            <TableCell>{employee.user.username}</TableCell>
-                                            <TableCell>{employee.user.email}</TableCell>
-                                            <TableCell>
-                                                <Chip
-                                                    label={employee.is_active ? 'Active' : 'Inactive'}
-                                                    color={employee.is_active ? 'success' : 'default'}
-                                                    size="small"
-                                                />
-                                            </TableCell>
-                                            <TableCell>
-                                                {new Date(employee.created_at).toLocaleDateString()}
-                                            </TableCell>
-                                            <TableCell align="right">
-                                                {employee.is_active ? (
-                                                    <IconButton
-                                                        color="error"
-                                                        onClick={() => handleRemoveEmployee(employee.user.id)}
-                                                        title="Remove employee"
-                                                    >
-                                                        <DeleteIcon />
-                                                    </IconButton>
-                                                ) : (
-                                                    <IconButton
-                                                        color="primary"
-                                                        onClick={() => handleReactivateEmployee(employee.user.id)}
-                                                        title="Reactivate employee"
-                                                    >
-                                                        <RestoreIcon />
-                                                    </IconButton>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
-                                )}
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
+                <Paper sx={{ width: '100%', overflow: 'hidden' }}>
+                    <TeamDataGrid
+                        rows={employees}
+                        onDelete={handleRemoveEmployee}
+                        onReactivate={handleReactivateEmployee}
+                    />
                 </Paper>
             )}
 
