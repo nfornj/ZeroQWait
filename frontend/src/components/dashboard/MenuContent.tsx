@@ -7,7 +7,6 @@ import Stack from '@mui/material/Stack';
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded';
 import QueueRoundedIcon from '@mui/icons-material/QueueRounded';
 import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
-import AnalyticsRoundedIcon from '@mui/icons-material/AnalyticsRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
 import HelpRoundedIcon from '@mui/icons-material/HelpRounded';
@@ -17,7 +16,6 @@ const mainListItems = [
   { text: 'Dashboard', icon: <DashboardRoundedIcon />, path: '/dashboard' },
   { text: 'Queues', icon: <QueueRoundedIcon />, path: '/queues' },
   { text: 'Team', icon: <PeopleRoundedIcon />, path: '/employees' },
-  { text: 'Analytics', icon: <AnalyticsRoundedIcon />, path: '/analytics' },
 ];
 
 const secondaryListItems = [

@@ -21,7 +21,6 @@ import FavoritesPage from "./pages/FavoritesPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import ShopRegistrationPage from "./pages/ShopRegistrationPage";
 import ShopDashboardPage from "./pages/ShopDashboardPage";
-import ShopAnalyticsPage from "./pages/ShopAnalyticsPage";
 import ShopSettingsPage from "./pages/ShopSettingsPage";
 import EmployeeManagementPage from "./pages/EmployeeManagementPage";
 import EmployeeQueuePage from "./pages/EmployeeQueuePage";
@@ -86,7 +85,6 @@ function App() {
           {/* Shop Owner Portal Routes (No Global Navbar) */}
           <Route element={<ShopLayout />}>
             <Route path="/dashboard" element={<ShopDashboardPage />} />
-            <Route path="/analytics" element={<ShopAnalyticsPage />} />
             <Route path="/employees" element={<EmployeeManagementPage />} />
             <Route path="/settings" element={<ShopSettingsPage />} />
             <Route path="/queues" element={<QueueManagementPage />} />
