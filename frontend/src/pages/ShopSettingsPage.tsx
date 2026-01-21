@@ -139,7 +139,7 @@ const ShopSettingsPage: React.FC = () => {
 
         try {
             const token = localStorage.getItem('token');
-            await axios.post(`/api/shops/${shop.id}/generate-sample-data`, {}, {
+            await axios.post(`/shops/${shop.id}/generate-sample-data`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setSuccess('Sample data generated successfully! Please refresh dashboard.');

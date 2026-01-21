@@ -19,7 +19,7 @@ export default function RecentVisitsDataGrid() {
 
                 // Fetch all queues for the shop to get items
                 // Since we don't have a direct "all-items" endpoint yet, we fetch all queues and aggregate
-                const queuesRes = await axios.get(`/api/queues/shop/${shop.id}/all`, { headers });
+                const queuesRes = await axios.get(`/queues/shop/${shop.id}/all`, { headers });
                 const allQueues = queuesRes.data;
 
                 let allItems: any[] = [];

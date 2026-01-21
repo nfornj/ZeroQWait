@@ -34,7 +34,7 @@ export default function MainGrid() {
         const token = localStorage.getItem('token');
         const headers = { Authorization: `Bearer ${token}` };
 
-        const response = await axios.get(`/api/analytics/${shop.id}?days=30`, { headers });
+        const response = await axios.get(`/analytics/${shop.id}?days=30`, { headers });
         const data = response.data;
 
         // Transform daily stats for charts

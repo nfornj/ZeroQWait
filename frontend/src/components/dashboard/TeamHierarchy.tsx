@@ -149,7 +149,7 @@ export default function TeamHierarchy() {
                 const headers = { Authorization: `Bearer ${token}` };
 
                 // Fetch employees
-                const empResponse = await axios.get(`/api/shops/${shop.id}/employees`, { headers });
+                const empResponse = await axios.get(`/shops/${shop.id}/employees`, { headers });
                 const employees = empResponse.data;
 
                 // Separate by role

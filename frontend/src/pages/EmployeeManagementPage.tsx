@@ -65,7 +65,7 @@ const EmployeeManagementPage: React.FC = () => {
 
     const fetchEmployees = React.useCallback(async (id: number, token: string) => {
         try {
-            const response = await axios.get(`/api/shops/${id}/employees`, {
+            const response = await axios.get(`/shops/${id}/employees`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setEmployees(response.data);
@@ -84,7 +84,7 @@ const EmployeeManagementPage: React.FC = () => {
             }
 
             // Get shop ID first
-            const shopResponse = await axios.get(`/api/shops/my-shops`, {
+            const shopResponse = await axios.get(`/shops/my-shops`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -196,7 +196,7 @@ const EmployeeManagementPage: React.FC = () => {
         try {
             const token = localStorage.getItem('token');
             await axios.post(
-                `/api/shops/${shopId}/employees`,
+                `/shops/${shopId}/employees`,
                 formData,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
