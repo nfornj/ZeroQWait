@@ -79,33 +79,39 @@ async def run_api_tests():
         logger.info("4. Creating Employees...")
         employees = ["John Barber", "Jane Stylist", "Mike Colorist"]
         for emp_name in employees:
-            res = await client.post(f"{BASE_URL}/employees/", json={
+            # Correct Path: /api/shops/{shop_id}/employees
+            res = await client.post(f"{BASE_URL}/shops/{shop_id}/employees", json={
                 "username": emp_name.lower().replace(" ", ""),
                 "email": f"{emp_name.lower().replace(' ', '')}@test.com",
-                "password": "password123",
-                "shop_id": shop_id
+                "password": "password123"
             }, headers=headers)
-            if res.status_code == 200:
+            if res.status_code == 201: # 201 Created
                 logger.info(f"   ✓ Created employee: {emp_name}")
             else:
                 logger.error(f"   ✗ Failed to create {emp_name}: {res.text}")
 
         # 5. Create Queues
         logger.info("5. Creating Queues...")
-        res = await client.post(f"{BASE_URL}/queues/", json={
-            "name": "Walk-ins",
-            "shop_id": shop_id,
+        # Correct Path: /api/queues/shop/{shop_id}
+        res = await client.post(f"{BASE_URL}/queues/shop/{shop_id}", json={
+            "name": "Walk-ins"
         }, headers=headers)
-        if res.status_code != 200:
-             # Try getting existing queues if creation fails (maybe auto-created)
-             res = await client.get(f"{BASE_URL}/queues/{shop_id}", headers=headers)
         
-        queues = res.json()
-        if not queues:
+        if res.status_code != 200:
+             # Try getting existing queues if creation fails
+             res = await client.get(f"{BASE_URL}/queues/shop/{shop_id}/all", headers=headers)
+        
+        # Determine queue response structure
+        data = res.json()
+        if isinstance(data, list):
+            main_queue = data[0] if data else None
+        else:
+            main_queue = data
+
+        if not main_queue:
              logger.error("❌ No queues found or created")
              return
         
-        main_queue = queues[0] if isinstance(queues, list) else queues
         queue_id = main_queue["id"]
         logger.info(f"✅ Queue Validated: {main_queue['name']} (ID: {queue_id})")
 
@@ -113,7 +119,8 @@ async def run_api_tests():
         logger.info("6. Simulating Live Queue Flow (Join -> Serve -> Complete)...")
         
         # Validating Create Queue Item (Join)
-        res = await client.post(f"{BASE_URL}/queues/{queue_id}/join", json={
+        # Correct Path: /api/queues/shop/{shop_id}/join
+        res = await client.post(f"{BASE_URL}/queues/shop/{shop_id}/join", json={
             "customer_name": "Test Customer Live",
             "customer_phone": "555-0000",
             "notes": "Live Test Haircut"
@@ -124,24 +131,25 @@ async def run_api_tests():
             logger.info("   ✓ Customer Joined Queue")
             
             # Serve
-            res = await client.put(f"{BASE_URL}/queues/items/{item_id}/status", 
-                json={"status": "being_served"}, 
+            # Correct Path: PATCH /api/queues/items/{item_id}/status
+            res = await client.patch(f"{BASE_URL}/queues/items/{item_id}/status", 
+                params={"new_status": "being_served"}, 
                 headers=headers
             )
             if res.status_code == 200:
                 logger.info("   ✓ Serving Customer")
                 
                 # Complete
-                res = await client.put(f"{BASE_URL}/queues/items/{item_id}/status", 
-                    json={"status": "completed"}, 
+                res = await client.patch(f"{BASE_URL}/queues/items/{item_id}/status", 
+                    params={"new_status": "completed"}, 
                     headers=headers
                 )
                 if res.status_code == 200:
                     logger.info("   ✓ Service Completed")
                 else:
-                    logger.error("   ✗ Failed to complete service")
+                    logger.error(f"   ✗ Failed to complete service: {res.text}")
             else:
-                logger.error("   ✗ Failed to start service")
+                logger.error(f"   ✗ Failed to start service: {res.text}")
         else:
              logger.error(f"   ✗ Join Failed: {res.text}")
 
