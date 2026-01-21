@@ -29,10 +29,12 @@ async def run_api_tests():
 
         # 1. Register Shop Owner
         logger.info(f"1. Registering Shop Owner: {OWNER_EMAIL}")
-        res = await client.post(f"{BASE_URL}/register/shop-owner", json={
+        # Note: Correct endpoint from users.py is /api/users
+        res = await client.post(f"{BASE_URL}/users", json={
             "email": OWNER_EMAIL,
             "username": f"owner_v2_{random.randint(1000,9999)}",
-            "password": OWNER_PASS
+            "password": OWNER_PASS,
+            "role": "shop_owner"
         })
         if res.status_code != 200:
             logger.error(f"❌ Registration Failed: {res.text}")
@@ -40,7 +42,8 @@ async def run_api_tests():
         
         # 2. Login
         logger.info("2. Logging in...")
-        res = await client.post(f"{BASE_URL}/token", data={
+        # Note: Correct endpoint from auth.py is /api/auth/token
+        res = await client.post(f"{BASE_URL}/auth/token", data={
             "username": OWNER_EMAIL,
             "password": OWNER_PASS
         })
@@ -61,7 +64,8 @@ async def run_api_tests():
             "zip_code": "12345",
             "phone": "555-0100",
             "shop_type": "Barbershop",
-            "slug": f"test-shop-{random.randint(1000,9999)}"
+            "slug": f"test-shop-{random.randint(1000,9999)}",
+            "country": "United States"
         }, headers=headers)
         
         if res.status_code != 200:
