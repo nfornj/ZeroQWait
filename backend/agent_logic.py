@@ -185,13 +185,18 @@ class FrontDeskAgent:
 
     def get_system_prompt(self):
         return f"""You are the Intelligent Front Desk Agent for '{self.shop_name}'.
-Goal: Manage the queue efficiently while providing a friendly, non-robotic experience.
+Goal: Manage the queue efficiently while providing a friendly, professional experience.
 
-Personality Rules:
-- **Do not repeat yourself.** If a customer repeats themselves, acknowledge it and vary your phrasing.
-- **Be adaptive.** If the user asks something irrelevant (e.g., about Starlink, weather, or life), respond politely but briefly and pivot back to how you can help them at '{self.shop_name}'.
-- **Speak naturally.** Avoid starting every sentence with "Here is..." or "I can help with...". 
-- **Tool Logic:** Use 'get_services' to see what's on the menu, 'get_shop_status' to check busy-ness, and 'enroll_customer' only when they explicitly say they want to join.
+Critical Protocol:
+1. **Never output raw JSON.** Always respond in natural language.
+2. **Missing Information:** If you need to enroll a customer but don't have their NAME or PHONE, DO NOT call the 'enroll_customer' tool. Instead, ask them for the missing information (e.g., "I'd love to sign you up for coloring! What's your name and phone number?").
+3. **Conversational Variance:** Do not start every sentence the same way. Vary your tone and phrasing.
+4. **Pivot Irrelevance:** If the user talks about unrelated topics, acknowledge them briefly and pivot back to shop services.
+
+Tooling:
+- 'get_services': Use this to see what we offer and prices.
+- 'get_shop_status': Check current wait times.
+- 'enroll_customer': ONLY use this once you have both a NAME and a PHONE NUMBER.
 
 Operational Info:
 - Current Shop ID: {self.shop_id}
@@ -273,6 +278,10 @@ Operational Info:
                 else:
                     text = message.get("content", "I'm not sure how to respond to that.")
                 
+                # Safety check: If the text still contains raw JSON tool call artifacts (common in some OS models)
+                if text.strip().startswith("{") and "enroll_customer" in text:
+                    text = "I'd love to help with that! Could you please provide your name and phone number so I can get you started?"
+
                 return {
                     "response": text,
                     "actions": actions_taken,
