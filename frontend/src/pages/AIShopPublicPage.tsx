@@ -64,7 +64,7 @@ const AIShopPublicPage: React.FC = () => {
     const fetchShopData = async () => {
         try {
             const isSlug = isNaN(Number(shopId));
-            const endpoint = isSlug ? `/shops/public/${shopId}` : `/shops/${shopId}`;
+            const endpoint = isSlug ? `/shops/s/${shopId}` : `/shops/${shopId}`;
             const response = await axios.get(endpoint);
             setShop(response.data);
             setLoading(false);

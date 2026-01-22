@@ -105,12 +105,12 @@ const InShopDisplayPage: React.FC = () => {
 
             if (isSubdomain) {
                 const slug = hostname.split('.')[0];
-                response = await axios.get(`/shops/public/${slug}`);
+                response = await axios.get(`/shops/s/${slug}`);
             } else if (shopId) {
                 // Determine if shopId is a slug or an ID
                 const isSlug = isNaN(Number(shopId));
                 if (isSlug) {
-                    response = await axios.get(`/shops/public/${shopId}`);
+                    response = await axios.get(`/shops/s/${shopId}`);
                 } else {
                     response = await axios.get(`/shops/${shopId}`);
                 }

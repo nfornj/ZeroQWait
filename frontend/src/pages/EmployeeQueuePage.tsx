@@ -117,7 +117,7 @@ const EmployeeQueuePage: React.FC = () => {
 
                     // Fetch services
                     try {
-                        const servicesRes = await axios.get(`/services/shop/${currentShop.id}`, {
+                        const servicesRes = await axios.get(`/shops/${currentShop.id}/services`, {
                             headers: { Authorization: `Bearer ${token}` }
                         });
                         setServices(servicesRes.data.filter((s: any) => s.is_active));

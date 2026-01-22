@@ -95,11 +95,13 @@ const QueueViewPage: React.FC = () => {
 
     const fetchShop = async () => {
         try {
-            const response = await axios.get(`/shops/${shopId}`);
+            const isSlug = isNaN(Number(shopId));
+            const endpoint = isSlug ? `/shops/s/${shopId}` : `/shops/${shopId}`;
+            const response = await axios.get(endpoint);
             setShop(response.data);
 
             // Fetch Services
-            const servicesRes = await axios.get(`/services/shop/${shopId}`);
+            const servicesRes = await axios.get(`/shops/${shopId}/services`);
             setServices(servicesRes.data.filter((s: any) => s.is_active));
 
             setLoading(false);
