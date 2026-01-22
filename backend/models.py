@@ -206,5 +206,21 @@ class ShopCloseDay(Base):
     # Relationships
     shop = relationship("Shop", back_populates="close_days")
 
+class ShopCustomer(Base):
+    __tablename__ = "shop_customers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    phone = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String)
+    visit_count = Column(Integer, default=1)
+    last_visit = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    shop = relationship("Shop", back_populates="customers")
+
 # Update Shop relationship
 Shop.close_days = relationship("ShopCloseDay", back_populates="shop", cascade="all, delete-orphan")
+Shop.customers = relationship("ShopCustomer", back_populates="shop", cascade="all, delete-orphan")

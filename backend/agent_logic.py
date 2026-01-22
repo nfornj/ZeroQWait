@@ -27,9 +27,33 @@ def get_shop_status(shop_id: int) -> Dict[str, Any]:
     except Exception as e:
         return {"error": str(e)}
 
-def enroll_customer(shop_id: int, name: str, phone: str, service_id: Optional[int] = None, notes: Optional[str] = None) -> Dict[str, Any]:
-    """Enroll a customer into the most efficient queue or a specific service."""
+        logger.error(f"Enrollment error: {e}")
+        return {"error": str(e)}
+
+def check_returning_customer(shop_id: int, phone: str) -> Dict[str, Any]:
+    """Check if a customer has visited this shop before using their phone number."""
     try:
+        customer = db_interface.get_shop_customer_by_phone(shop_id, phone)
+        if customer:
+            return {
+                "is_returning": True,
+                "name": customer["name"],
+                "visit_count": customer["visit_count"],
+                "last_visit": customer["last_visit"]
+            }
+        return {"is_returning": False}
+    except Exception as e:
+        return {"error": str(e)}
+
+def enroll_customer(shop_id: int, name: str, phone: str, service_id: Optional[int] = None, notes: Optional[str] = None) -> Dict[str, Any]:
+    """Enroll a customer into the most efficient queue or a specific service. REQUIRES NAME AND PHONE."""
+    if not name or not phone:
+        return {"error": "Missing required information. I need both a NAME and a PHONE NUMBER to sign you up."}
+        
+    try:
+        # Business Logic: Update/Create ShopCustomer record
+        db_interface.upsert_shop_customer(shop_id, {"name": name, "phone": phone})
+        
         # Business Logic: Find the queue with the shortest wait
         queues = db_interface.get_queues({"shop_id": shop_id, "is_active": True})
         if not queues:
@@ -130,10 +154,22 @@ AVAILABLE_TOOLS = {
     "get_shop_status": get_shop_status,
     "enroll_customer": enroll_customer,
     "get_services": get_services,
-    "find_best_queue": find_best_queue
+    "find_best_queue": find_best_queue,
+    "check_returning_customer": check_returning_customer
 }
 
 TOOL_DEFINITIONS = [
+    {
+        "name": "check_returning_customer",
+        "description": "Check if a customer has visited this shop before. Use this if they mention they've been here or if you have their phone number.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "phone": {"type": "string", "description": "The customer's phone number."}
+            },
+            "required": ["phone"]
+        }
+    },
     {
         "name": "get_shop_status",
         "description": "Get current queue lengths and occupancy for the shop.",
@@ -189,14 +225,16 @@ Goal: Manage the queue efficiently while providing a friendly, professional expe
 
 Core Protocol:
 1. **Never output raw JSON or code.** Never show strings like "get_services" or "{{'id': 1}}" to the customer. Always use natural sentences.
-2. **Missing Info:** If you lack a NAME or PHONE for enrollment, ask for them politely.
-3. **Conversational Variance:** Acknowledge user non-answers. If they say "maybe later" or "I'm busy", back off gracefully.
-4. **Pivot Logic:** If the user talks about code, logs, or other tech, briefly acknowledge it and pivot back only when appropriate.
+2. **Missing Info:** If you lack a NAME or PHONE for enrollment, ASK for them politely. DO NOT guess or use placeholders.
+3. **CRM Awareness:** Always check `check_returning_customer` if a user provides their phone number. If they are returning, welcome them back by name and acknowledge their loyalty (e.g., "Welcome back, John! Great to see you for your 5th visit.").
+4. **Conversational Variance:** Acknowledge user non-answers. If they say "maybe later" or "I'm busy", back off gracefully.
+5. **Pivot Logic:** If the user talks about code, logs, or other tech, briefly acknowledge it and pivot back only when appropriate.
 
 Tooling:
-- 'get_services': See what we offer and prices. Use this ONLY once per session unless requested.
+- 'check_returning_customer': Check if customer is a regular.
+- 'get_services': See what we offer and prices.
 - 'get_shop_status': Check wait times.
-- 'enroll_customer': ONLY use this once you have both a NAME and a PHONE NUMBER.
+- 'enroll_customer': ONLY use this once you have BOTH a NAME and a PHONE NUMBER.
 
 Operational Info:
 - Current Shop ID: {self.shop_id}

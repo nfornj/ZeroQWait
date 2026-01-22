@@ -16,7 +16,7 @@ if USE_SUPABASE:
 else:
     # SQLAlchemy mode
     from database import SessionLocal, engine
-    from models import Base, User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, DailyAnalytics, ShopService
+    from models import Base, User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, DailyAnalytics, ShopService, ShopCustomer
     import models
     supabase = None
 
@@ -563,6 +563,73 @@ class DatabaseInterface:
             finally:
                 db.close()
     
+    # Shop Customer Context (CRM)
+    def get_shop_customer_by_phone(self, shop_id: int, phone: str) -> Optional[Dict]:
+        if self.use_supabase:
+            response = supabase.table("shop_customers").select("*").eq("shop_id", shop_id).eq("phone", phone).execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                customer = db.query(ShopCustomer).filter(
+                    ShopCustomer.shop_id == shop_id,
+                    ShopCustomer.phone == phone
+                ).first()
+                return self._model_to_dict(customer) if customer else None
+            finally:
+                db.close()
+
+    def upsert_shop_customer(self, shop_id: int, customer_data: Dict) -> Dict:
+        """Create or update a customer record for a specific shop."""
+        phone = customer_data.get("phone")
+        if not phone:
+            return None
+            
+        existing = self.get_shop_customer_by_phone(shop_id, phone)
+        
+        if self.use_supabase:
+            if existing:
+                # Update
+                updates = {
+                    "visit_count": existing.get("visit_count", 0) + 1,
+                    "last_visit": datetime.utcnow().isoformat(),
+                    "name": customer_data.get("name", existing.get("name"))
+                }
+                response = supabase.table("shop_customers").update(updates).eq("id", existing["id"]).execute()
+                return response.data[0] if response.data else None
+            else:
+                # Insert
+                customer_data["shop_id"] = shop_id
+                customer_data["visit_count"] = 1
+                customer_data["last_visit"] = datetime.utcnow().isoformat()
+                response = supabase.table("shop_customers").insert(customer_data).execute()
+                return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                if existing:
+                    customer = db.query(ShopCustomer).filter(ShopCustomer.id == existing["id"]).first()
+                    customer.visit_count += 1
+                    customer.last_visit = datetime.utcnow()
+                    if "name" in customer_data:
+                        customer.name = customer_data["name"]
+                    db.commit()
+                    db.refresh(customer)
+                else:
+                    customer = ShopCustomer(
+                        shop_id=shop_id,
+                        phone=phone,
+                        name=customer_data.get("name"),
+                        visit_count=1,
+                        last_visit=datetime.utcnow()
+                    )
+                    db.add(customer)
+                    db.commit()
+                    db.refresh(customer)
+                return self._model_to_dict(customer)
+            finally:
+                db.close()
+
     # Helper method to convert SQLAlchemy model to dict
     def _model_to_dict(self, model) -> Dict:
         if model is None:
