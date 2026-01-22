@@ -279,7 +279,7 @@ Operational Info:
                     text = message.get("content", "I'm not sure how to respond to that.")
                 
                 # Safety check: Catch any JSON leakage or "tool_call" artifacts
-                clean_text = text.strip()
+                clean_text = str(text or "").strip()
                 
                 # Broad match for anything that looks like JSON or a tool call (starts with { or "tool",)
                 leakage_detected = False
