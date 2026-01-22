@@ -179,8 +179,9 @@ class FrontDeskAgent:
     def __init__(self, shop_id: int, shop_name: str):
         self.shop_id = shop_id
         self.shop_name = shop_name
-        self.api_key = os.getenv("GROQ_API_KEY") # Switch to Groq for OS LLM
-        self.base_url = "https://api.groq.com/openai/v1/chat/completions"
+        # Internal K3s URL for Ollama
+        self.base_url = "http://ollama.llm.svc.cluster.local:11434/api/chat"
+        self.model = "llama3"
 
     def get_system_prompt(self):
         return f"""You are the Intelligent Front Desk Agent for '{self.shop_name}'.
@@ -203,37 +204,32 @@ Current Shop ID: {self.shop_id}
 
     async def chat(self, user_message: str, history: List[Dict[str, str]] = []) -> Dict[str, Any]:
         """
-        Agentic chat loop using Groq Llama 3.
+        Agentic chat loop using Local Ollama (Llama 3).
         """
-        if not self.api_key:
-            return self._mock_chat(user_message, history)
-
         messages = [
             {"role": "system", "content": self.get_system_prompt()}
         ]
-        # Append limited history
         messages.extend(history[-4:])
         messages.append({"role": "user", "content": user_message})
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
                     self.base_url,
-                    headers={"Authorization": f"Bearer {self.api_key}"},
                     json={
-                        "model": "llama3-70b-8192", 
+                        "model": self.model,
                         "messages": messages,
-                        "tools": [{"type": "function", "function": t} for t in TOOL_DEFINITIONS],
-                        "tool_choice": "auto"
+                        "stream": False,
+                        "tools": [{"type": "function", "function": t} for t in TOOL_DEFINITIONS]
                     }
                 )
                 
                 if response.status_code != 200:
-                    logger.error(f"Groq API Error: {response.text}")
+                    logger.error(f"Ollama API Error: {response.text}")
                     return self._mock_chat(user_message, history)
 
                 resp_data = response.json()
-                message = resp_data["choices"][0]["message"]
+                message = resp_data["message"]
                 
                 actions_taken = []
                 
@@ -241,7 +237,10 @@ Current Shop ID: {self.shop_id}
                     for tc in message["tool_calls"]:
                         func = tc["function"]
                         name = func["name"]
-                        args = json.loads(func["arguments"])
+                        args = func["arguments"] # Ollama often returns parsed args
+                        if isinstance(args, str):
+                            args = json.loads(args)
+                        
                         args["shop_id"] = self.shop_id
                         
                         if name in AVAILABLE_TOOLS:
@@ -264,7 +263,7 @@ Current Shop ID: {self.shop_id}
                     "shop_name": self.shop_name
                 }
         except Exception as e:
-            logger.error(f"Chat execution failed: {e}")
+            logger.error(f"Local LLM chat failed: {e}")
             return self._mock_chat(user_message, history)
 
     def _mock_chat(self, user_message, history):
