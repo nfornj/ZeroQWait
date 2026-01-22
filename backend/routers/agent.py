@@ -32,7 +32,11 @@ async def agent_chat(
             raise HTTPException(status_code=404, detail="Shop not found")
         
         # Initialize Agent
-        agent = FrontDeskAgent(shop_id=shop_id, shop_name=shop["name"])
+        agent = FrontDeskAgent(
+            shop_id=shop_id, 
+            shop_name=shop["name"],
+            ai_agent_name=shop.get("ai_agent_name")
+        )
         
         # Process Message
         result = await agent.chat(request.message, request.history)

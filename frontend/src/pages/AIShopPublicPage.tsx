@@ -70,7 +70,8 @@ const AIShopPublicPage: React.FC = () => {
             setLoading(false);
 
             setTimeout(() => {
-                speak(`Welcome to ${response.data.name}. I'm your AI assistant. How can I help you join the queue?`);
+                const agentName = response.data.ai_agent_name || response.data.name;
+                speak(`Welcome to ${response.data.name}. I'm ${agentName}, your AI assistant. How can I help you join the queue?`);
             }, 1000);
         } catch (err) {
             setError('Could not load shop details');

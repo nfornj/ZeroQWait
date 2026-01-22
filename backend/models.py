@@ -70,6 +70,7 @@ class Shop(Base):
     secondary_color = Column(String)
     accent_color = Column(String)
     background_color = Column(String)
+    ai_agent_name = Column(String, nullable=True)
     slug = Column(String, unique=True, index=True)
     latitude = Column(Float)
     longitude = Column(Float)

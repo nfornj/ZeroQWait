@@ -212,15 +212,16 @@ TOOL_DEFINITIONS = [
 import httpx
 
 class FrontDeskAgent:
-    def __init__(self, shop_id: int, shop_name: str):
+    def __init__(self, shop_id: int, shop_name: str, ai_agent_name: Optional[str] = None):
         self.shop_id = shop_id
         self.shop_name = shop_name
+        self.ai_agent_name = ai_agent_name or shop_name
         # Internal K3s URL for Ollama
         self.base_url = "http://ollama.llm.svc.cluster.local:11434/api/chat"
         self.model = "llama3.2"
 
     def get_system_prompt(self):
-        return f"""You are the Intelligent Front Desk Agent for '{self.shop_name}'.
+        return f"""You are the Intelligent Front Desk Agent for '{self.shop_name}'. Your name is '{self.ai_agent_name}'.
 Goal: Manage the queue efficiently while providing a friendly, professional experience.
 
 Core Protocol:
@@ -240,6 +241,7 @@ Tooling:
 Operational Info:
 - Current Shop ID: {self.shop_id}
 - Shop Name: {self.shop_name}
+- AI Agent Name: {self.ai_agent_name}
 """
 
     async def chat(self, user_message: str, history: List[Dict[str, str]] = []) -> Dict[str, Any]:

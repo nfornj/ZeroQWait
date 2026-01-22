@@ -41,6 +41,7 @@ interface Shop {
     phone: string;
     average_service_time: number;
     slug?: string;
+    ai_agent_name?: string;
 }
 
 interface QueueItem {
@@ -69,14 +70,8 @@ const QueueViewPage: React.FC = () => {
     const navigate = useNavigate();
     const [shop, setShop] = useState<Shop | null>(null);
     const [queue, setQueue] = useState<Queue | null>(null);
-    const [customerName, setCustomerName] = useState('');
-    const [customerPhone, setCustomerPhone] = useState('');
-    const [customerEmail, setCustomerEmail] = useState('');
-    const [notes, setNotes] = useState('');
     const [myQueueItem, setMyQueueItem] = useState<QueueItem | null>(null);
     const [waitEstimate, setWaitEstimate] = useState<WaitEstimate | null>(null);
-    const [services, setServices] = useState<any[]>([]);
-    const [selectedServiceId, setSelectedServiceId] = useState<number | ''>('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -104,11 +99,6 @@ const QueueViewPage: React.FC = () => {
             const endpoint = isSlug ? `/shops/s/${shopId}` : `/shops/${shopId}`;
             const response = await axios.get(endpoint);
             setShop(response.data);
-
-            // Fetch Services
-            const servicesRes = await axios.get(`/shops/${shopId}/services`);
-            setServices(servicesRes.data.filter((s: any) => s.is_active));
-
             setLoading(false);
         } catch (err) {
             setError('Failed to load shop details');
@@ -149,37 +139,6 @@ const QueueViewPage: React.FC = () => {
             setWaitEstimate(response.data);
         } catch (err) {
             // Silently fail - retry on next interval
-        }
-    };
-
-    const handleJoinQueue = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError('');
-        setSuccess('');
-
-        if (!customerName.trim()) {
-            setError('Please enter your name');
-            return;
-        }
-
-        try {
-            const response = await axios.post(`/queues/shop/${shopId}/join`, {
-                customer_name: customerName,
-                customer_phone: customerPhone,
-                customer_email: customerEmail,
-                notes: notes,
-                service_id: selectedServiceId || undefined,
-            });
-
-            setMyQueueItem(response.data);
-            localStorage.setItem(`queue_item_${shopId}`, response.data.id.toString());
-            setSuccess('Successfully joined the queue!');
-            setCustomerName('');
-            setCustomerPhone('');
-            setCustomerEmail('');
-            setNotes('');
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to join queue');
         }
     };
 
@@ -266,7 +225,7 @@ const QueueViewPage: React.FC = () => {
                     <SmartToyIcon />
                     <Box>
                         <Typography variant="subtitle1" fontWeight="bold">Switch to AI Assistant</Typography>
-                        <Typography variant="body2" sx={{ opacity: 0.9 }}>Talk to Boomboo about your spot in line.</Typography>
+                        <Typography variant="body2" sx={{ opacity: 0.9 }}>Talk to {shop.ai_agent_name || shop.name} about your spot in line.</Typography>
                     </Box>
                 </Box>
             </Paper>
@@ -350,75 +309,22 @@ const QueueViewPage: React.FC = () => {
                         </Card>
                     </Box>
                 ) : (
-                    <Box sx={{ flex: 1, minWidth: '250px' }}>
-                        <Card>
-                            <CardContent>
-                                <Typography variant="h5" gutterBottom>
-                                    Join Queue
+                    <Box sx={{ flex: 1, minWidth: '300px' }}>
+                        <Card variant="outlined" sx={{ bgcolor: '#f8f9fa', border: '1px dashed #ccc' }}>
+                            <CardContent sx={{ textAlign: 'center', py: 6 }}>
+                                <Typography variant="h6" gutterBottom color="textSecondary">
+                                    You are not currently in the queue
                                 </Typography>
-                                <Divider sx={{ mb: 3 }} />
-                                <Box component="form" onSubmit={handleJoinQueue}>
-                                    <TextField
-                                        fullWidth
-                                        required
-                                        label="Your Name"
-                                        value={customerName}
-                                        onChange={(e) => setCustomerName(e.target.value)}
-                                        sx={{ mb: 2 }}
-                                    />
-                                    <TextField
-                                        fullWidth
-                                        label="Phone Number"
-                                        value={customerPhone}
-                                        onChange={(e) => setCustomerPhone(e.target.value)}
-                                        sx={{ mb: 2 }}
-                                    />
-                                    <TextField
-                                        fullWidth
-                                        label="Email (optional)"
-                                        type="email"
-                                        value={customerEmail}
-                                        onChange={(e) => setCustomerEmail(e.target.value)}
-                                        sx={{ mb: 2 }}
-                                    />
-                                    <TextField
-                                        fullWidth
-                                        multiline
-                                        rows={2}
-                                        label="Notes (optional)"
-                                        value={notes}
-                                        onChange={(e) => setNotes(e.target.value)}
-                                        sx={{ mb: 2 }}
-                                    />
-
-                                    <FormControl fullWidth sx={{ mb: 3 }}>
-                                        <InputLabel id="service-select-label">Service (Optional)</InputLabel>
-                                        <Select
-                                            labelId="service-select-label"
-                                            value={selectedServiceId}
-                                            label="Service (Optional)"
-                                            onChange={(e) => setSelectedServiceId(e.target.value as number)}
-                                        >
-                                            <MenuItem value="">
-                                                <em>None</em>
-                                            </MenuItem>
-                                            {services.map((service) => (
-                                                <MenuItem key={service.id} value={service.id}>
-                                                    {service.name} - ${service.cost} ({service.duration_minutes} min)
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
-                                    <Button
-                                        type="submit"
-                                        variant="contained"
-                                        color="primary"
-                                        fullWidth
-                                        size="large"
-                                    >
-                                        Join Queue
-                                    </Button>
-                                </Box>
+                                <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+                                    To join the line, please head back to the shop's main page.
+                                </Typography>
+                                <Button
+                                    variant="contained"
+                                    onClick={() => navigate(`/s/${shop.slug || shop.id}`)}
+                                    startIcon={<ArrowBackIcon />}
+                                >
+                                    Go to Enrollment Form
+                                </Button>
                             </CardContent>
                         </Card>
                     </Box>

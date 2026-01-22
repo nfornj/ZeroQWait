@@ -180,7 +180,7 @@ const PublicShopPage: React.FC = () => {
                 >
                     <Box>
                         <Typography variant="h5" fontWeight="bold">Try our Intelligent Concierge</Typography>
-                        <Typography variant="body1" sx={{ opacity: 0.8 }}>Talk to Boomboo to join the queue or check wait times instantly.</Typography>
+                        <Typography variant="body1" sx={{ opacity: 0.8 }}>Talk to {shop.ai_agent_name || shop.name} to join the queue or check wait times instantly.</Typography>
                     </Box>
                     <Button
                         variant="contained"
