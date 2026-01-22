@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List
+from typing import List, Optional
 from db_interface import db_interface
 from schemas import ShopService, ShopServiceCreate, ShopServiceUpdate
-from auth_utils import get_current_user
+from auth_utils import get_current_user, get_current_user_optional
 from permissions import check_shop_access
 
 router = APIRouter()
@@ -35,24 +35,33 @@ def create_service(
             detail=f"Failed to create service: {str(e)}"
         )
 
+from auth_utils import get_current_user, get_current_user_optional
+
 @router.get("/shops/{shop_id}/services", response_model=List[ShopService])
 def list_services(
     shop_id: int,
     include_inactive: bool = False,
-    current_user: dict = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_current_user_optional)
 ):
     """
-    List services for a shop.
+    List services for a shop (Public).
     """
-    # Allow read access to anyone logged in? No, should check shop access.
-    # Actually, queue creation needs to see services. 
-    # If this is public for the Queue View, we might need a public endpoint too.
-    # For now, this is the internal management endpoint.
-    check_shop_access(shop_id, current_user, require_owner=False)
-
+    # Public access allowed for listing services
     try:
+        # If user is logged in, we could do extra checks, but for now just return active services for public
+        # If internal/owner, maybe show inactive? 
+        # The param include_inactive defaults to False.
+        
+        # If include_inactive is requested, enforce auth
+        if include_inactive:
+            if not current_user:
+                raise HTTPException(status_code=401, detail="Authentication required to view inactive services")
+            check_shop_access(shop_id, current_user, require_owner=False)
+
         services = db_interface.get_shop_services(shop_id, include_inactive=include_inactive)
         return services
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

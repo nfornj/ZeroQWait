@@ -12,24 +12,19 @@ import {
     Stack,
     keyframes,
     useTheme,
-    Button
+    Button,
+    Chip,
+    LinearProgress
 } from '@mui/material';
 import { useSpring, animated, config } from '@react-spring/web';
 import MicIcon from '@mui/icons-material/Mic';
-import MicOffIcon from '@mui/icons-material/MicOff';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import KeyboardIcon from '@mui/icons-material/Keyboard';
+import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
 import axios from 'axios';
 import { useVoiceInterface } from '../hooks/useVoiceInterface';
 
 // --- Animations ---
-const float = keyframes`
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-20px); }
-  100% { transform: translateY(0px); }
-`;
-
 const pulseGlow = keyframes`
   0% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0.4); }
   70% { box-shadow: 0 0 0 20px rgba(25, 118, 210, 0); }
@@ -66,16 +61,34 @@ const Visualizer = ({ isListening }: { isListening: boolean }) => {
     );
 };
 
+type FlowState = 'idle' | 'listening' | 'asking_name' | 'asking_phone' | 'asking_service' | 'confirming' | 'processing' | 'success' | 'error';
+
 const AIShopPublicPage: React.FC = () => {
-    const { shopId } = useParams<{ shopId: string }>(); // Logic handles slug or ID
+    const { shopId } = useParams<{ shopId: string }>();
     const navigate = useNavigate();
-    const theme = useTheme();
+
+    // Data States
     const [shop, setShop] = useState<any>(null);
     const [queues, setQueues] = useState<any[]>([]);
+    const [services, setServices] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [interactionState, setInteractionState] = useState<'idle' | 'listening' | 'processing' | 'success' | 'error'>('idle');
-    const [feedbackMessage, setFeedbackMessage] = useState("Hi! I'm your shop assistant. Tap the mic to join a queue.");
+
+    // Flow Data
+    const [customerName, setCustomerName] = useState('');
+    const [customerPhone, setCustomerPhone] = useState('');
+    const [selectedService, setSelectedService] = useState<any>(null);
+
+    // UI State
+    const [flowState, setFlowState] = useState<FlowState>('idle');
+    const [feedbackMessage, setFeedbackMessage] = useState("Hi! Tap the mic to join.");
+    const [transcriptHistory, setTranscriptHistory] = useState<string[]>([]);
+
+    // Voice Interface
+    const { isListening, transcript, startListening, stopListening, speak, isSupported } = useVoiceInterface({
+        continuous: false,
+        onResult: (text) => handleVoiceInput(text)
+    });
 
     // Animation springs
     const fadeIn = useSpring({
@@ -90,294 +103,271 @@ const AIShopPublicPage: React.FC = () => {
         config: config.gentle
     });
 
-    // Voice Interface
-    const { isListening, transcript, startListening, stopListening, speak, isSupported } = useVoiceInterface({
-        continuous: false,
-        onResult: (text) => handleVoiceCommand(text)
-    });
-
     useEffect(() => {
-        fetchShopAndQueues();
+        fetchShopData();
     }, [shopId]);
 
-    // Handle state visualization for voice
     useEffect(() => {
         if (isListening) {
-            setInteractionState('listening');
-            setFeedbackMessage("Listening...");
-        } else if (interactionState === 'listening') {
-            // Stopped listening but haven't processed yet? 
-            // Usually onResult handles processing.
-            // setInteractionState('idle'); 
+            // Just UI update, state logic is handled in flow
         }
     }, [isListening]);
 
-    const fetchShopAndQueues = async () => {
+    const fetchShopData = async () => {
         try {
+            // 1. Fetch Shop
             let response;
-            // Determine if slug or ID
             const isSlug = isNaN(Number(shopId));
             if (isSlug) {
-                // Assuming we have this endpoint or use public slug search
-                // Since I didn't verify the /shops/s/ endpoint, I'll try to guess logic or standard ID
-                // Actually, let's stick to the pattern used in InShopDisplayPage
                 response = await axios.get(`/shops/public/${shopId}`);
             } else {
                 response = await axios.get(`/shops/${shopId}`);
-                // If that fails (auth), try public
+                if (!response?.data) response = await axios.get(`/shops/${shopId}`); // Fallback
             }
+            const shopData = response.data;
+            setShop(shopData);
 
-            // Fallback for demo if API strict
-            // Note: The previous files suggested `/shops/s/${slug}` might not exist.
-            // Using logic from InShopDisplayPage which seems more robust:
-
-            // Re-implementing InShopDisplayPage logic simplistically:
-            if (!response?.data && !isNaN(Number(shopId))) {
-                response = await axios.get(`/shops/${shopId}`);
-            }
-
-            setShop(response.data);
-
-            if (response.data.id) {
-                const queueRes = await axios.get(`/queues/shop/${response.data.id}/active`);
+            // 2. Fetch Queues
+            if (shopData.id) {
+                const queueRes = await axios.get(`/queues/shop/${shopData.id}/active`);
                 setQueues(queueRes.data.queue_items ? [queueRes.data] : (Array.isArray(queueRes.data) ? queueRes.data : []));
-                // Note: API consistency varied in other files. Assuming standard list or single object.
-                // Actually QueueManagement gets `/queues/shop/${id}/all`.
-                const allQueues = await axios.get(`/queues/shop/${response.data.id}/all`);
-                setQueues(allQueues.data);
+
+                // 3. Fetch Services (Public)
+                try {
+                    const servicesRes = await axios.get(`/api/shops/${shopData.id}/services`);
+                    setServices(servicesRes.data.filter((s: any) => s.is_active));
+                } catch (e) {
+                    console.log("Services fetch failed or empty", e);
+                }
             }
             setLoading(false);
 
-            // Greeter
+            // Initial Greeting
             setTimeout(() => {
-                speak(`Welcome to ${response.data.name}. How can I help you?`);
+                speak(`Welcome to ${shopData.name}. Tap the microphone and say Join Queue to start.`);
             }, 1000);
 
         } catch (err) {
             console.error(err);
-            // Fallback for dev/demo if backend not perfectly aligned to my assumptions
             setError('Could not load shop details');
             setLoading(false);
         }
     };
 
-    const handleVoiceCommand = (text: string) => {
-        setInteractionState('processing');
+    const handleVoiceInput = (text: string) => {
         const lowerText = text.toLowerCase();
+        console.log("Input:", text, "State:", flowState);
+        setTranscriptHistory(prev => [...prev.slice(-2), text]); // Keep last 3
 
-        console.log("Voice command:", lowerText);
+        switch (flowState) {
+            case 'idle':
+            case 'error':
+                if (lowerText.includes('join') || lowerText.includes('queue') || lowerText.includes('add me')) {
+                    setFlowState('asking_name');
+                    const msg = "Sure! What is your name?";
+                    setFeedbackMessage(msg);
+                    speak(msg);
+                    // Auto-listen after speaking? Web Speech API requires user interaction often, 
+                    // but if we are already in a flow initiated by user, we might try to startListening again after delay.
+                    // For now, let's rely on user tapping or manual re-activation if continuous is false.
+                    // But ideally: 
+                    setTimeout(startListening, 3000);
+                } else if (lowerText.includes('wait') || lowerText.includes('time')) {
+                    const time = shop.average_service_time || 15;
+                    const msg = `Estimated wait time is about ${time} minutes.`;
+                    setFeedbackMessage(msg);
+                    speak(msg);
+                    setFlowState('idle');
+                } else {
+                    speak("I didn't catch that. Say Join Queue to start.");
+                }
+                break;
 
-        if (lowerText.includes('join') || lowerText.includes('queue') || lowerText.includes('add me')) {
-            // Heuristic for which queue
-            if (queues.length > 0) {
-                const targetQueue = queues[0]; // Default to first
-                joinQueue(targetQueue);
-            } else {
-                setFeedbackMessage("Sorry, there are no open queues right now.");
-                speak("Sorry, there are no open queues right now.");
-                setInteractionState('error');
-            }
-        } else if (lowerText.includes('wait') || lowerText.includes('time') || lowerText.includes('long')) {
-            if (shop) {
-                const time = shop.average_service_time || 15;
-                setFeedbackMessage(`Estimated wait time is about ${time} minutes.`);
-                speak(`The estimated wait time is about ${time} minutes per person.`);
-                setInteractionState('idle');
-            }
-        } else {
-            setFeedbackMessage("I didn't quite catch that. Try saying 'Join Queue'.");
-            speak("I didn't quite catch that. You can say join queue.");
-            setInteractionState('error');
+            case 'asking_name':
+                // Naive extraction: take the whole text as name if short, or look for patterns
+                // User might say "My name is John"
+                let name = text;
+                if (lowerText.includes('my name is')) {
+                    name = text.substring(lowerText.indexOf('is') + 3).trim();
+                } else if (lowerText.includes('i am')) {
+                    name = text.substring(lowerText.indexOf('am') + 3).trim();
+                }
+                // Clean up punctuation
+                name = name.replace(/[.,!]/g, '');
+
+                setCustomerName(name);
+                setFlowState('asking_phone');
+                const phoneMsg = `Hi ${name}. What's your phone number?`;
+                setFeedbackMessage(phoneMsg);
+                speak(phoneMsg);
+                setTimeout(startListening, 4000);
+                break;
+
+            case 'asking_phone':
+                // Extract digits
+                const nums = text.replace(/[^0-9]/g, '');
+                if (nums.length < 7) {
+                    speak("That didn't sound like a phone number. Please say it again.");
+                    setTimeout(startListening, 3000);
+                    return;
+                }
+                setCustomerPhone(nums);
+
+                if (services.length > 0) {
+                    setFlowState('asking_service');
+                    const serviceNames = services.map(s => s.name).join(', ');
+                    const srvMsg = `Got it. Which service would you like? We have: ${serviceNames}`;
+                    setFeedbackMessage(`Services: ${serviceNames}`);
+                    speak(srvMsg);
+                    setTimeout(startListening, 6000);
+                } else {
+                    // No services, skip to confirm
+                    submitQueue(name, nums, null);
+                }
+                break;
+
+            case 'asking_service':
+                // Match service name
+                const matchedService = services.find(s => lowerText.includes(s.name.toLowerCase()));
+                if (matchedService) {
+                    setSelectedService(matchedService);
+                    submitQueue(customerName, customerPhone, matchedService);
+                } else {
+                    // If ambiguous, maybe default or ask again.
+                    // Let's assume first one if unsure? No that's risky.
+                    // Let's ask again.
+                    speak("Sorry, I didn't recognize that service. Please choose from: " + services.map(s => s.name).join(', '));
+                    setTimeout(startListening, 5000);
+                }
+                break;
         }
-
-        setTimeout(() => {
-            if (interactionState !== 'success') setInteractionState('idle');
-        }, 5000);
     };
 
-    const joinQueue = (queue: any) => {
-        // In a real flow, we'd ask for name/phone. 
-        // For this AI agent page, let's redirect to the queue join form or handle it if we knew the user.
-        // Let's redirect to the existing detailed join page but maybe pre-fill or auto-trigger?
-        // Or better: Simulate the logic here.
+    const submitQueue = async (name: string, phone: string, service: any) => {
+        setFlowState('processing');
+        setFeedbackMessage("Adding you to the queue...");
+        speak("Adding you to the queue now.");
 
-        setFeedbackMessage(`Navigating you to join ${queue.name}...`);
-        speak(`Okay, let's get you in the ${queue.name} queue.`);
-        setInteractionState('success');
+        try {
+            await axios.post(`/queues/shop/${shop.id}/join`, {
+                customer_name: name,
+                customer_phone: phone,
+                service_id: service?.id || null,
+                notes: "Joined via AI Voice Agent"
+            });
 
-        setTimeout(() => {
-            navigate(`/queue/${shop.id}`);
-        }, 2000);
+            setFlowState('success');
+            const finalMsg = `You are added! ${service ? 'for ' + service.name : ''}. You will receive a text shortly.`;
+            setFeedbackMessage("Joined Successfully!");
+            speak(finalMsg);
+
+            // Navigate after delay
+            setTimeout(() => {
+                navigate(`/queue/${shop.id}`);
+            }, 5000);
+
+        } catch (err) {
+            console.error(err);
+            setFlowState('error');
+            setFeedbackMessage("Failed to join. Please try again or use manual join.");
+            speak("Something went wrong joining the queue. Please try the manual button.");
+        }
     };
 
-    if (loading) return (
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-            <CircularProgress />
-        </Box>
-    );
-
-    if (error || !shop) return (
-        <Container maxWidth="sm" sx={{ mt: 10 }}>
-            <Alert severity="error">{error || "Shop not found"}</Alert>
-        </Container>
-    );
+    if (loading) return <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh"><CircularProgress /></Box>;
+    if (error || !shop) return <Container maxWidth="sm" sx={{ mt: 10 }}><Alert severity="error">{error || "Shop not found"}</Alert></Container>;
 
     return (
         <animated.div style={{ ...bgSpring, minHeight: '100vh', width: '100%', overflow: 'hidden', position: 'relative' }}>
 
-            {/* Background Decor */}
-            <Box sx={{ position: 'absolute', top: -100, right: -100, width: 400, height: 400, borderRadius: '50%', background: `radial-gradient(circle, ${shop.primary_color || '#1976d2'}44 0%, transparent 70%)` }} />
-            <Box sx={{ position: 'absolute', bottom: -50, left: -50, width: 300, height: 300, borderRadius: '50%', background: `radial-gradient(circle, ${shop.primary_color || '#1976d2'}22 0%, transparent 70%)` }} />
-
+            {/* Background & Header (Same as before) */}
             <Container maxWidth="md" sx={{ pt: 8, pb: 4, position: 'relative', zIndex: 2 }}>
-
-                {/* Header Section */}
                 <Stack spacing={2} alignItems="center" textAlign="center" mb={6}>
-                    {shop.logo_url && (
-                        <animated.div style={fadeIn}>
-                            <Avatar
-                                src={shop.logo_url}
-                                sx={{ width: 100, height: 100, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', border: '4px solid white' }}
-                            />
-                        </animated.div>
-                    )}
-                    <animated.div style={fadeIn}>
-                        <Typography variant="h3" fontWeight="800" sx={{ letterSpacing: '-1px' }}>
-                            {shop.name}
-                        </Typography>
-                        <Typography variant="subtitle1" color="text.secondary">
-                            AI Assistant
-                        </Typography>
-                    </animated.div>
+                    {shop.logo_url && <Avatar src={shop.logo_url} sx={{ width: 80, height: 80, border: '4px solid white', boxShadow: 3 }} />}
+                    <Typography variant="h4" fontWeight="800">{shop.name}</Typography>
                 </Stack>
 
-                {/* Main AI Interface Card */}
                 <animated.div style={fadeIn}>
                     <Paper
                         elevation={12}
                         sx={{
                             p: 6,
                             borderRadius: '32px',
-                            background: 'rgba(255, 255, 255, 0.8)',
+                            background: 'rgba(255, 255, 255, 0.9)',
                             backdropFilter: 'blur(20px)',
-                            border: '1px solid rgba(255, 255, 255, 0.5)',
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
-                            gap: 4,
-                            minHeight: 400,
-                            justifyContent: 'center',
-                            position: 'relative'
+                            gap: 3,
+                            minHeight: 450,
+                            border: flowState === 'listening' ? `2px solid ${shop.primary_color || '#1976d2'}` : 'none'
                         }}
                     >
-                        {/* Status Feedback */}
-                        <Box sx={{ minHeight: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {interactionState === 'listening' ? (
-                                <Visualizer isListening={true} />
-                            ) : (
-                                <Typography variant="h5" color="text.secondary" fontWeight="500" textAlign="center">
-                                    {feedbackMessage}
-                                </Typography>
+                        {/* Status Area */}
+                        <Box sx={{ minHeight: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                            {flowState === 'idle' && <Typography variant="h5" color="text.secondary">Tap & Say "Join Queue"</Typography>}
+
+                            {/* Dynamic prompt display */}
+                            {(flowState === 'asking_name' || flowState === 'asking_phone' || flowState === 'asking_service') && (
+                                <Typography variant="h5" fontWeight="bold" textAlign="center">{feedbackMessage}</Typography>
                             )}
+
+                            {/* Transcript */}
+                            {transcript && <Typography variant="body1" color="primary" sx={{ mt: 1, fontStyle: 'italic' }}>"{transcript}"</Typography>}
                         </Box>
 
-                        {/* Mic Button */}
-                        <Box sx={{ position: 'relative' }}>
+                        {/* Visualizer & Mic */}
+                        <Box sx={{ position: 'relative', mb: 2 }}>
                             {isListening && (
-                                <Box
-                                    sx={{
-                                        position: 'absolute',
-                                        top: '50%',
-                                        left: '50%',
-                                        transform: 'translate(-50%, -50%)',
-                                        width: '100%',
-                                        height: '100%',
-                                        borderRadius: '50%',
-                                        animation: `${pulseGlow} 2s infinite`
-                                    }}
-                                />
+                                <Box sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '100%', height: '100%', borderRadius: '50%', animation: `${pulseGlow} 2s infinite` }} />
                             )}
                             <IconButton
                                 onClick={isListening ? stopListening : startListening}
-                                disabled={!isSupported}
+                                disabled={flowState === 'processing' || flowState === 'success'}
                                 sx={{
-                                    width: 100,
-                                    height: 100,
+                                    width: 120,
+                                    height: 120,
                                     bgcolor: isListening ? 'error.main' : 'primary.main',
                                     color: 'white',
-                                    transition: 'all 0.3s ease',
-                                    '&:hover': {
-                                        transform: 'scale(1.1)',
-                                        bgcolor: isListening ? 'error.dark' : 'primary.dark',
-                                    },
-                                    boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+                                    '&:hover': { bgcolor: isListening ? 'error.dark' : 'primary.dark', transform: 'scale(1.05)' },
+                                    boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+                                    transition: 'all 0.3s'
                                 }}
                             >
-                                {isListening ? <GraphicEqIcon fontSize="large" /> : <MicIcon fontSize="large" />}
+                                {isListening ? <GraphicEqIcon sx={{ fontSize: 60 }} /> : <MicIcon sx={{ fontSize: 60 }} />}
                             </IconButton>
                         </Box>
 
-                        {/* Transcript Display */}
-                        {transcript && (
-                            <Typography variant="body1" sx={{ fontStyle: 'italic', opacity: 0.7, maxWidth: '80%', textAlign: 'center' }}>
-                                "{transcript}"
-                            </Typography>
+                        {/* Progress Steps */}
+                        {flowState !== 'idle' && flowState !== 'error' && flowState !== 'success' && (
+                            <Box sx={{ width: '100%', mt: 2 }}>
+                                <Stack direction="row" spacing={1} justifyContent="center" mb={1}>
+                                    <Chip label="Name" color={['asking_name', 'asking_phone', 'asking_service', 'processing'].includes(flowState) || customerName ? "primary" : "default"} />
+                                    <Chip label="Phone" color={['asking_phone', 'asking_service', 'processing'].includes(flowState) || customerPhone ? "primary" : "default"} />
+                                    <Chip label="Service" color={['asking_service', 'processing'].includes(flowState) || selectedService ? "primary" : "default"} />
+                                </Stack>
+                                <LinearProgress variant={flowState === 'processing' ? "indeterminate" : "determinate"} value={
+                                    flowState === 'asking_name' ? 33 :
+                                        flowState === 'asking_phone' ? 66 :
+                                            flowState === 'asking_service' ? 90 : 100
+                                } />
+                            </Box>
                         )}
 
-                        {!isSupported && (
-                            <Alert severity="warning">
-                                Voice not supported in this browser. Please use the buttons below.
-                            </Alert>
-                        )}
+                        {/* Filled Data Display */}
+                        <Stack spacing={1} direction="row" flexWrap="wrap" justifyContent="center">
+                            {customerName && <Chip label={customerName} avatar={<Avatar>{customerName[0]}</Avatar>} />}
+                            {customerPhone && <Chip label={customerPhone} icon={<RecordVoiceOverIcon />} />}
+                            {selectedService && <Chip label={selectedService.name} color="secondary" />}
+                        </Stack>
 
-                        {/* Quick Actions Actions */}
-                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center', mt: 2 }}>
-                            <Button
-                                startIcon={<ArrowForwardIcon />}
-                                variant="outlined"
-                                size="large"
-                                sx={{ borderRadius: 8, px: 4, py: 1.5, borderColor: 'primary.main', borderWidth: 2 }}
-                                onClick={() => navigate(`/queue/${shop.id}`)}
-                            >
-                                Manual Join
-                            </Button>
-                        </Box>
+                        {/* Manual Action Fallback */}
+                        <Button variant="text" size="small" onClick={() => navigate(`/queue/${shop.id}`)} sx={{ mt: 'auto' }}>
+                            Prefer to type? Switch to Manual Form
+                        </Button>
 
                     </Paper>
                 </animated.div>
-
-                {/* Available Queues Glace */}
-                <Stack direction="row" justifyContent="center" gap={2} mt={6} flexWrap="wrap">
-                    {queues.map((q, i) => (
-                        <animated.div key={q.id} style={{ ...fadeIn }}>
-                            <Paper
-                                elevation={0}
-                                sx={{
-                                    p: 2,
-                                    borderRadius: 4,
-                                    bgcolor: 'white',
-                                    minWidth: 150,
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    transition: 'transform 0.2s',
-                                    '&:hover': { transform: 'translateY(-5px)' }
-                                }}
-                                onClick={() => navigate(`/queue/${shop.id}`)}
-                            >
-                                <Typography variant="subtitle2" color="text.secondary" textTransform="uppercase" fontSize={10} letterSpacing={1} fontWeight="bold">
-                                    Queue
-                                </Typography>
-                                <Typography variant="h6" fontWeight="bold">
-                                    {q.name}
-                                </Typography>
-                                <Box sx={{ mt: 1, display: 'inline-block', px: 1, py: 0.5, bgcolor: 'secondary.main', color: 'white', borderRadius: 2, fontSize: 12, fontWeight: 'bold' }}>
-                                    Open
-                                </Box>
-                            </Paper>
-                        </animated.div>
-                    ))}
-                </Stack>
-
             </Container>
         </animated.div>
     );
