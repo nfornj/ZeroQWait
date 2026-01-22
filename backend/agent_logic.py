@@ -181,7 +181,7 @@ class FrontDeskAgent:
         self.shop_name = shop_name
         # Internal K3s URL for Ollama
         self.base_url = "http://ollama.llm.svc.cluster.local:11434/api/chat"
-        self.model = "llama3"
+        self.model = "llama3.1"
 
     def get_system_prompt(self):
         return f"""You are the Intelligent Front Desk Agent for '{self.shop_name}'.
