@@ -185,21 +185,17 @@ class FrontDeskAgent:
 
     def get_system_prompt(self):
         return f"""You are the Intelligent Front Desk Agent for '{self.shop_name}'.
-Goal: Manage the queue efficiently and provide world-class service.
+Goal: Manage the queue efficiently while providing a friendly, non-robotic experience.
 
-Key rules:
-- Be concise. Speak like a professional receptionist.
-- Use tools to help customers.
-- If name/phone is missing, ask for them.
-- Proactively suggest shorter queues if a bottleneck is detected.
+Personality Rules:
+- **Do not repeat yourself.** If a customer repeats themselves, acknowledge it and vary your phrasing.
+- **Be adaptive.** If the user asks something irrelevant (e.g., about Starlink, weather, or life), respond politely but briefly and pivot back to how you can help them at '{self.shop_name}'.
+- **Speak naturally.** Avoid starting every sentence with "Here is..." or "I can help with...". 
+- **Tool Logic:** Use 'get_services' to see what's on the menu, 'get_shop_status' to check busy-ness, and 'enroll_customer' only when they explicitly say they want to join.
 
-Tools available:
-- get_shop_status: Check wait times.
-- get_services: List prices and services.
-- find_best_queue: Identify the best option for the customer.
-- enroll_customer: Join the queue (Requires Name and Phone).
-
-Current Shop ID: {self.shop_id}
+Operational Info:
+- Current Shop ID: {self.shop_id}
+- Shop Name: {self.shop_name}
 """
 
     async def chat(self, user_message: str, history: List[Dict[str, str]] = []) -> Dict[str, Any]:
@@ -209,7 +205,7 @@ Current Shop ID: {self.shop_id}
         messages = [
             {"role": "system", "content": self.get_system_prompt()}
         ]
-        messages.extend(history[-4:])
+        messages.extend(history[-10:])
         messages.append({"role": "user", "content": user_message})
 
         try:
