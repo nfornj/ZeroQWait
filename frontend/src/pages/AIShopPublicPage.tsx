@@ -13,7 +13,9 @@ import {
     Fade,
     Button,
     Chip,
-    LinearProgress
+    LinearProgress,
+    TextField,
+    InputAdornment
 } from '@mui/material';
 import { useSpring, animated, config } from '@react-spring/web';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
@@ -185,12 +187,64 @@ const AIShopPublicPage: React.FC = () => {
                                         fontWeight: 600,
                                         lineHeight: 1.4,
                                         color: isProcessing ? 'text.disabled' : 'text.primary',
-                                        px: 2
+                                        px: 2,
+                                        minHeight: '3em',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
                                     }}
                                 >
                                     {feedbackMessage}
                                 </Typography>
                             </Fade>
+
+                            {/* Voice Support Warning (for HTTP environments) */}
+                            {!isListening && !isProcessing && (
+                                <Box sx={{ width: '100%', mt: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                                    {transcript ? (
+                                        <Typography
+                                            variant="h6"
+                                            color="primary"
+                                            sx={{
+                                                fontStyle: 'italic',
+                                                backgroundColor: `${primaryColor}10`,
+                                                px: 3,
+                                                py: 1,
+                                                borderRadius: 10
+                                            }}
+                                        >
+                                            "{transcript}"
+                                        </Typography>
+                                    ) : (
+                                        <Box
+                                            component="form"
+                                            onSubmit={(e: any) => {
+                                                e.preventDefault();
+                                                const val = e.target.elements.chatInput.value;
+                                                if (val) {
+                                                    handleAgenticChat(val);
+                                                    e.target.elements.chatInput.value = '';
+                                                }
+                                            }}
+                                            sx={{ width: '100%', maxWidth: 400 }}
+                                        >
+                                            <TextField
+                                                name="chatInput"
+                                                fullWidth
+                                                placeholder="Ask me anything..."
+                                                variant="outlined"
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiOutlinedInput-root': {
+                                                        borderRadius: 10,
+                                                        backgroundColor: 'rgba(255,255,255,0.8)'
+                                                    }
+                                                }}
+                                            />
+                                        </Box>
+                                    )}
+                                </Box>
+                            )}
 
                             {/* The Animated Canvas Orb */}
                             <Box
@@ -198,7 +252,8 @@ const AIShopPublicPage: React.FC = () => {
                                     position: 'relative',
                                     cursor: 'pointer',
                                     transition: 'transform 0.2s',
-                                    '&:active': { transform: 'scale(0.95)' }
+                                    '&:active': { transform: 'scale(0.95)' },
+                                    opacity: isProcessing ? 0.6 : 1
                                 }}
                                 onPointerDown={(e) => {
                                     if (!isProcessing) isListening ? stopListening() : startListening();
@@ -209,16 +264,11 @@ const AIShopPublicPage: React.FC = () => {
                                     isListening={isListening}
                                     primaryColor={primaryColor}
                                 />
-
-                                {/* Optional center icon for clarity */}
-                                {/* <Box sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'white' }}>
-                                     {isListening ? <GraphicEqIcon fontSize="large" /> : <MicIcon fontSize="large" />}
-                                 </Box> */}
                             </Box>
 
-                            {transcript && (
-                                <Typography variant="body1" color="primary" sx={{ fontStyle: 'italic', opacity: 0.8 }}>
-                                    "{transcript}"
+                            {isListening && (
+                                <Typography variant="body1" color="primary" sx={{ fontStyle: 'italic', animation: 'pulse 1.5s infinite' }}>
+                                    {transcript ? `"${transcript}"` : "Listening..."}
                                 </Typography>
                             )}
                         </Box>
