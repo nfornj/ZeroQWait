@@ -189,7 +189,7 @@ class ShopServiceBase(BaseModel):
     description: Optional[str] = None
     duration_minutes: int = 30
     cost: float = 0.0
-    currency: str = "USD"
+    currency: Optional[str] = "USD"
     is_active: bool = True
 
 class ShopServiceCreate(ShopServiceBase):
@@ -206,7 +206,7 @@ class ShopServiceUpdate(BaseModel):
 class ShopService(ShopServiceBase):
     id: int
     shop_id: int
-    created_at: datetime
+    created_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
