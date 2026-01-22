@@ -173,82 +173,121 @@ TOOL_DEFINITIONS = [
     }
 ]
 
+import httpx
+
 class FrontDeskAgent:
     def __init__(self, shop_id: int, shop_name: str):
         self.shop_id = shop_id
         self.shop_name = shop_name
-        self.api_key = os.getenv("GEMINI_API_KEY") # Defaulting to Gemini as recommended
+        self.api_key = os.getenv("GROQ_API_KEY") # Switch to Groq for OS LLM
+        self.base_url = "https://api.groq.com/openai/v1/chat/completions"
 
     def get_system_prompt(self):
         return f"""You are the Intelligent Front Desk Agent for '{self.shop_name}'.
-Your goal is to manage the queue efficiently and provide world-class service.
+Goal: Manage the queue efficiently and provide world-class service.
 
-Capabilities:
-1. You can check the status of all queues in the shop.
-2. You can list services and prices.
-3. You can enroll customers into the queue once you have their Name and Phone Number.
+Key rules:
+- Be concise. Speak like a professional receptionist.
+- Use tools to help customers.
+- If name/phone is missing, ask for them.
+- Proactively suggest shorter queues if a bottleneck is detected.
 
-Guidelines:
-- If a user wants to join, but hasn't given a name/phone, ask for them politely.
-- If one queue is very busy and another is free, pro-actively suggest the faster option.
-- Be concise and helpful. You are a professional receptionist.
-- When enrolling is successful, confirm the position/wait time if available.
+Tools available:
+- get_shop_status: Check wait times.
+- get_services: List prices and services.
+- find_best_queue: Identify the best option for the customer.
+- enroll_customer: Join the queue (Requires Name and Phone).
 
 Current Shop ID: {self.shop_id}
 """
 
     async def chat(self, user_message: str, history: List[Dict[str, str]] = []) -> Dict[str, Any]:
         """
-        Processing the chat. 
-        Note: Since we might not have a live LLM SDK installed or key yet, 
-        I'm implementing a 'Direct Intent' parser as a fallback that can be 
-        seamlessly replaced by an LLM call.
+        Agentic chat loop using Groq Llama 3.
         """
-        
-        # In a real implementation, we would call:
-        # response = await llm.generate_content(prompt + user_message, tools=TOOL_DEFINITIONS)
-        
-        # For now, let's implement the 'Routing' logic that will be used by the LLM response handler
-        
-        # Placeholder for 'AI Logic' - This will move to a real LLM call once API Key is provided
-        # I will structure the return to be 'Agentic' (Text + Actions)
-        
-        # MOCK AGENT LOGIC (To keep the app working while waiting for API Key)
-        text_response = "I'm processing your request."
-        actions_taken = []
-        
-        # Simple heuristic mapping for the "Agentic Experience"
-        msg = user_message.lower()
-        if "join" in msg or "queue" in msg:
-            # Check if name/phone in string
-            import re
-            phone_match = re.search(r'\d{7,15}', msg)
-            name_match = re.search(r'name is ([a-zA-Z]+)', msg)
-            
-            if phone_match and name_match:
-                name = name_match.group(1)
-                phone = phone_match.group(0)
-                enroll_res = enroll_customer(self.shop_id, name, phone)
-                text_response = f"Perfect, {name}! I've added you to the queue. {enroll_res.get('message', '')}"
-                actions_taken.append({"tool": "enroll_customer", "result": enroll_res})
-            else:
-                text_response = "I'd love to help you join the queue. Could you please tell me your name and phone number?"
-        
-        elif "status" in msg or "how busy" in msg or "best" in msg or "long" in msg:
-            best_data = find_best_queue(self.shop_id)
-            if best_data.get("bottleneck_detected"):
-                bn = best_data["bottleneck_detected"]
-                text_response = f"Currently, '{bn['slowest']}' is quite busy. I recommend joining '{bn['fastest']}' instead – it will save you about {bn['saving']} minutes!"
-            else:
-                best = best_data["best_queue"]
-                text_response = f"The best option right now is '{best['name']}' with an estimated wait of {best['wait_minutes']} minutes."
-            
-            actions_taken.append({"tool": "find_best_queue", "result": best_data})
+        if not self.api_key:
+            return self._mock_chat(user_message, history)
 
+        messages = [
+            {"role": "system", "content": self.get_system_prompt()}
+        ]
+        # Append limited history
+        messages.extend(history[-4:])
+        messages.append({"role": "user", "content": user_message})
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    self.base_url,
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json={
+                        "model": "llama3-70b-8192", 
+                        "messages": messages,
+                        "tools": [{"type": "function", "function": t} for t in TOOL_DEFINITIONS],
+                        "tool_choice": "auto"
+                    }
+                )
+                
+                if response.status_code != 200:
+                    logger.error(f"Groq API Error: {response.text}")
+                    return self._mock_chat(user_message, history)
+
+                resp_data = response.json()
+                message = resp_data["choices"][0]["message"]
+                
+                actions_taken = []
+                
+                if message.get("tool_calls"):
+                    for tc in message["tool_calls"]:
+                        func = tc["function"]
+                        name = func["name"]
+                        args = json.loads(func["arguments"])
+                        args["shop_id"] = self.shop_id
+                        
+                        if name in AVAILABLE_TOOLS:
+                            result = AVAILABLE_TOOLS[name](**args)
+                            actions_taken.append({"tool": name, "result": result})
+                    
+                    if any(a["tool"] == "enroll_customer" for a in actions_taken):
+                        text = "I've successfully added you to the queue! You should receive a confirmation shortly."
+                    elif any(a["tool"] == "find_best_queue" for a in actions_taken):
+                        best = next(a for a in actions_taken if a["tool"] == "find_best_queue")["result"]
+                        text = f"I've checked the wait times. The best option is '{best['best_queue']['name']}'."
+                    else:
+                        text = message.get("content") or "Processing your request..."
+                else:
+                    text = message.get("content")
+                
+                return {
+                    "response": text,
+                    "actions": actions_taken,
+                    "shop_name": self.shop_name
+                }
+        except Exception as e:
+            logger.error(f"Chat execution failed: {e}")
+            return self._mock_chat(user_message, history)
+
+    def _mock_chat(self, user_message, history):
+        msg = user_message.lower()
+        actions_taken = []
+        text_response = "I'm ready to help. Say Join Queue or ask about wait times."
+        
+        if "join" in msg or "queue" in msg:
+             text_response = "I'd love to help you join. What is your name and phone number?"
+        elif "status" in msg or "how busy" in msg or "best" in msg or "long" in msg:
+             best_data = find_best_queue(self.shop_id)
+             if best_data.get("bottleneck_detected"):
+                 bn = best_data["bottleneck_detected"]
+                 text_response = f"Currently, '{bn['slowest']}' is quite busy. I recommend joining '{bn['fastest']}' instead – it will save you about {bn['saving']} minutes!"
+             else:
+                 best = best_data["best_queue"]
+                 text_response = f"The best option right now is '{best['name']}' with an estimated wait of {best['wait_minutes']} minutes."
+             actions_taken.append({"tool": "find_best_queue", "result": best_data})
+             
         elif "service" in msg or "price" in msg:
             services = get_services(self.shop_id)
             srv_list = ", ".join([f"{s['name']} (${s['cost']})" for s in services])
-            text_response = f"We offer several services, including: {srv_list}. Which one are you interested in?"
+            text_response = f"We offer several services, including: {srv_list}."
             actions_taken.append({"tool": "get_services", "result": services})
 
         return {
