@@ -12,7 +12,8 @@ import {
     TextField,
     Alert,
     Chip,
-    Box
+    Box,
+    Stack
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
@@ -30,6 +31,7 @@ const QueueManagementPage: React.FC = () => {
     const [error, setError] = useState('');
 
     useEffect(() => {
+        console.log("QueueManagementPage: AI Version Loaded");
         fetchShopAndQueues();
     }, []);
 
@@ -92,19 +94,31 @@ const QueueManagementPage: React.FC = () => {
                 <Alert severity="info" sx={{ mb: 2 }} icon={<TvIcon />}>
                     <Box display="flex" justifyContent="space-between" alignItems="center">
                         <Box>
-                            <Typography variant="subtitle2" fontWeight="bold">In-Shop Display Available</Typography>
+                            <Typography variant="subtitle2" fontWeight="bold">AI Public Shop Display</Typography>
                             <Typography variant="body2">
-                                Display your queue on a TV screen for customers in your shop
+                                Launch the animated AI voice agent for your shop queue
                             </Typography>
                         </Box>
-                        <Button
-                            variant="outlined"
-                            size="small"
-                            startIcon={<TvIcon />}
-                            onClick={() => window.open(`/display/${shop.id}`, '_blank')}
-                        >
-                            Open Display
-                        </Button>
+                        <Stack direction="row" spacing={2}>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<TvIcon />}
+                                onClick={() => window.open(`/display/${shop.id}`, '_blank')}
+                            >
+                                Standard Display
+                            </Button>
+                            <Button
+                                variant="contained"
+                                color="secondary"
+                                size="small"
+                                startIcon={<TvIcon />}
+                                onClick={() => window.open(`/shop-ai/${shop.id}`, '_blank')}
+                                sx={{ borderRadius: 4, fontWeight: 'bold' }}
+                            >
+                                Launch AI Agent
+                            </Button>
+                        </Stack>
                     </Box>
                 </Alert>
             )}

@@ -14,7 +14,7 @@ import Stack from '@mui/material/Stack';
 import MuiCard from '@mui/material/Card';
 import { styled } from '@mui/material/styles';
 import AppTheme from '../auth-shared-theme/AppTheme';
-import { GoogleIcon, FacebookIcon, SitemarkIcon } from './components/CustomIcons';
+import { GoogleIcon, FacebookIcon, ZeroQwaitLogo } from './components/CustomIcons';
 
 const Card = styled(MuiCard)(({ theme }) => ({
   display: 'flex',
@@ -111,9 +111,9 @@ export default function SignUp(props: { disableCustomTheme?: boolean }) {
       <CssBaseline enableColorScheme />
       <SignUpContainer direction="column" justifyContent="space-between">
         <Card variant="outlined">
-          <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main', fontSize: '2.5rem', mb: 2 }}>
-            ZeroQwait
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <ZeroQwaitLogo />
+          </Box>
           <Typography
             component="h1"
             variant="h4"

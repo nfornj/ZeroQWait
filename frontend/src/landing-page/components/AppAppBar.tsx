@@ -13,6 +13,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import Typography from '@mui/material/Typography';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 
+
 import ColorModeIconDropdown from '../../auth-shared-theme/ColorModeIconDropdown';
 
 const StyledToolbar = styled(Toolbar)(({ theme }) => ({

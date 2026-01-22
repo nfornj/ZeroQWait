@@ -18,6 +18,8 @@ router = APIRouter()
 def get_shop_analytics(
     shop_id: int,
     days: int = 30,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     # Verify shop ownership
@@ -29,107 +31,136 @@ def get_shop_analytics(
         raise HTTPException(status_code=403, detail="Not authorized to view analytics for this shop")
 
     # Calculate date range
-    end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=days)
+    if start_date and end_date:
+        current_end = datetime.fromisoformat(end_date.replace("Z", "+00:00")).replace(tzinfo=None) if "T" in end_date else datetime.strptime(end_date, "%Y-%m-%d")
+        current_start = datetime.fromisoformat(start_date.replace("Z", "+00:00")).replace(tzinfo=None) if "T" in start_date else datetime.strptime(start_date, "%Y-%m-%d")
+    else:
+        current_end = datetime.utcnow()
+        current_start = current_end - timedelta(days=days)
 
-    # Get all queues for the shop
-    queues = db_interface.get_analytics_queues(shop_id)
-    if not queues:
-        # No queues, return empty analytics
+    # Calculate comparison range (previous period of same duration)
+    duration = current_end - current_start
+    previous_end = current_start
+    previous_start = previous_end - duration
+
+    # Helper to calculate stats for a period
+    def calculate_period_stats(start, end):
+        queues = db_interface.get_analytics_queues(shop_id)
+        if not queues:
+            return {"count": 0, "revenue": 0, "wait": 0, "service": 0}
+        
+        queue_ids = [q["id"] for q in queues]
+        items = db_interface.get_analytics_items(queue_ids, start) # This gets everything >= start
+        
+        # Filter strictly within range [start, end)
+        period_items = []
+        for item in items:
+            completed_str = item.get("completed_at")
+            if completed_str:
+                dt = datetime.fromisoformat(completed_str.replace("Z", "+00:00")).replace(tzinfo=None)
+                if start <= dt < end + timedelta(days=1): # inclusive of end date (end of day)
+                    period_items.append(item)
+        
+        total_customers = len(period_items)
+        total_revenue = 0.0
+        total_wait = 0
+        wait_count = 0
+        total_service = 0
+        service_count = 0
+        
+        daily_data = {}
+
+        for item in period_items:
+            # Revenue
+            total_revenue += float(item.get("service_cost") or 0.0)
+            
+            # Wait Time
+            svc_start = item.get("service_started_at")
+            check_in = item.get("checked_in_at")
+            completed = item.get("completed_at")
+            
+            if svc_start and check_in:
+                try:
+                    s = datetime.fromisoformat(svc_start.replace("Z", "+00:00")).replace(tzinfo=None)
+                    c = datetime.fromisoformat(check_in.replace("Z", "+00:00")).replace(tzinfo=None)
+                    w = (s - c).total_seconds()
+                    if w > 0:
+                        total_wait += w
+                        wait_count += 1
+                except: pass
+            
+            if completed and svc_start:
+                try:
+                    cp = datetime.fromisoformat(completed.replace("Z", "+00:00")).replace(tzinfo=None)
+                    s = datetime.fromisoformat(svc_start.replace("Z", "+00:00")).replace(tzinfo=None)
+                    sv = (cp - s).total_seconds()
+                    if sv > 0:
+                        total_service += sv
+                        service_count += 1
+                except: pass
+
+            # Daily Stats (only needed for current period)
+            if completed:
+                try:
+                    d = datetime.fromisoformat(completed.replace("Z", "+00:00")).replace(tzinfo=None).strftime("%Y-%m-%d")
+                    if d not in daily_data:
+                        daily_data[d] = {"count": 0, "revenue": 0}
+                    daily_data[d]["count"] += 1
+                    daily_data[d]["revenue"] += float(item.get("service_cost") or 0.0)
+                except: pass
+
+        avg_wait = round(total_wait / wait_count / 60) if wait_count > 0 else 0
+        avg_service = round(total_service / service_count / 60) if service_count > 0 else 0
+        
         return {
-            "period_days": days,
-            "total_customers": 0,
-            "avg_wait_minutes": 0,
-            "avg_service_minutes": 0,
-            "daily_stats": []
+            "total_customers": total_customers,
+            "total_revenue": total_revenue,
+            "avg_wait_minutes": avg_wait,
+            "avg_service_minutes": avg_service,
+            "daily_data": daily_data
         }
-    
-    queue_ids = [q["id"] for q in queues]
-    
-    # Get completed items in date range
-    completed_items = db_interface.get_analytics_items(queue_ids, start_date)
 
-    # 1. Total Customers Served
-    total_customers = len(completed_items)
+    # Calculate stats
+    current_stats = calculate_period_stats(current_start, current_end)
+    previous_stats = calculate_period_stats(previous_start, previous_end)
 
-    # 2. Average Wait Time (Check-in to Service Start)
-    total_wait_seconds = 0
-    wait_count = 0
-    
-    # 3. Average Service Time (Service Start to Completion)
-    total_service_seconds = 0
-    service_count = 0
-
-    # 4. Customers Per Day & Revenue
-    daily_counts = {}
-    daily_revenue = {}
-    total_revenue = 0.0
-
-    for item in completed_items:
-        # Wait Time
-        service_started = item.get("service_started_at")
-        checked_in = item.get("checked_in_at")
-        if service_started and checked_in:
-            try:
-                service_started_dt = datetime.fromisoformat(service_started.replace("Z", "+00:00"))
-                checked_in_dt = datetime.fromisoformat(checked_in.replace("Z", "+00:00"))
-                wait_time = (service_started_dt - checked_in_dt).total_seconds()
-                if wait_time > 0:
-                    total_wait_seconds += wait_time
-                    wait_count += 1
-            except Exception:
-                pass
-        
-        # Service Time
-        completed = item.get("completed_at")
-        if completed and service_started:
-            try:
-                completed_dt = datetime.fromisoformat(completed.replace("Z", "+00:00"))
-                service_started_dt = datetime.fromisoformat(service_started.replace("Z", "+00:00"))
-                service_time = (completed_dt - service_started_dt).total_seconds()
-                if service_time > 0:
-                    total_service_seconds += service_time
-                    service_count += 1
-            except Exception:
-                pass
-        
-        # Daily Counts
-        if completed:
-            try:
-                completed_dt = datetime.fromisoformat(completed.replace("Z", "+00:00"))
-                date_str = completed_dt.strftime("%Y-%m-%d")
-                daily_counts[date_str] = daily_counts.get(date_str, 0) + 1
-                
-                # Revenue
-                cost = float(item.get("service_cost") or 0.0)
-                total_revenue += cost
-                daily_revenue[date_str] = daily_revenue.get(date_str, 0.0) + cost
-            except Exception:
-                pass
-
-    avg_wait_minutes = round(total_wait_seconds / wait_count / 60) if wait_count > 0 else 0
-    avg_service_minutes = round(total_service_seconds / service_count / 60) if service_count > 0 else 0
-
-    # Format daily counts for frontend
-    # Fill in missing days with 0
+    # Format Chart Data
     chart_data = []
-    current = start_date
-    while current <= end_date:
-        date_str = current.strftime("%Y-%m-%d")
+    curr = current_start
+    while curr <= current_end:
+        d_str = curr.strftime("%Y-%m-%d")
+        data = current_stats["daily_data"].get(d_str, {"count": 0, "revenue": 0})
         chart_data.append({
-            "date": date_str,
-            "count": daily_counts.get(date_str, 0),
-            "revenue": daily_revenue.get(date_str, 0.0)
+            "date": d_str,
+            "count": data["count"],
+            "revenue": data["revenue"]
         })
-        current += timedelta(days=1)
+        curr += timedelta(days=1)
+
+    # Calculate Trends (%)
+    def calc_trend(curr, prev):
+        if prev == 0:
+            return 100 if curr > 0 else 0
+        return round(((curr - prev) / prev) * 100)
+
+    visits_trend = calc_trend(current_stats["total_customers"], previous_stats["total_customers"])
+    revenue_trend = calc_trend(current_stats["total_revenue"], previous_stats["total_revenue"])
+    wait_trend = calc_trend(current_stats["avg_wait_minutes"], previous_stats["avg_wait_minutes"])
+    service_trend = calc_trend(current_stats["avg_service_minutes"], previous_stats["avg_service_minutes"])
 
     return {
-        "period_days": days,
-        "total_customers": total_customers,
-        "total_revenue": total_revenue,
-        "avg_wait_minutes": avg_wait_minutes,
-        "avg_service_minutes": avg_service_minutes,
-        "daily_stats": chart_data
+        "period_days": days if not (start_date and end_date) else (current_end - current_start).days,
+        "total_customers": current_stats["total_customers"],
+        "total_revenue": current_stats["total_revenue"],
+        "avg_wait_minutes": current_stats["avg_wait_minutes"],
+        "avg_service_minutes": current_stats["avg_service_minutes"],
+        "daily_stats": chart_data,
+        "trends": {
+            "visits": visits_trend,
+            "revenue": revenue_trend,
+            "wait": wait_trend,
+            "service": service_trend
+        }
     }
 
 

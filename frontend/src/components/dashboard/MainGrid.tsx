@@ -3,6 +3,7 @@ import Grid from '@mui/material/Grid';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import { FormControl, Select, MenuItem, TextField } from '@mui/material';
 import axios from 'axios';
 import { useShop } from '../../contexts/ShopContext';
 import Copyright from './Copyright';
@@ -27,6 +28,11 @@ export default function MainGrid() {
   const [dailyVisits, setDailyVisits] = useState<number[]>([]);
   const [dates, setDates] = useState<string[]>([]);
 
+  // Date Range State
+  const [period, setPeriod] = useState<string>('30'); // 30, 60, 365, custom
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+
   useEffect(() => {
     const fetchAnalytics = async () => {
       if (!shop) return;
@@ -35,7 +41,14 @@ export default function MainGrid() {
         const token = localStorage.getItem('token');
         const headers = { Authorization: `Bearer ${token}` };
 
-        const response = await axios.get(`/analytics/${shop.id}?days=30`, { headers });
+        let url = `/analytics/${shop.id}?`;
+        if (period !== 'custom') {
+          url += `days=${period}`;
+        } else {
+          url += `start_date=${startDate}&end_date=${endDate}`;
+        }
+
+        const response = await axios.get(url, { headers });
         const data = response.data;
 
         const dailyCounts = data.daily_stats.map((d: any) => d.count);
@@ -47,33 +60,41 @@ export default function MainGrid() {
         setDailyVisits(dailyCounts);
         setDates(dayLabels);
 
+        // Helper to format trend
+        const getTrend = (val: number) => val > 0 ? 'up' : val < 0 ? 'down' : 'neutral';
+        const getTrendValue = (val: number) => val !== 0 ? `${val > 0 ? '+' : ''}${val}%` : '';
+
+        const intervalLabel = period === 'custom'
+          ? `${startDate} - ${endDate}`
+          : `Last ${period} days`;
+
         setStats([
           {
             title: 'Total Visits',
             value: data.total_customers.toString(),
-            interval: 'Last 30 days',
-            trend: 'up',
+            interval: intervalLabel,
+            trend: getTrend(data.trends?.visits || 0),
             data: dailyCounts
           },
           {
             title: 'Avg Wait Time',
             value: `${data.avg_wait_minutes} min`,
-            interval: 'Last 30 days',
-            trend: data.avg_wait_minutes < 15 ? 'down' : 'neutral',
+            interval: intervalLabel,
+            trend: getTrend(-(data.trends?.wait || 0)),
             data: dailyCounts.map(() => data.avg_wait_minutes)
           },
           {
             title: 'Avg Service Time',
             value: `${data.avg_service_minutes} min`,
-            interval: 'Last 30 days',
+            interval: intervalLabel,
             trend: 'neutral',
             data: dailyCounts.map(() => data.avg_service_minutes)
           },
           {
             title: 'Total Revenue',
             value: data.total_revenue !== undefined ? `$${data.total_revenue}` : '$0.00',
-            interval: 'Last 30 days',
-            trend: 'up',
+            interval: intervalLabel,
+            trend: getTrend(data.trends?.revenue || 0),
             data: data.daily_stats.map((d: any) => d.revenue || 0)
           }
         ]);
@@ -83,14 +104,57 @@ export default function MainGrid() {
       }
     };
 
-    fetchAnalytics();
-  }, [shop]);
+    if (period !== 'custom' || (startDate && endDate)) {
+      fetchAnalytics();
+    }
+  }, [shop, period, startDate, endDate]);
 
   return (
     <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
+      {/* Title */}
       <Typography component="h2" variant="h6" sx={{ mb: 2 }}>
         Overview
       </Typography>
+
+      {/* Controls - separate section */}
+      <Box display="flex" justifyContent="flex-end" mb={4} sx={{ marginTop: 2 }}>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <FormControl size="small">
+            <Select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              sx={{ minWidth: 150 }}
+            >
+              <MenuItem value="30">Last 30 Days</MenuItem>
+              <MenuItem value="60">Last 60 Days</MenuItem>
+              <MenuItem value="365">Last Year</MenuItem>
+              <MenuItem value="custom">Custom Range</MenuItem>
+            </Select>
+          </FormControl>
+
+          {period === 'custom' && (
+            <>
+              <TextField
+                type="date"
+                size="small"
+                label="Start"
+                InputLabelProps={{ shrink: true }}
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+              <TextField
+                type="date"
+                size="small"
+                label="End"
+                InputLabelProps={{ shrink: true }}
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </>
+          )}
+        </Stack>
+      </Box>
+
       <Grid
         container
         spacing={2}

@@ -92,8 +92,8 @@ export default function Hero() {
               width: { sm: '100%', md: '80%' },
             }}
           >
-            The smartest way to manage queues and appointments.
-            Join thousands of businesses saving time and delighting customers.
+            The World&apos;s First AI-Powered Universal Queue Management System for Small Businesses.
+            Experience a smarter way to manage queues and delight your customers.
           </Typography>
           <Stack
             direction={{ xs: 'column', sm: 'row' }}

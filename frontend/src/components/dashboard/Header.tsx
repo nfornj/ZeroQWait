@@ -71,6 +71,8 @@ export default function Header() {
         justifyContent: 'space-between',
         maxWidth: { sm: '100%', md: '1700px' },
         pt: 1.5,
+        pb: 12, // Padding-bottom instead of margin to force spacing
+        borderBottom: '1px solid transparent', // Force layout boundary
       }}
       spacing={2}
     >

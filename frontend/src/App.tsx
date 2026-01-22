@@ -42,6 +42,7 @@ import ShopLayout from "./layouts/ShopLayout";
 import PublicShopPage from "./pages/PublicShopPage";
 import PublicLayout from "./layouts/PublicLayout";
 import QueueCounterPage from "./pages/QueueCounterPage";
+import AIShopPublicPage from "./pages/AIShopPublicPage";
 
 import SignInSide from "./auth-sign-in/SignInSide";
 import ShopOwnerSignUp from "./auth-sign-up/ShopOwnerSignUp";
@@ -75,6 +76,9 @@ function App() {
 
           {/* In-Shop Display (No Layout - Fullscreen) */}
           <Route path="/display/:shopId" element={<InShopDisplayPage />} />
+
+          {/* AI Agentic Shop Display */}
+          <Route path="/shop-ai/:shopId" element={<AIShopPublicPage />} />
 
           {/* Embeddable Widget (No Layout - For iframe embedding) */}
           <Route path="/widget/:shopId" element={<WidgetPage />} />

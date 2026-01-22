@@ -10,14 +10,14 @@ import Typography from '@mui/material/Typography';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import LinkedInIcon from '@mui/icons-material/LinkedIn';
 import TwitterIcon from '@mui/icons-material/X';
-import SitemarkIcon from './SitemarkIcon';
+import ZeroQwaitLogo from './ZeroQwaitLogo';
 
 function Copyright() {
   return (
     <Typography variant="body2" sx={{ color: 'text.secondary', mt: 1 }}>
       {'Copyright © '}
-      <Link color="text.secondary" href="https://mui.com/">
-        Sitemark
+      <Link color="text.secondary" href="https://zeroqwait.com/">
+        ZeroQwait
       </Link>
       &nbsp;
       {new Date().getFullYear()}
@@ -188,7 +188,7 @@ export default function Footer() {
           <IconButton
             color="inherit"
             size="small"
-            href="https://github.com/mui"
+            href="#"
             aria-label="GitHub"
             sx={{ alignSelf: 'center' }}
           >
@@ -197,7 +197,7 @@ export default function Footer() {
           <IconButton
             color="inherit"
             size="small"
-            href="https://x.com/MaterialUI"
+            href="#"
             aria-label="X"
             sx={{ alignSelf: 'center' }}
           >
@@ -206,7 +206,7 @@ export default function Footer() {
           <IconButton
             color="inherit"
             size="small"
-            href="https://www.linkedin.com/company/mui/"
+            href="#"
             aria-label="LinkedIn"
             sx={{ alignSelf: 'center' }}
           >

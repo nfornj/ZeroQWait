@@ -53,6 +53,7 @@ const ShopLayout: React.FC = () => {
                         pb: 5,
                         mt: { xs: 8, md: 0 }, // Top margin for mobile navbar
                         height: '100%',
+                        gap: 6, // Add 48px gap between child components (Header and content)
                     }}>
                         <Outlet />
                     </Box>
