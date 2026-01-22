@@ -11,7 +11,11 @@ class AgentChatRequest(BaseModel):
     message: str
     history: Optional[List[Dict[str, str]]] = []
 
-@router.post("/{shop_id}/chat")
+@router.get("/health")
+async def agent_health():
+    return {"status": "ok", "message": "Agent router is active"}
+
+@router.post("/chat/{shop_id}")
 async def agent_chat(
     shop_id: int,
     request: AgentChatRequest,

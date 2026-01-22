@@ -86,7 +86,7 @@ const AIShopPublicPage: React.FC = () => {
         setFeedbackMessage("Thinking...");
 
         try {
-            const response = await axios.post(`/agent/${shop.id}/chat`, {
+            const response = await axios.post(`/api/agent/chat/${shop.id}`, {
                 message: userText,
                 history: chatHistory.map(h => ({
                     role: h.role === 'ai' ? 'assistant' : 'user',
