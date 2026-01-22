@@ -9,9 +9,10 @@ import { AuthProvider } from "./contexts/AuthContext";
 import axios from "axios";
 
 // Configure axios defaults
-const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
-console.log("[Frontend] REACT_APP_API_URL env var:", process.env.REACT_APP_API_URL);
-console.log("[Frontend] Axios baseURL set to:", apiUrl);
+// Using '/api' as a relative path allows the app to work via Cloudflare tunnel, 
+// local IP, or nip.io without hardcoding an address.
+const apiUrl = process.env.REACT_APP_API_URL || '/api';
+console.log("[Frontend] React App API URL:", apiUrl);
 axios.defaults.baseURL = apiUrl;
 
 const root = ReactDOM.createRoot(
