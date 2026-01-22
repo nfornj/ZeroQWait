@@ -188,10 +188,10 @@ class FrontDeskAgent:
 Goal: Manage the queue efficiently while providing a friendly, professional experience.
 
 Core Protocol:
-1. **Never output raw JSON.** Always respond in natural language.
-2. **Missing Info:** If you need to enroll a customer but lack NAME or PHONE, ask for them politely.
+1. **Never output raw JSON or code.** Never show strings like "get_services" or "{'id': 1}" to the customer. Always use natural sentences.
+2. **Missing Info:** If you lack a NAME or PHONE for enrollment, ask for them politely.
 3. **Conversational Variance:** Acknowledge user non-answers. If they say "maybe later" or "I'm busy", back off gracefully.
-4. **Pivot Logic:** If the user is talking about something unrelated (Starlink, code, databases, logs), briefly acknowledge it (e.g., "That sounds technical!") and then offer to help with shop-specific tasks only if they are ready.
+4. **Pivot Logic:** If the user talks about code, logs, or other tech, briefly acknowledge it and pivot back only when appropriate.
 
 Tooling:
 - 'get_services': See what we offer and prices. Use this ONLY once per session unless requested.
@@ -278,9 +278,21 @@ Operational Info:
                 else:
                     text = message.get("content", "I'm not sure how to respond to that.")
                 
-                # Safety check: If the text still contains raw JSON tool call artifacts (common in some OS models)
-                if text.strip().startswith("{") and "enroll_customer" in text:
-                    text = "I'd love to help with that! Could you please provide your name and phone number so I can get you started?"
+                # Safety check: Catch any JSON leakage or "tool_call" artifacts
+                clean_text = text.strip()
+                
+                # Broad match for anything that looks like JSON or a tool call (starts with { or "tool",)
+                leakage_detected = False
+                if clean_text.startswith("{") or clean_text.startswith("["):
+                    leakage_detected = True
+                elif '"' in clean_text and "{" in clean_text and (any(t in clean_text for t in AVAILABLE_TOOLS)):
+                    leakage_detected = True
+
+                if leakage_detected:
+                    logger.warning(f"Raw LLM leakage detected and intercepted: {clean_text}")
+                    # Try to find a fallback response from our mock logic or a simple polite brush-off
+                    fallback = self._mock_chat(user_message, history)
+                    text = fallback["response"]
 
                 return {
                     "response": text,
