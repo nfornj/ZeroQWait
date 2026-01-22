@@ -21,6 +21,9 @@ import axios from 'axios';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PeopleIcon from '@mui/icons-material/People';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { useNavigate } from 'react-router-dom';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
@@ -37,6 +40,7 @@ interface Shop {
     state: string;
     phone: string;
     average_service_time: number;
+    slug?: string;
 }
 
 interface QueueItem {
@@ -62,6 +66,7 @@ interface WaitEstimate {
 
 const QueueViewPage: React.FC = () => {
     const { shopId } = useParams<{ shopId: string }>();
+    const navigate = useNavigate();
     const [shop, setShop] = useState<Shop | null>(null);
     const [queue, setQueue] = useState<Queue | null>(null);
     const [customerName, setCustomerName] = useState('');
@@ -228,19 +233,42 @@ const QueueViewPage: React.FC = () => {
 
     return (
         <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-            <Paper sx={{ p: 4, mb: 4 }}>
-                <Typography variant="h3" gutterBottom>
+            <Paper sx={{ p: 4, mb: 4, position: 'relative' }}>
+                <Button
+                    startIcon={<ArrowBackIcon />}
+                    onClick={() => navigate(`/s/${shop.slug || shop.id}`)}
+                    sx={{ mb: 2 }}
+                >
+                    Back to Shop
+                </Button>
+                <Typography variant="h3" fontWeight="bold" gutterBottom>
                     {shop.name}
                 </Typography>
-                <Typography variant="body1" color="textSecondary" gutterBottom>
-                    {shop.description}
-                </Typography>
-                <Typography variant="body2" color="textSecondary">
+                <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
                     {shop.address}, {shop.city}, {shop.state}
                 </Typography>
-                <Typography variant="body2" color="textSecondary">
-                    Phone: {shop.phone}
-                </Typography>
+
+                {/* AI Concierge Switcher */}
+                <Box
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 2,
+                        p: 2,
+                        bgcolor: 'primary.main',
+                        color: 'white',
+                        borderRadius: 2,
+                        cursor: 'pointer',
+                        '&:hover': { bgcolor: 'primary.dark' }
+                    }}
+                    onClick={() => navigate(`/shop-ai/${shopId}`)}
+                >
+                    <SmartToyIcon />
+                    <Box>
+                        <Typography variant="subtitle1" fontWeight="bold">Switch to AI Assistant</Typography>
+                        <Typography variant="body2" sx={{ opacity: 0.9 }}>Talk to Boomboo about your spot in line.</Typography>
+                    </Box>
+                </Box>
             </Paper>
 
             {error && (
