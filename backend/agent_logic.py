@@ -233,11 +233,15 @@ Current Shop ID: {self.shop_id}
                 
                 actions_taken = []
                 
+                # If tool calls are present, execute them and do a SECOND pass for a natural response
                 if message.get("tool_calls"):
+                    # Add agent's tool call to history
+                    messages.append(message)
+                    
                     for tc in message["tool_calls"]:
                         func = tc["function"]
                         name = func["name"]
-                        args = func["arguments"] # Ollama often returns parsed args
+                        args = func.get("arguments", {})
                         if isinstance(args, str):
                             args = json.loads(args)
                         
@@ -246,16 +250,32 @@ Current Shop ID: {self.shop_id}
                         if name in AVAILABLE_TOOLS:
                             result = AVAILABLE_TOOLS[name](**args)
                             actions_taken.append({"tool": name, "result": result})
+                            
+                            # Add tool result to history for the second pass
+                            messages.append({
+                                "role": "tool",
+                                "content": json.dumps(result),
+                                "name": name
+                            })
                     
-                    if any(a["tool"] == "enroll_customer" for a in actions_taken):
-                        text = "I've successfully added you to the queue! You should receive a confirmation shortly."
-                    elif any(a["tool"] == "find_best_queue" for a in actions_taken):
-                        best = next(a for a in actions_taken if a["tool"] == "find_best_queue")["result"]
-                        text = f"I've checked the wait times. The best option is '{best['best_queue']['name']}'."
+                    # --- SECOND PASS ---
+                    # Now call the LLM again with the tool results in history
+                    response_pass2 = await client.post(
+                        self.base_url,
+                        json={
+                            "model": self.model,
+                            "messages": messages,
+                            "stream": False
+                        }
+                    )
+                    
+                    if response_pass2.status_code == 200:
+                        resp_data_pass2 = response_pass2.json()
+                        text = resp_data_pass2["message"].get("content", "I've processed your request.")
                     else:
-                        text = message.get("content") or "Processing your request..."
+                        text = "I've executed the requested actions, but I'm having trouble phrasing my response. How else can I help?"
                 else:
-                    text = message.get("content")
+                    text = message.get("content", "I'm not sure how to respond to that.")
                 
                 return {
                     "response": text,
