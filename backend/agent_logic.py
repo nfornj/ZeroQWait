@@ -345,10 +345,15 @@ Operational Info:
     def _mock_chat(self, user_message, history):
         msg = user_message.lower()
         actions_taken = []
-        text_response = "I'm ready to help. Say Join Queue or ask about wait times."
+        
+        # Playful energy for "funny sounds"
+        if any(s in msg for s in ["ooh la la", "haha", "hehe", "lol", "funny", "yay"]):
+            text_response = "Ooh la la indeed! You've got that stylish energy! ✨ While we celebrate your vibe, can I help you pick a service like a Haircut or Coloring?"
+        else:
+            text_response = "I'm ready to help! You can ask about our services, join the queue, or check wait times."
         
         if "join" in msg or "queue" in msg:
-             text_response = "I'd love to help you join. What is your name and phone number?"
+             text_response = "I'd love to help you join! What is your name and phone number?"
         elif "status" in msg or "how busy" in msg or "best" in msg or "long" in msg:
              best_data = find_best_queue(self.shop_id)
              if best_data.get("bottleneck_detected"):
