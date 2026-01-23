@@ -206,8 +206,8 @@ const QueueViewPage: React.FC = () => {
     };
 
     const waitingCustomers = queue?.queue_items.filter(
-        (item) => item.status === 'waiting'
-    ) || [];
+        (item) => item.status === 'waiting' || item.status === 'being_served'
+    ).sort((a, b) => (a.position || 0) - (b.position || 0)) || [];
 
     if (loading) {
         return (
@@ -227,42 +227,48 @@ const QueueViewPage: React.FC = () => {
 
     return (
         <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-            <Paper sx={{ p: 4, mb: 4, position: 'relative' }}>
+            {/* Main Header / Hero Section */}
+            <Box sx={{ mb: 6, textAlign: 'center' }}>
                 <Button
                     startIcon={<ArrowBackIcon />}
                     onClick={() => navigate(`/s/${shop.slug || shop.id}`)}
-                    sx={{ mb: 2 }}
+                    sx={{ mb: 3 }}
                 >
                     Back to Shop
                 </Button>
-                <Typography variant="h3" fontWeight="bold" gutterBottom>
+                <Typography variant="h2" fontWeight="800" gutterBottom sx={{ color: '#1a1a1a', letterSpacing: '-0.02em' }}>
                     {shop.name}
                 </Typography>
-                <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
-                    {shop.address}, {shop.city}, {shop.state}
+                <Typography variant="h6" color="textSecondary">
+                    {shop.address}, {shop.city}
                 </Typography>
+            </Box>
 
-                {/* AI Concierge Switcher */}
-                <Box
-                    sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 2,
-                        p: 2,
-                        bgcolor: 'primary.main',
-                        color: 'white',
-                        borderRadius: 2,
-                        cursor: 'pointer',
-                        '&:hover': { bgcolor: 'primary.dark' }
-                    }}
-                    onClick={() => navigate(`/shop-ai/${shopId}`)}
-                >
-                    <SmartToyIcon />
+            {/* AI Concierge Banner */}
+            <Paper
+                elevation={0}
+                sx={{
+                    p: 2.5,
+                    mb: 4,
+                    borderRadius: 4,
+                    background: 'linear-gradient(90deg, #2196F3 0%, #21CBF3 100%)',
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    '&:hover': { transform: 'translateY(-2px)', transition: '0.2s' }
+                }}
+                onClick={() => navigate(`/shop-ai/${shopId}`)}
+            >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <SmartToyIcon sx={{ fontSize: 32 }} />
                     <Box>
-                        <Typography variant="subtitle1" fontWeight="bold">Switch to AI Assistant</Typography>
-                        <Typography variant="body2" sx={{ opacity: 0.9 }}>Talk to {shop.ai_agent_name || shop.name} about your spot in line.</Typography>
+                        <Typography variant="h6" fontWeight="bold">Switch to AI Assistant</Typography>
+                        <Typography variant="body2">Talk to {shop.ai_agent_name || shop.name} about your spot in line.</Typography>
                     </Box>
                 </Box>
+                <ArrowBackIcon sx={{ transform: 'rotate(180deg)' }} />
             </Paper>
 
             {error && (
@@ -279,87 +285,68 @@ const QueueViewPage: React.FC = () => {
             <Box display="flex" flexWrap="wrap" gap={3}>
                 {/* My Queue Status or Redirection */}
                 {myQueueItem ? (
-                    <Box sx={{ flex: 1, minWidth: '300px' }}>
+                    <Box sx={{ flex: 1, minWidth: '100%', mb: 4 }}>
                         <Card variant="outlined" sx={{
-                            borderRadius: 4,
-                            border: '1px solid #e0e0e0',
+                            borderRadius: 6,
+                            border: 'none',
+                            bgcolor: '#1a1a1a',
+                            color: 'white',
                             overflow: 'hidden',
-                            boxShadow: '0 4px 25px rgba(0,0,0,0.05)'
+                            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+                            p: { xs: 4, md: 6 }
                         }}>
-                            <Box sx={{
-                                bgcolor: shop?.primary_color || 'primary.main',
-                                color: 'white',
-                                p: 3,
-                                textAlign: 'center'
-                            }}>
-                                <Typography variant="h6" sx={{ opacity: 0.9 }}>Your Current Wait</Typography>
-                                <Typography variant="h1" sx={{ fontWeight: 800, my: 1 }}>
-                                    #{myQueueItem.position}
-                                </Typography>
-                                <Chip
-                                    label={myQueueItem.status.replace('_', ' ').toUpperCase()}
-                                    sx={{
-                                        bgcolor: 'rgba(255,255,255,0.2)',
-                                        color: 'white',
-                                        fontWeight: 'bold',
-                                        px: 2
-                                    }}
-                                />
-                            </Box>
-
-                            <CardContent sx={{ p: 4 }}>
-                                <Grid container spacing={3}>
-                                    <Grid size={{ xs: 6 }}>
-                                        <Box sx={{ textAlign: 'center', p: 2, bgcolor: '#f8faff', borderRadius: 3 }}>
-                                            <PeopleIcon color="primary" sx={{ fontSize: 32, mb: 1 }} />
-                                            <Typography variant="h4" fontWeight="bold">
-                                                {waitEstimate?.people_ahead ?? '...'}
+                            <Grid container spacing={4} alignItems="center">
+                                <Grid size={{ xs: 12, md: 7 }}>
+                                    <Box sx={{ textAlign: { xs: 'center', md: 'left' } }}>
+                                        <Typography variant="h5" sx={{ opacity: 0.6, mb: 1, fontWeight: 500 }}>
+                                            YOU ARE
+                                        </Typography>
+                                        <Typography variant="h1" sx={{ fontWeight: 900, mb: 2, fontSize: { xs: '5rem', md: '8rem' }, lineHeight: 1 }}>
+                                            {myQueueItem.position}
+                                            <Typography component="span" variant="h3" sx={{ verticalAlign: 'top', ml: 1, opacity: 0.8 }}>
+                                                {myQueueItem.position === 1 ? 'st' : myQueueItem.position === 2 ? 'nd' : myQueueItem.position === 3 ? 'rd' : 'th'}
                                             </Typography>
-                                            <Typography variant="caption" color="textSecondary">People Ahead</Typography>
-                                        </Box>
-                                    </Grid>
-                                    <Grid size={{ xs: 6 }}>
-                                        <Box sx={{ textAlign: 'center', p: 2, bgcolor: '#fff8f8', borderRadius: 3 }}>
-                                            <AccessTimeIcon color="error" sx={{ fontSize: 32, mb: 1 }} />
-                                            <Typography variant="h4" fontWeight="bold">
-                                                ~{waitEstimate?.estimated_wait_minutes ?? '...'}
-                                            </Typography>
-                                            <Typography variant="caption" color="textSecondary">Min Remaining</Typography>
-                                        </Box>
-                                    </Grid>
+                                        </Typography>
+                                        <Typography variant="h4" sx={{ fontWeight: 600, mb: 3 }}>
+                                            in the queue
+                                        </Typography>
+                                        <Typography variant="h5" sx={{ fontWeight: 500, bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 3, display: 'inline-block' }}>
+                                            Estimated Wait: <strong>~{waitEstimate?.estimated_wait_minutes ?? '...'} mins</strong>
+                                        </Typography>
+                                    </Box>
                                 </Grid>
+                                <Grid size={{ xs: 12, md: 5 }}>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                                        <Button
+                                            fullWidth
+                                            variant="contained"
+                                            size="large"
+                                            startIcon={<SmartToyIcon />}
+                                            onClick={() => navigate(`/shop-ai/${shopId}`)}
+                                            sx={{
+                                                borderRadius: 4,
+                                                py: 2.5,
+                                                fontSize: '1.1rem',
+                                                fontWeight: 'bold',
+                                                background: 'white',
+                                                color: '#1a1a1a',
+                                                '&:hover': { background: '#f5f5f5' }
+                                            }}
+                                        >
+                                            Add Someone Else (AI)
+                                        </Button>
 
-                                <Divider sx={{ my: 4 }} />
-
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                    <Button
-                                        fullWidth
-                                        variant="contained"
-                                        size="large"
-                                        startIcon={<SmartToyIcon />}
-                                        onClick={() => navigate(`/shop-ai/${shopId}`)}
-                                        sx={{
-                                            borderRadius: 3,
-                                            py: 1.5,
-                                            background: 'linear-gradient(45deg, #2196F3, #21CBF3)',
-                                            boxShadow: '0 3px 15px rgba(33, 203, 243, .3)',
-                                        }}
-                                    >
-                                        Add Someone Else (AI Support)
-                                    </Button>
-
-                                    <Button
-                                        fullWidth
-                                        variant="outlined"
-                                        color="error"
-                                        startIcon={<ExitToAppIcon />}
-                                        onClick={handleLeaveQueue}
-                                        sx={{ borderRadius: 3, py: 1.5 }}
-                                    >
-                                        Exit the Queue
-                                    </Button>
-                                </Box>
-                            </CardContent>
+                                        <Button
+                                            fullWidth
+                                            variant="text"
+                                            onClick={handleLeaveQueue}
+                                            sx={{ color: '#ff4d4f', fontSize: '1rem' }}
+                                        >
+                                            Exit the Queue
+                                        </Button>
+                                    </Box>
+                                </Grid>
+                            </Grid>
                         </Card>
                     </Box>
                 ) : (
@@ -402,24 +389,68 @@ const QueueViewPage: React.FC = () => {
                                 <Typography color="textSecondary">Queue is empty - join now!</Typography>
                             ) : (
                                 <List>
-                                    {waitingCustomers.slice(0, 5).map((item) => (
-                                        <ListItem
-                                            key={item.id}
-                                            sx={{
-                                                bgcolor: 'action.hover',
-                                                mb: 1,
-                                            }}
-                                        >
-                                            <Box sx={{ mr: 2, fontWeight: 'bold' }}>#{item.position}</Box>
-                                            <ListItemText
-                                                primary={item.customer_name}
-                                                secondary={new Date(item.checked_in_at).toLocaleTimeString()}
-                                            />
-                                        </ListItem>
-                                    ))}
-                                    {waitingCustomers.length > 5 && (
-                                        <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                                            ... and {waitingCustomers.length - 5} more
+                                    {waitingCustomers.slice(0, 10).map((item) => {
+                                        const isMe = myQueueItem?.id === item.id;
+                                        return (
+                                            <ListItem
+                                                key={item.id}
+                                                sx={{
+                                                    bgcolor: isMe ? 'primary.light' : 'action.hover',
+                                                    color: isMe ? 'white' : 'inherit',
+                                                    borderRadius: 2,
+                                                    mb: 1,
+                                                    border: isMe ? 'none' : '1px solid #eee'
+                                                }}
+                                            >
+                                                <Box sx={{ mr: 2, fontWeight: '900', fontSize: '1.2rem' }}>#{item.position}</Box>
+                                                <ListItemText
+                                                    primary={
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <Typography fontWeight={isMe ? "800" : "500"}>
+                                                                {item.customer_name}
+                                                            </Typography>
+                                                            {isMe && <Chip label="YOU" size="small" sx={{ bgcolor: 'white', color: 'primary.main', fontWeight: 'bold', height: 20 }} />}
+                                                        </Box>
+                                                    }
+                                                    secondary={
+                                                        <Typography variant="caption" sx={{ color: isMe ? 'white' : 'textSecondary', opacity: isMe ? 0.8 : 1 }}>
+                                                            {new Date(item.checked_in_at).toLocaleTimeString()}
+                                                        </Typography>
+                                                    }
+                                                />
+                                                {item.status === 'being_served' && (
+                                                    <Chip label="SERVING" size="small" color="success" />
+                                                )}
+                                            </ListItem>
+                                        );
+                                    })}
+
+                                    {/* Show "Your Spot" if you are deep in the queue (>10) */}
+                                    {myQueueItem && myQueueItem.position > 10 && (
+                                        <>
+                                            <Box sx={{ textAlign: 'center', py: 1, opacity: 0.5 }}>•••</Box>
+                                            <ListItem
+                                                sx={{
+                                                    bgcolor: 'primary.main',
+                                                    color: 'white',
+                                                    borderRadius: 2,
+                                                    mb: 1,
+                                                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                                                }}
+                                            >
+                                                <Box sx={{ mr: 2, fontWeight: '900', fontSize: '1.2rem' }}>#{myQueueItem.position}</Box>
+                                                <ListItemText
+                                                    primary={<Typography fontWeight="800">You (Your Spot)</Typography>}
+                                                    secondary={<Typography variant="caption" sx={{ color: 'white', opacity: 0.8 }}>Deep in line</Typography>}
+                                                />
+                                                <Chip label="YOU" size="small" sx={{ bgcolor: 'white', color: 'primary.main', fontWeight: 'bold' }} />
+                                            </ListItem>
+                                        </>
+                                    )}
+
+                                    {waitingCustomers.length > 10 && (!myQueueItem || myQueueItem.position <= 10) && (
+                                        <Typography variant="body2" color="textSecondary" sx={{ mt: 1, textAlign: 'center' }}>
+                                            ... and {waitingCustomers.length - 10} more waiting
                                         </Typography>
                                     )}
                                 </List>
