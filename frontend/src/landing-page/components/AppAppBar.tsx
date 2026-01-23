@@ -12,6 +12,7 @@ import Drawer from '@mui/material/Drawer';
 import MenuIcon from '@mui/icons-material/Menu';
 import Typography from '@mui/material/Typography';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 
 
 import ColorModeIconDropdown from '../../auth-shared-theme/ColorModeIconDropdown';
@@ -196,6 +197,22 @@ export default function AppAppBar() {
             </Button>
             <Button color="primary" variant="contained" size="small" onClick={handleSignUp}>
               Sign up
+            </Button>
+            <Button
+              color="secondary"
+              variant="outlined"
+              size="small"
+              startIcon={<SmartToyIcon />}
+              onClick={() => window.dispatchEvent(new CustomEvent('toggle-ai-assistant'))}
+              sx={{
+                mr: 1,
+                display: { xs: 'none', sm: 'flex' },
+                fontWeight: 'bold',
+                borderWidth: '2px',
+                '&:hover': { borderWidth: '2px' }
+              }}
+            >
+              Talk to AI
             </Button>
             <ColorModeIconDropdown />
           </Box>

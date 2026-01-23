@@ -10,6 +10,7 @@ import Features from './components/Features';
 import Testimonials from './components/Testimonials';
 import FAQ from './components/FAQ';
 import Footer from './components/Footer';
+import MasterAIAgent from './components/MasterAIAgent';
 
 export default function MarketingPage(props: { disableCustomTheme?: boolean }) {
   return (
@@ -32,6 +33,7 @@ export default function MarketingPage(props: { disableCustomTheme?: boolean }) {
         <Divider />
         <Footer />
       </div>
+      <MasterAIAgent />
     </AppTheme>
   );
 }
