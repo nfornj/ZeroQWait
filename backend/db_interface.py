@@ -161,6 +161,34 @@ class DatabaseInterface:
             finally:
                 db.close()
     
+    def search_shops(self, query: str = None, shop_type: str = None, city: str = None, limit: int = 10) -> List[Dict]:
+        """Fuzzy search for shops by name, type, and city."""
+        if self.use_supabase:
+            builder = supabase.table("shops").select("*")
+            if query:
+                builder = builder.ilike("name", f"%{query}%")
+            if shop_type:
+                builder = builder.ilike("shop_type", f"%{shop_type}%")
+            if city:
+                builder = builder.ilike("city", f"%{city}%")
+            response = builder.limit(limit).execute()
+            return response.data if response.data else []
+        else:
+            db = self.get_session()
+            try:
+                from sqlalchemy import or_
+                q = db.query(Shop)
+                if query:
+                    q = q.filter(Shop.name.ilike(f"%{query}%"))
+                if shop_type:
+                    q = q.filter(Shop.shop_type.ilike(f"%{shop_type}%"))
+                if city:
+                    q = q.filter(Shop.city.ilike(f"%{city}%"))
+                shops = q.limit(limit).all()
+                return [self._model_to_dict(shop) for shop in shops]
+            finally:
+                db.close()
+
     def get_shops(self, filters: Dict = None, skip: int = 0, limit: int = 100) -> List[Dict]:
         if self.use_supabase:
             query = supabase.table("shops").select("*")

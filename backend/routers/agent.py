@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from auth_utils import get_current_user_optional
-from agent_logic import FrontDeskAgent
+from agent_logic import FrontDeskAgent, MasterAgent
 from db_interface import db_interface
 
 router = APIRouter()
@@ -46,4 +46,24 @@ async def agent_chat(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Agent Error: {str(e)}"
+        )
+
+
+@router.post("/master/chat")
+async def master_agent_chat(
+    request: AgentChatRequest,
+    current_user: Optional[dict] = Depends(get_current_user_optional)
+):
+    """
+    Global Master AI Chat Endpoint.
+    Helpful assistant for the landing page.
+    """
+    try:
+        agent = MasterAgent()
+        result = await agent.chat(request.message, request.history)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Master Agent Error: {str(e)}"
         )

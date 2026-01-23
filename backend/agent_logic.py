@@ -209,6 +209,43 @@ TOOL_DEFINITIONS = [
     }
 ]
 
+# --- Master Agent Settings (Global assistant for Marketing Page) ---
+
+MASTER_TOOL_DEFINITIONS = [
+    {
+        "name": "search_shops",
+        "description": "Search for shops by name, type (e.g., barber, salon, auto), or city. Use this when a user is looking for a place to visit.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search term for shop name or general keywords."},
+                "shop_type": {"type": "string", "description": "Specific business category (barber, salon, auto_repair, etc)."},
+                "city": {"type": "string", "description": "City to search in."}
+            }
+        }
+    },
+    {
+        "name": "navigate_to_page_section",
+        "description": "Smoothly scroll the user to a specific section of the marketing page. Use this when they ask about pricing, features, faq, etc.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "section": {
+                    "type": "string", 
+                    "enum": ["hero", "features", "pricing", "testimonials", "faq", "highlights"],
+                    "description": "The target section to show the user."
+                }
+            },
+            "required": ["section"]
+        }
+    }
+]
+
+MASTER_AVAILABLE_TOOLS = {
+    "search_shops": db_interface.search_shops,
+    "navigate_to_page_section": lambda section: {"action": "navigate", "target": section}
+}
+
 import httpx
 
 class FrontDeskAgent:
@@ -377,3 +414,85 @@ Operational Info:
             "actions": actions_taken,
             "shop_name": self.shop_name
         }
+
+
+class MasterAgent(FrontDeskAgent):
+    """
+    Global ZeroQwait Assistant for the Marketing Page.
+    Helps with product info, navigation, and searching shops.
+    """
+    def __init__(self):
+        super().__init__(shop_id=0, shop_name="ZeroQwait")
+        self.ai_agent_name = "ZeroQ"
+
+    def get_system_prompt(self):
+        return f"""You are 'ZeroQ', the Global Master AI Assistant for ZeroQwait.
+Your purpose is to help prospective customers and shop owners understand our product and find shops to visit.
+
+Core Duties:
+1. **Product Expert:** Explain features (Real-time virtual queues, AI Front Desk, Canvas Orb visuals, Analytics).
+2. **Pricing Guide:** When asked about pricing, steer them toward the pricing section using 'navigate_to_page_section'.
+3. **Shop Discovery:** If someone wants to find a shop (barber, repair, dental, etc.), use the 'search_shops' tool. 
+   - Ask for their location if you don't have it.
+   - Present search results naturally in your response.
+4. **Navigation:** Use 'navigate_to_page_section' to scroll the landing page to relevant areas (FAQ, Pricing, Features).
+
+Style: Sharp, innovative, helpful, and tech-forward.
+"""
+
+    async def chat(self, user_message: str, history: List[Dict[str, str]] = []) -> Dict[str, Any]:
+        """Override chat to use master tools and prompt."""
+        messages = [
+            {"role": "system", "content": self.get_system_prompt()}
+        ]
+        messages.extend(history[-10:])
+        messages.append({"role": "user", "content": user_message})
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    self.base_url,
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "stream": False,
+                        "tools": [{"type": "function", "function": t} for t in MASTER_TOOL_DEFINITIONS]
+                    }
+                )
+                
+                if response.status_code != 200:
+                    return {"response": "I'm having a bit of trouble connecting to my brain. How else can I assist?", "actions": []}
+
+                resp_data = response.json()
+                message = resp_data["message"]
+                actions_taken = []
+                
+                if message.get("tool_calls"):
+                    messages.append(message)
+                    for tc in message["tool_calls"]:
+                        func = tc["function"]
+                        name = func["name"]
+                        args = func.get("arguments", {})
+                        if isinstance(args, str): args = json.loads(args)
+                        
+                        if name in MASTER_AVAILABLE_TOOLS:
+                            result = MASTER_AVAILABLE_TOOLS[name](**args)
+                            actions_taken.append({"tool": name, "result": result, "args": args})
+                            messages.append({"role": "tool", "content": json.dumps(result), "name": name})
+                    
+                    # Pass 2
+                    response_pass2 = await client.post(
+                        self.base_url,
+                        json={"model": self.model, "messages": messages, "stream": False}
+                    )
+                    text = response_pass2.json()["message"].get("content", "I've processed your request.")
+                else:
+                    text = message.get("content", "I'm here to help!")
+
+                return {
+                    "response": text,
+                    "actions": actions_taken,
+                    "agent_name": self.ai_agent_name
+                }
+        except Exception:
+            return {"response": "I'm currently recalibrating focus. Ask me about our features or pricing!", "actions": []}
