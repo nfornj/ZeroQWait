@@ -126,14 +126,37 @@ const QueueViewPage: React.FC = () => {
                 const item = response.data.queue_items.find(
                     (i: QueueItem) => i.id === parseInt(savedItemId)
                 );
-                if (item && item.status !== 'completed' && item.status !== 'cancelled') {
-                    setMyQueueItem(item);
-                    // Standardize on the numeric key
-                    localStorage.setItem(`queue_item_${shop.id}`, savedItemId);
+
+                if (item) {
+                    if (item.status === 'completed' || item.status === 'cancelled') {
+                        // Definitely done - clear it
+                        localStorage.removeItem(`queue_item_${shop.id}`);
+                        localStorage.removeItem(`queue_item_${shopId}`);
+                        setMyQueueItem(null);
+                    } else {
+                        // Still active
+                        setMyQueueItem(item);
+                        localStorage.setItem(`queue_item_${shop.id}`, savedItemId);
+                    }
                 } else {
-                    localStorage.removeItem(`queue_item_${shop.id}`);
-                    localStorage.removeItem(`queue_item_${shopId}`);
-                    setMyQueueItem(null);
+                    // Item not found in the currently fetched queue list. 
+                    // DO NOT clear it yet - it might just be the wrong queue object or transient sync issues.
+                    // Instead, use the estimate endpoint as a definitive "exists" check
+                    try {
+                        const checkRes = await axios.get(`/queues/items/${savedItemId}/estimate`);
+                        if (checkRes.data && (checkRes.data.status !== 'completed' && checkRes.data.status !== 'cancelled')) {
+                            // Item exists and is active!
+                            setMyQueueItem({
+                                id: parseInt(savedItemId),
+                                status: checkRes.data.status,
+                                position: checkRes.data.position,
+                                customer_name: "You" // Fallback name
+                            } as any);
+                        }
+                    } catch (e) {
+                        // If the specific check fails with 404, THEN we clear it
+                        // console.error("Item verified as gone:", e);
+                    }
                 }
             }
         } catch (err) {
