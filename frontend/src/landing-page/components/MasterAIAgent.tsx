@@ -67,7 +67,7 @@ const MasterAIAgent: React.FC = () => {
         setIsProcessing(true);
 
         try {
-            const response = await axios.post('/api/agent/master/chat', {
+            const response = await axios.post('/agent/master/chat', {
                 message: userText,
                 history: chatHistory.map(h => ({
                     role: h.role === 'ai' ? 'assistant' : 'user',
@@ -222,8 +222,23 @@ const MasterAIAgent: React.FC = () => {
                         gap: 2
                     }}
                 >
+                    {/* Insecure Context Warning */}
+                    {!window.isSecureContext && window.location.hostname !== 'localhost' && (
+                        <Box sx={{ mb: 2, p: 1, px: 2, bgcolor: 'rgba(255, 152, 0, 0.2)', border: '1px solid #ff9800', borderRadius: '10px' }}>
+                            <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+                                ⚠️ Microphone blocked. Use HTTPS or localhost to enable voice.
+                            </Typography>
+                        </Box>
+                    )}
+
                     <IconButton
-                        onClick={() => isListening ? stopListening() : startListening()}
+                        onClick={() => {
+                            if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+                                alert("Microphone access requires a secure connection (HTTPS). Please try accessing via localhost or a secure domain.");
+                                return;
+                            }
+                            isListening ? stopListening() : startListening();
+                        }}
                         sx={{
                             width: 90,
                             height: 90,

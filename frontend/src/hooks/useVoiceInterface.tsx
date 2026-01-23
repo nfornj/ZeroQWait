@@ -49,7 +49,14 @@ export const useVoiceInterface = (
             (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
         if (SpeechRecognition) {
-            setIsSupported(true);
+            // Also check if we are in a secure context (HTTPS or localhost)
+            // Browsers like Chrome disable SpeechRecognition/Mic on insecure origins
+            if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+                console.warn('Speech Recognition is disabled due to insecure context (HTTP). Please use HTTPS or localhost.');
+                setIsSupported(true); // Still "supported" but blocked
+            } else {
+                setIsSupported(true);
+            }
             recognitionRef.current = new SpeechRecognition();
             recognitionRef.current.continuous = continuous;
             recognitionRef.current.interimResults = true;
