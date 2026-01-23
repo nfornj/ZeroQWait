@@ -10,8 +10,9 @@ def simulate_historical_data(years=5, shops_prefix="test_bulk_"):
     try:
         print(f"📈 Starting 5-year historical simulation for shops with prefix: '{shops_prefix}'")
         
-        # 1. Target shops
-        shops = db.query(Shop).filter(Shop.slug.like(f"{shops_prefix}%")).all()
+        # 1. Target shops by owner's test username prefix
+        from models import User
+        shops = db.query(Shop).join(User, Shop.owner_id == User.id).filter(User.username.like(f"{shops_prefix}%")).all()
         if not shops:
             print("No shops found with the specified prefix.")
             return
