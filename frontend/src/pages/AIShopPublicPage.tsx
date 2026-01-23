@@ -104,6 +104,10 @@ const AIShopPublicPage: React.FC = () => {
 
             const enrollment = actions.find((a: any) => a.tool === 'enroll_customer' && a.result.success);
             if (enrollment) {
+                const item = enrollment.result.data;
+                if (item && item.id) {
+                    localStorage.setItem(`queue_item_${shop.id}`, item.id.toString());
+                }
                 setTimeout(() => navigate(`/queue/${shop.id}`), 4000);
             }
 

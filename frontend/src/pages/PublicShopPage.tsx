@@ -215,7 +215,7 @@ const PublicShopPage: React.FC = () => {
                                     <TextField
                                         fullWidth
                                         required
-                                        label="Your Name *"
+                                        label="Your Name"
                                         value={customerName}
                                         onChange={(e) => setCustomerName(e.target.value)}
                                         sx={{ mb: 2 }}
