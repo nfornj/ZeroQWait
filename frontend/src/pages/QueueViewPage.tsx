@@ -16,6 +16,7 @@ import {
     Alert,
     CircularProgress,
     Paper,
+    Grid,
 } from '@mui/material';
 import axios from 'axios';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -42,6 +43,7 @@ interface Shop {
     average_service_time: number;
     slug?: string;
     ai_agent_name?: string;
+    primary_color?: string;
 }
 
 interface QueueItem {
@@ -79,11 +81,16 @@ const QueueViewPage: React.FC = () => {
     useEffect(() => {
         if (shopId) {
             fetchShop();
+        }
+    }, [shopId]);
+
+    useEffect(() => {
+        if (shop) {
             fetchQueue();
             const interval = setInterval(fetchQueue, 5000); // Refresh every 5 seconds
             return () => clearInterval(interval);
         }
-    }, [shopId]);
+    }, [shop]);
 
     useEffect(() => {
         if (myQueueItem) {
@@ -107,19 +114,24 @@ const QueueViewPage: React.FC = () => {
     };
 
     const fetchQueue = async () => {
+        if (!shop) return;
         try {
-            const response = await axios.get(`/queues/shop/${shopId}/active`);
+            const response = await axios.get(`/queues/shop/${shop.id}/active`);
             setQueue(response.data);
 
-            // Check if user has an active queue item
-            const savedItemId = localStorage.getItem(`queue_item_${shopId}`);
+            // Check if user has an active queue item using the numeric ID primarily
+            const savedItemId = localStorage.getItem(`queue_item_${shop.id}`) || localStorage.getItem(`queue_item_${shopId}`);
+
             if (savedItemId) {
                 const item = response.data.queue_items.find(
                     (i: QueueItem) => i.id === parseInt(savedItemId)
                 );
                 if (item && item.status !== 'completed' && item.status !== 'cancelled') {
                     setMyQueueItem(item);
+                    // Standardize on the numeric key
+                    localStorage.setItem(`queue_item_${shop.id}`, savedItemId);
                 } else {
+                    localStorage.removeItem(`queue_item_${shop.id}`);
                     localStorage.removeItem(`queue_item_${shopId}`);
                     setMyQueueItem(null);
                 }
@@ -242,69 +254,88 @@ const QueueViewPage: React.FC = () => {
             )}
 
             <Box display="flex" flexWrap="wrap" gap={3}>
-                {/* My Queue Status */}
+                {/* My Queue Status or Redirection */}
                 {myQueueItem ? (
-                    <Box sx={{ flex: 1, minWidth: '250px' }}>
-                        <Card sx={{ bgcolor: 'primary.light', color: 'white' }}>
-                            <CardContent>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                    <Typography variant="h5">
-                                        Your Position
-                                    </Typography>
+                    <Box sx={{ flex: 1, minWidth: '300px' }}>
+                        <Card variant="outlined" sx={{
+                            borderRadius: 4,
+                            border: '1px solid #e0e0e0',
+                            overflow: 'hidden',
+                            boxShadow: '0 4px 25px rgba(0,0,0,0.05)'
+                        }}>
+                            <Box sx={{
+                                bgcolor: shop?.primary_color || 'primary.main',
+                                color: 'white',
+                                p: 3,
+                                textAlign: 'center'
+                            }}>
+                                <Typography variant="h6" sx={{ opacity: 0.9 }}>Your Current Wait</Typography>
+                                <Typography variant="h1" sx={{ fontWeight: 800, my: 1 }}>
+                                    #{myQueueItem.position}
+                                </Typography>
+                                <Chip
+                                    label={myQueueItem.status.replace('_', ' ').toUpperCase()}
+                                    sx={{
+                                        bgcolor: 'rgba(255,255,255,0.2)',
+                                        color: 'white',
+                                        fontWeight: 'bold',
+                                        px: 2
+                                    }}
+                                />
+                            </Box>
+
+                            <CardContent sx={{ p: 4 }}>
+                                <Grid container spacing={3}>
+                                    <Grid size={{ xs: 6 }}>
+                                        <Box sx={{ textAlign: 'center', p: 2, bgcolor: '#f8faff', borderRadius: 3 }}>
+                                            <PeopleIcon color="primary" sx={{ fontSize: 32, mb: 1 }} />
+                                            <Typography variant="h4" fontWeight="bold">
+                                                {waitEstimate?.people_ahead ?? '...'}
+                                            </Typography>
+                                            <Typography variant="caption" color="textSecondary">People Ahead</Typography>
+                                        </Box>
+                                    </Grid>
+                                    <Grid size={{ xs: 6 }}>
+                                        <Box sx={{ textAlign: 'center', p: 2, bgcolor: '#fff8f8', borderRadius: 3 }}>
+                                            <AccessTimeIcon color="error" sx={{ fontSize: 32, mb: 1 }} />
+                                            <Typography variant="h4" fontWeight="bold">
+                                                ~{waitEstimate?.estimated_wait_minutes ?? '...'}
+                                            </Typography>
+                                            <Typography variant="caption" color="textSecondary">Min Remaining</Typography>
+                                        </Box>
+                                    </Grid>
+                                </Grid>
+
+                                <Divider sx={{ my: 4 }} />
+
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                     <Button
-                                        variant="outlined"
-                                        size="small"
-                                        startIcon={<ExitToAppIcon />}
-                                        onClick={handleLeaveQueue}
+                                        fullWidth
+                                        variant="contained"
+                                        size="large"
+                                        startIcon={<SmartToyIcon />}
+                                        onClick={() => navigate(`/shop-ai/${shopId}`)}
                                         sx={{
-                                            color: 'white',
-                                            borderColor: 'white',
-                                            '&:hover': {
-                                                borderColor: 'white',
-                                                bgcolor: 'rgba(255,255,255,0.1)'
-                                            }
+                                            borderRadius: 3,
+                                            py: 1.5,
+                                            background: 'linear-gradient(45deg, #2196F3, #21CBF3)',
+                                            boxShadow: '0 3px 15px rgba(33, 203, 243, .3)',
                                         }}
                                     >
-                                        Leave Queue
+                                        Add Someone Else (AI Support)
+                                    </Button>
+
+                                    <Button
+                                        fullWidth
+                                        variant="outlined"
+                                        color="error"
+                                        startIcon={<ExitToAppIcon />}
+                                        onClick={handleLeaveQueue}
+                                        sx={{ borderRadius: 3, py: 1.5 }}
+                                    >
+                                        Exit the Queue
                                     </Button>
                                 </Box>
-                                <Divider sx={{ my: 2, bgcolor: 'white' }} />
-                                <Box textAlign="center" py={3}>
-                                    <Typography variant="h1" sx={{ fontWeight: 'bold' }}>
-                                        #{myQueueItem.position}
-                                    </Typography>
-                                    <Chip
-                                        label={myQueueItem.status.replace('_', ' ').toUpperCase()}
-                                        color={getStatusColor(myQueueItem.status) as any}
-                                        sx={{ mt: 2 }}
-                                    />
-                                </Box>
-                                {waitEstimate && (
-                                    <Box mt={3}>
-                                        <Box display="flex" flexWrap="wrap" gap={2}>
-                                            <Box sx={{ flex: 1, minWidth: '250px' }}>
-                                                <Box display="flex" alignItems="center">
-                                                    <PeopleIcon sx={{ mr: 1 }} />
-                                                    <Box>
-                                                        <Typography variant="h6">{waitEstimate.people_ahead}</Typography>
-                                                        <Typography variant="caption">People Ahead</Typography>
-                                                    </Box>
-                                                </Box>
-                                            </Box>
-                                            <Box sx={{ flex: 1, minWidth: '250px' }}>
-                                                <Box display="flex" alignItems="center">
-                                                    <AccessTimeIcon sx={{ mr: 1 }} />
-                                                    <Box>
-                                                        <Typography variant="h6">
-                                                            ~{waitEstimate.estimated_wait_minutes} min
-                                                        </Typography>
-                                                        <Typography variant="caption">Est. Wait Time</Typography>
-                                                    </Box>
-                                                </Box>
-                                            </Box>
-                                        </Box>
-                                    </Box>
-                                )}
                             </CardContent>
                         </Card>
                     </Box>
