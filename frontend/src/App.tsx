@@ -70,9 +70,11 @@ function App() {
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/search" element={<SearchPage />} />
-            <Route path="/queue/:shopId" element={<QueueViewPage />} />
             <Route path="/queue-counter" element={<QueueCounterPage />} />
           </Route>
+
+          {/* Standalone Status Page (No Global Navbar) */}
+          <Route path="/queue/:shopId" element={<QueueViewPage />} />
 
           {/* In-Shop Display (No Layout - Fullscreen) */}
           <Route path="/display/:shopId" element={<InShopDisplayPage />} />
