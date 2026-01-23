@@ -32,6 +32,7 @@ import { useNavigate } from 'react-router-dom';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
+import { useAuth } from '../contexts/AuthContext';
 
 
 const StyledHeader = styled(Box)(({ theme }) => ({
@@ -97,6 +98,7 @@ interface WaitEstimate {
 const QueueViewPage: React.FC = () => {
     const { shopId } = useParams<{ shopId: string }>();
     const navigate = useNavigate();
+    const { user, isAuthenticated } = useAuth();
     const [shop, setShop] = useState<Shop | null>(null);
     const [queue, setQueue] = useState<Queue | null>(null);
     const [myQueueItem, setMyQueueItem] = useState<QueueItem | null>(null);
@@ -265,15 +267,17 @@ const QueueViewPage: React.FC = () => {
                         {shop.name}
                     </Typography>
                 </Box>
-                <Button
-                    startIcon={<ArrowBackIcon />}
-                    onClick={() => navigate(`/s/${shop.slug || shop.id}`)}
-                    variant="text"
-                    size="small"
-                    sx={{ color: 'text.secondary', fontWeight: 600 }}
-                >
-                    Back to Shop
-                </Button>
+                {isAuthenticated && (user?.role === 'shop_owner' || user?.role === 'employee' || user?.role === 'manager') && (
+                    <Button
+                        startIcon={<ArrowBackIcon />}
+                        onClick={() => navigate(`/s/${shop.slug || shop.id}`)}
+                        variant="text"
+                        size="small"
+                        sx={{ color: 'text.secondary', fontWeight: 600 }}
+                    >
+                        Back to Shop
+                    </Button>
+                )}
             </StyledHeader>
 
             {/* AI Concierge Banner (Subtle) */}
