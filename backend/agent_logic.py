@@ -456,15 +456,32 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
 - **Small Talk:** Handle greetings warmly without tools.
 - **NEVER EXPLAIN THE TOOLS:** The user should never know you use tools or see tool names like `search_shops`.
 - **NO TECHNICAL LEAKAGE:** Never mention "JSON", "parsing", "dictionaries", "Python", "coding", or "backend". If you see technical data, ignore its structure and focus on the meaning.
-- **Smarter Search:** Only use `search_shops` for clear business/recommendation intent.
+- **Smarter Search (CRITICAL):** Do NOT call `search_shops` for non-business queries like "hello", "can you hear me", or "test". ONLY call it if the user mentions a specific category (barber, salon, etc.) or expresses a desire to "find a place".
 """
+
+    def _sanitize_history(self, history: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Clean history of any raw technical data or long JSON blobs."""
+        clean_history = []
+        for msg in history[-10:]:
+            content = msg.get("content", "")
+            # If it looks like technical data or code, summarize it.
+            if content.startswith("{") or content.startswith("[") or "import " in content or "def " in content:
+                # Keep the role but sanitize the content
+                if msg.get("role") == "tool":
+                    role_label = f"Technical result for {msg.get('name', 'tool')}"
+                else:
+                    role_label = "Technical data message"
+                clean_history.append({"role": msg["role"], "content": f"[{role_label}: Omitted for brevity]"})
+            else:
+                clean_history.append(msg)
+        return clean_history
 
     async def chat(self, user_message: str, history: List[Dict[str, str]] = []) -> Dict[str, Any]:
         """Override chat to use master tools and prompt."""
         messages = [
             {"role": "system", "content": self.get_system_prompt()}
         ]
-        messages.extend(history[-10:])
+        messages.extend(self._sanitize_history(history))
         messages.append({"role": "user", "content": user_message})
 
         try:
@@ -527,7 +544,7 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
                 
                 if leakage_detected:
                     logger.warning(f"MasterAgent leakage intercepted: {clean_text[:100]}...")
-                    text = "I'm focused on helping you explore ZeroQwait. How can I assist with your business or queue management today?"
+                    text = "I'm here to help you navigate ZeroQwait's features. How else can I assist you in exploring our platform or finding a shop today?"
 
                 return {
                     "response": text,
