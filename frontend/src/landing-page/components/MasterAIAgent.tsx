@@ -29,6 +29,8 @@ const MasterAIAgent: React.FC = () => {
     const [chatHistory, setChatHistory] = useState<Array<{ role: 'ai' | 'user', text: string, shops?: any[] }>>([
         { role: 'ai', text: "Welcome to ZeroQwait! I'm ZeroQ. How can I help you today?" }
     ]);
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const latestAIResponse = chatHistory[chatHistory.length - 1]?.role === 'ai' ? chatHistory[chatHistory.length - 1] : null;
     const navigate = useNavigate();
 
     const { isListening, transcript, startListening, stopListening, speak } = useVoiceInterface({
@@ -98,11 +100,18 @@ const MasterAIAgent: React.FC = () => {
             speak(agentText);
         } catch (err) {
             setIsProcessing(false);
-            const errorMsg = "I missed that. Could you say it again?";
-            setChatHistory(prev => [...prev, { role: 'ai', text: errorMsg }]);
-            speak(errorMsg);
         }
     };
+
+    // Auto-scroll to bottom of chat
+    useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTo({
+                top: scrollRef.current.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+    }, [chatHistory, transcript]);
 
     const latestAIResponse = chatHistory.filter(m => m.role === 'ai').slice(-1)[0];
 
@@ -157,26 +166,63 @@ const MasterAIAgent: React.FC = () => {
                         )}
                     </Box>
 
-                    {/* Minimalist Output Text Area */}
-                    <Box sx={{ textAlign: 'center', mt: 2, px: 4 }}>
-                        <Fade in={!isProcessing} key={isListening ? 'listening' : latestAIResponse?.text}>
+                    {/* Scrollable Transcript Area */}
+                    <Box
+                        ref={scrollRef}
+                        sx={{
+                            textAlign: 'center',
+                            mt: 2,
+                            px: 4,
+                            maxHeight: '40vh',
+                            overflowY: 'auto',
+                            width: '100%',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 3,
+                            maskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)',
+                            WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)',
+                            '&::-webkit-scrollbar': { display: 'none' },
+                            msOverflowStyle: 'none',
+                            scrollbarWidth: 'none'
+                        }}
+                    >
+                        {chatHistory.map((chat, index) => (
+                            <Box key={index} sx={{ opacity: index === chatHistory.length - 1 ? 1 : 0.4, transition: 'opacity 0.5s' }}>
+                                <Typography
+                                    variant="body1"
+                                    sx={{
+                                        fontWeight: 300,
+                                        lineHeight: 1.6,
+                                        letterSpacing: '0.01em',
+                                        color: chat.role === 'user' ? 'rgba(245, 225, 192, 0.9)' : 'rgba(255, 255, 255, 0.95)',
+                                        fontSize: { xs: '1.1rem', md: '1.4rem' },
+                                        maxWidth: '600px',
+                                        margin: '0 auto'
+                                    }}
+                                >
+                                    {chat.role === 'user' ? `“${chat.text}”` : chat.text}
+                                </Typography>
+                            </Box>
+                        ))}
+
+                        {isListening && transcript && (
                             <Typography
-                                variant="h3"
+                                variant="body1"
                                 sx={{
-                                    fontWeight: 200,
-                                    lineHeight: 1.3,
+                                    fontWeight: 300,
+                                    lineHeight: 1.6,
                                     letterSpacing: '0.01em',
-                                    color: 'rgba(255, 255, 255, 0.95)',
-                                    textShadow: '0 0 30px rgba(245, 225, 192, 0.2)',
-                                    fontSize: { xs: '1.5rem', md: '2.5rem' }
+                                    color: 'rgba(245, 225, 192, 0.6)',
+                                    fontSize: { xs: '1.1rem', md: '1.4rem' },
+                                    fontStyle: 'italic'
                                 }}
                             >
-                                {isListening ? (transcript || "I'm listening...") : latestAIResponse?.text}
+                                {transcript}
                             </Typography>
-                        </Fade>
+                        )}
 
                         {isProcessing && (
-                            <Typography variant="h6" sx={{ mt: 2, color: 'secondary.main', opacity: 0.6, fontStyle: 'italic' }}>
+                            <Typography variant="body2" sx={{ mt: 1, color: 'secondary.main', opacity: 0.6, fontStyle: 'italic' }}>
                                 Thinking...
                             </Typography>
                         )}
