@@ -448,7 +448,8 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
 - Be sharp, tech-forward, and impressively helpful.
 - When someone asks "what is this?", explain it as a Universal AI Front Desk for all service businesses.
 - If they ask about pricing, guide them to the pricing section using `navigate_to_page_section` AND summarize the tiers.
-- If they are looking for a shop, use `search_shops` immediately.
+- If they are looking for a shop, use `search_shops` immediately. 
+- **CRITICAL:** Always use the `search_shops` tool if the user asks for a place, a category of business, or recommendations. Never just list shops in text format; always provide the structured data via the tool so the UI can display them correctly.
 """
 
     async def chat(self, user_message: str, history: List[Dict[str, str]] = []) -> Dict[str, Any]:

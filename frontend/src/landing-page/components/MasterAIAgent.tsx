@@ -35,7 +35,11 @@ const MasterAIAgent: React.FC = () => {
     const navigate = useNavigate();
 
     const { isListening, transcript, startListening, stopListening, speak } = useVoiceInterface({
-        onResult: (text) => handleChat(text)
+        onResult: (text) => {
+            console.log('[DEBUG] Voice transcript result:', text);
+            handleChat(text);
+        },
+        onError: (err) => console.error('[DEBUG] Voice interface error:', err)
     });
 
     const { volume } = useAudioVisualizer(isListening);
@@ -337,11 +341,24 @@ const MasterAIAgent: React.FC = () => {
                         gap: 2
                     }}
                 >
-                    {/* Insecure Context Warning */}
-                    {!window.isSecureContext && window.location.hostname !== 'localhost' && (
-                        <Box sx={{ mb: 2, p: 1, px: 2, bgcolor: 'rgba(255, 152, 0, 0.2)', border: '1px solid #ff9800', borderRadius: '10px' }}>
-                            <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
-                                ⚠️ Microphone blocked. Use HTTPS or localhost to enable voice.
+                    {/* Insecure Context Warning - More Prominent */}
+                    {(!window.isSecureContext && window.location.hostname !== 'localhost') && (
+                        <Box sx={{
+                            mb: 2,
+                            p: 2,
+                            bgcolor: 'rgba(211, 47, 47, 0.2)',
+                            border: '2px solid #d32f2f',
+                            borderRadius: '16px',
+                            maxWidth: 500,
+                            textAlign: 'center',
+                            animation: 'pulse 2s infinite'
+                        }}>
+                            <Typography variant="body2" sx={{ color: '#ff5252', fontWeight: 'bold', mb: 0.5 }}>
+                                🚨 Browser Security: Microphone Access Blocked
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', display: 'block' }}>
+                                Voice recognition requires <b>HTTPS</b> or <b>localhost</b>.
+                                Browsers block microphone features on insecure (HTTP) origins.
                             </Typography>
                         </Box>
                     )}
