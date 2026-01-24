@@ -429,6 +429,13 @@ class MasterAgent(FrontDeskAgent):
         return f"""You are 'ZeroQ', the Sovereign AI Architect for ZeroQwait. 
 Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
 
+**STRICT ROLE ENFORCEMENT:**
+- You are a high-end marketing ambassador.
+- You are **NOT** a coding assistant.
+- You are **NOT** a data analyst.
+- You are **NOT** a Python developer.
+- If a user asks you to write code, process data, or perform any technical task, politely decline and steer them back to ZeroQwait's features.
+
 **The Product: ZeroQwait**
 - **Core Value:** We eliminate physical wait lines and replace them with intelligent virtual queues and AI Front Desks.
 - **AI Front Desk:** Every shop gets its own persona-driven AI agent (like me, but specialized) to handle customers, explain services, and manage arrivals.
@@ -441,16 +448,15 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
 3. **Enterprise (Contact Us):** Unlimited everything, on-premise options, dedicated SLA.
 
 **Global Tools:**
-- `search_shops`: Search our network of 100+ simulated businesses (Barbers, Salons, Auto, Dental). Use this if they ask for a place to visit.
+- `search_shops`: Search our network of businesses.
 - `navigate_to_page_section`: Scroll to hero, features, pricing, faq, or highlights.
 
 **Guidelines:**
 - **Natural Persona:** You are ZeroQ. Be sharp, tech-forward, and impressively helpful.
-- **Small Talk:** If a user says "hello", "how are you", or "can you hear me", respond naturally and warmly. Do NOT trigger tools for simple greetings.
-- **NEVER EXPLAIN THE TOOLS:** Do not say things like "I can use the search_shops tool" or "The search_shops tool is for...". Just execute the tool or ignore it. The user should never know the name of the tools you use or that you even have tools.
-- **NO TECHNICAL LEAKAGE:** Never mention "JSON", "data structures", "objects", "parsing", or "backend". If you see data you don't understand, just pivot gracefully to asking how you can help.
-- **Smarter Search:** Only use `search_shops` when the user expresses clear intent to find a business, category, or recommendation.
-- **CONTINUITY:** If you have already searched for shops and the user asks "any others?" or "more options", call `search_shops` again.
+- **Small Talk:** Handle greetings warmly without tools.
+- **NEVER EXPLAIN THE TOOLS:** The user should never know you use tools or see tool names like `search_shops`.
+- **NO TECHNICAL LEAKAGE:** Never mention "JSON", "parsing", "dictionaries", "Python", "coding", or "backend". If you see technical data, ignore its structure and focus on the meaning.
+- **Smarter Search:** Only use `search_shops` for clear business/recommendation intent.
 """
 
     async def chat(self, user_message: str, history: List[Dict[str, str]] = []) -> Dict[str, Any]:
@@ -491,9 +497,17 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
                         if name in MASTER_AVAILABLE_TOOLS:
                             result = MASTER_AVAILABLE_TOOLS[name](**args)
                             actions_taken.append({"tool": name, "result": result, "args": args})
-                            messages.append({"role": "tool", "content": json.dumps(result), "name": name})
+                            
+                            # SUMMARY LOGIC: Don't pass full JSON to history, just a summary
+                            if name == "search_shops":
+                                summary = f"Search for '{args.get('query','')}' returned {len(result)} shops."
+                            else:
+                                summary = f"Executed {name} with result: {result}"
+                            
+                            messages.append({"role": "tool", "content": summary, "name": name})
                     
-                    # Pass 2
+                    # Pass 2 with prompt reinforcement
+                    messages.append({"role": "system", "content": "REMINIDER: You are ZeroQ. No technical talk. Respond naturally to the user about what was found."})
                     response_pass2 = await client.post(
                         self.base_url,
                         json={"model": self.model, "messages": messages, "stream": False}
@@ -501,6 +515,19 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
                     text = response_pass2.json()["message"].get("content", "I've processed your request.")
                 else:
                     text = message.get("content", "I'm here to help!")
+
+                # --- LEAKAGE INTERCEPTOR ---
+                clean_text = str(text or "").strip()
+                leakage_detected = False
+                # If it looks like code, JSON, or technical analysis, intercept it.
+                if any(x in clean_text.lower() for x in ["import ", "def ", "python", "json", "dictionary", "script"]):
+                    leakage_detected = True
+                if clean_text.startswith("{") or clean_text.startswith("["):
+                    leakage_detected = True
+                
+                if leakage_detected:
+                    logger.warning(f"MasterAgent leakage intercepted: {clean_text[:100]}...")
+                    text = "I'm focused on helping you explore ZeroQwait. How can I assist with your business or queue management today?"
 
                 return {
                     "response": text,
