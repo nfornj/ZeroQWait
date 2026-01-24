@@ -156,9 +156,9 @@ const MasterAIAgent: React.FC = () => {
                         )}
                     </Box>
 
-                    {/* Minimalist Output Text */}
-                    <Box sx={{ textAlign: 'center', mt: 2 }}>
-                        <Fade in={!isProcessing} key={latestAIResponse?.text}>
+                    {/* Minimalist Output Text Area */}
+                    <Box sx={{ textAlign: 'center', mt: 2, px: 4 }}>
+                        <Fade in={!isProcessing} key={isListening ? 'listening' : latestAIResponse?.text}>
                             <Typography
                                 variant="h3"
                                 sx={{
@@ -167,18 +167,18 @@ const MasterAIAgent: React.FC = () => {
                                     letterSpacing: '0.01em',
                                     color: 'rgba(255, 255, 255, 0.95)',
                                     textShadow: '0 0 30px rgba(245, 225, 192, 0.2)',
-                                    fontSize: { xs: '1.8rem', md: '2.5rem' }
+                                    fontSize: { xs: '1.5rem', md: '2.5rem' }
                                 }}
                             >
-                                {latestAIResponse?.text}
+                                {isListening ? (transcript || "I'm listening...") : latestAIResponse?.text}
                             </Typography>
                         </Fade>
 
-                        <Fade in={isListening}>
-                            <Typography variant="h5" sx={{ mt: 3, color: '#f5e1c0', fontWeight: 300, opacity: 0.8 }}>
-                                {transcript || "Listening..."}
+                        {isProcessing && (
+                            <Typography variant="h6" sx={{ mt: 2, color: 'secondary.main', opacity: 0.6, fontStyle: 'italic' }}>
+                                Thinking...
                             </Typography>
-                        </Fade>
+                        )}
                     </Box>
 
                     {/* Shop Results Cards (Compact) */}

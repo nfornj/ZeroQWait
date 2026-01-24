@@ -56,11 +56,12 @@ async def master_agent_chat(
 ):
     """
     Global Master AI Chat Endpoint.
-    Helpful assistant for the landing page.
     """
+    print(f"[DEBUG] Master agent chat request received: {request.message}")
     try:
         agent = MasterAgent()
         result = await agent.chat(request.message, request.history)
+        print(f"[DEBUG] Master agent response: {result['response'][:50]}...")
         return result
     except Exception as e:
         raise HTTPException(
