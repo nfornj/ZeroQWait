@@ -10,6 +10,7 @@ import Chip from '@mui/material/Chip';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import visuallyHidden from '@mui/utils/visuallyHidden';
 import { styled } from '@mui/material/styles';
+import FloatingAIOrb from './FloatingAIOrb';
 
 const StyledBox = styled('div')(({ theme }) => ({
   alignSelf: 'center',
@@ -61,57 +62,8 @@ export default function Hero() {
           pb: { xs: 8, sm: 12 },
         }}
       >
-        {/* AI Introduction Banner */}
-        <Box
-          sx={{
-            mb: 4,
-            p: 1.5,
-            px: 3,
-            borderRadius: '50px',
-            background: 'rgba(156, 39, 176, 0.1)',
-            border: '1px solid rgba(156, 39, 176, 0.3)',
-            backdropFilter: 'blur(10px)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            cursor: 'pointer',
-            transition: 'all 0.3s ease',
-            '&:hover': {
-              background: 'rgba(156, 39, 176, 0.2)',
-              transform: 'translateY(-2px)'
-            }
-          }}
-          onClick={() => window.dispatchEvent(new CustomEvent('toggle-ai-assistant'))}
-        >
-          <Chip
-            label="NEW"
-            size="small"
-            sx={{
-              bgcolor: 'secondary.main',
-              color: 'white',
-              fontWeight: 'bold',
-              height: 20,
-              fontSize: '0.65rem'
-            }}
-          />
-          <Typography variant="body2" sx={{ color: 'secondary.main', fontWeight: 600 }}>
-            Meet ZeroQ: Your AI-Powered Master Assistant is here!
-          </Typography>
-          <Button
-            size="small"
-            variant="text"
-            sx={{
-              p: 0,
-              minWidth: 0,
-              color: 'secondary.main',
-              textTransform: 'none',
-              fontWeight: 700,
-              textDecoration: 'underline'
-            }}
-          >
-            Say Hello
-          </Button>
-        </Box>
+        {/* Floating AI Orb entry point */}
+        <FloatingAIOrb />
         <Stack
           spacing={2}
           useFlexGap
