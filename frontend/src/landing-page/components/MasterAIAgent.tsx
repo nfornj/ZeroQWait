@@ -113,7 +113,6 @@ const MasterAIAgent: React.FC = () => {
         }
     }, [chatHistory, transcript]);
 
-    const latestAIResponse = chatHistory.filter(m => m.role === 'ai').slice(-1)[0];
 
     return (
         <Fade in={isOpen}>
