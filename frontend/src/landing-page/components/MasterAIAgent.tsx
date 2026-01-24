@@ -143,116 +143,184 @@ const MasterAIAgent: React.FC = () => {
                     <CloseIcon sx={{ fontSize: 40 }} />
                 </IconButton>
 
-                <Stack spacing={4} alignItems="center" sx={{ maxWidth: '80%', width: 800 }}>
+                <Stack
+                    direction={latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? "row" : "column"}
+                    spacing={latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 8 : 4}
+                    alignItems="center"
+                    justifyContent="center"
+                    sx={{
+                        maxWidth: '95%',
+                        width: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 1400 : 800,
+                        transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+                    }}
+                >
+                    {/* Left Column: AI Assistant (Sphere + Transcript) */}
+                    <Box sx={{
+                        flex: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 0.8 : 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 2,
+                        transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+                        width: '100%'
+                    }}>
+                        {/* The Particle Sphere */}
+                        <Box sx={{ position: 'relative', width: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 300 : 400, height: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 300 : 400, transition: 'all 0.8s ease' }}>
+                            <ParticleSphere volume={volume} isListening={isListening} />
+                            {isProcessing && (
+                                <CircularProgress
+                                    size={latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 200 : 260}
+                                    thickness={1}
+                                    sx={{
+                                        position: 'absolute',
+                                        top: '50%',
+                                        left: '50%',
+                                        marginTop: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '-100px' : '-130px',
+                                        marginLeft: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '-100px' : '-130px',
+                                        color: 'rgba(245, 225, 192, 0.2)',
+                                        animationDuration: '1.5s',
+                                        transition: 'all 0.8s ease'
+                                    }}
+                                />
+                            )}
+                        </Box>
 
-                    {/* The Particle Sphere */}
-                    <Box sx={{ position: 'relative', width: 400, height: 400 }}>
-                        <ParticleSphere volume={volume} isListening={isListening} />
-                        {isProcessing && (
-                            <CircularProgress
-                                size={260}
-                                thickness={1}
-                                sx={{
-                                    position: 'absolute',
-                                    top: '50%',
-                                    left: '50%',
-                                    marginTop: '-130px',
-                                    marginLeft: '-130px',
-                                    color: 'rgba(245, 225, 192, 0.2)',
-                                    animationDuration: '1.5s'
-                                }}
-                            />
-                        )}
-                    </Box>
+                        {/* Scrollable Transcript Area */}
+                        <Box
+                            ref={scrollRef}
+                            sx={{
+                                textAlign: 'center',
+                                mt: 2,
+                                px: 4,
+                                maxHeight: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '30vh' : '40vh',
+                                overflowY: 'auto',
+                                width: '100%',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 3,
+                                maskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)',
+                                WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)',
+                                '&::-webkit-scrollbar': { display: 'none' },
+                                msOverflowStyle: 'none',
+                                scrollbarWidth: 'none',
+                                transition: 'all 0.8s ease'
+                            }}
+                        >
+                            {chatHistory.map((chat, index) => (
+                                <Box key={index} sx={{ opacity: index === chatHistory.length - 1 ? 1 : 0.4, transition: 'opacity 0.5s' }}>
+                                    <Typography
+                                        variant="body1"
+                                        sx={{
+                                            fontWeight: 300,
+                                            lineHeight: 1.6,
+                                            letterSpacing: '0.01em',
+                                            color: chat.role === 'user' ? 'rgba(245, 225, 192, 0.9)' : 'rgba(255, 255, 255, 0.95)',
+                                            fontSize: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '1.1rem' : { xs: '1.1rem', md: '1.4rem' },
+                                            maxWidth: '600px',
+                                            margin: '0 auto',
+                                            transition: 'all 0.8s ease'
+                                        }}
+                                    >
+                                        {chat.role === 'user' ? `“${chat.text}”` : chat.text}
+                                    </Typography>
+                                </Box>
+                            ))}
 
-                    {/* Scrollable Transcript Area */}
-                    <Box
-                        ref={scrollRef}
-                        sx={{
-                            textAlign: 'center',
-                            mt: 2,
-                            px: 4,
-                            maxHeight: '40vh',
-                            overflowY: 'auto',
-                            width: '100%',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 3,
-                            maskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)',
-                            WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)',
-                            '&::-webkit-scrollbar': { display: 'none' },
-                            msOverflowStyle: 'none',
-                            scrollbarWidth: 'none'
-                        }}
-                    >
-                        {chatHistory.map((chat, index) => (
-                            <Box key={index} sx={{ opacity: index === chatHistory.length - 1 ? 1 : 0.4, transition: 'opacity 0.5s' }}>
+                            {isListening && transcript && (
                                 <Typography
                                     variant="body1"
                                     sx={{
                                         fontWeight: 300,
                                         lineHeight: 1.6,
                                         letterSpacing: '0.01em',
-                                        color: chat.role === 'user' ? 'rgba(245, 225, 192, 0.9)' : 'rgba(255, 255, 255, 0.95)',
-                                        fontSize: { xs: '1.1rem', md: '1.4rem' },
-                                        maxWidth: '600px',
-                                        margin: '0 auto'
+                                        color: 'rgba(245, 225, 192, 0.6)',
+                                        fontSize: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '1.1rem' : { xs: '1.1rem', md: '1.4rem' },
+                                        fontStyle: 'italic',
+                                        transition: 'all 0.8s ease'
                                     }}
                                 >
-                                    {chat.role === 'user' ? `“${chat.text}”` : chat.text}
+                                    {transcript}
                                 </Typography>
-                            </Box>
-                        ))}
+                            )}
 
-                        {isListening && transcript && (
-                            <Typography
-                                variant="body1"
-                                sx={{
-                                    fontWeight: 300,
-                                    lineHeight: 1.6,
-                                    letterSpacing: '0.01em',
-                                    color: 'rgba(245, 225, 192, 0.6)',
-                                    fontSize: { xs: '1.1rem', md: '1.4rem' },
-                                    fontStyle: 'italic'
-                                }}
-                            >
-                                {transcript}
-                            </Typography>
-                        )}
-
-                        {isProcessing && (
-                            <Typography variant="body2" sx={{ mt: 1, color: 'secondary.main', opacity: 0.6, fontStyle: 'italic' }}>
-                                Thinking...
-                            </Typography>
-                        )}
+                            {isProcessing && (
+                                <Typography variant="body2" sx={{ mt: 1, color: 'secondary.main', opacity: 0.6, fontStyle: 'italic' }}>
+                                    Thinking...
+                                </Typography>
+                            )}
+                        </Box>
                     </Box>
 
-                    {/* Shop Results Cards (Compact) */}
+                    {/* Right Column: Shop Results List (Animated) */}
                     {latestAIResponse?.shops && latestAIResponse.shops.length > 0 && (
-                        <Fade in={true}>
-                            <Stack direction="row" spacing={2} sx={{ mt: 4, overflowX: 'auto', width: '100%', pb: 2, justifyContent: 'center' }}>
-                                {latestAIResponse.shops.map((shop) => (
-                                    <Card key={shop.id} sx={{ minWidth: 260, bgcolor: 'rgba(255,255,255,0.08)', borderRadius: '20px', color: 'white' }}>
-                                        <CardContent sx={{ p: 2 }}>
-                                            <Stack direction="row" spacing={2} alignItems="center">
-                                                <Avatar src={shop.logo_url} sx={{ width: 48, height: 48, borderRadius: '12px' }} />
-                                                <Box sx={{ flex: 1 }}>
-                                                    <Typography variant="subtitle1" fontWeight="600">{shop.name}</Typography>
-                                                    <Typography variant="caption" sx={{ opacity: 0.6 }}>{shop.city}</Typography>
-                                                </Box>
-                                                <Button
-                                                    size="small"
-                                                    variant="contained"
-                                                    sx={{ bgcolor: 'white', color: 'black', '&:hover': { bgcolor: 'rgba(255,255,255,0.8)' } }}
-                                                    onClick={() => navigate(`/s/${shop.slug}`)}
-                                                >
-                                                    Visit
-                                                </Button>
-                                            </Stack>
-                                        </CardContent>
-                                    </Card>
-                                ))}
-                            </Stack>
+                        <Fade in={true} timeout={1000}>
+                            <Box sx={{
+                                flex: 1.2,
+                                width: '100%',
+                                maxHeight: '70vh',
+                                overflowY: 'auto',
+                                pr: 2,
+                                '&::-webkit-scrollbar': { width: '4px' },
+                                '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(255,255,255,0.1)', borderRadius: '10px' }
+                            }}>
+                                <Typography variant="h5" sx={{ mb: 3, fontWeight: 300, color: 'rgba(245, 225, 192, 0.9)' }}>
+                                    Found {latestAIResponse.shops.length} results
+                                </Typography>
+                                <Stack spacing={3}>
+                                    {latestAIResponse.shops.map((shop) => (
+                                        <Card
+                                            key={shop.id}
+                                            sx={{
+                                                bgcolor: 'rgba(255,255,255,0.05)',
+                                                borderRadius: '24px',
+                                                color: 'white',
+                                                border: '1px solid rgba(255,255,255,0.05)',
+                                                transition: 'all 0.3s ease',
+                                                '&:hover': {
+                                                    bgcolor: 'rgba(255,255,255,0.08)',
+                                                    transform: 'translateY(-4px)',
+                                                    borderColor: 'rgba(245, 225, 192, 0.3)'
+                                                }
+                                            }}
+                                        >
+                                            <CardContent sx={{ p: 3 }}>
+                                                <Stack direction="row" spacing={3} alignItems="center">
+                                                    <Avatar
+                                                        src={shop.logo_url}
+                                                        sx={{ width: 80, height: 80, borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)' }}
+                                                    />
+                                                    <Box sx={{ flex: 1 }}>
+                                                        <Typography variant="h6" fontWeight="600" sx={{ mb: 0.5 }}>{shop.name}</Typography>
+                                                        <Typography variant="body2" sx={{ opacity: 0.6, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                            <LocationOnIcon sx={{ fontSize: 16 }} />
+                                                            {shop.address}, {shop.city}
+                                                        </Typography>
+                                                        <Box sx={{ mt: 1.5, display: 'flex', gap: 1 }}>
+                                                            <Chip label="Open Now" size="small" sx={{ bgcolor: 'rgba(76, 175, 80, 0.1)', color: '#4caf50', border: '1px solid rgba(76, 175, 80, 0.2)' }} />
+                                                            <Chip label={`${shop.average_service_time || 30}m wait`} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid rgba(255,255,255,0.1)' }} />
+                                                        </Box>
+                                                    </Box>
+                                                    <Button
+                                                        variant="contained"
+                                                        sx={{
+                                                            bgcolor: 'rgba(245, 225, 192, 0.9)',
+                                                            color: 'black',
+                                                            fontWeight: 'bold',
+                                                            px: 4,
+                                                            py: 1.5,
+                                                            borderRadius: '16px',
+                                                            '&:hover': { bgcolor: '#fff' }
+                                                        }}
+                                                        onClick={() => navigate(`/s/${shop.slug}`)}
+                                                    >
+                                                        Join Queue
+                                                    </Button>
+                                                </Stack>
+                                            </CardContent>
+                                        </Card>
+                                    ))}
+                                </Stack>
+                            </Box>
                         </Fade>
                     )}
                 </Stack>
