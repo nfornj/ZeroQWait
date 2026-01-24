@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Typography, Fade } from '@mui/material';
 import { styled, keyframes } from '@mui/material/styles';
-import ParticleSphere from './ParticleSphere';
+import ParticleSphere from '../../components/agent/ParticleSphere';
 
 const float = keyframes`
   0% { transform: translateY(0px) rotate(0deg); }
