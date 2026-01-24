@@ -185,6 +185,9 @@ class DatabaseInterface:
                 if city:
                     q = q.filter(Shop.city.ilike(f"%{city}%"))
                 shops = q.limit(limit).all()
+                # Fallback: If no results for query, return popular shops
+                if not shops and (query or shop_type or city):
+                    shops = db.query(Shop).limit(limit).all()
                 return [self._model_to_dict(shop) for shop in shops]
             finally:
                 db.close()

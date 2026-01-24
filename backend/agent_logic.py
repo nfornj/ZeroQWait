@@ -450,6 +450,8 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
 - If they ask about pricing, guide them to the pricing section using `navigate_to_page_section` AND summarize the tiers.
 - If they are looking for a shop, use `search_shops` immediately. 
 - **CRITICAL:** Always use the `search_shops` tool if the user asks for a place, a category of business, or recommendations. Never just list shops in text format; always provide the structured data via the tool so the UI can display them correctly.
+- **NEVER EXPLAIN THE TOOLS:** Do not say things like "I can use the search_shops tool" or "The search_shops tool is for...". Just execute the tool. The user should never know the name of the tools you use.
+- **CONTINUITY:** If you have already searched for shops and the user asks "any others?" or "more options", call `search_shops` again with a slightly different or broader query.
 """
 
     async def chat(self, user_message: str, history: List[Dict[str, str]] = []) -> Dict[str, Any]:
