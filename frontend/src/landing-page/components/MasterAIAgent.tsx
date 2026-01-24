@@ -255,6 +255,38 @@ const MasterAIAgent: React.FC = () => {
                     <Typography variant="caption" sx={{ opacity: 0.4, letterSpacing: '0.1em' }}>
                         {isListening ? "STOP LISTENING" : "START VOICE CONVERSATION"}
                     </Typography>
+
+                    {/* Text Input Fallback (always visible if not listening) */}
+                    {!isListening && (
+                        <Box sx={{ mt: 3, width: { xs: '90vw', sm: 400 }, transition: 'all 0.3s' }}>
+                            <TextField
+                                fullWidth
+                                placeholder="Type or speak to ZeroQ..."
+                                variant="outlined"
+                                autoFocus
+                                onKeyPress={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const target = e.target as HTMLInputElement;
+                                        handleChat(target.value);
+                                        target.value = '';
+                                    }
+                                }}
+                                slotProps={{
+                                    input: {
+                                        sx: {
+                                            borderRadius: '30px',
+                                            bgcolor: 'rgba(255,255,255,0.05)',
+                                            color: 'white',
+                                            '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                                            '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.2)' },
+                                            '&.Mui-focused fieldset': { borderColor: 'rgba(245, 225, 192, 0.4)' }
+                                        },
+                                        endAdornment: <SearchIcon sx={{ color: 'rgba(255,255,255,0.3)', mr: 1 }} />
+                                    }
+                                }}
+                            />
+                        </Box>
+                    )}
                 </Box>
             </Box>
         </Fade>
