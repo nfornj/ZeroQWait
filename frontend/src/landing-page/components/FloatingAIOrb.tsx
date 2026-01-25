@@ -47,7 +47,7 @@ const GlowEffect = styled(Box)({
 
 const Label = styled(Typography)({
     position: 'absolute',
-    top: '-50px',
+    top: '-75px',
     color: '#A855F7',
     fontWeight: 600,
     fontSize: '0.9rem',
