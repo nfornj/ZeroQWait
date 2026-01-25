@@ -31,9 +31,10 @@ jobs:
           echo "📥 Pulling latest changes from GitHub..."
           git pull origin main
           
-          # Stop containers
-          echo "🛑 Stopping containers..."
-          docker compose -f docker-compose.prod.yml down
+          # Stop containers and cleanup
+          echo "🛑 Stopping containers and cleaning up volumes..."
+          docker compose -f docker-compose.prod.yml down -v
+          docker system prune -f
           
           # Build new images
           echo "🔨 Building Docker images..."

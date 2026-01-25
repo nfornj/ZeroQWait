@@ -419,6 +419,9 @@ const MasterAIAgent: React.FC = () => {
                     <Typography variant="caption" sx={{ opacity: 0.4, letterSpacing: '0.1em' }}>
                         {isListening ? "STOP LISTENING" : "START VOICE CONVERSATION"}
                     </Typography>
+                    <Typography variant="caption" sx={{ opacity: 0.2, fontSize: '0.6rem' }}>
+                        v1.0.1-light
+                    </Typography>
 
                     {/* Text Input Fallback (always visible if not listening) */}
                     {!isListening && (
