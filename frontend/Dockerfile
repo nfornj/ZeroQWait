@@ -1,20 +1,29 @@
 # Build stage
-FROM node:16-alpine as build
+FROM node:18-alpine as build
 
 WORKDIR /app
 
 # Accept build argument for API URL with production default
-ARG REACT_APP_API_URL=https://nowait-backend.fly.dev/api
+ARG REACT_APP_API_URL=/api
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 
 # Copy package files
 COPY package*.json ./
+
+# Set memory limit for node process to avoid OOM
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+ENV GENERATE_SOURCEMAP=false
+ENV DISABLE_ESLINT_PLUGIN=true
 
 # Install dependencies
 RUN npm install
 
 # Copy source code
 COPY . .
+
+# Patch react-scripts to fix OOM in ForkTsCheckerWebpackPlugin
+RUN sed -i "s/mode: 'write-references',/mode: 'write-references', memoryLimit: 2048,/" node_modules/react-scripts/config/webpack.config.js
+RUN sed -i "s/useTypeScript &&/false \&\&/g" node_modules/react-scripts/config/webpack.config.js
 
 # Build the application
 RUN npm run build

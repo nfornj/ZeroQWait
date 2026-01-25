@@ -84,7 +84,7 @@ const EmployeeSelector: React.FC<EmployeeSelectorProps> = ({
         const clockInTime = new Date(clockIn);
         const diff = now.getTime() - clockInTime.getTime();
         const minutes = Math.floor(diff / 60000);
-        
+
         if (minutes < 60) {
             return `${minutes}m ago`;
         }
@@ -155,7 +155,6 @@ const EmployeeSelector: React.FC<EmployeeSelectorProps> = ({
                                                 selectedEmployeeId === employee.user_id
                                                     ? 'primary.main'
                                                     : 'divider',
-                                            borderRadius: 2,
                                             bgcolor:
                                                 selectedEmployeeId === employee.user_id
                                                     ? 'primary.light'

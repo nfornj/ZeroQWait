@@ -5,12 +5,6 @@ import {
     Typography,
     Button,
     Paper,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
     Dialog,
     DialogTitle,
     DialogContent,
@@ -29,6 +23,8 @@ import RestoreIcon from '@mui/icons-material/Restore';
 import PeopleIcon from '@mui/icons-material/People';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import AttendanceCalendar from '../components/AttendanceCalendar';
+import TeamDataGrid from '../components/dashboard/TeamDataGrid';
+import Header from '../components/dashboard/Header';
 
 
 interface Employee {
@@ -53,7 +49,8 @@ const EmployeeManagementPage: React.FC = () => {
     const [formData, setFormData] = useState({
         username: '',
         email: '',
-        password: ''
+        password: '',
+        role: 'employee'
     });
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
@@ -67,69 +64,18 @@ const EmployeeManagementPage: React.FC = () => {
     const [shiftsLoading, setShiftsLoading] = useState(false);
     const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState<number | null>(null);
 
-    useEffect(() => {
-        fetchShopAndEmployees();
+    const fetchEmployees = React.useCallback(async (id: number, token: string) => {
+        try {
+            const response = await axios.get(`/shops/${id}/employees`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setEmployees(response.data);
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to load employees');
+        }
     }, []);
 
-    useEffect(() => {
-        // Fetch shifts when switching to attendance tab
-        if (currentTab === 1 && shopId) {
-            const token = localStorage.getItem('token');
-            if (token) {
-                fetchShifts(shopId, token, selectedEmployeeFilter);
-            }
-        }
-    }, [currentTab, shopId, selectedEmployeeFilter]);
-
-    useEffect(() => {
-        const checkUsername = async () => {
-            if (!formData.username || formData.username.length < 3) {
-                setUsernameAvailable(null);
-                return;
-            }
-
-            setCheckingUsername(true);
-            try {
-                const response = await axios.get(`/check-username/${formData.username}`);
-                setUsernameAvailable(response.data.available);
-            } catch (err) {
-                console.error('Failed to check username:', err);
-                setUsernameAvailable(null);
-            } finally {
-                setCheckingUsername(false);
-            }
-        };
-
-        const timeoutId = setTimeout(checkUsername, 500);
-        return () => clearTimeout(timeoutId);
-    }, [formData.username]);
-
-    useEffect(() => {
-        const checkEmail = async () => {
-            // Basic email validation
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!formData.email || !emailRegex.test(formData.email)) {
-                setEmailAvailable(null);
-                return;
-            }
-
-            setCheckingEmail(true);
-            try {
-                const response = await axios.get(`/check-email/${encodeURIComponent(formData.email)}`);
-                setEmailAvailable(response.data.available);
-            } catch (err) {
-                console.error('Failed to check email:', err);
-                setEmailAvailable(null);
-            } finally {
-                setCheckingEmail(false);
-            }
-        };
-
-        const timeoutId = setTimeout(checkEmail, 500);
-        return () => clearTimeout(timeoutId);
-    }, [formData.email]);
-
-    const fetchShopAndEmployees = async () => {
+    const fetchShopAndEmployees = React.useCallback(async () => {
         try {
             const token = localStorage.getItem('token');
             if (!token) {
@@ -155,26 +101,13 @@ const EmployeeManagementPage: React.FC = () => {
             // Fetch employees
             await fetchEmployees(shop.id, token);
         } catch (err: any) {
-            console.error('Failed to fetch data:', err);
             setError(err.response?.data?.detail || 'Failed to load data');
         } finally {
             setLoading(false);
         }
-    };
+    }, [fetchEmployees]);
 
-    const fetchEmployees = async (id: number, token: string) => {
-        try {
-            const response = await axios.get(`/shops/${id}/employees`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setEmployees(response.data);
-        } catch (err: any) {
-            console.error('Failed to fetch employees:', err);
-            setError(err.response?.data?.detail || 'Failed to load employees');
-        }
-    };
-
-    const fetchShifts = async (id: number, token: string, employeeId: number | null = null) => {
+    const fetchShifts = React.useCallback(async (id: number, token: string, employeeId: number | null = null) => {
         setShiftsLoading(true);
         try {
             let url = `/shops/${id}/employee-shifts?months=3`;
@@ -186,16 +119,77 @@ const EmployeeManagementPage: React.FC = () => {
             });
             setShifts(response.data);
         } catch (err: any) {
-            console.error('Failed to fetch shifts:', err);
             setError(err.response?.data?.detail || 'Failed to load attendance data');
         } finally {
             setShiftsLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        fetchShopAndEmployees();
+    }, [fetchShopAndEmployees]);
+
+    useEffect(() => {
+        // Fetch shifts when switching to attendance tab
+        if (currentTab === 1 && shopId) {
+            const token = localStorage.getItem('token');
+            if (token) {
+                fetchShifts(shopId, token, selectedEmployeeFilter);
+            }
+        }
+    }, [currentTab, shopId, selectedEmployeeFilter, fetchShifts]);
+
+    useEffect(() => {
+        const checkUsername = async () => {
+            if (!formData.username || formData.username.length < 3) {
+                setUsernameAvailable(null);
+                return;
+            }
+
+            setCheckingUsername(true);
+            try {
+                const response = await axios.get(`/check-username/${formData.username}`);
+                setUsernameAvailable(response.data.available);
+            } catch (err) {
+                setUsernameAvailable(null);
+            } finally {
+                setCheckingUsername(false);
+            }
+        };
+
+        const timeoutId = setTimeout(checkUsername, 500);
+        return () => clearTimeout(timeoutId);
+    }, [formData.username]);
+
+    useEffect(() => {
+        const checkEmail = async () => {
+            // Basic email validation
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!formData.email || !emailRegex.test(formData.email)) {
+                setEmailAvailable(null);
+                return;
+            }
+
+            setCheckingEmail(true);
+            try {
+                const response = await axios.get(`/check-email/${encodeURIComponent(formData.email)}`);
+                setEmailAvailable(response.data.available);
+            } catch (err) {
+                setEmailAvailable(null);
+            } finally {
+                setCheckingEmail(false);
+            }
+        };
+
+        const timeoutId = setTimeout(checkEmail, 500);
+        return () => clearTimeout(timeoutId);
+    }, [formData.email]);
+
+
 
     const handleAddEmployee = async () => {
         if (!shopId) return;
-        
+
         setSubmitting(true);
         setError(null);
         setSuccess(null);
@@ -209,9 +203,9 @@ const EmployeeManagementPage: React.FC = () => {
             );
 
             setSuccess('Employee added successfully!');
-            setFormData({ username: '', email: '', password: '' });
+            setFormData({ username: '', email: '', password: '', role: 'employee' });
             setOpenDialog(false);
-            
+
             // Refresh employee list
             await fetchEmployees(shopId, token!);
         } catch (err: any) {
@@ -274,14 +268,9 @@ const EmployeeManagementPage: React.FC = () => {
     }
 
     return (
-        <Box sx={{ p: 3 }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                <Box display="flex" alignItems="center" gap={2}>
-                    <PeopleIcon sx={{ fontSize: 32 }} />
-                    <Typography variant="h4" component="h1">
-                        Team Management
-                    </Typography>
-                </Box>
+        <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
+            <Header />
+            <Box display="flex" justifyContent="flex-end" alignItems="center" mb={3} mt={2}>
                 {currentTab === 0 && (
                     <Button
                         variant="contained"
@@ -305,67 +294,12 @@ const EmployeeManagementPage: React.FC = () => {
             </Paper>
 
             {currentTab === 0 && (
-                <Paper>
-                <TableContainer>
-                    <Table>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell><strong>Username</strong></TableCell>
-                                <TableCell><strong>Email</strong></TableCell>
-                                <TableCell><strong>Status</strong></TableCell>
-                                <TableCell><strong>Added On</strong></TableCell>
-                                <TableCell align="right"><strong>Actions</strong></TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {employees.length === 0 ? (
-                                <TableRow>
-                                    <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
-                                        <Typography color="text.secondary">
-                                            No employees yet. Add your first employee to get started!
-                                        </Typography>
-                                    </TableCell>
-                                </TableRow>
-                            ) : (
-                                employees.map((employee) => (
-                                    <TableRow key={employee.user.id}>
-                                        <TableCell>{employee.user.username}</TableCell>
-                                        <TableCell>{employee.user.email}</TableCell>
-                                        <TableCell>
-                                            <Chip
-                                                label={employee.is_active ? 'Active' : 'Inactive'}
-                                                color={employee.is_active ? 'success' : 'default'}
-                                                size="small"
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            {new Date(employee.created_at).toLocaleDateString()}
-                                        </TableCell>
-                                        <TableCell align="right">
-                                            {employee.is_active ? (
-                                                <IconButton
-                                                    color="error"
-                                                    onClick={() => handleRemoveEmployee(employee.user.id)}
-                                                    title="Remove employee"
-                                                >
-                                                    <DeleteIcon />
-                                                </IconButton>
-                                            ) : (
-                                                <IconButton
-                                                    color="primary"
-                                                    onClick={() => handleReactivateEmployee(employee.user.id)}
-                                                    title="Reactivate employee"
-                                                >
-                                                    <RestoreIcon />
-                                                </IconButton>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            )}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
+                <Paper sx={{ width: '100%', overflow: 'hidden' }}>
+                    <TeamDataGrid
+                        rows={employees}
+                        onDelete={handleRemoveEmployee}
+                        onReactivate={handleReactivateEmployee}
+                    />
                 </Paper>
             )}
 
@@ -404,10 +338,10 @@ const EmployeeManagementPage: React.FC = () => {
                                 checkingUsername
                                     ? 'Checking availability...'
                                     : usernameAvailable === false
-                                    ? 'Username already taken'
-                                    : usernameAvailable === true
-                                    ? '✓ Username available'
-                                    : 'Employee will use this to log in'
+                                        ? 'Username already taken'
+                                        : usernameAvailable === true
+                                            ? '✓ Username available'
+                                            : 'Employee will use this to log in'
                             }
                             InputProps={{
                                 endAdornment: checkingUsername ? <CircularProgress size={20} /> : null
@@ -425,10 +359,10 @@ const EmployeeManagementPage: React.FC = () => {
                                 checkingEmail
                                     ? 'Checking availability...'
                                     : emailAvailable === false
-                                    ? 'Email already registered'
-                                    : emailAvailable === true
-                                    ? '✓ Email available'
-                                    : ''
+                                        ? 'Email already registered'
+                                        : emailAvailable === true
+                                            ? '✓ Email available'
+                                            : ''
                             }
                             InputProps={{
                                 endAdornment: checkingEmail ? <CircularProgress size={20} /> : null
@@ -443,6 +377,20 @@ const EmployeeManagementPage: React.FC = () => {
                             required
                             helperText="Temporary password - employee can change it later"
                         />
+                        <TextField
+                            select
+                            label="Role"
+                            value={formData.role}
+                            onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                            fullWidth
+                            required
+                            SelectProps={{
+                                native: true,
+                            }}
+                        >
+                            <option value="employee">Employee</option>
+                            <option value="manager">Manager</option>
+                        </TextField>
                     </Box>
                 </DialogContent>
                 <DialogActions>

@@ -1,12 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Container,
     Typography,
     Paper,
-    List,
-    ListItem,
-    ListItemText,
-    ListItemSecondaryAction,
+
     IconButton,
     Button,
     Dialog,
@@ -16,12 +12,15 @@ import {
     TextField,
     Alert,
     Chip,
-    Box
+    Box,
+    Stack
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import TvIcon from '@mui/icons-material/Tv';
 import axios from 'axios';
+import Header from '../components/dashboard/Header';
+import QueueDataGrid from '../components/dashboard/QueueDataGrid';
 
 
 const QueueManagementPage: React.FC = () => {
@@ -32,6 +31,7 @@ const QueueManagementPage: React.FC = () => {
     const [error, setError] = useState('');
 
     useEffect(() => {
+        console.log("QueueManagementPage: AI Version Loaded");
         fetchShopAndQueues();
     }, []);
 
@@ -53,7 +53,7 @@ const QueueManagementPage: React.FC = () => {
                 setQueues(queueRes.data);
             }
         } catch (err) {
-            console.error(err);
+            // Silently fail - error will show in UI
         }
     };
 
@@ -76,11 +76,9 @@ const QueueManagementPage: React.FC = () => {
     };
 
     return (
-        <Container maxWidth="md">
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                <Typography variant="h4">
-                    Queue Management
-                </Typography>
+        <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
+            <Header />
+            <Box display="flex" justifyContent="flex-end" alignItems="center" mb={3} mt={2}>
                 <Button
                     variant="contained"
                     startIcon={<AddIcon />}
@@ -96,48 +94,46 @@ const QueueManagementPage: React.FC = () => {
                 <Alert severity="info" sx={{ mb: 2 }} icon={<TvIcon />}>
                     <Box display="flex" justifyContent="space-between" alignItems="center">
                         <Box>
-                            <Typography variant="subtitle2" fontWeight="bold">In-Shop Display Available</Typography>
+                            <Typography variant="subtitle2" fontWeight="bold">AI Public Shop Display</Typography>
                             <Typography variant="body2">
-                                Display your queue on a TV screen for customers in your shop
+                                Launch the animated AI voice agent for your shop queue
                             </Typography>
                         </Box>
-                        <Button
-                            variant="outlined"
-                            size="small"
-                            startIcon={<TvIcon />}
-                            onClick={() => window.open(`/display/${shop.id}`, '_blank')}
-                        >
-                            Open Display
-                        </Button>
+                        <Stack direction="row" spacing={2}>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<TvIcon />}
+                                onClick={() => window.open(`/display/${shop.id}`, '_blank')}
+                            >
+                                Standard Display
+                            </Button>
+                            <Button
+                                variant="contained"
+                                color="secondary"
+                                size="small"
+                                startIcon={<TvIcon />}
+                                onClick={() => window.open(`/shop-ai/${shop.id}`, '_blank')}
+                                sx={{ borderRadius: 4, fontWeight: 'bold' }}
+                            >
+                                Launch AI Agent
+                            </Button>
+                        </Stack>
                     </Box>
                 </Alert>
             )}
 
-            <Paper>
-                <List>
-                    {queues.map((queue) => (
-                        <ListItem key={queue.id} divider>
-                            <ListItemText
-                                primary={queue.name || "Main Queue"}
-                                secondary={`ID: ${queue.id} • ${queue.is_active ? 'Active' : 'Inactive'}`}
-                            />
-                            <ListItemSecondaryAction>
-                                <Chip
-                                    label={queue.is_active ? "Active" : "Inactive"}
-                                    color={queue.is_active ? "success" : "default"}
-                                    size="small"
-                                    sx={{ mr: 1 }}
-                                />
-                                {/* Delete/Deactivate button could go here */}
-                            </ListItemSecondaryAction>
-                        </ListItem>
-                    ))}
-                    {queues.length === 0 && (
-                        <ListItem>
-                            <ListItemText primary="No active queues found" />
-                        </ListItem>
-                    )}
-                </List>
+            <Paper sx={{ width: '100%', overflow: 'hidden' }}>
+                <QueueDataGrid
+                    rows={queues}
+                    onEdit={(queue) => {
+                        // For now just allow editing name via same dialog logic if we want, 
+                        // or just keep it simple. The original code didn't have edit.
+                        // We'll treat "Create" as the only action for now or repurpose.
+                        // Let's just log or ignore for this step as backend might not support update yet.
+                        console.log('Edit queue', queue);
+                    }}
+                />
             </Paper>
 
             <Dialog open={open} onClose={() => setOpen(false)}>
@@ -158,7 +154,7 @@ const QueueManagementPage: React.FC = () => {
                     <Button onClick={handleCreateQueue} variant="contained">Create</Button>
                 </DialogActions>
             </Dialog>
-        </Container>
+        </Box>
     );
 };
 

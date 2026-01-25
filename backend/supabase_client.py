@@ -11,15 +11,23 @@ from pathlib import Path
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
 
-# Supabase configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://yuxfpspyzyhesfuspjns.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Check if we're using Supabase or local PostgreSQL
+USE_SUPABASE = os.getenv("USE_SUPABASE", "true").lower() == "true"
 
-if not SUPABASE_KEY:
-    raise ValueError("SUPABASE_KEY environment variable is required")
-
-# Initialize Supabase client
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+if USE_SUPABASE:
+    # Supabase configuration
+    SUPABASE_URL = os.getenv("SUPABASE_URL", "https://yuxfpspyzyhesfuspjns.supabase.co")
+    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+    
+    if not SUPABASE_KEY:
+        raise ValueError("SUPABASE_KEY environment variable is required when USE_SUPABASE=true")
+    
+    # Initialize Supabase client
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+else:
+    # Mock Supabase client for local PostgreSQL mode
+    # This prevents import errors when routers import supabase_client
+    supabase = None
 
 def get_supabase() -> Client:
     """

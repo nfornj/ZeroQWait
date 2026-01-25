@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     Box,
     Paper,
     Typography,
     IconButton,
-    Grid,
     Chip,
     Tooltip,
     FormControl,
@@ -16,11 +15,11 @@ import {
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import { 
-    startOfMonth, 
-    endOfMonth, 
-    eachDayOfInterval, 
-    format, 
+import {
+    startOfMonth,
+    endOfMonth,
+    eachDayOfInterval,
+    format,
     isSameDay,
     addMonths,
     subMonths,
@@ -47,10 +46,10 @@ interface AttendanceCalendarProps {
     onEmployeeChange?: (employeeId: number | null) => void;
 }
 
-const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({ 
-    shifts, 
+const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
+    shifts,
     employees,
-    onEmployeeChange 
+    onEmployeeChange
 }) => {
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const [selectedEmployee, setSelectedEmployee] = useState<number | null>(null);
@@ -115,8 +114,8 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
             {/* Header with month navigation and employee filter */}
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
                 <Box display="flex" alignItems="center" gap={1}>
-                    <IconButton 
-                        onClick={handlePreviousMonth} 
+                    <IconButton
+                        onClick={handlePreviousMonth}
                         disabled={!canGoBack}
                         size="small"
                     >
@@ -125,8 +124,8 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                     <Typography variant="h6" sx={{ minWidth: '150px', textAlign: 'center' }}>
                         {format(currentMonth, 'MMMM yyyy')}
                     </Typography>
-                    <IconButton 
-                        onClick={handleNextMonth} 
+                    <IconButton
+                        onClick={handleNextMonth}
                         disabled={!canGoForward}
                         size="small"
                     >
@@ -154,47 +153,47 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
             {/* Calendar Grid */}
             <Paper sx={{ p: 2 }}>
                 {/* Day headers */}
-                <Grid container spacing={1} sx={{ mb: 1 }}>
+                <Box display="flex" gap={1} sx={{ mb: 1 }}>
                     {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                        <Grid item xs={12 / 7} key={day}>
-                            <Typography 
-                                variant="caption" 
-                                fontWeight="bold" 
-                                display="block" 
+                        <Box key={day} flex="1">
+                            <Typography
+                                variant="caption"
+                                fontWeight="bold"
+                                display="block"
                                 textAlign="center"
                                 color="text.secondary"
                             >
                                 {day}
                             </Typography>
-                        </Grid>
+                        </Box>
                     ))}
-                </Grid>
+                </Box>
 
                 {/* Calendar days */}
-                <Grid container spacing={1}>
+                <Box display="flex" flexWrap="wrap" gap={1}>
                     {calendarDays.map((day, index) => {
                         const dayShifts = getShiftsForDay(day);
                         const isCurrentMonth = day.getMonth() === currentMonth.getMonth();
                         const isTodayDate = isToday(day);
 
                         return (
-                            <Grid item xs={12 / 7} key={index}>
+                            <Box key={index} sx={{ width: 'calc((100% - 6 * 8px) / 7)' }}>
                                 <Paper
                                     variant="outlined"
                                     sx={{
                                         minHeight: '100px',
                                         p: 1,
-                                        backgroundColor: isTodayDate 
-                                            ? 'action.selected' 
-                                            : isCurrentMonth 
-                                                ? 'background.paper' 
+                                        backgroundColor: isTodayDate
+                                            ? 'action.selected'
+                                            : isCurrentMonth
+                                                ? 'background.paper'
                                                 : 'action.hover',
                                         border: isTodayDate ? '2px solid' : '1px solid',
                                         borderColor: isTodayDate ? 'primary.main' : 'divider',
                                     }}
                                 >
-                                    <Typography 
-                                        variant="caption" 
+                                    <Typography
+                                        variant="caption"
                                         fontWeight={isTodayDate ? 'bold' : 'normal'}
                                         color={isCurrentMonth ? 'text.primary' : 'text.disabled'}
                                     >
@@ -230,7 +229,7 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                                                         label={shift.username}
                                                         size="small"
                                                         color={shift.clock_out ? 'success' : 'warning'}
-                                                        sx={{ 
+                                                        sx={{
                                                             fontSize: '0.65rem',
                                                             height: '20px',
                                                             width: '100%',
@@ -251,10 +250,10 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                                         </Box>
                                     )}
                                 </Paper>
-                            </Grid>
+                            </Box>
                         );
                     })}
-                </Grid>
+                </Box>
             </Paper>
 
             {/* Legend */}

@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: zeroqwait
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox:1.28
+        command: ['sh', '-c', 'until nc -z postgres.zeroqwait.svc.cluster.local 5432; do echo waiting for postgres; sleep 2; done;']
+      - name: init-database
+        image: python:3.11-slim
+        workingDir: /app
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            pip install --no-cache-dir sqlalchemy psycopg2-binary python-dotenv
+            python init_database.py
+        envFrom:
+        - configMapRef:
+            name: backend-config
+        - secretRef:
+            name: backend-secret
+        volumeMounts:
+        - name: app-code
+          mountPath: /app
+      containers:
+      - name: backend
+        image: python:3.11-slim
+        workingDir: /app
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            pip install --no-cache-dir -r requirements.txt
+            uvicorn main:app --host 0.0.0.0 --port 8000
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: backend-config
+        - secretRef:
+            name: backend-secret
+        volumeMounts:
+        - name: app-code
+          mountPath: /app
+        - name: static-uploads
+          mountPath: /app/static/uploads
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: app-code
+        hostPath:
+          path: /home/neekrishrichu/apps/zeroqwait/backend
+          type: Directory
+      - name: static-uploads
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: zeroqwait
+spec:
+  selector:
+    app: backend
+  type: NodePort
+  ports:
+  - port: 8000
+    targetPort: 8000
+    nodePort: 30000

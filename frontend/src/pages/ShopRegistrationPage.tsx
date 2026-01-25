@@ -10,8 +10,7 @@ import {
   Card,
   CardContent,
   Alert,
-  Grid
-} from '@mui/material';
+  } from '@mui/material';
 import axios from 'axios';
 
 
@@ -99,8 +98,8 @@ const ShopRegistrationPage: React.FC = () => {
           )}
 
           <Box component="form" onSubmit={handleSubmit}>
-            <Grid container spacing={3}>
-              <Grid item xs={12}>
+            <Box display="flex" flexWrap="wrap" gap={3}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -109,9 +108,9 @@ const ShopRegistrationPage: React.FC = () => {
                   value={formData.name}
                   onChange={handleChange}
                 />
-              </Grid>
+              </Box>
 
-              <Grid item xs={12}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   select
@@ -127,9 +126,9 @@ const ShopRegistrationPage: React.FC = () => {
                     </MenuItem>
                   ))}
                 </TextField>
-              </Grid>
+              </Box>
 
-              <Grid item xs={12}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   multiline
@@ -139,9 +138,9 @@ const ShopRegistrationPage: React.FC = () => {
                   value={formData.description}
                   onChange={handleChange}
                 />
-              </Grid>
+              </Box>
 
-              <Grid item xs={12}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -150,9 +149,9 @@ const ShopRegistrationPage: React.FC = () => {
                   value={formData.address}
                   onChange={handleChange}
                 />
-              </Grid>
+              </Box>
 
-              <Grid item xs={12} sm={6}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -161,9 +160,9 @@ const ShopRegistrationPage: React.FC = () => {
                   value={formData.city}
                   onChange={handleChange}
                 />
-              </Grid>
+              </Box>
 
-              <Grid item xs={12} sm={4}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -173,9 +172,9 @@ const ShopRegistrationPage: React.FC = () => {
                   onChange={handleChange}
                   helperText="e.g., ON, CA, TX, etc."
                 />
-              </Grid>
+              </Box>
 
-              <Grid item xs={12} sm={4}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -184,9 +183,9 @@ const ShopRegistrationPage: React.FC = () => {
                   value={formData.zip_code}
                   onChange={handleChange}
                 />
-              </Grid>
+              </Box>
 
-              <Grid item xs={12} sm={4}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   select
@@ -213,9 +212,9 @@ const ShopRegistrationPage: React.FC = () => {
                   <MenuItem value="Singapore">Singapore</MenuItem>
                   <MenuItem value="Other">Other</MenuItem>
                 </TextField>
-              </Grid>
+              </Box>
 
-              <Grid item xs={12} sm={6}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -224,9 +223,9 @@ const ShopRegistrationPage: React.FC = () => {
                   value={formData.phone}
                   onChange={handleChange}
                 />
-              </Grid>
+              </Box>
 
-              <Grid item xs={12} sm={6}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   label="Email"
@@ -235,9 +234,9 @@ const ShopRegistrationPage: React.FC = () => {
                   value={formData.email}
                   onChange={handleChange}
                 />
-              </Grid>
+              </Box>
 
-              <Grid item xs={12} sm={6}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   label="Website"
@@ -245,9 +244,9 @@ const ShopRegistrationPage: React.FC = () => {
                   value={formData.website}
                   onChange={handleChange}
                 />
-              </Grid>
+              </Box>
 
-              <Grid item xs={12} sm={6}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <TextField
                   fullWidth
                   required
@@ -258,9 +257,9 @@ const ShopRegistrationPage: React.FC = () => {
                   onChange={handleChange}
                   inputProps={{ min: 5, max: 180 }}
                 />
-              </Grid>
+              </Box>
 
-              <Grid item xs={12}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <Button
                   type="submit"
                   variant="contained"
@@ -271,8 +270,8 @@ const ShopRegistrationPage: React.FC = () => {
                 >
                   Create Shop
                 </Button>
-              </Grid>
-            </Grid>
+              </Box>
+            </Box>
           </Box>
         </CardContent>
       </Card>

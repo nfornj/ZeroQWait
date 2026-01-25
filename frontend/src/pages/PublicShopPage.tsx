@@ -7,14 +7,25 @@ import {
     Card,
     CardContent,
     Button,
-    Grid,
     Chip,
     Avatar,
     CircularProgress,
-    Alert
+    Alert,
+    TextField,
+    Grid,
+    Divider,
+    List,
+    ListItem,
+    ListItemText,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    Paper
 } from '@mui/material';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PeopleIcon from '@mui/icons-material/People';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 import axios from 'axios';
 
 
@@ -32,24 +43,67 @@ const PublicShopPage: React.FC = () => {
 
     const fetchShopAndQueues = async () => {
         try {
-            // We need an endpoint to fetch by slug. 
-            // Current API only supports ID. We need to update backend or search by slug.
-            // For now, let's assume we added a /shops/slug/:slug endpoint.
-            // If not, we might fail. I should check backend.
-            // Wait, I didn't add fetch by slug endpoint. I added the field but not the lookup.
-            // I need to add `GET /shops/s/{slug}` to backend.
-
             const response = await axios.get(`/shops/s/${slug}`);
             setShop(response.data);
+
+            // Redirect if already in queue
+            const savedItemId = localStorage.getItem(`queue_item_${response.data.id}`);
+            if (savedItemId) {
+                navigate(`/queue/${response.data.id}`);
+                return;
+            }
+
             if (response.data.queues) {
                 setQueues(response.data.queues.filter((q: any) => q.is_active));
             } else {
                 setQueues([]);
             }
+
+            // Fetch services for the shop
+            const servicesRes = await axios.get(`/shops/${response.data.id}/services`);
+            setServices(servicesRes.data.filter((s: any) => s.is_active));
+
             setLoading(false);
         } catch (err) {
             setError('Shop not found');
             setLoading(false);
+        }
+    };
+
+    const [services, setServices] = useState<any[]>([]);
+    const [customerName, setCustomerName] = useState('');
+    const [customerPhone, setCustomerPhone] = useState('');
+    const [customerEmail, setCustomerEmail] = useState('');
+    const [notes, setNotes] = useState('');
+    const [selectedServiceId, setSelectedServiceId] = useState<number | ''>('');
+    const [joinLoading, setJoinLoading] = useState(false);
+    const [joinError, setJoinError] = useState('');
+
+    const handleJoinQueue = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setJoinError('');
+        setJoinLoading(true);
+
+        if (!customerName.trim()) {
+            setJoinError('Please enter your name');
+            setJoinLoading(false);
+            return;
+        }
+
+        try {
+            const response = await axios.post(`/queues/shop/${shop.id}/join`, {
+                customer_name: customerName,
+                customer_phone: customerPhone,
+                customer_email: customerEmail,
+                notes: notes,
+                service_id: selectedServiceId || undefined,
+            });
+
+            localStorage.setItem(`queue_item_${shop.id}`, response.data.id.toString());
+            navigate(`/queue/${shop.id}`);
+        } catch (err: any) {
+            setJoinError(err.response?.data?.detail || 'Failed to join queue');
+            setJoinLoading(false);
         }
     };
 
@@ -66,98 +120,231 @@ const PublicShopPage: React.FC = () => {
     );
 
     return (
-        <Box sx={{ bgcolor: '#f5f5f5', minHeight: '100vh', pb: 8 }}>
-            {/* Hero Section with Branding */}
-            <Box
-                sx={{
-                    bgcolor: shop.primary_color || '#1976d2',
-                    color: 'white',
-                    py: 4, // Reduced from 8
-                    mb: 4,
-                    textAlign: 'center'
-                }}
-            >
-                <Container maxWidth="md">
-                    {shop.logo_url && (
-                        <Avatar
-                            src={shop.logo_url}
-                            sx={{ width: 80, height: 80, mx: 'auto', mb: 2, border: '3px solid white' }} // Reduced size
-                        />
-                    )}
-                    <Typography variant="h3" fontWeight="bold" gutterBottom> {/* Reduced from h2 */}
-                        {shop.name}
-                    </Typography>
-                    <Typography variant="h6" sx={{ opacity: 0.9 }}> {/* Reduced from h5 */}
-                        {shop.address}, {shop.city}
-                    </Typography>
+        <Box sx={{ bgcolor: '#ffffff', minHeight: '100vh', pb: 8 }}>
+            {/* Minimal Header with branding */}
+            <Paper elevation={0} sx={{ borderBottom: '1px solid #eee', py: 2, mb: 4 }}>
+                <Container maxWidth="lg">
+                    <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography variant="h4" fontWeight="bold" color="primary" sx={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
+                            ZeroQWait
+                        </Typography>
+                        <Box display="flex" gap={2}>
+                            <Button variant="text" size="small">SEARCH</Button>
+                            <Button variant="text" size="small">PRICING</Button>
+                            <Button variant="text" size="small">LOG IN</Button>
+                            <Button variant="contained" color="error" size="small" sx={{ borderRadius: 2 }}>SIGN UP</Button>
+                        </Box>
+                    </Box>
                 </Container>
-            </Box>
+            </Paper>
 
-            <Container maxWidth="md">
-                <Typography variant="h4" gutterBottom sx={{ mb: 3 }}>
-                    Join a Queue
-                </Typography>
+            <Container maxWidth="lg">
+                {/* Shop Info Card */}
+                <Card variant="outlined" sx={{ mb: 4, borderRadius: 2, p: 1 }}>
+                    <CardContent>
+                        <Box display="flex" alignItems="center" gap={3}>
+                            {shop.logo_url && (
+                                <Avatar
+                                    src={shop.logo_url}
+                                    sx={{ width: 80, height: 80, borderRadius: 1, border: '1px solid #eee' }}
+                                />
+                            )}
+                            <Box>
+                                <Typography variant="h3" fontWeight="bold" gutterBottom>
+                                    {shop.name}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    {shop.address}, {shop.city}, {shop.state}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    Phone: {shop.phone}
+                                </Typography>
+                            </Box>
+                        </Box>
+                    </CardContent>
+                </Card>
 
-                <Grid container spacing={3}>
-                    {queues.map((queue) => (
-                        <Grid item xs={12} md={6} key={queue.id}>
-                            <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                                <CardContent sx={{ flexGrow: 1 }}>
-                                    <Typography variant="h5" gutterBottom>
-                                        {queue.name || "Main Queue"}
-                                    </Typography>
+                {/* AI Concierge Call-to-action */}
+                <Box
+                    sx={{
+                        mb: 4,
+                        p: 3,
+                        borderRadius: 3,
+                        background: `linear-gradient(90deg, ${shop.primary_color || '#1976d2'}, #000)`,
+                        color: 'white',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                    }}
+                >
+                    <Box>
+                        <Typography variant="h5" fontWeight="bold">Try our Intelligent Concierge</Typography>
+                        <Typography variant="body1" sx={{ opacity: 0.8 }}>Talk to {shop.ai_agent_name || shop.name} to join the queue or check wait times instantly.</Typography>
+                    </Box>
+                    <Button
+                        variant="contained"
+                        startIcon={<SmartToyIcon />}
+                        onClick={() => navigate(`/shop-ai/${shop.id}`)}
+                        sx={{
+                            bgcolor: 'white',
+                            color: 'black',
+                            fontWeight: 'bold',
+                            borderRadius: 10,
+                            px: 4,
+                            '&:hover': { bgcolor: '#eee' }
+                        }}
+                    >
+                        START CHAT
+                    </Button>
+                </Box>
 
-                                    <Box display="flex" alignItems="center" mb={1}>
-                                        <PeopleIcon sx={{ mr: 1, color: 'text.secondary' }} />
-                                        <Typography color="text.secondary">
-                                            {queue.queue_items?.filter((i: any) => i.status === 'waiting').length || 0} waiting
-                                        </Typography>
-                                    </Box>
+                <Grid container spacing={4}>
+                    {/* Left Side: Join Queue Form */}
+                    <Grid size={{ xs: 12, md: 7 }}>
+                        <Card variant="outlined" sx={{ borderRadius: 2 }}>
+                            <CardContent sx={{ p: 4 }}>
+                                <Typography variant="h5" fontWeight="bold" gutterBottom>
+                                    Join Queue
+                                </Typography>
+                                <Divider sx={{ mb: 3 }} />
 
-                                    <Box display="flex" alignItems="center" mb={3}>
-                                        <AccessTimeIcon sx={{ mr: 1, color: 'text.secondary' }} />
-                                        <Typography color="text.secondary">
-                                            ~{shop.average_service_time} min wait
-                                        </Typography>
-                                    </Box>
+                                {joinError && <Alert severity="error" sx={{ mb: 2 }}>{joinError}</Alert>}
+
+                                <Box component="form" onSubmit={handleJoinQueue}>
+                                    <TextField
+                                        fullWidth
+                                        required
+                                        label="Your Name"
+                                        value={customerName}
+                                        onChange={(e) => setCustomerName(e.target.value)}
+                                        sx={{ mb: 2 }}
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        label="Phone Number"
+                                        value={customerPhone}
+                                        onChange={(e) => setCustomerPhone(e.target.value)}
+                                        sx={{ mb: 2 }}
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        label="Email (optional)"
+                                        type="email"
+                                        value={customerEmail}
+                                        onChange={(e) => setCustomerEmail(e.target.value)}
+                                        sx={{ mb: 2 }}
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        multiline
+                                        rows={3}
+                                        label="Notes (optional)"
+                                        value={notes}
+                                        onChange={(e) => setNotes(e.target.value)}
+                                        sx={{ mb: 2 }}
+                                    />
+
+                                    <FormControl fullWidth sx={{ mb: 3 }}>
+                                        <InputLabel id="service-select-label">Service (Optional)</InputLabel>
+                                        <Select
+                                            labelId="service-select-label"
+                                            value={selectedServiceId}
+                                            label="Service (Optional)"
+                                            onChange={(e) => setSelectedServiceId(e.target.value as number)}
+                                        >
+                                            <MenuItem value=""><em>None</em></MenuItem>
+                                            {services.map((service) => (
+                                                <MenuItem key={service.id} value={service.id}>
+                                                    {service.name} - ${service.cost} ({service.duration_minutes} min)
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
 
                                     <Button
+                                        type="submit"
                                         variant="contained"
                                         fullWidth
                                         size="large"
-                                        sx={{ bgcolor: shop.primary_color }}
-                                        onClick={() => navigate(`/queue/${shop.id}`)}
+                                        disabled={joinLoading}
+                                        sx={{
+                                            py: 1.5,
+                                            fontSize: '1.1rem',
+                                            fontWeight: 'bold',
+                                            borderRadius: 1,
+                                            boxShadow: 'none'
+                                        }}
                                     >
-                                        Join Queue
+                                        {joinLoading ? <CircularProgress size={24} /> : 'JOIN QUEUE'}
                                     </Button>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    ))}
-                </Grid>
+                                </Box>
+                            </CardContent>
+                        </Card>
+                    </Grid>
 
-                <Box mt={6}>
-                    <Typography variant="h5" gutterBottom>
-                        About Us
-                    </Typography>
-                    <Card>
-                        <CardContent>
-                            <Typography variant="body1">
-                                {shop.description || "No description available."}
-                            </Typography>
-                            <Box mt={2}>
-                                <Typography variant="body2" color="text.secondary">
-                                    <strong>Phone:</strong> {shop.phone}
+                    {/* Right Side: Current Queue Status */}
+                    <Grid size={{ xs: 12, md: 5 }}>
+                        <Card variant="outlined" sx={{ borderRadius: 2 }}>
+                            <CardContent sx={{ p: 4 }}>
+                                <Typography variant="h5" fontWeight="bold" gutterBottom>
+                                    Current Queue
                                 </Typography>
-                                {shop.website && (
-                                    <Typography variant="body2" color="text.secondary">
-                                        <strong>Website:</strong> <a href={shop.website} target="_blank" rel="noopener noreferrer">{shop.website}</a>
-                                    </Typography>
+                                <Divider sx={{ mb: 2 }} />
+
+                                {queues.length > 0 && queues[0].queue_items ? (
+                                    <>
+                                        <Box display="flex" alignItems="center" mb={3}>
+                                            <PeopleIcon sx={{ mr: 1, color: 'text.secondary' }} />
+                                            <Typography variant="h6">
+                                                {queues[0].queue_items.filter((i: any) => i.status === 'waiting').length} people waiting
+                                            </Typography>
+                                        </Box>
+
+                                        <List disablePadding>
+                                            {queues[0].queue_items.filter((i: any) => i.status === 'waiting').slice(0, 5).map((item: any, idx: number) => (
+                                                <ListItem
+                                                    key={item.id}
+                                                    sx={{
+                                                        bgcolor: '#f8f9fa',
+                                                        mb: 1,
+                                                        borderRadius: 1,
+                                                        borderLeft: idx === 0 ? `4px solid ${shop.primary_color || '#1976d2'}` : 'none'
+                                                    }}
+                                                >
+                                                    <Box sx={{ mr: 2, fontWeight: 'bold', color: 'text.secondary' }}>#{idx + 1}</Box>
+                                                    <ListItemText
+                                                        primary={item.customer_name}
+                                                        secondary={new Date(item.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    />
+                                                </ListItem>
+                                            ))}
+                                            {queues[0].queue_items.filter((i: any) => i.status === 'waiting').length > 5 && (
+                                                <Typography variant="body2" color="text.secondary" textAlign="center" mt={2}>
+                                                    ... and more
+                                                </Typography>
+                                            )}
+                                        </List>
+                                    </>
+                                ) : (
+                                    <Box textAlign="center" py={4}>
+                                        <Typography color="text.secondary">Queue is empty. Join now!</Typography>
+                                    </Box>
                                 )}
-                            </Box>
-                        </CardContent>
-                    </Card>
-                </Box>
+                            </CardContent>
+                        </Card>
+
+                        {/* Additional Info Box */}
+                        <Box sx={{ mt: 3, p: 2, bgcolor: '#f0f4f8', borderRadius: 2 }}>
+                            <Typography variant="subtitle2" fontWeight="bold" display="flex" alignItems="center" gap={1}>
+                                <AccessTimeIcon fontSize="small" /> Estimated Wait Time
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Each service takes about {shop.average_service_time} minutes on average.
+                            </Typography>
+                        </Box>
+                    </Grid>
+                </Grid>
             </Container>
         </Box>
     );

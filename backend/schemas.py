@@ -7,6 +7,7 @@ from enum import Enum
 class UserRole(str, Enum):
     CUSTOMER = "customer"
     SHOP_OWNER = "shop_owner"
+    MANAGER = "manager"
     EMPLOYEE = "employee"
 
 class QueueStatus(str, Enum):
@@ -60,7 +61,10 @@ class ShopBase(BaseModel):
     secondary_color: Optional[str] = None
     accent_color: Optional[str] = None
     background_color: Optional[str] = None
+    ai_agent_name: Optional[str] = None
     slug: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class ShopCreate(ShopBase):
     pass
@@ -84,7 +88,10 @@ class ShopUpdate(BaseModel):
     secondary_color: Optional[str] = None
     accent_color: Optional[str] = None
     background_color: Optional[str] = None
+    ai_agent_name: Optional[str] = None
     slug: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class Shop(ShopBase):
     id: int
@@ -100,6 +107,7 @@ class QueueItemBase(BaseModel):
     customer_name: str
     customer_phone: Optional[str] = None
     customer_email: Optional[str] = None
+    service_id: Optional[int] = None
     notes: Optional[str] = None
 
 class QueueItemCreate(QueueItemBase):
@@ -116,6 +124,8 @@ class QueueItem(QueueItemBase):
     completed_at: Optional[datetime] = None
     assigned_employee_id: Optional[int] = None
     assigned_employee: Optional[dict] = None  # Will be populated with employee details
+    service_cost: Optional[float] = 0.0
+    service: Optional[dict] = None # Will be populated with service details
 
     class Config:
         from_attributes = True
@@ -149,6 +159,7 @@ class EmployeeCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
+    role: Optional[UserRole] = UserRole.EMPLOYEE
 
 class ShopEmployee(BaseModel):
     id: int
@@ -170,6 +181,34 @@ class EmployeeShift(BaseModel):
     shop_id: int
     clock_in: datetime
     clock_out: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+# Service schemas
+class ShopServiceBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    duration_minutes: int = 30
+    cost: float = 0.0
+    currency: Optional[str] = "USD"
+    is_active: bool = True
+
+class ShopServiceCreate(ShopServiceBase):
+    pass
+
+class ShopServiceUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    cost: Optional[float] = None
+    currency: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class ShopService(ShopServiceBase):
+    id: int
+    shop_id: int
+    created_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

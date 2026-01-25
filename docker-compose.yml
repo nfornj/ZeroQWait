@@ -4,23 +4,24 @@ services:
     build: ./backend
     volumes:
       - ./backend:/app
+      - ./backend/static:/app/static
     ports:
       - "8000:8000"
     env_file:
       - ./backend/.env
     environment:
       - PYTHONUNBUFFERED=1
+      - FRONTEND_URL=http://192.168.2.88.nip.io
+    restart: unless-stopped
 
   # React Frontend
   frontend:
     build:
       context: ./frontend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      args:
+        REACT_APP_API_URL: /api
     ports:
       - "3000:80"
     depends_on:
       - backend
-    environment:
-      - REACT_APP_API_URL=http://localhost:8000/api
+    restart: unless-stopped

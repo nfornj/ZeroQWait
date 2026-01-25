@@ -6,7 +6,8 @@ interface User {
   id: number;
   username: string;
   email: string;
-  role: "customer" | "shop_owner" | "employee";
+  role: "customer" | "shop_owner" | "employee" | "manager";
+  profile_photo_url?: string;
 }
 
 interface AuthContextType {
@@ -56,17 +57,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Check token expiration on mount and periodically
   useEffect(() => {
+    // Check for token in URL (passed from cross-domain redirect)
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("token");
+
+    if (urlToken) {
+      console.log("[AuthContext] Token found in URL, saving to localStorage");
+      localStorage.setItem("token", urlToken);
+      setToken(urlToken);
+      setIsAuthenticated(true);
+
+      // Clean URL without reloading
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+
     const checkTokenExpiration = () => {
       const storedToken = localStorage.getItem('token');
       if (storedToken && isTokenExpired(storedToken)) {
-        console.warn('Token expired. Logging out...');
         logout();
-        window.location.href = '/login';
+
+        // Smart redirect based on current location
+        const currentHost = window.location.hostname;
+        const currentPath = window.location.pathname;
+
+        // Check if we're on a shop subdomain
+        const isShopSubdomain = () => {
+          if (currentHost === 'localhost') return false;
+          if (currentHost.match(/^\d+\.\d+\.\d+\.\d+\.(nip|np)\.io$/)) return false;
+          if (currentHost.match(/^www\./)) return false;
+
+          const parts = currentHost.split('.');
+          if (currentHost.includes('nip.io') || currentHost.includes('np.io')) {
+            return parts.length > 4;
+          } else {
+            return parts.length > 2;
+          }
+        };
+
+        // Extract shop slug from subdomain if present
+        const getShopSlug = () => {
+          const parts = currentHost.split('.');
+          return parts[0]; // First part is the shop slug
+        };
+
+        if (isShopSubdomain()) {
+          // Redirect to public shop page to maintain context
+          const shopSlug = getShopSlug();
+          console.log('[AuthContext] Token expired on shop subdomain, redirecting to public shop page:', `/s/${shopSlug}`);
+          window.location.href = `/s/${shopSlug}`;
+        } else {
+          // Redirect to marketing page on main domain
+          console.log('[AuthContext] Token expired on main domain, redirecting to marketing page');
+          window.location.href = '/';
+        }
       }
     };
 
-    // Check immediately on mount
-    checkTokenExpiration();
+    // Check immediately on mount (if no URL token was just set)
+    if (!urlToken) {
+      checkTokenExpiration();
+    }
 
     // Check every minute
     const interval = setInterval(checkTokenExpiration, 60000);
@@ -93,7 +144,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       (error) => {
         if (error.response?.status === 401) {
           // Token expired or invalid - auto logout
-          console.warn('Authentication expired. Logging out...');
           logout();
           // Redirect to login page
           window.location.href = '/login';
@@ -114,11 +164,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (token) {
         try {
           setLoading(true);
+          console.log("[AuthContext] Fetching user data with token:", token.substring(0, 20) + "...");
           const response = await axios.get("/users/me");
+          console.log("[AuthContext] User data received:", response.data);
           setUser(response.data);
           setIsAuthenticated(true);
         } catch (err: any) {
-          console.error("Error fetching user:", err);
+          console.error("[AuthContext] Error fetching user:", err.response?.status, err.response?.data);
           // Only logout if it's not a 401 (interceptor handles that)
           if (err.response?.status !== 401) {
             logout();
@@ -155,8 +207,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setUser(userResponse.data);
       setIsAuthenticated(true);
     } catch (err: any) {
+      console.error("[AuthContext] Login error:", err);
+      if (err.response) {
+        console.error("[AuthContext] Response status:", err.response.status);
+        console.error("[AuthContext] Response data:", err.response.data);
+      }
       setError(err.response?.data?.detail || "Login failed");
-      console.error("Login error:", err);
     } finally {
       setLoading(false);
     }
@@ -183,12 +239,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       await login(username, password);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Registration failed");
-      console.error("Registration error:", err);
       throw err; // Re-throw to prevent navigation
     } finally {
       setLoading(false);
     }
   };
+
+  console.log("[AuthContext] Current state:", { user, token: token ? token.substring(0, 20) + "..." : null, isAuthenticated, loading });
 
   const value = {
     user,

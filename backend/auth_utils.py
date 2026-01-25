@@ -7,7 +7,7 @@ from typing import Optional
 import os
 from dotenv import load_dotenv
 
-from supabase_client import supabase
+from db_interface import db_interface
 import schemas
 
 load_dotenv()
@@ -15,7 +15,7 @@ load_dotenv()
 # Secret key and algorithm for JWT
 SECRET_KEY = os.getenv("SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -30,10 +30,15 @@ def get_password_hash(password):
 
 def authenticate_user(username: str, password: str):
     try:
-        response = supabase.table("users").select("*").eq("username", username).execute()
-        if not response.data:
+        # Try finding by username first
+        user = db_interface.get_user_by_username(username)
+        
+        # If not found, try finding by email (since username param might be an email)
+        if not user:
+            user = db_interface.get_user_by_email(username)
+            
+        if not user:
             return False
-        user = response.data[0]
         if not verify_password(password, user["hashed_password"]):
             return False
         return user
@@ -66,10 +71,9 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     
     try:
-        response = supabase.table("users").select("*").eq("username", token_data.username).execute()
-        if not response.data:
+        user = db_interface.get_user_by_username(token_data.username)
+        if not user:
             raise credentials_exception
-        user = response.data[0]
         return user
     except Exception:
         raise credentials_exception
@@ -93,11 +97,11 @@ def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme_optio
         if username is None:
             return None
         
-        response = supabase.table("users").select("*").eq("username", username).execute()
-        if not response.data:
+        user = db_interface.get_user_by_username(username)
+        if not user:
             return None
         
-        return response.data[0]
+        return user
     except JWTError:
         return None
     except Exception:

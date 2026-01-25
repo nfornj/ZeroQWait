@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
+import "leaflet/dist/leaflet.css";
 import App from "./App";
 import reportWebVitals from "./reportWebVitals";
 import { BrowserRouter } from "react-router-dom";
@@ -8,7 +9,11 @@ import { AuthProvider } from "./contexts/AuthContext";
 import axios from "axios";
 
 // Configure axios defaults
-axios.defaults.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+// Using '/api' as a relative path allows the app to work via Cloudflare tunnel, 
+// local IP, or nip.io without hardcoding an address.
+const apiUrl = process.env.REACT_APP_API_URL || '/api';
+console.log("[Frontend] React App API URL:", apiUrl);
+axios.defaults.baseURL = apiUrl;
 
 const root = ReactDOM.createRoot(
   document.getElementById("root") as HTMLElement

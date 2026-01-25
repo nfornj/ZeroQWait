@@ -1,11 +1,10 @@
-import React from "react";
-import { Link as RouterLink } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Link as RouterLink, useNavigate } from "react-router-dom";
 import {
   Container,
   Typography,
   Box,
   Button,
-  Grid,
   Card,
   CardContent,
   alpha,
@@ -15,11 +14,29 @@ import SearchIcon from "@mui/icons-material/Search";
 import LocationOnIcon from "@mui/icons-material/LocationOn";
 import StarIcon from "@mui/icons-material/Star";
 import ScheduleIcon from "@mui/icons-material/Schedule";
+import VideocamIcon from "@mui/icons-material/Videocam";
+import SmartToyIcon from "@mui/icons-material/SmartToy";
 import { useAuth } from "../contexts/AuthContext";
 
 const HomePage: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const navigate = useNavigate();
   const theme = useTheme();
+
+  // Redirect authenticated users based on their role
+  useEffect(() => {
+    console.log("[HomePage] Auth check", { isAuthenticated, user });
+    if (isAuthenticated && user) {
+      console.log("[HomePage] User role is", user.role);
+      if (user.role === "shop_owner") {
+        console.log("[HomePage] Redirecting shop_owner to /dashboard");
+        navigate("/dashboard");
+      } else if (user.role === "employee") {
+        console.log("[HomePage] Redirecting employee to /employee-dashboard");
+        navigate("/employee-dashboard");
+      }
+    }
+  }, [isAuthenticated, user, navigate]);
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
@@ -93,8 +110,8 @@ const HomePage: React.FC = () => {
             </Box>
 
             {/* Stats */}
-            <Grid container spacing={4} sx={{ mt: 4 }}>
-              <Grid item xs={12} sm={4}>
+            <Box display="flex" flexWrap="wrap" gap={4} sx={{ mt: 4 }}>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
                     500+
@@ -103,8 +120,8 @@ const HomePage: React.FC = () => {
                     Service Providers
                   </Typography>
                 </Box>
-              </Grid>
-              <Grid item xs={12} sm={4}>
+              </Box>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'secondary.main' }}>
                     10k+
@@ -113,8 +130,8 @@ const HomePage: React.FC = () => {
                     Active Customers
                   </Typography>
                 </Box>
-              </Grid>
-              <Grid item xs={12} sm={4}>
+              </Box>
+              <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
                     4.8★
@@ -123,8 +140,8 @@ const HomePage: React.FC = () => {
                     Average Rating
                   </Typography>
                 </Box>
-              </Grid>
-            </Grid>
+              </Box>
+            </Box>
           </Box>
         </Container>
       </Box>
@@ -157,8 +174,8 @@ const HomePage: React.FC = () => {
             </Typography>
           </Box>
 
-          <Grid container spacing={4}>
-            <Grid item xs={12} md={4}>
+          <Box display="flex" flexWrap="wrap" gap={4}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <Card
                 elevation={0}
                 sx={{
@@ -167,7 +184,6 @@ const HomePage: React.FC = () => {
                   p: 4,
                   border: '1px solid',
                   borderColor: 'divider',
-                  borderRadius: 4,
                   transition: 'all 0.3s ease-in-out',
                   '&:hover': {
                     transform: 'translateY(-8px)',
@@ -198,9 +214,9 @@ const HomePage: React.FC = () => {
                   with flexible settings for wait times and capacity management.
                 </Typography>
               </Card>
-            </Grid>
+            </Box>
 
-            <Grid item xs={12} md={4}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <Card
                 elevation={0}
                 sx={{
@@ -209,7 +225,6 @@ const HomePage: React.FC = () => {
                   p: 4,
                   border: '1px solid',
                   borderColor: 'divider',
-                  borderRadius: 4,
                   transition: 'all 0.3s ease-in-out',
                   '&:hover': {
                     transform: 'translateY(-8px)',
@@ -240,9 +255,9 @@ const HomePage: React.FC = () => {
                   process check-ins, and keep customers informed automatically.
                 </Typography>
               </Card>
-            </Grid>
+            </Box>
 
-            <Grid item xs={12} md={4}>
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
               <Card
                 elevation={0}
                 sx={{
@@ -251,7 +266,6 @@ const HomePage: React.FC = () => {
                   p: 4,
                   border: '1px solid',
                   borderColor: 'divider',
-                  borderRadius: 4,
                   transition: 'all 0.3s ease-in-out',
                   '&:hover': {
                     transform: 'translateY(-8px)',
@@ -284,8 +298,104 @@ const HomePage: React.FC = () => {
                   }
                 </Typography>
               </Card>
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
+        </Container>
+      </Box>
+
+      {/* AI Demo Section */}
+      <Box sx={{ py: { xs: 8, md: 12 }, bgcolor: 'background.paper' }}>
+        <Container maxWidth="lg">
+          <Box display="flex" flexWrap="wrap" gap={6} alignItems="center">
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
+              <Box
+                sx={{
+                  background: 'linear-gradient(135deg, #FF5A5F 0%, #00A699 100%)',
+                  p: 4,
+                  color: 'white',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center'
+                }}
+              >
+                <SmartToyIcon sx={{ fontSize: 60, mb: 2 }} />
+                <Typography variant="h3" sx={{ fontWeight: 700, mb: 2 }}>
+                  🎮 AI Queue Counter
+                </Typography>
+                <Typography variant="h6" sx={{ mb: 3, opacity: 0.9 }}>
+                  See AI in action! Our demo uses computer vision to count people in real-time.
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body1" sx={{ mb: 1 }}>
+                    ✓ Real-time person detection
+                  </Typography>
+                  <Typography variant="body1" sx={{ mb: 1 }}>
+                    ✓ Automatic wait time calculation
+                  </Typography>
+                  <Typography variant="body1" sx={{ mb: 1 }}>
+                    ✓ Works with camera on phone
+                  </Typography>
+                  <Typography variant="body1">
+                    ✓ Fun demo with toys or real people!
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+
+            <Box sx={{ flex: 1, minWidth: '250px' }}>
+              <Box sx={{ textAlign: 'center' }}>
+                <Box
+                  sx={{
+                    width: { xs: 200, md: 250 },
+                    height: { xs: 200, md: 250 },
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, rgba(255, 90, 95, 0.1) 0%, rgba(0, 166, 153, 0.1) 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mx: 'auto',
+                    mb: 4,
+                    border: '4px solid',
+                    borderColor: 'primary.main'
+                  }}
+                >
+                  <VideocamIcon sx={{ fontSize: { xs: 80, md: 100 }, color: 'primary.main' }} />
+                </Box>
+                <Typography variant="h4" sx={{ fontWeight: 600, mb: 3 }}>
+                  Try the Demo!
+                </Typography>
+                <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
+                  Experience the future of queue management with our AI-powered camera demo.
+                  Perfect for showing kids how AI and computer vision work!
+                </Typography>
+                <Button
+                  variant="contained"
+                  size="large"
+                  component={RouterLink}
+                  to="/queue-counter"
+                  startIcon={<SmartToyIcon />}
+                  sx={{
+                    fontSize: '1.25rem',
+                    fontWeight: 600,
+                    px: 5,
+                    py: 2,
+                    borderRadius: '50px',
+                    background: 'linear-gradient(135deg, #00A699 0%, #4DB6AC 100%)',
+                    boxShadow: '0 8px 32px rgba(0, 166, 153, 0.3)',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #00897B 0%, #00A699 100%)',
+                      boxShadow: '0 12px 40px rgba(0, 166, 153, 0.4)',
+                      transform: 'translateY(-2px)'
+                    },
+                    transition: 'all 0.3s ease-in-out'
+                  }}
+                >
+                  Launch AI Demo
+                </Button>
+              </Box>
+            </Box>
+          </Box>
         </Container>
       </Box>
 

@@ -6,7 +6,6 @@ import {
     Card,
     CardContent,
     Button,
-    Grid,
     List,
     ListItem,
     ListItemIcon,
@@ -67,9 +66,9 @@ const PricingPage: React.FC = () => {
                 </Typography>
             </Box>
 
-            <Grid container spacing={4} alignItems="stretch">
+            <Box display="flex" flexWrap="wrap" gap={4} alignItems="stretch">
                 {tiers.map((tier) => (
-                    <Grid item xs={12} md={4} key={tier.name}>
+                    <Box sx={{ flex: 1, minWidth: '250px' }} key={tier.name}>
                         <Card
                             raised={tier.highlighted}
                             sx={{
@@ -149,15 +148,15 @@ const PricingPage: React.FC = () => {
                                 </Button>
                             </CardContent>
                         </Card>
-                    </Grid>
+                    </Box>
                 ))}
-            </Grid>
+            </Box>
 
             <Box sx={{ mt: 8, textAlign: "center" }}>
                 <Typography variant="h5" gutterBottom>
                     All plans include:
                 </Typography>
-                <Grid container spacing={2} sx={{ mt: 2, justifyContent: "center" }}>
+                <Box display="flex" flexWrap="wrap" gap={2} sx={{ mt: 2, justifyContent: "center" }}>
                     {[
                         "Real-time queue tracking",
                         "Customer notifications",
@@ -166,14 +165,14 @@ const PricingPage: React.FC = () => {
                         "No setup fees",
                         "Cancel anytime",
                     ].map((feature) => (
-                        <Grid item xs={12} sm={6} md={4} key={feature}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }} key={feature}>
                             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                                 <CheckCircleIcon color="primary" sx={{ mr: 1 }} fontSize="small" />
                                 <Typography variant="body1">{feature}</Typography>
                             </Box>
-                        </Grid>
+                        </Box>
                     ))}
-                </Grid>
+                </Box>
             </Box>
 
             <Box sx={{ mt: 6, textAlign: "center" }}>

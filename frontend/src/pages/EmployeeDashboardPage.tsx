@@ -4,7 +4,6 @@ import {
     Container,
     Box,
     Typography,
-    Grid,
     Card,
     CardContent,
     Button,
@@ -85,9 +84,9 @@ const EmployeeDashboardPage: React.FC = () => {
                     You are not assigned to any shops yet. Contact your shop owner to get access.
                 </Alert>
             ) : (
-                <Grid container spacing={3}>
+                <Box display="flex" flexWrap="wrap" gap={3}>
                     {shops.map((shop) => (
-                        <Grid item xs={12} md={6} key={shop.id}>
+                        <Box sx={{ flex: 1, minWidth: '250px' }} key={shop.id}>
                             <Card sx={{ height: '100%' }}>
                                 <CardContent>
                                     <Box sx={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', mb: 2 }}>
@@ -123,9 +122,9 @@ const EmployeeDashboardPage: React.FC = () => {
                                     </Button>
                                 </CardContent>
                             </Card>
-                        </Grid>
+                        </Box>
                     ))}
-                </Grid>
+                </Box>
             )}
         </Container>
     );

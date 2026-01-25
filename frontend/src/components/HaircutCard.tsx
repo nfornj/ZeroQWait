@@ -71,19 +71,17 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
       }
     } catch (err) {
       setError("Failed to update favorite status");
-      console.error("Favorite error:", err);
     }
   };
 
   return (
-    <Card 
+    <Card
       elevation={0}
       sx={{
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
         border: '1px solid #EBEBEB',
-        borderRadius: 3,
         overflow: 'hidden',
         transition: 'all 0.3s ease-in-out',
         '&:hover': {
@@ -94,8 +92,8 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
       }}
     >
       {/* Header with favorite button */}
-      <Box 
-        sx={{ 
+      <Box
+        sx={{
           position: 'relative',
           background: 'linear-gradient(135deg, rgba(255, 90, 95, 0.1) 0%, rgba(0, 166, 153, 0.05) 100%)',
           p: 3,
@@ -110,10 +108,10 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
             mb: 2
           }}
         >
-          <Typography 
-            variant="h6" 
-            component="h2" 
-            sx={{ 
+          <Typography
+            variant="h6"
+            component="h2"
+            sx={{
               fontWeight: 600,
               fontSize: '1.25rem',
               color: 'text.primary',
@@ -145,12 +143,11 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
         </Box>
 
         {error && (
-          <Alert 
-            severity="error" 
-            sx={{ 
-              mt: 1, 
+          <Alert
+            severity="error"
+            sx={{
+              mt: 1,
               mb: 2,
-              borderRadius: 2,
               fontSize: '0.875rem'
             }}
           >
@@ -161,16 +158,16 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
         {/* Rating and Price */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Rating 
-              value={haircut.rating} 
-              precision={0.5} 
-              readOnly 
+            <Rating
+              value={haircut.rating}
+              precision={0.5}
+              readOnly
               size="small"
               sx={{ fontSize: '1.1rem' }}
             />
-            <Typography 
-              variant="body2" 
-              sx={{ 
+            <Typography
+              variant="body2"
+              sx={{
                 fontWeight: 500,
                 color: 'text.secondary',
                 ml: 0.5
@@ -180,16 +177,16 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
             </Typography>
           </Box>
           {haircut.price_range && (
-            <Chip 
-              label={haircut.price_range} 
-              size="small" 
-              sx={{ 
+            <Chip
+              label={haircut.price_range}
+              size="small"
+              sx={{
                 bgcolor: 'white',
                 color: 'primary.main',
                 fontWeight: 600,
                 border: '1px solid',
                 borderColor: 'primary.light'
-              }} 
+              }}
             />
           )}
         </Box>
@@ -198,9 +195,9 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
       <CardContent sx={{ flexGrow: 1, pt: 2 }}>
         {/* Location */}
         <Box sx={{ mb: 2 }}>
-          <Typography 
-            variant="body1" 
-            sx={{ 
+          <Typography
+            variant="body1"
+            sx={{
               fontWeight: 500,
               color: 'text.primary',
               mb: 0.5
@@ -218,8 +215,8 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
           {haircut.phone && (
             <Link
               href={`tel:${haircut.phone}`}
-              sx={{ 
-                display: 'flex', 
+              sx={{
+                display: 'flex',
                 alignItems: 'center',
                 textDecoration: 'none',
                 color: 'primary.main',
@@ -239,8 +236,8 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
               href={haircut.website}
               target="_blank"
               rel="noopener noreferrer"
-              sx={{ 
-                display: 'flex', 
+              sx={{
+                display: 'flex',
                 alignItems: 'center',
                 textDecoration: 'none',
                 color: 'secondary.main',
@@ -261,17 +258,17 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
       {/* Expandable section */}
       {haircut.hours && (
         <>
-          <CardActions 
-            disableSpacing 
-            sx={{ 
+          <CardActions
+            disableSpacing
+            sx={{
               borderTop: '1px solid #F0F0F0',
               px: 3,
               py: 1.5
             }}
           >
-            <Typography 
-              variant="body2" 
-              sx={{ 
+            <Typography
+              variant="body2"
+              sx={{
                 fontWeight: 500,
                 color: 'text.secondary',
                 flexGrow: 1
@@ -284,7 +281,7 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
               onClick={handleExpandClick}
               aria-expanded={expanded}
               aria-label="show more"
-              sx={{ 
+              sx={{
                 color: 'text.secondary',
                 '&:hover': {
                   bgcolor: 'rgba(0, 0, 0, 0.04)'
@@ -297,9 +294,9 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
 
           <Collapse in={expanded} timeout="auto" unmountOnExit>
             <CardContent sx={{ pt: 0, borderTop: '1px solid #F0F0F0' }}>
-              <Typography 
-                variant="subtitle2" 
-                sx={{ 
+              <Typography
+                variant="subtitle2"
+                sx={{
                   fontWeight: 600,
                   color: 'text.primary',
                   mb: 1
@@ -307,9 +304,9 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
               >
                 Hours of Operation
               </Typography>
-              <Typography 
-                variant="body2" 
-                sx={{ 
+              <Typography
+                variant="body2"
+                sx={{
                   color: 'text.secondary',
                   lineHeight: 1.6
                 }}
