@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-APP_DIR="/home/neekrishrichu/apps/zeroqwait"
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY="localhost:5000"
 IMAGE_NAME="frontend"
 TAG="latest"
@@ -9,7 +9,7 @@ TAG="latest"
 echo "🚀 Starting Local CI/CD Pipeline..."
 
 echo "📥 Pulling latest code..."
-cd $APP_DIR
+cd "$APP_DIR"
 # Ensure we are on the correct branch
 git checkout main
 git pull origin main
