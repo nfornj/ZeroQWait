@@ -30,7 +30,7 @@ const OrbWrapper = styled(Box)(({ theme }) => ({
         filter: 'drop-shadow(0 0 30px rgba(168, 85, 247, 0.5))',
         '& .orb-label': {
             opacity: 1,
-            transform: 'translateY(10px)',
+            transform: 'translateY(-10px)',
         }
     }
 }));
@@ -47,7 +47,7 @@ const GlowEffect = styled(Box)({
 
 const Label = styled(Typography)({
     position: 'absolute',
-    bottom: '-30px',
+    top: '-50px',
     color: '#A855F7',
     fontWeight: 600,
     fontSize: '0.9rem',
