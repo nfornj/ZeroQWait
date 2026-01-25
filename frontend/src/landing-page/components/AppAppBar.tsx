@@ -198,22 +198,6 @@ export default function AppAppBar() {
             <Button color="primary" variant="contained" size="small" onClick={handleSignUp}>
               Sign up
             </Button>
-            <Button
-              color="secondary"
-              variant="outlined"
-              size="small"
-              startIcon={<SmartToyIcon />}
-              onClick={() => window.dispatchEvent(new CustomEvent('toggle-ai-assistant'))}
-              sx={{
-                mr: 1,
-                display: { xs: 'none', sm: 'flex' },
-                fontWeight: 'bold',
-                borderWidth: '2px',
-                '&:hover': { borderWidth: '2px' }
-              }}
-            >
-              Talk to AI
-            </Button>
             <ColorModeIconDropdown />
           </Box>
           <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1 }}>

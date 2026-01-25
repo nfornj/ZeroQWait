@@ -147,7 +147,52 @@ def find_best_queue(shop_id: int) -> Dict[str, Any]:
     except Exception as e:
         return {"error": str(e)}
 
-# --- Agent Brain (The LLM Interface) ---
+# --- Shared Agent Utilities ---
+
+def sanitize_history(history: List[Dict[str, str]], limit: int = 10) -> List[Dict[str, str]]:
+    """Clean history of any raw technical data or long JSON blobs."""
+    clean_history = []
+    for msg in history[-limit:]:
+        content = msg.get("content", "")
+        # If it looks like technical data or code, summarize it.
+        if content.startswith("{") or content.startswith("[") or "import " in content or "def " in content:
+            # Keep the role but sanitize the content
+            if msg.get("role") == "tool":
+                role_label = f"Technical result for {msg.get('name', 'tool')}"
+            else:
+                role_label = "Technical data message"
+            clean_history.append({"role": msg["role"], "content": f"--- {role_label}: Omitted for brevity ---"})
+        else:
+            clean_history.append(msg)
+    return clean_history
+
+def detect_leakage(text: str) -> bool:
+    """Check if the text contains technical leakage (code, JSON, tool names)."""
+    clean_text = str(text or "").strip()
+    if not clean_text:
+        return False
+        
+    # JSON or block markers
+    if clean_text.startswith("{") or clean_text.startswith("["):
+        return True
+    
+    # Specific keywords that indicate internal processing
+    leakage_keywords = [
+        "import ", "def ", "python", "json", "dictionary", "script", 
+        "tool_call", "tool_result", "search_shops", "get_services",
+        "find_best_queue", "enroll_customer", "navigate_to_page_section"
+    ]
+    if any(x in clean_text.lower() for x in leakage_keywords):
+        return True
+        
+    return False
+
+def get_fallback_persona_response(agent_name: str) -> str:
+    """Universal fallback response when leakage is detected."""
+    if agent_name == "ZeroQ":
+        return "I'm here to help you navigate ZeroQwait's features. How else can I assist you in exploring our platform or finding a shop today?"
+    return "I'm focused on helping you with your visit today. How else can I assist you with our services or the queue?"
+
 
 # Mapping of function names to actual Python functions for the LLM to call
 AVAILABLE_TOOLS = {
@@ -288,7 +333,7 @@ Operational Info:
         messages = [
             {"role": "system", "content": self.get_system_prompt()}
         ]
-        messages.extend(history[-10:])
+        messages.extend(sanitize_history(history))
         messages.append({"role": "user", "content": user_message})
 
         try:
@@ -330,15 +375,15 @@ Operational Info:
                             result = AVAILABLE_TOOLS[name](**args)
                             actions_taken.append({"tool": name, "result": result})
                             
-                            # Add tool result to history for the second pass
+                            # Add tool result (sanitized) to history for the second pass
                             messages.append({
                                 "role": "tool",
-                                "content": json.dumps(result),
+                                "content": f"Action {name} completed successfully." if isinstance(result, (list, dict)) and len(str(result)) > 200 else json.dumps(result),
                                 "name": name
                             })
                     
                     # --- SECOND PASS ---
-                    # Now call the LLM again with the tool results in history
+                    messages.append({"role": "system", "content": f"REMINIDER: You are {self.ai_agent_name}. No technical talk. Respond naturally to the user."})
                     response_pass2 = await client.post(
                         self.base_url,
                         json={
@@ -356,26 +401,16 @@ Operational Info:
                 else:
                     text = message.get("content", "I'm not sure how to respond to that.")
                 
-                # Safety check: Catch any JSON leakage or "tool_call" artifacts
-                clean_text = str(text or "").strip()
-                
-                # Broad match for anything that looks like JSON or a tool call (starts with { or "tool",)
-                leakage_detected = False
-                if clean_text.startswith("{") or clean_text.startswith("["):
-                    leakage_detected = True
-                elif '"' in clean_text and "{" in clean_text and (any(t in clean_text for t in AVAILABLE_TOOLS)):
-                    leakage_detected = True
-
-                if leakage_detected:
-                    logger.warning(f"Raw LLM leakage detected and intercepted: {clean_text}")
-                    # Try to find a fallback response from our mock logic or a simple polite brush-off
-                    fallback = self._mock_chat(user_message, history)
-                    text = fallback["response"]
+                # --- LEAKAGE INTERCEPTOR ---
+                if detect_leakage(text):
+                    logger.warning(f"FrontDeskAgent leakage intercepted: {text[:100]}...")
+                    text = get_fallback_persona_response(self.ai_agent_name)
 
                 return {
                     "response": text,
                     "actions": actions_taken,
-                    "shop_name": self.shop_name
+                    "shop_name": self.shop_name,
+                    "agent_name": self.ai_agent_name
                 }
         except Exception as e:
             logger.error(f"Local LLM chat failed: {e}")
@@ -459,29 +494,12 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
 - **Smarter Search (CRITICAL):** Do NOT call `search_shops` for non-business queries like "hello", "can you hear me", or "test". ONLY call it if the user mentions a specific category (barber, salon, etc.) or expresses a desire to "find a place".
 """
 
-    def _sanitize_history(self, history: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """Clean history of any raw technical data or long JSON blobs."""
-        clean_history = []
-        for msg in history[-10:]:
-            content = msg.get("content", "")
-            # If it looks like technical data or code, summarize it.
-            if content.startswith("{") or content.startswith("[") or "import " in content or "def " in content:
-                # Keep the role but sanitize the content
-                if msg.get("role") == "tool":
-                    role_label = f"Technical result for {msg.get('name', 'tool')}"
-                else:
-                    role_label = "Technical data message"
-                clean_history.append({"role": msg["role"], "content": f"[{role_label}: Omitted for brevity]"})
-            else:
-                clean_history.append(msg)
-        return clean_history
-
     async def chat(self, user_message: str, history: List[Dict[str, str]] = []) -> Dict[str, Any]:
         """Override chat to use master tools and prompt."""
         messages = [
             {"role": "system", "content": self.get_system_prompt()}
         ]
-        messages.extend(self._sanitize_history(history))
+        messages.extend(sanitize_history(history))
         messages.append({"role": "user", "content": user_message})
 
         try:
@@ -524,7 +542,7 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
                             messages.append({"role": "tool", "content": summary, "name": name})
                     
                     # Pass 2 with prompt reinforcement
-                    messages.append({"role": "system", "content": "REMINIDER: You are ZeroQ. No technical talk. Respond naturally to the user about what was found."})
+                    messages.append({"role": "system", "content": f"REMINIDER: You are {self.ai_agent_name}. No technical talk. Respond naturally to the user."})
                     response_pass2 = await client.post(
                         self.base_url,
                         json={"model": self.model, "messages": messages, "stream": False}
@@ -534,17 +552,9 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
                     text = message.get("content", "I'm here to help!")
 
                 # --- LEAKAGE INTERCEPTOR ---
-                clean_text = str(text or "").strip()
-                leakage_detected = False
-                # If it looks like code, JSON, or technical analysis, intercept it.
-                if any(x in clean_text.lower() for x in ["import ", "def ", "python", "json", "dictionary", "script"]):
-                    leakage_detected = True
-                if clean_text.startswith("{") or clean_text.startswith("["):
-                    leakage_detected = True
-                
-                if leakage_detected:
-                    logger.warning(f"MasterAgent leakage intercepted: {clean_text[:100]}...")
-                    text = "I'm here to help you navigate ZeroQwait's features. How else can I assist you in exploring our platform or finding a shop today?"
+                if detect_leakage(text):
+                    logger.warning(f"MasterAgent leakage intercepted: {text[:100]}...")
+                    text = get_fallback_persona_response(self.ai_agent_name)
 
                 return {
                     "response": text,

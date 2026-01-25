@@ -23,9 +23,12 @@ import { useVoiceInterface } from '../../hooks/useVoiceInterface';
 import { useAudioVisualizer } from '../../hooks/useAudioVisualizer';
 import ParticleSphere from '../../components/agent/ParticleSphere';
 import { useNavigate } from 'react-router-dom';
+import LightModeIcon from '@mui/icons-material/LightMode';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
 
 const MasterAIAgent: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
+    const [isDarkMode, setIsDarkMode] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [chatHistory, setChatHistory] = useState<Array<{ role: 'ai' | 'user', text: string, shops?: any[] }>>([
         { role: 'ai', text: "Welcome to ZeroQwait! I'm ZeroQ. How can I help you today?" }
@@ -44,22 +47,28 @@ const MasterAIAgent: React.FC = () => {
 
     const { volume } = useAudioVisualizer(isListening);
 
+    // Theme & Visibility Configuration
+    const theme = {
+        bg: isDarkMode ? 'rgba(5, 5, 10, 0.92)' : 'rgba(255, 255, 255, 0.95)',
+        glass: isDarkMode ? 'blur(40px)' : 'blur(30px)',
+        text: isDarkMode ? '#ffffff' : '#0f172a',
+        textSecondary: isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(15, 23, 42, 0.7)',
+        accent: isDarkMode ? '#f5e1c0' : '#A855F7', // Gold in dark, Purple in light
+        cardBg: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.03)',
+        cardBorder: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.08)',
+        inputBg: isDarkMode ? 'rgba(255, 255, 255, 0.07)' : 'rgba(15, 23, 42, 0.05)',
+        iconColor: isDarkMode ? '#ffffff' : '#0f172a'
+    };
+
     // Visibility & Global Triggers
     useEffect(() => {
-        const timer = setTimeout(() => {
-            if (!isOpen) {
-                setIsOpen(true);
-            }
-        }, 5000);
-
         const handleToggle = () => setIsOpen(prev => !prev);
         window.addEventListener('toggle-ai-assistant', handleToggle);
 
         return () => {
-            clearTimeout(timer);
             window.removeEventListener('toggle-ai-assistant', handleToggle);
         };
-    }, [isOpen]);
+    }, []);
 
     // Handle initial speech when opening
     useEffect(() => {
@@ -130,23 +139,40 @@ const MasterAIAgent: React.FC = () => {
                     width: '100vw',
                     height: '100vh',
                     zIndex: 10000,
-                    background: 'rgba(5, 5, 10, 0.9)',
-                    backdropFilter: 'blur(50px)',
+                    background: theme.bg,
+                    backdropFilter: theme.glass,
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: 'white',
-                    overflow: 'hidden'
+                    color: theme.text,
+                    overflow: 'hidden',
+                    transition: 'all 0.5s ease'
                 }}
             >
-                {/* Close Button Top Right */}
-                <IconButton
-                    onClick={() => setIsOpen(false)}
-                    sx={{ position: 'absolute', top: 40, right: 40, color: 'white', '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' } }}
-                >
-                    <CloseIcon sx={{ fontSize: 40 }} />
-                </IconButton>
+                {/* Controls Top Right */}
+                <Stack direction="row" spacing={2} sx={{ position: 'absolute', top: 40, right: 40 }}>
+                    <IconButton
+                        onClick={() => setIsDarkMode(!isDarkMode)}
+                        sx={{
+                            color: theme.iconColor,
+                            bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.05)',
+                            '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)' }
+                        }}
+                    >
+                        {isDarkMode ? <LightModeIcon sx={{ fontSize: 24 }} /> : <DarkModeIcon sx={{ fontSize: 24 }} />}
+                    </IconButton>
+                    <IconButton
+                        onClick={() => setIsOpen(false)}
+                        sx={{
+                            color: theme.iconColor,
+                            bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.05)',
+                            '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)' }
+                        }}
+                    >
+                        <CloseIcon sx={{ fontSize: 32 }} />
+                    </IconButton>
+                </Stack>
 
                 <Stack
                     direction={latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? "row" : "column"}
@@ -171,7 +197,7 @@ const MasterAIAgent: React.FC = () => {
                     }}>
                         {/* The Particle Sphere */}
                         <Box sx={{ position: 'relative', width: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 300 : 400, height: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 300 : 400, transition: 'all 0.8s ease' }}>
-                            <ParticleSphere volume={volume} isListening={isListening} />
+                            <ParticleSphere volume={volume} isListening={isListening} color={theme.accent} />
                             {isProcessing && (
                                 <CircularProgress
                                     size={latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 200 : 260}
@@ -182,7 +208,8 @@ const MasterAIAgent: React.FC = () => {
                                         left: '50%',
                                         marginTop: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '-100px' : '-130px',
                                         marginLeft: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '-100px' : '-130px',
-                                        color: 'rgba(245, 225, 192, 0.2)',
+                                        color: theme.accent,
+                                        opacity: 0.3,
                                         animationDuration: '1.5s',
                                         transition: 'all 0.8s ease'
                                     }}
@@ -216,10 +243,10 @@ const MasterAIAgent: React.FC = () => {
                                     <Typography
                                         variant="body1"
                                         sx={{
-                                            fontWeight: 300,
+                                            fontWeight: index === chatHistory.length - 1 ? 400 : 300,
                                             lineHeight: 1.6,
                                             letterSpacing: '0.01em',
-                                            color: chat.role === 'user' ? 'rgba(245, 225, 192, 0.9)' : 'rgba(255, 255, 255, 0.95)',
+                                            color: chat.role === 'user' ? theme.accent : theme.text,
                                             fontSize: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '1.1rem' : { xs: '1.1rem', md: '1.4rem' },
                                             maxWidth: '600px',
                                             margin: '0 auto',
@@ -276,15 +303,16 @@ const MasterAIAgent: React.FC = () => {
                                         <Card
                                             key={shop.id}
                                             sx={{
-                                                bgcolor: 'rgba(255,255,255,0.05)',
+                                                bgcolor: theme.cardBg,
                                                 borderRadius: '24px',
-                                                color: 'white',
-                                                border: '1px solid rgba(255,255,255,0.05)',
+                                                color: theme.text,
+                                                border: `1px solid ${theme.cardBorder}`,
+                                                boxShadow: isDarkMode ? 'none' : '0 8px 32px rgba(15, 23, 42, 0.05)',
                                                 transition: 'all 0.3s ease',
                                                 '&:hover': {
-                                                    bgcolor: 'rgba(255,255,255,0.08)',
+                                                    bgcolor: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.06)',
                                                     transform: 'translateY(-4px)',
-                                                    borderColor: 'rgba(245, 225, 192, 0.3)'
+                                                    borderColor: theme.accent
                                                 }
                                             }}
                                         >
@@ -292,29 +320,29 @@ const MasterAIAgent: React.FC = () => {
                                                 <Stack direction="row" spacing={3} alignItems="center">
                                                     <Avatar
                                                         src={shop.logo_url}
-                                                        sx={{ width: 80, height: 80, borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)' }}
+                                                        sx={{ width: 80, height: 80, borderRadius: '20px', border: `1px solid ${theme.cardBorder}` }}
                                                     />
                                                     <Box sx={{ flex: 1 }}>
                                                         <Typography variant="h6" fontWeight="600" sx={{ mb: 0.5 }}>{shop.name}</Typography>
-                                                        <Typography variant="body2" sx={{ opacity: 0.6, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                        <Typography variant="body2" sx={{ color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                             <LocationOnIcon sx={{ fontSize: 16 }} />
                                                             {shop.address}, {shop.city}
                                                         </Typography>
                                                         <Box sx={{ mt: 1.5, display: 'flex', gap: 1 }}>
-                                                            <Chip label="Open Now" size="small" sx={{ bgcolor: 'rgba(76, 175, 80, 0.1)', color: '#4caf50', border: '1px solid rgba(76, 175, 80, 0.2)' }} />
-                                                            <Chip label={`${shop.average_service_time || 30}m wait`} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid rgba(255,255,255,0.1)' }} />
+                                                            <Chip label="Open Now" size="small" sx={{ bgcolor: isDarkMode ? 'rgba(76, 175, 80, 0.1)' : 'rgba(76, 175, 80, 0.05)', color: '#2e7d32', border: '1px solid rgba(76, 175, 80, 0.2)' }} />
+                                                            <Chip label={`${shop.average_service_time || 30}m wait`} size="small" sx={{ bgcolor: theme.inputBg, color: theme.text, border: `1px solid ${theme.cardBorder}` }} />
                                                         </Box>
                                                     </Box>
                                                     <Button
                                                         variant="contained"
                                                         sx={{
-                                                            bgcolor: 'rgba(245, 225, 192, 0.9)',
-                                                            color: 'black',
+                                                            bgcolor: theme.accent,
+                                                            color: isDarkMode ? 'black' : 'white',
                                                             fontWeight: 'bold',
                                                             px: 4,
                                                             py: 1.5,
                                                             borderRadius: '16px',
-                                                            '&:hover': { bgcolor: '#fff' }
+                                                            '&:hover': { bgcolor: theme.accent, opacity: 0.9 }
                                                         }}
                                                         onClick={() => navigate(`/s/${shop.slug}`)}
                                                     >
@@ -374,11 +402,12 @@ const MasterAIAgent: React.FC = () => {
                         sx={{
                             width: 90,
                             height: 90,
-                            bgcolor: isListening ? '#f5e1c0' : 'rgba(255,255,255,0.1)',
-                            color: isListening ? 'black' : 'white',
-                            '&:hover': { bgcolor: isListening ? '#fff' : 'rgba(255,255,255,0.15)' },
+                            bgcolor: isListening ? theme.accent : theme.cardBg,
+                            color: isListening ? (isDarkMode ? 'black' : 'white') : theme.text,
+                            '&:hover': { bgcolor: isListening ? theme.accent : theme.inputBg },
                             transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                            boxShadow: isListening ? '0 0 40px rgba(245, 225, 192, 0.4)' : 'none'
+                            border: `1px solid ${theme.cardBorder}`,
+                            boxShadow: isListening ? `0 0 40px ${theme.accent}66` : 'none'
                         }}
                     >
                         {isListening ? <MicIcon sx={{ fontSize: 45 }} /> : <MicOffIcon sx={{ fontSize: 45 }} />}
@@ -407,13 +436,13 @@ const MasterAIAgent: React.FC = () => {
                                     input: {
                                         sx: {
                                             borderRadius: '30px',
-                                            bgcolor: 'rgba(255,255,255,0.05)',
-                                            color: 'white',
-                                            '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
-                                            '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.2)' },
-                                            '&.Mui-focused fieldset': { borderColor: 'rgba(245, 225, 192, 0.4)' }
+                                            bgcolor: theme.inputBg,
+                                            color: theme.text,
+                                            '& fieldset': { borderColor: theme.cardBorder },
+                                            '&:hover fieldset': { borderColor: theme.accent },
+                                            '&.Mui-focused fieldset': { borderColor: theme.accent, borderWidth: '2px' }
                                         },
-                                        endAdornment: <SearchIcon sx={{ color: 'rgba(255,255,255,0.3)', mr: 1 }} />
+                                        endAdornment: <SearchIcon sx={{ color: theme.textSecondary, mr: 1 }} />
                                     }
                                 }}
                             />

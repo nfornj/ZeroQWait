@@ -132,20 +132,6 @@ export default function Hero() {
             >
               Start now
             </Button>
-            <Button
-              variant="outlined"
-              color="secondary"
-              size="small"
-              startIcon={<SmartToyIcon />}
-              onClick={() => window.dispatchEvent(new CustomEvent('toggle-ai-assistant'))}
-              sx={{
-                minWidth: 'fit-content',
-                borderWidth: '2px',
-                '&:hover': { borderWidth: '2px' }
-              }}
-            >
-              Talk to AI
-            </Button>
           </Stack>
           <Typography
             variant="caption"
