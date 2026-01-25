@@ -11,8 +11,8 @@ echo "🚀 Starting Local CI/CD Pipeline..."
 echo "📥 Pulling latest code..."
 cd $APP_DIR
 # Ensure we are on the correct branch
-git checkout new_desktop
-git pull origin new_desktop
+git checkout main
+git pull origin main
 
 echo "🏗️  Building Docker image..."
 cd frontend
