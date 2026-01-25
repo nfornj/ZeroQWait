@@ -69,9 +69,6 @@ export default function Hero() {
           useFlexGap
           sx={{ alignItems: 'center', width: { xs: '100%', sm: '70%' } }}
         >
-          <Typography variant="h1" sx={{ textAlign: 'center', fontSize: 'clamp(3rem, 10vw, 3.5rem)', color: 'error.main', mb: 2 }}>
-            DEPLOYMENT TEST v2
-          </Typography>
           <Typography
             variant="h1"
             sx={{
