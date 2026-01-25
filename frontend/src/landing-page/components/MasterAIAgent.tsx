@@ -229,6 +229,7 @@ const MasterAIAgent: React.FC = () => {
                                 textAlign: 'center',
                                 mt: 2,
                                 px: 4,
+                                pb: 6,
                                 maxHeight: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '30vh' : '40vh',
                                 overflowY: 'auto',
                                 width: '100%',
