@@ -45,11 +45,14 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
 
             ctx.clearRect(0, 0, width, height);
 
-            rotationX += 0.003;
-            rotationY += 0.005;
+            // Dynamic rotation based on volume (faster when speaking)
+            const baseSpeed = 0.003;
+            const speedMultiplier = 1 + (volume * 8); // Significantly fast when loud
+            rotationX += baseSpeed * speedMultiplier;
+            rotationY += (baseSpeed * 1.5) * speedMultiplier;
 
-            // Audio reaction factor
-            const scale = 1 + (volume * 1.2);
+            // Audio reaction factor - Stronger pulse
+            const scale = 1 + (volume * 1.5);
 
             particles.current.forEach((p) => {
                 // Rotation logic
@@ -66,10 +69,11 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
 
                 // Depth-based opacity and size
                 const zNorm = (pz + RADIUS) / (RADIUS * 2);
-                const alpha = (p.opacity * zNorm * scale) + (volume * 0.5);
+                // Boost opacity with volume for "glowing" effect
+                const alpha = (p.opacity * zNorm) + (volume * 0.8);
 
                 ctx.beginPath();
-                ctx.arc(sx, sy, p.size * fov, 0, Math.PI * 2);
+                ctx.arc(sx, sy, (p.size * fov) * (1 + volume), 0, Math.PI * 2);
                 ctx.fillStyle = color;
                 ctx.globalAlpha = Math.min(alpha, 1);
                 ctx.fill();

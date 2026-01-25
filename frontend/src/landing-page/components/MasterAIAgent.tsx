@@ -26,13 +26,25 @@ import { useNavigate } from 'react-router-dom';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 
+import Pricing from './Pricing';
+import Features from './Features';
+import FAQ from './FAQ';
+
 const MasterAIAgent: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
-    const [chatHistory, setChatHistory] = useState<Array<{ role: 'ai' | 'user', text: string, shops?: any[] }>>([
+
+    // Updated State Type for Dynamic Layout
+    const [chatHistory, setChatHistory] = useState<Array<{
+        role: 'ai' | 'user',
+        text: string,
+        shops?: any[],
+        relatedViewer?: 'shops' | 'pricing' | 'features' | 'faq' | null
+    }>>([
         { role: 'ai', text: "Welcome to ZeroQwait! I'm ZeroQ. How can I help you today?" }
     ]);
+
     const scrollRef = useRef<HTMLDivElement>(null);
     const latestAIResponse = chatHistory[chatHistory.length - 1]?.role === 'ai' ? chatHistory[chatHistory.length - 1] : null;
     const navigate = useNavigate();
@@ -50,14 +62,14 @@ const MasterAIAgent: React.FC = () => {
     // Theme & Visibility Configuration
     const theme = {
         bg: isDarkMode
-            ? 'rgba(5, 5, 10, 0.92)'
-            : 'linear-gradient(135deg, rgba(249, 250, 251, 0.98) 0%, rgba(243, 244, 246, 0.95) 50%, rgba(238, 242, 255, 0.98) 100%)',
-        glass: isDarkMode ? 'blur(40px)' : 'blur(60px)',
+            ? 'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 50%, 15%), #05050A)' // Deep violet dark mode
+            : 'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 80%, 90%), #FFFFFF)', // Bright violet light mode - Matches Hero
+        glass: isDarkMode ? 'blur(20px)' : 'blur(40px)', // Reduced blur for crisper bg visibility
         text: isDarkMode ? '#ffffff' : '#0f172a',
         textSecondary: isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(15, 23, 42, 0.7)',
-        accent: isDarkMode ? '#f5e1c0' : '#A855F7', // Gold in dark, Purple in light
-        cardBg: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.7)',
-        cardBorder: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(168, 85, 247, 0.15)',
+        accent: isDarkMode ? '#E879F9' : '#C026D3', // Fuchsia 400 (Dark) / Fuchsia 600 (Light) - Vibrant & Neon
+        cardBg: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.6)',
+        cardBorder: isDarkMode ? 'rgba(232, 121, 249, 0.2)' : 'rgba(192, 38, 211, 0.15)',
         inputBg: isDarkMode ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.8)',
         iconColor: isDarkMode ? '#ffffff' : '#0f172a'
     };
@@ -89,6 +101,19 @@ const MasterAIAgent: React.FC = () => {
         setIsProcessing(true);
 
         try {
+            // MOCK INTENT DETECTION FOR DEMO PURPOSES
+            // In a real app, the backend would return 'relatedViewer' or 'action'
+            const lowerText = userText.toLowerCase();
+            let relatedViewer: 'shops' | 'pricing' | 'features' | 'faq' | null = null;
+
+            if (lowerText.includes('pricing') || lowerText.includes('cost') || lowerText.includes('plan')) {
+                relatedViewer = 'pricing';
+            } else if (lowerText.includes('feature') || lowerText.includes('what can you do')) {
+                relatedViewer = 'features';
+            } else if (lowerText.includes('help') || lowerText.includes('faq') || lowerText.includes('question')) {
+                relatedViewer = 'faq';
+            }
+
             const response = await axios.post('/agent/master/chat', {
                 message: userText,
                 history: chatHistory.map(h => ({
@@ -102,19 +127,22 @@ const MasterAIAgent: React.FC = () => {
 
             actions.forEach((action: any) => {
                 if (action.tool === 'navigate_to_page_section') {
-                    const sectionId = action.result.target;
-                    const element = document.getElementById(sectionId);
-                    if (element) {
-                        element.scrollIntoView({ behavior: 'smooth' });
-                        // Close immersive mode after navigation so they see the result
-                        setTimeout(() => setIsOpen(false), 2000);
+                    // We might handle scroll here, OR if we have relatedViewer, we stay in overlay
+                    if (!relatedViewer) {
+                        const sectionId = action.result.target;
+                        const element = document.getElementById(sectionId);
+                        if (element) {
+                            element.scrollIntoView({ behavior: 'smooth' });
+                            setTimeout(() => setIsOpen(false), 2000);
+                        }
                     }
                 } else if (action.tool === 'search_shops') {
                     shopResults = action.result;
+                    if (shopResults.length > 0) relatedViewer = 'shops';
                 }
             });
 
-            setChatHistory(prev => [...prev, { role: 'ai', text: agentText, shops: shopResults }]);
+            setChatHistory(prev => [...prev, { role: 'ai', text: agentText, shops: shopResults, relatedViewer }]);
             setIsProcessing(false);
             speak(agentText);
         } catch (err) {
@@ -180,7 +208,6 @@ const MasterAIAgent: React.FC = () => {
                     </IconButton>
                 </Stack>
 
-                {/* Scrollable Region for Content & Footer */}
                 <Box
                     sx={{
                         flex: 1,
@@ -192,7 +219,6 @@ const MasterAIAgent: React.FC = () => {
                         flexDirection: 'column',
                         position: 'relative',
                         zIndex: 1,
-                        // Custom scrollbar styling
                         '&::-webkit-scrollbar': { width: '6px' },
                         '&::-webkit-scrollbar-track': { background: 'transparent' },
                         '&::-webkit-scrollbar-thumb': {
@@ -201,290 +227,230 @@ const MasterAIAgent: React.FC = () => {
                         }
                     }}
                 >
-                    {/* Content Wrapper - Centers content if space allows, stretches if not */}
+                    {/* Main Content Wrapper - Centers or Splits */}
                     <Box sx={{
                         flex: 1,
                         display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        py: 10, // Top/bottom padding for spacing
-                        minHeight: 'min-content' // Ensure it can grow
+                        flexDirection: latestAIResponse?.relatedViewer ? { xs: 'column', md: 'row' } : 'column',
+                        alignItems: latestAIResponse?.relatedViewer ? 'flex-start' : 'center',
+                        justifyContent: latestAIResponse?.relatedViewer ? 'center' : 'center',
+                        py: latestAIResponse?.relatedViewer ? 4 : 10,
+                        px: latestAIResponse?.relatedViewer ? 6 : 0,
+                        gap: 6,
+                        height: '100%',
+                        minHeight: 'min-content'
                     }}>
-                        <Stack
-                            direction={latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? "row" : "column"}
-                            spacing={latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 8 : 4}
-                            alignItems="center"
-                            justifyContent="center"
-                            sx={{
-                                maxWidth: '95%',
-                                width: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 1400 : 800,
-                                transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
-                            }}
-                        >
-                            {/* Left Column: AI Assistant (Sphere + Transcript) */}
-                            <Box sx={{
-                                flex: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 0.8 : 'none',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: 2,
-                                transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
-                                width: '100%'
-                            }}>
-                                {/* The Particle Sphere */}
-                                <Box sx={{ position: 'relative', width: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 300 : 400, height: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 300 : 400, transition: 'all 0.8s ease' }}>
-                                    <ParticleSphere volume={volume} isListening={isListening} color={theme.accent} />
-                                    {isProcessing && (
-                                        <CircularProgress
-                                            size={latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? 200 : 260}
-                                            thickness={1}
-                                            sx={{
-                                                position: 'absolute',
-                                                top: '50%',
-                                                left: '50%',
-                                                marginTop: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '-100px' : '-130px',
-                                                marginLeft: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '-100px' : '-130px',
-                                                color: theme.accent,
-                                                opacity: 0.3,
-                                                animationDuration: '1.5s',
-                                                transition: 'all 0.8s ease'
-                                            }}
-                                        />
-                                    )}
-                                </Box>
 
-                                {/* Scrollable Transcript Area */}
-                                <Box
-                                    ref={scrollRef}
-                                    sx={{
-                                        textAlign: 'center',
-                                        mt: 2,
-                                        px: 4,
-                                        maxHeight: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '30vh' : '40vh',
-                                        overflowY: 'auto',
-                                        width: '100%',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: 3,
-                                        maskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)',
-                                        WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)',
-                                        '&::-webkit-scrollbar': { display: 'none' },
-                                        msOverflowStyle: 'none',
-                                        scrollbarWidth: 'none',
-                                        transition: 'all 0.8s ease'
-                                    }}
-                                >
-                                    {chatHistory.map((chat, index) => (
-                                        <Box key={index} sx={{ opacity: index === chatHistory.length - 1 ? 1 : 0.4, transition: 'opacity 0.5s' }}>
-                                            <Typography
-                                                variant="body1"
-                                                sx={{
-                                                    fontWeight: index === chatHistory.length - 1 ? 400 : 300,
-                                                    lineHeight: 1.6,
-                                                    letterSpacing: '0.01em',
-                                                    color: chat.role === 'user' ? theme.accent : theme.text,
-                                                    fontSize: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '1.1rem' : { xs: '1.1rem', md: '1.4rem' },
-                                                    maxWidth: '600px',
-                                                    margin: '0 auto',
-                                                    transition: 'all 0.8s ease'
-                                                }}
-                                            >
-                                                {chat.role === 'user' ? `“${chat.text}”` : chat.text}
-                                            </Typography>
-                                        </Box>
-                                    ))}
+                        {/* LEFT COLUMN: Agent, Transcript & Controls (Moves left when content shows) */}
+                        <Box sx={{
+                            flex: latestAIResponse?.relatedViewer ? 1 : 'none',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 4,
+                            transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+                            width: latestAIResponse?.relatedViewer ? '100%' : 'auto',
+                            maxWidth: latestAIResponse?.relatedViewer ? '600px' : '800px',
+                            position: latestAIResponse?.relatedViewer ? 'sticky' : 'relative',
+                            top: latestAIResponse?.relatedViewer ? 20 : 'auto',
+                        }}>
+                            {/* The Particle Sphere */}
+                            <Box sx={{ position: 'relative', width: 300, height: 300, transition: 'all 0.8s ease' }}>
+                                <ParticleSphere volume={volume} isListening={isListening} color={theme.accent} />
+                                {isProcessing && (
+                                    <CircularProgress
+                                        size={200}
+                                        thickness={1}
+                                        sx={{
+                                            position: 'absolute',
+                                            top: '50%',
+                                            left: '50%',
+                                            marginTop: '-100px',
+                                            marginLeft: '-100px',
+                                            color: theme.accent,
+                                            opacity: 0.5,
+                                            animationDuration: '1s',
+                                        }}
+                                    />
+                                )}
+                            </Box>
 
-                                    {isListening && transcript && (
+                            {/* Scrollable Transcript - More compact when split */}
+                            <Box
+                                ref={scrollRef}
+                                sx={{
+                                    textAlign: 'center',
+                                    maxHeight: latestAIResponse?.relatedViewer ? '25vh' : '30vh',
+                                    overflowY: 'auto',
+                                    width: '100%',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 2,
+                                    maskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)',
+                                    WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)',
+                                    '&::-webkit-scrollbar': { display: 'none' },
+                                }}
+                            >
+                                {chatHistory.map((chat, index) => (
+                                    <Box key={index} sx={{ opacity: index === chatHistory.length - 1 ? 1 : 0.6 }}>
                                         <Typography
                                             variant="body1"
                                             sx={{
-                                                fontWeight: 300,
+                                                fontWeight: index === chatHistory.length - 1 ? 500 : 300,
                                                 lineHeight: 1.6,
-                                                letterSpacing: '0.01em',
-                                                color: 'rgba(245, 225, 192, 0.6)',
-                                                fontSize: latestAIResponse?.shops && latestAIResponse.shops.length > 0 ? '1.1rem' : { xs: '1.1rem', md: '1.4rem' },
-                                                fontStyle: 'italic',
-                                                transition: 'all 0.8s ease'
+                                                color: chat.role === 'user' ? theme.accent : theme.text,
+                                                fontSize: latestAIResponse?.relatedViewer ? '1.1rem' : '1.3rem',
+                                                transition: 'all 0.5s ease'
                                             }}
                                         >
-                                            {transcript}
+                                            {chat.role === 'user' ? `“${chat.text}”` : chat.text}
                                         </Typography>
-                                    )}
+                                    </Box>
+                                ))}
 
-                                    {isProcessing && (
-                                        <Typography variant="body2" sx={{ mt: 1, color: 'secondary.main', opacity: 0.6, fontStyle: 'italic' }}>
-                                            Thinking...
-                                        </Typography>
-                                    )}
-                                </Box>
+                                {isListening && transcript && (
+                                    <Typography
+                                        variant="body1"
+                                        sx={{
+                                            fontWeight: 300,
+                                            lineHeight: 1.6,
+                                            color: isDarkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+                                            fontSize: '1.2rem',
+                                            fontStyle: 'italic',
+                                        }}
+                                    >
+                                        {transcript}
+                                    </Typography>
+                                )}
                             </Box>
 
-                            {/* Right Column: Shop Results List (Animated) */}
-                            {latestAIResponse?.shops && latestAIResponse.shops.length > 0 && (
-                                <Fade in={true} timeout={1000}>
-                                    <Box sx={{
-                                        flex: 1.2,
-                                        width: '100%',
-                                        maxHeight: '70vh',
-                                        overflowY: 'auto',
-                                        pr: 2,
-                                        '&::-webkit-scrollbar': { width: '4px' },
-                                        '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(255,255,255,0.1)', borderRadius: '10px' }
-                                    }}>
-                                        <Typography variant="h5" sx={{ mb: 3, fontWeight: 300, color: 'rgba(245, 225, 192, 0.9)' }}>
-                                            Found {latestAIResponse.shops.length} results
-                                        </Typography>
+                            {/* Interaction Footer - MOVED INSIDE LEFT COLUMN */}
+                            <Box
+                                sx={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: 2,
+                                    width: '100%'
+                                }}
+                            >
+                                <IconButton
+                                    onClick={() => {
+                                        if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+                                            alert("Microphone access requires a secure connection (HTTPS). Please try accessing via localhost or a secure domain.");
+                                            return;
+                                        }
+                                        isListening ? stopListening() : startListening();
+                                    }}
+                                    sx={{
+                                        width: 80,
+                                        height: 80,
+                                        bgcolor: isListening ? theme.accent : theme.cardBg,
+                                        color: isListening ? (isDarkMode ? 'black' : 'white') : theme.text,
+                                        '&:hover': { bgcolor: isListening ? theme.accent : theme.inputBg },
+                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        border: `2px solid ${theme.cardBorder}`,
+                                        boxShadow: isListening ? `0 0 50px ${theme.accent}88` : 'none'
+                                    }}
+                                >
+                                    {isListening ? <MicIcon sx={{ fontSize: 40 }} /> : <MicOffIcon sx={{ fontSize: 40 }} />}
+                                </IconButton>
+
+                                <Typography variant="caption" sx={{ opacity: 0.6, letterSpacing: '0.1em', fontWeight: 600 }}>
+                                    {isListening ? "LISTENING..." : "START VOICE CONVERSATION"}
+                                </Typography>
+
+                                {!isListening && (
+                                    <TextField
+                                        fullWidth
+                                        placeholder="Type or speak to ZeroQ..."
+                                        variant="outlined"
+                                        sx={{ maxWidth: 400 }}
+                                        onKeyPress={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const target = e.target as HTMLInputElement;
+                                                handleChat(target.value);
+                                                target.value = '';
+                                            }
+                                        }}
+                                        slotProps={{
+                                            input: {
+                                                sx: {
+                                                    borderRadius: '30px',
+                                                    bgcolor: theme.inputBg,
+                                                    color: theme.text,
+                                                    backdropFilter: 'blur(10px)',
+                                                    '& fieldset': { borderColor: theme.cardBorder },
+                                                    '&:hover fieldset': { borderColor: theme.accent },
+                                                    '&.Mui-focused fieldset': { borderColor: theme.accent, borderWidth: '2px' }
+                                                },
+                                                endAdornment: <SearchIcon sx={{ color: theme.textSecondary, mr: 1 }} />
+                                            }
+                                        }}
+                                    />
+                                )}
+                            </Box>
+                        </Box>
+
+                        {/* RIGHT COLUMN: Dynamic Content Viewer */}
+                        {latestAIResponse?.relatedViewer && (
+                            <Fade in={true} timeout={800}>
+                                <Box sx={{
+                                    flex: 1.5,
+                                    width: '100%',
+                                    height: '100%',
+                                    maxHeight: '85vh',
+                                    overflowY: 'auto',
+                                    p: 4,
+                                    bgcolor: isDarkMode ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.7)',
+                                    borderRadius: '32px',
+                                    border: `1px solid ${theme.cardBorder}`,
+                                    backdropFilter: 'blur(20px)',
+                                    boxShadow: '0 20px 80px rgba(0,0,0,0.1)',
+                                    '&::-webkit-scrollbar': { width: '4px' },
+                                    '&::-webkit-scrollbar-thumb': { bgcolor: theme.accent, borderRadius: '4px' }
+                                }}>
+                                    {/* Shops View */}
+                                    {latestAIResponse.relatedViewer === 'shops' && (
                                         <Stack spacing={3}>
-                                            {latestAIResponse.shops.map((shop) => (
-                                                <Card
-                                                    key={shop.id}
-                                                    sx={{
-                                                        bgcolor: theme.cardBg,
-                                                        borderRadius: '24px',
-                                                        color: theme.text,
-                                                        border: `1px solid ${theme.cardBorder}`,
-                                                        boxShadow: isDarkMode ? 'none' : '0 8px 32px rgba(15, 23, 42, 0.05)',
-                                                        transition: 'all 0.3s ease',
-                                                        '&:hover': {
-                                                            bgcolor: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.06)',
-                                                            transform: 'translateY(-4px)',
-                                                            borderColor: theme.accent
-                                                        }
-                                                    }}
-                                                >
-                                                    <CardContent sx={{ p: 3 }}>
-                                                        <Stack direction="row" spacing={3} alignItems="center">
-                                                            <Avatar
-                                                                src={shop.logo_url}
-                                                                sx={{ width: 80, height: 80, borderRadius: '20px', border: `1px solid ${theme.cardBorder}` }}
-                                                            />
-                                                            <Box sx={{ flex: 1 }}>
-                                                                <Typography variant="h6" fontWeight="600" sx={{ mb: 0.5 }}>{shop.name}</Typography>
-                                                                <Typography variant="body2" sx={{ color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                    <LocationOnIcon sx={{ fontSize: 16 }} />
-                                                                    {shop.address}, {shop.city}
-                                                                </Typography>
-                                                                <Box sx={{ mt: 1.5, display: 'flex', gap: 1 }}>
-                                                                    <Chip label="Open Now" size="small" sx={{ bgcolor: isDarkMode ? 'rgba(76, 175, 80, 0.1)' : 'rgba(76, 175, 80, 0.05)', color: '#2e7d32', border: '1px solid rgba(76, 175, 80, 0.2)' }} />
-                                                                    <Chip label={`${shop.average_service_time || 30}m wait`} size="small" sx={{ bgcolor: theme.inputBg, color: theme.text, border: `1px solid ${theme.cardBorder}` }} />
-                                                                </Box>
-                                                            </Box>
-                                                            <Button
-                                                                variant="contained"
-                                                                sx={{
-                                                                    bgcolor: theme.accent,
-                                                                    color: isDarkMode ? 'black' : 'white',
-                                                                    fontWeight: 'bold',
-                                                                    px: 4,
-                                                                    py: 1.5,
-                                                                    borderRadius: '16px',
-                                                                    '&:hover': { bgcolor: theme.accent, opacity: 0.9 }
-                                                                }}
-                                                                onClick={() => navigate(`/s/${shop.slug}`)}
-                                                            >
-                                                                Join Queue
-                                                            </Button>
-                                                        </Stack>
+                                            <Typography variant="h5" sx={{ fontWeight: 600 }}>Nearby Verified Queues</Typography>
+                                            {latestAIResponse.shops?.map((shop: any) => (
+                                                <Card key={shop.id} sx={{ bgcolor: theme.cardBg, borderRadius: '20px', border: `1px solid ${theme.cardBorder}` }}>
+                                                    <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                                                        <Avatar src={shop.logo_url} sx={{ width: 60, height: 60, borderRadius: '12px' }} />
+                                                        <Box sx={{ flex: 1 }}>
+                                                            <Typography variant="h6">{shop.name}</Typography>
+                                                            <Typography variant="body2" sx={{ opacity: 0.7 }}>{shop.address}, {shop.city}</Typography>
+                                                        </Box>
+                                                        <Button variant="contained" sx={{ bgcolor: theme.accent, borderRadius: '12px' }} onClick={() => navigate(`/s/${shop.slug}`)}>Join</Button>
                                                     </CardContent>
                                                 </Card>
                                             ))}
                                         </Stack>
-                                    </Box>
-                                </Fade>
-                            )}
-                        </Stack>
-                    </Box>
+                                    )}
 
-                    {/* Interaction Footer - In Flow */}
-                    <Box
-                        sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            gap: 2,
-                            pb: 6, // Padding bottom for scroll clearance
-                            flexShrink: 0
-                        }}
-                    >
-                        {/* Insecure Context Warning - More Prominent */}
-                        {(!window.isSecureContext && window.location.hostname !== 'localhost') && (
-                            <Box sx={{
-                                mb: 2,
-                                p: 2,
-                                bgcolor: 'rgba(211, 47, 47, 0.2)',
-                                border: '2px solid #d32f2f',
-                                borderRadius: '16px',
-                                maxWidth: 500,
-                                textAlign: 'center',
-                                animation: 'pulse 2s infinite'
-                            }}>
-                                <Typography variant="body2" sx={{ color: '#ff5252', fontWeight: 'bold', mb: 0.5 }}>
-                                    🚨 Browser Security: Microphone Access Blocked
-                                </Typography>
-                                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', display: 'block' }}>
-                                    Voice recognition requires <b>HTTPS</b> or <b>localhost</b>.
-                                    Browsers block microphone features on insecure (HTTP) origins.
-                                </Typography>
-                            </Box>
-                        )}
+                                    {/* Pricing View */}
+                                    {latestAIResponse.relatedViewer === 'pricing' && (
+                                        <Box sx={{ pointerEvents: 'none' }}> {/* Non-interactive preview */}
+                                            <Pricing />
+                                        </Box>
+                                    )}
 
-                        <IconButton
-                            onClick={() => {
-                                if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-                                    alert("Microphone access requires a secure connection (HTTPS). Please try accessing via localhost or a secure domain.");
-                                    return;
-                                }
-                                isListening ? stopListening() : startListening();
-                            }}
-                            sx={{
-                                width: 90,
-                                height: 90,
-                                bgcolor: isListening ? theme.accent : theme.cardBg,
-                                color: isListening ? (isDarkMode ? 'black' : 'white') : theme.text,
-                                '&:hover': { bgcolor: isListening ? theme.accent : theme.inputBg },
-                                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                                border: `1px solid ${theme.cardBorder}`,
-                                boxShadow: isListening ? `0 0 40px ${theme.accent}66` : 'none'
-                            }}
-                        >
-                            {isListening ? <MicIcon sx={{ fontSize: 45 }} /> : <MicOffIcon sx={{ fontSize: 45 }} />}
-                        </IconButton>
+                                    {/* Features View */}
+                                    {latestAIResponse.relatedViewer === 'features' && (
+                                        <Box sx={{ pointerEvents: 'none', transform: 'scale(0.9)', transformOrigin: 'top center' }}>
+                                            <Features />
+                                        </Box>
+                                    )}
 
-                        <Typography variant="caption" sx={{ opacity: 0.4, letterSpacing: '0.1em' }}>
-                            {isListening ? "STOP LISTENING" : "START VOICE CONVERSATION"}
-                        </Typography>
-
-                        {/* Text Input Fallback (always visible if not listening) */}
-                        {!isListening && (
-                            <Box sx={{ mt: 3, width: { xs: '90vw', sm: 400 }, transition: 'all 0.3s' }}>
-                                <TextField
-                                    fullWidth
-                                    placeholder="Type or speak to ZeroQ..."
-                                    variant="outlined"
-                                    autoFocus
-                                    onKeyPress={(e) => {
-                                        if (e.key === 'Enter') {
-                                            const target = e.target as HTMLInputElement;
-                                            handleChat(target.value);
-                                            target.value = '';
-                                        }
-                                    }}
-                                    slotProps={{
-                                        input: {
-                                            sx: {
-                                                borderRadius: '30px',
-                                                bgcolor: theme.inputBg,
-                                                color: theme.text,
-                                                '& fieldset': { borderColor: theme.cardBorder },
-                                                '&:hover fieldset': { borderColor: theme.accent },
-                                                '&.Mui-focused fieldset': { borderColor: theme.accent, borderWidth: '2px' }
-                                            },
-                                            endAdornment: <SearchIcon sx={{ color: theme.textSecondary, mr: 1 }} />
-                                        }
-                                    }}
-                                />
-                            </Box>
+                                    {/* FAQ View */}
+                                    {latestAIResponse.relatedViewer === 'faq' && (
+                                        <Box sx={{ pointerEvents: 'none' }}>
+                                            <FAQ />
+                                        </Box>
+                                    )}
+                                </Box>
+                            </Fade>
                         )}
                     </Box>
                 </Box>
