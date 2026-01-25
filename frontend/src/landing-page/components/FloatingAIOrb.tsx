@@ -64,7 +64,8 @@ const FloatingAIOrb: React.FC = () => {
     const [isHovered, setIsHovered] = useState(false);
 
     const handleClick = () => {
-        window.dispatchEvent(new CustomEvent('toggle-ai-assistant'));
+        console.log('[DEBUG] Dispatching trigger-zeroq-assistant');
+        window.dispatchEvent(new CustomEvent('trigger-zeroq-assistant'));
     };
 
     return (

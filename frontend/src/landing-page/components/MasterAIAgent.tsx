@@ -62,11 +62,14 @@ const MasterAIAgent: React.FC = () => {
 
     // Visibility & Global Triggers
     useEffect(() => {
-        const handleToggle = () => setIsOpen(prev => !prev);
-        window.addEventListener('toggle-ai-assistant', handleToggle);
+        const handleToggle = () => {
+            console.log('[DEBUG] AI Assistant trigger received');
+            setIsOpen(prev => !prev);
+        };
+        window.addEventListener('trigger-zeroq-assistant', handleToggle);
 
         return () => {
-            window.removeEventListener('toggle-ai-assistant', handleToggle);
+            window.removeEventListener('trigger-zeroq-assistant', handleToggle);
         };
     }, []);
 
