@@ -146,6 +146,31 @@ const MasterAIAgent: React.FC = () => {
             setIsProcessing(false);
             speak(agentText);
         } catch (err) {
+            console.warn('[MasterAIAgent] Backend unreachable, using offline fallback for demo');
+
+            // Fallback logic for demo purposes (if backend is down)
+            const lowerText = userText.toLowerCase();
+            let fallbackText = "I'm having trouble connecting to the server, but I can still help navigate.";
+            let fallbackViewer: any = null;
+
+            if (lowerText.includes('pricing') || lowerText.includes('cost')) {
+                fallbackText = "Here are our pricing plans. We offer flexible tiers for every business size.";
+                fallbackViewer = 'pricing';
+            } else if (lowerText.includes('feature')) {
+                fallbackText = "Check out our key features. We simplify queue management for you.";
+                fallbackViewer = 'features';
+            } else if (lowerText.includes('help') || lowerText.includes('faq')) {
+                fallbackText = "Here are some frequently asked questions to help you get started.";
+                fallbackViewer = 'faq';
+            }
+
+            if (fallbackViewer) {
+                setChatHistory(prev => [...prev, { role: 'ai', text: fallbackText, relatedViewer: fallbackViewer }]);
+                speak(fallbackText);
+            } else {
+                setChatHistory(prev => [...prev, { role: 'ai', text: "I'm sorry, I cannot connect to the brain right now. Please try again later." }]);
+            }
+
             setIsProcessing(false);
         }
     };
@@ -233,24 +258,27 @@ const MasterAIAgent: React.FC = () => {
                         display: 'flex',
                         flexDirection: latestAIResponse?.relatedViewer ? { xs: 'column', md: 'row' } : 'column',
                         alignItems: latestAIResponse?.relatedViewer ? 'flex-start' : 'center',
-                        justifyContent: latestAIResponse?.relatedViewer ? 'center' : 'center',
+                        justifyContent: latestAIResponse?.relatedViewer ? 'space-between' : 'center', // Spread out
                         py: latestAIResponse?.relatedViewer ? 4 : 10,
-                        px: latestAIResponse?.relatedViewer ? 6 : 0,
-                        gap: 6,
+                        px: latestAIResponse?.relatedViewer ? 8 : 0, // More padding on sides
+                        gap: 2,
+                        width: '100%',
+                        maxWidth: '1600px', // Allow wider layout
+                        mx: 'auto',
                         height: '100%',
                         minHeight: 'min-content'
                     }}>
 
                         {/* LEFT COLUMN: Agent, Transcript & Controls (Moves left when content shows) */}
                         <Box sx={{
-                            flex: latestAIResponse?.relatedViewer ? 1 : 'none',
+                            flex: latestAIResponse?.relatedViewer ? '0 0 400px' : 'none', // Fixed width when split
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
                             gap: 4,
                             transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
-                            width: latestAIResponse?.relatedViewer ? '100%' : 'auto',
-                            maxWidth: latestAIResponse?.relatedViewer ? '600px' : '800px',
+                            width: latestAIResponse?.relatedViewer ? '400px' : 'auto',
+                            maxWidth: latestAIResponse?.relatedViewer ? '400px' : '800px',
                             position: latestAIResponse?.relatedViewer ? 'sticky' : 'relative',
                             top: latestAIResponse?.relatedViewer ? 20 : 'auto',
                         }}>
@@ -394,12 +422,12 @@ const MasterAIAgent: React.FC = () => {
 
                         {/* RIGHT COLUMN: Dynamic Content Viewer */}
                         {latestAIResponse?.relatedViewer && (
-                            <Fade in={true} timeout={800}>
+                            <Fade in={true} timeout={1000}>
                                 <Box sx={{
-                                    flex: 1.5,
+                                    flex: 1, // Take all remaining space
                                     width: '100%',
                                     height: '100%',
-                                    maxHeight: '85vh',
+                                    maxHeight: '90vh', // Slightly taller
                                     overflowY: 'auto',
                                     p: 4,
                                     bgcolor: isDarkMode ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.7)',
@@ -407,12 +435,15 @@ const MasterAIAgent: React.FC = () => {
                                     border: `1px solid ${theme.cardBorder}`,
                                     backdropFilter: 'blur(20px)',
                                     boxShadow: '0 20px 80px rgba(0,0,0,0.1)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center', // Center content horizontally inside
                                     '&::-webkit-scrollbar': { width: '4px' },
                                     '&::-webkit-scrollbar-thumb': { bgcolor: theme.accent, borderRadius: '4px' }
                                 }}>
                                     {/* Shops View */}
                                     {latestAIResponse.relatedViewer === 'shops' && (
-                                        <Stack spacing={3}>
+                                        <Stack spacing={3} sx={{ width: '100%' }}>
                                             <Typography variant="h5" sx={{ fontWeight: 600 }}>Nearby Verified Queues</Typography>
                                             {latestAIResponse.shops?.map((shop: any) => (
                                                 <Card key={shop.id} sx={{ bgcolor: theme.cardBg, borderRadius: '20px', border: `1px solid ${theme.cardBorder}` }}>
@@ -431,21 +462,21 @@ const MasterAIAgent: React.FC = () => {
 
                                     {/* Pricing View */}
                                     {latestAIResponse.relatedViewer === 'pricing' && (
-                                        <Box sx={{ pointerEvents: 'none' }}> {/* Non-interactive preview */}
+                                        <Box sx={{ width: '100%', pointerEvents: 'auto' }}>
                                             <Pricing />
                                         </Box>
                                     )}
 
                                     {/* Features View */}
                                     {latestAIResponse.relatedViewer === 'features' && (
-                                        <Box sx={{ pointerEvents: 'none', transform: 'scale(0.9)', transformOrigin: 'top center' }}>
+                                        <Box sx={{ width: '100%', pointerEvents: 'auto', transform: 'scale(0.95)', transformOrigin: 'top center' }}>
                                             <Features />
                                         </Box>
                                     )}
 
                                     {/* FAQ View */}
                                     {latestAIResponse.relatedViewer === 'faq' && (
-                                        <Box sx={{ pointerEvents: 'none' }}>
+                                        <Box sx={{ width: '100%', pointerEvents: 'auto' }}>
                                             <FAQ />
                                         </Box>
                                     )}
