@@ -572,8 +572,12 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
         text_response = "I can help you navigate ZeroQwait. You can search for shops, check pricing, or see our features."
 
         if any(x in msg for x in ["shop", "search", "find", "store", "near me"]):
-            # Extract basic query if possible, or just search all
-            shops = db_interface.search_shops(query="" if "near me" in msg else msg.replace("search", "").replace("find", "").strip(), limit=5)
+            # Extract basic query by removing noise words
+            query = msg
+            for word in ["search", "find", "shops", "shop", "stores", "store", "repair", "services", "service", "near me"]:
+                query = query.replace(word, "")
+            
+            shops = db_interface.search_shops(query=query.strip(), limit=5)
             if shops:
                 text_response = f"I found {len(shops)} shops nearby. Here are the top results."
                 actions_taken.append({"tool": "search_shops", "result": shops})

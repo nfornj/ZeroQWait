@@ -179,11 +179,19 @@ class DatabaseInterface:
                 from sqlalchemy import or_
                 q = db.query(Shop)
                 if query:
-                    q = q.filter(Shop.name.ilike(f"%{query}%"))
+                    search_filter = or_(
+                        Shop.name.ilike(f"%{query}%"),
+                        Shop.shop_type.ilike(f"%{query}%"),
+                        Shop.description.ilike(f"%{query}%")
+                    )
+                    q = q.filter(search_filter)
+                
+                # Apply explicit filters if provided
                 if shop_type:
                     q = q.filter(Shop.shop_type.ilike(f"%{shop_type}%"))
                 if city:
                     q = q.filter(Shop.city.ilike(f"%{city}%"))
+                
                 shops = q.limit(limit).all()
                 return [self._model_to_dict(shop) for shop in shops]
             finally:
