@@ -23,19 +23,20 @@ jobs:
         
         # Pull latest changes
         echo "📥 Pulling latest changes from GitHub..."
-        git pull origin pi_hosted_from_local
+        git pull origin main
         
-        # Stop containers
-        echo "🛑 Stopping containers..."
-        docker compose -f docker-compose.prod.simple.yml down
+        # Stop containers and cleanup
+        echo "🛑 Stopping containers and cleaning up volumes..."
+        docker compose -f docker-compose.prod.yml down -v
+        docker system prune -f
         
         # Build new images
         echo "🔨 Building Docker images..."
-        docker compose -f docker-compose.prod.simple.yml build --no-cache
+        docker compose -f docker-compose.prod.yml build --pull --no-cache
         
         # Start containers
         echo "🚀 Starting containers..."
-        docker compose -f docker-compose.prod.simple.yml up -d
+        docker compose -f docker-compose.prod.yml up -d
         
         # Wait for containers to be healthy
         echo "⏳ Waiting for containers to start..."
@@ -43,7 +44,7 @@ jobs:
         
         # Check status
         echo "📊 Container status:"
-        docker compose -f docker-compose.prod.simple.yml ps
+        docker compose -f docker-compose.prod.yml ps
         
         # Clean up old images
         echo "🧹 Cleaning up old Docker images..."
