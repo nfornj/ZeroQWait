@@ -16,9 +16,8 @@ git pull origin main
 
 echo "🏗️  Building Docker image..."
 cd frontend
-# Build using the main Dockerfile which has the Nginx setup
-# Note: Ensure the Dockerfile is clean and doesn't have local-only paths
-docker build -t $REGISTRY/$IMAGE_NAME:$TAG .
+# Build using the main Dockerfile with no-cache to ensure latest code
+docker build --no-cache -t $REGISTRY/$IMAGE_NAME:$TAG .
 
 echo "⬆️  Pushing to local registry..."
 docker push $REGISTRY/$IMAGE_NAME:$TAG
