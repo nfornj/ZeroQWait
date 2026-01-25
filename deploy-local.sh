@@ -27,7 +27,10 @@ echo "🔄 Applying Kubernetes Manifests..."
 cd $APP_DIR
 sudo kubectl apply -f k8s-manifests/frontend-deployment.yaml
 
-echo "🔄 Restarting Kubernetes Deployment..."
+echo "🔄 Restarting Backend Deployment..."
+sudo kubectl rollout restart deployment/backend -n zeroqwait
+
+echo "🔄 Restarting Frontend Deployment..."
 sudo kubectl rollout restart deployment/frontend -n zeroqwait
 
 echo "✅ Deployed Successfully!"

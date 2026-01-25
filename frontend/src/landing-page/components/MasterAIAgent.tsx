@@ -162,6 +162,19 @@ const MasterAIAgent: React.FC = () => {
             } else if (lowerText.includes('help') || lowerText.includes('faq')) {
                 fallbackText = "Here are some frequently asked questions to help you get started.";
                 fallbackViewer = 'faq';
+            } else if (lowerText.includes('shop') || lowerText.includes('store') || lowerText.includes('near me')) {
+                fallbackText = "Here are some verified queues nearby.";
+                fallbackViewer = 'shops';
+                // Mock shops for demo
+                const mockShops = [
+                    { id: 1, name: "City Barber", address: "123 Main St", city: "New York", logo_url: "https://mui.com/static/images/avatar/1.jpg", slug: "city-barber", average_service_time: 15 },
+                    { id: 2, name: "Downtown Salon", address: "456 Market Ave", city: "New York", logo_url: "https://mui.com/static/images/avatar/2.jpg", slug: "downtown-salon", average_service_time: 25 },
+                    { id: 3, name: "Dr. Smith Clinic", address: "789 Health Blvd", city: "Brooklyn", logo_url: "https://mui.com/static/images/avatar/3.jpg", slug: "dr-smith", average_service_time: 40 }
+                ];
+                setChatHistory(prev => [...prev, { role: 'ai', text: fallbackText, shops: mockShops, relatedViewer: fallbackViewer }]);
+                speak(fallbackText);
+                setIsProcessing(false);
+                return;
             }
 
             if (fallbackViewer) {
@@ -256,7 +269,7 @@ const MasterAIAgent: React.FC = () => {
                     <Box sx={{
                         flex: 1,
                         display: 'flex',
-                        flexDirection: latestAIResponse?.relatedViewer ? { xs: 'column', md: 'row' } : 'column',
+                        flexDirection: latestAIResponse?.relatedViewer ? { xs: 'column', md: 'row-reverse' } : 'column',
                         alignItems: latestAIResponse?.relatedViewer ? 'flex-start' : 'center',
                         justifyContent: latestAIResponse?.relatedViewer ? 'space-between' : 'center', // Spread out
                         py: latestAIResponse?.relatedViewer ? 4 : 10,
@@ -275,12 +288,14 @@ const MasterAIAgent: React.FC = () => {
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
+                            justifyContent: 'center', // Vertically center the content
                             gap: 4,
                             transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
                             width: latestAIResponse?.relatedViewer ? '400px' : 'auto',
                             maxWidth: latestAIResponse?.relatedViewer ? '400px' : '800px',
+                            minHeight: latestAIResponse?.relatedViewer ? '100vh' : 'auto', // Full height to allow centering
                             position: latestAIResponse?.relatedViewer ? 'sticky' : 'relative',
-                            top: latestAIResponse?.relatedViewer ? 20 : 'auto',
+                            top: 0,
                         }}>
                             {/* The Particle Sphere */}
                             <Box sx={{ position: 'relative', width: 300, height: 300, transition: 'all 0.8s ease' }}>
@@ -427,7 +442,7 @@ const MasterAIAgent: React.FC = () => {
                                     flex: 1, // Take all remaining space
                                     width: '100%',
                                     height: '100%',
-                                    maxHeight: '90vh', // Slightly taller
+                                    maxHeight: '95vh', // Slightly taller
                                     overflowY: 'auto',
                                     p: 4,
                                     bgcolor: isDarkMode ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.7)',
@@ -438,6 +453,7 @@ const MasterAIAgent: React.FC = () => {
                                     display: 'flex',
                                     flexDirection: 'column',
                                     alignItems: 'center', // Center content horizontally inside
+                                    justifyContent: 'center', // Vertically center the content
                                     '&::-webkit-scrollbar': { width: '4px' },
                                     '&::-webkit-scrollbar-thumb': { bgcolor: theme.accent, borderRadius: '4px' }
                                 }}>

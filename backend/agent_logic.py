@@ -297,9 +297,10 @@ class FrontDeskAgent:
     def __init__(self, shop_id: int, shop_name: str, ai_agent_name: Optional[str] = None):
         self.shop_id = shop_id
         self.shop_name = shop_name
+        self.shop_name = shop_name
         self.ai_agent_name = ai_agent_name or shop_name
-        # Internal K3s URL for Ollama
-        self.base_url = "http://ollama.llm.svc.cluster.local:11434/api/chat"
+        # Internal K3s URL for Ollama (default) or override via Env
+        self.base_url = os.getenv("OLLAMA_URL", "http://ollama.llm.svc.cluster.local:11434/api/chat")
         self.model = "llama3.2"
 
     def get_system_prompt(self):
@@ -515,7 +516,7 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
                 )
                 
                 if response.status_code != 200:
-                    return {"response": "I'm having a bit of trouble connecting to my brain. How else can I assist?", "actions": []}
+                    return self._mock_master_chat(user_message, history)
 
                 resp_data = response.json()
                 message = resp_data["message"]
@@ -562,4 +563,33 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
                     "agent_name": self.ai_agent_name
                 }
         except Exception:
-            return {"response": "I'm currently recalibrating focus. Ask me about our features or pricing!", "actions": []}
+            return self._mock_master_chat(user_message, history)
+
+    def _mock_master_chat(self, user_message: str, history):
+        """Fallback logic using Regex when LLM is down."""
+        msg = user_message.lower()
+        actions_taken = []
+        text_response = "I can help you navigate ZeroQwait. You can search for shops, check pricing, or see our features."
+
+        if any(x in msg for x in ["shop", "search", "find", "store", "near me"]):
+            # Extract basic query if possible, or just search all
+            shops = db_interface.search_shops(query="" if "near me" in msg else msg.replace("search", "").replace("find", "").strip(), limit=5)
+            if shops:
+                text_response = f"I found {len(shops)} shops nearby. Here are the top results."
+                actions_taken.append({"tool": "search_shops", "result": shops})
+            else:
+                text_response = "I couldn't find any shops matching that description right now."
+        
+        elif "pricing" in msg or "cost" in msg:
+            text_response = "Our pricing is flexible! We have a Free tier for starters and a Premium tier for scaling businesses."
+            actions_taken.append({"tool": "navigate_to_page_section", "result": {"target": "pricing"}})
+
+        elif "feature" in msg:
+             text_response = "ZeroQwait offers AI Front Desks, Smart Queue Analytics, and a beautiful customer interface."
+             actions_taken.append({"tool": "navigate_to_page_section", "result": {"target": "features"}})
+
+        return {
+            "response": text_response,
+            "actions": actions_taken,
+            "agent_name": self.ai_agent_name
+        }
