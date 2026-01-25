@@ -49,14 +49,16 @@ const MasterAIAgent: React.FC = () => {
 
     // Theme & Visibility Configuration
     const theme = {
-        bg: isDarkMode ? 'rgba(5, 5, 10, 0.92)' : 'rgba(255, 255, 255, 0.95)',
-        glass: isDarkMode ? 'blur(40px)' : 'blur(30px)',
+        bg: isDarkMode
+            ? 'rgba(5, 5, 10, 0.92)'
+            : 'linear-gradient(135deg, rgba(249, 250, 251, 0.98) 0%, rgba(243, 244, 246, 0.95) 50%, rgba(238, 242, 255, 0.98) 100%)',
+        glass: isDarkMode ? 'blur(40px)' : 'blur(60px)',
         text: isDarkMode ? '#ffffff' : '#0f172a',
         textSecondary: isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(15, 23, 42, 0.7)',
         accent: isDarkMode ? '#f5e1c0' : '#A855F7', // Gold in dark, Purple in light
-        cardBg: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.03)',
-        cardBorder: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.08)',
-        inputBg: isDarkMode ? 'rgba(255, 255, 255, 0.07)' : 'rgba(15, 23, 42, 0.05)',
+        cardBg: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.7)',
+        cardBorder: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(168, 85, 247, 0.15)',
+        inputBg: isDarkMode ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.8)',
         iconColor: isDarkMode ? '#ffffff' : '#0f172a'
     };
 
@@ -365,11 +367,12 @@ const MasterAIAgent: React.FC = () => {
                 <Box
                     sx={{
                         position: 'absolute',
-                        bottom: 60,
+                        bottom: 80,
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
-                        gap: 2
+                        gap: 2,
+                        zIndex: 10001
                     }}
                 >
                     {/* Insecure Context Warning - More Prominent */}
