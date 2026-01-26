@@ -77,7 +77,19 @@ class ToolCallingAgent:
     async def chat(self, session_id: str, user_msg: str, latitude: float = None, longitude: float = None) -> Dict[str, Any]:
         # 1. Load History
         history_records = db_interface.get_conversation_history(session_id, limit=10)
-        messages = [{"role": h["role"], "content": h["content"]} for h in history_records]
+        messages = []
+        
+        # Add a strict system prompt for tool calling
+        system_prompt = (
+            "You are ZeroQ, the AI Assistant for ZeroQwait. "
+            "IMPORTANT: When you need to use a tool, use the native tool-calling protocol. "
+            "NEVER write raw JSON like '{\"name\": ...}' in your text response. "
+            "If you use a tool, respond with ONLY the tool call, no preamble."
+        )
+        messages.append({"role": "system", "content": system_prompt})
+        
+        for h in history_records:
+            messages.append({"role": h["role"], "content": h["content"]})
         
         # Add current user message with location context if available
         context_msg = user_msg
@@ -113,60 +125,76 @@ class ToolCallingAgent:
                 choice = resp_data["choices"][0]
                 message = choice["message"]
                 
-                # [INTERCEPTOR] Check for text-based tool calls (Llama 3.2 outputting raw JSON)
-                # [INTERCEPTOR] Check for text-based tool calls (Llama 3.2 outputting raw JSON)
-                # Matches simple JSON object-like strings, possibly wrapped in markdown or extra text
-                # We specifically look for known tool names to avoid false positives
+                # [ULTRA-ROBUST INTERCEPTOR]
+                # Catch malformed/fuzzy tool calls from Llama 3.2
                 content_str = message.get("content", "")
                 if not message.get("tool_calls") and content_str:
                     try:
                         import re
+                        import ast
                         
-                        # 1. Clean Markdown code blocks (```json ... ```)
-                        if "```" in content_str:
-                            match = re.search(r"```(?:json)?(.*?)```", content_str, re.DOTALL)
-                            if match:
-                                content_str = match.group(1).strip()
+                        # 1. Check for known tool names anywhere in the string
+                        potential_tool_found = None
+                        for tool in MASTER_AGENT_TOOLS:
+                            t_name = tool["function"]["name"]
+                            if t_name in content_str:
+                                potential_tool_found = t_name
+                                break
                         
-                        # 2. Extract potential JSON object { ... }
-                        # This regex finds the first outer-most {} block
-                        json_match = re.search(r"(\{.*\})", content_str, re.DOTALL)
-                        if json_match:
-                             potential_json = json_match.group(1).strip()
-                             
-                             # Simple heuristic: must contain a known tool name to be worth parsing
-                             if any(tool["function"]["name"] in potential_json for tool in MASTER_AGENT_TOOLS):
-                                 try:
-                                     data = json.loads(potential_json)
-                                 except json.JSONDecodeError:
-                                     # Try to repair common Llama3 mistakes like single quotes
-                                     import ast
-                                     try:
-                                         data = ast.literal_eval(potential_json)
-                                     except:
-                                         data = None
-                                 
-                                 if data and isinstance(data, dict):
-                                     # Handle various hallucinated formats
-                                     # 1. Direct: {"name": "search_shops", "arguments": {...}}
-                                     # 2. Function wrapper: {"function": {"name": "..."}}
-                                     func_name = data.get("name") or data.get("function", {}).get("name")
-                                     args = data.get("arguments") or data.get("parameters") or data.get("function", {}).get("arguments")
-                                     
-                                     if func_name and args:
-                                         logger.info(f"Intercepted Text-Based Tool Call: {func_name}")
-                                         message["tool_calls"] = [{
-                                             "id": f"call_{datetime.now().strftime('%f')}",
-                                             "type": "function",
-                                             "function": {
-                                                 "name": func_name,
-                                                 "arguments": json.dumps(args) if isinstance(args, dict) else str(args)
-                                             }
-                                         }]
-                                         # Clear content so we don't show the JSON to the user
-                                         message["content"] = None
+                        if potential_tool_found:
+                            # 2. Extract anything that looks like a JSON-ish block { ... }
+                            json_match = re.search(r"(\{.*\})", content_str, re.DOTALL)
+                            if json_match:
+                                raw_chunk = json_match.group(1).strip()
+                                
+                                # 3. CLEANING: Repair common Llama3 hallucinations
+                                # Fix: "parameters"."category" -> "parameters":{"category"
+                                # Fix: .category: -> "category":
+                                cleaned_chunk = raw_chunk.replace('"."', '":{"').replace('".', '":')
+                                cleaned_chunk = re.sub(r'(["\w])\.(\w+)', r'\1":"\2"', cleaned_chunk)
+                                
+                                data = None
+                                try:
+                                    data = json.loads(cleaned_chunk)
+                                except:
+                                    try:
+                                        # Use AST for single quotes and Python-ish dicts
+                                        data = ast.literal_eval(cleaned_chunk)
+                                    except:
+                                        # 4. BRUTE FORCE: If still failing, extract key-values via regex
+                                        logger.info(f"Brute-forcing parameter extraction for {potential_tool_found}")
+                                        extracted_args = {}
+                                        for key in ["category", "city", "query", "section"]:
+                                            val_match = re.search(rf'"{key}"\s*[:=]\s*(?:"([^"]+)"|([\w]+)|null)', cleaned_chunk)
+                                            if val_match:
+                                                extracted_args[key] = val_match.group(1) or val_match.group(2)
+                                                if extracted_args[key] == "null": extracted_args[key] = None
+                                        
+                                        if extracted_args or potential_tool_found:
+                                            data = {"name": potential_tool_found, "arguments": extracted_args}
+
+                                if data and isinstance(data, dict):
+                                    func_name = data.get("name") or data.get("function", {}).get("name") or potential_tool_found
+                                    args = data.get("arguments") or data.get("parameters") or data.get("function", {}).get("arguments") or data
+                                    
+                                    # Filter out names from args if it's the top level object
+                                    if isinstance(args, dict) and "name" in args and func_name == args["name"]:
+                                        args = {k: v for k, v in args.items() if k not in ["name", "function"]}
+
+                                    if func_name and (args is not None):
+                                        logger.info(f"Successfully Intercepted & Repaired Tool Call: {func_name}")
+                                        message["tool_calls"] = [{
+                                            "id": f"intercept_{datetime.now().strftime('%f')}",
+                                            "type": "function",
+                                            "function": {
+                                                "name": func_name,
+                                                "arguments": json.dumps(args) if isinstance(args, dict) else str(args)
+                                            }
+                                        }]
+                                        # SILENCE the raw output in UI
+                                        message["content"] = "Checking that for you..."
                     except Exception as e:
-                        logger.warning(f"Failed to parse text-based tool call: {e}")
+                        logger.error(f"Interceptor Critical Failure: {e}")
 
                 # Check for tool calls (Native or Intercepted)
                 if message.get("tool_calls"):
