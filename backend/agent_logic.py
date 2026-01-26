@@ -113,7 +113,36 @@ class ToolCallingAgent:
                 choice = resp_data["choices"][0]
                 message = choice["message"]
                 
-                # Check for tool calls
+                # [INTERCEPTOR] Check for text-based tool calls (Llama 3.2 outputting raw JSON)
+                if not message.get("tool_calls") and message.get("content", "").strip().startswith("{"):
+                    try:
+                        content_str = message["content"].strip()
+                        # Simple heuristic: must contain a known tool name
+                        if any(tool["function"]["name"] in content_str for tool in MASTER_AGENT_TOOLS):
+                            data = json.loads(content_str)
+                            
+                            # Handle various hallucinated formats
+                            # 1. Direct: {"name": "search_shops", "arguments": {...}}
+                            # 2. Function wrapper: {"function": {"name": "..."}}
+                            func_name = data.get("name") or data.get("function", {}).get("name")
+                            args = data.get("arguments") or data.get("parameters") or data.get("function", {}).get("arguments")
+                            
+                            if func_name and args:
+                                logger.info(f"Intercepted Text-Based Tool Call: {func_name}")
+                                message["tool_calls"] = [{
+                                    "id": f"call_{datetime.now().strftime('%f')}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": func_name,
+                                        "arguments": json.dumps(args) if isinstance(args, dict) else str(args)
+                                    }
+                                }]
+                    except json.JSONDecodeError:
+                        pass # Not JSON
+                    except Exception as e:
+                        logger.warning(f"Failed to parse text-based tool call: {e}")
+
+                # Check for tool calls (Native or Intercepted)
                 if message.get("tool_calls"):
                     # Add assistant's "thinking" step to history
                     messages.append(message)
