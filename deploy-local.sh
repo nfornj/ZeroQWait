@@ -14,22 +14,23 @@ cd "$APP_DIR"
 git checkout main
 git pull origin main
 
-echo "🏗️  Building Docker image..."
-cd frontend
-# Build using the main Dockerfile with no-cache to ensure latest code
-docker build --no-cache -t $REGISTRY/$IMAGE_NAME:$TAG .
+echo "🏗️  Building Frontend Docker image..."
+cd "$APP_DIR/frontend"
+docker build --no-cache -t $REGISTRY/frontend:$TAG .
+docker push $REGISTRY/frontend:$TAG
 
-echo "⬆️  Pushing to local registry..."
-docker push $REGISTRY/$IMAGE_NAME:$TAG
+echo "🏗️  Building Backend Docker image..."
+cd "$APP_DIR/backend"
+docker build --no-cache -t $REGISTRY/backend:$TAG .
+docker push $REGISTRY/backend:$TAG
 
 echo "🔄 Applying Kubernetes Manifests..."
-cd $APP_DIR
+cd "$APP_DIR"
 sudo kubectl apply -f k8s-manifests/frontend-deployment.yaml
+sudo kubectl apply -f k8s-manifests/backend-deployment.yaml
 
-echo "🔄 Restarting Backend Deployment..."
+echo "🔄 Restarting Deployments..."
 sudo kubectl rollout restart deployment/backend -n zeroqwait
-
-echo "🔄 Restarting Frontend Deployment..."
 sudo kubectl rollout restart deployment/frontend -n zeroqwait
 
 echo "✅ Deployed Successfully!"

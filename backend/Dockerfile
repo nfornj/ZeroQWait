@@ -24,10 +24,11 @@ RUN pip install --no-cache-dir \
     sqlalchemy==2.0.36 \
     psycopg2-binary==2.9.10
 
-# Copy only the application code (no tests, dev files)
+# Copy the application code
 COPY main.py auth_utils.py database.py email_utils.py permissions.py \
      scheduler.py schemas.py supabase_client.py tier_limits.py \
      models.py db_interface.py analytics_processor.py \
+     agent_logic.py add_auto_shop.py \
      update_db.py create_sample_data.py ./
 COPY routers ./routers/
 
