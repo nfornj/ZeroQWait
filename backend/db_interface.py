@@ -16,7 +16,8 @@ if USE_SUPABASE:
 else:
     # SQLAlchemy mode
     from database import SessionLocal, engine
-    from models import Base, User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, DailyAnalytics, ShopService, ShopCustomer
+    from database import SessionLocal, engine
+    from models import Base, User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, DailyAnalytics, ShopService, ShopCustomer, ConversationHistory
     import models
     supabase = None
 
@@ -554,6 +555,58 @@ class DatabaseInterface:
                 return None
             finally:
                 db.close()
+
+    def get_conversation_history(self, session_id: str, limit: int = 50) -> List[Dict]:
+        """Retrieve conversation history for a given session ID."""
+        if self.use_supabase:
+            response = supabase.table("conversation_history")\
+                .select("*")\
+                .eq("session_id", session_id)\
+                .order("created_at", desc=False)\
+                .limit(limit)\
+                .execute()
+            return response.data if response.data else []
+        else:
+            db = self.get_session()
+            try:
+                history = db.query(ConversationHistory)\
+                    .filter(ConversationHistory.session_id == session_id)\
+                    .order_by(ConversationHistory.created_at.asc())\
+                    .limit(limit)\
+                    .all()
+                return [self._model_to_dict(msg) for msg in history]
+            finally:
+                db.close()
+
+    def add_message_to_history(self, session_id: str, role: str, content: str, tool_call_id: str = None) -> Dict:
+        """Add a new message to the conversation history."""
+        data = {
+            "session_id": session_id,
+            "role": role,
+            "content": content,
+            "tool_call_id": tool_call_id,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        if self.use_supabase:
+            response = supabase.table("conversation_history").insert(data).execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                msg = ConversationHistory(
+                    session_id=session_id,
+                    role=role,
+                    content=content,
+                    tool_call_id=tool_call_id
+                )
+                db.add(msg)
+                db.commit()
+                db.refresh(msg)
+                return self._model_to_dict(msg)
+            finally:
+                db.close()
+
 
     def get_active_shift(self, user_id: int) -> Optional[Dict]:
         if self.use_supabase:

@@ -4,103 +4,212 @@ import logging
 from typing import List, Optional, Dict, Any
 from db_interface import db_interface
 from datetime import datetime
+import httpx
+import asyncio
 
 logger = logging.getLogger(__name__)
 
-import httpx
+# --- Tool Definitions (Llama 3.2 Schema) ---
+MASTER_AGENT_TOOLS = [
+    {
+        'type': 'function',
+        'function': {
+            'name': 'search_shops',
+            'description': 'Search for local businesses based on a category and optional location. Returns a list of matches.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'category': {
+                        'type': 'string', 
+                        'description': 'Type of shop. Supported: barber, salon, nail_spa, auto_repair, clinic, restaurant, vet. Map user input to one of these.'
+                    },
+                    'city': {
+                        'type': 'string', 
+                        'description': 'City name to filter results (e.g. Toronto, Oshawa).'
+                    },
+                    'query': {
+                        'type': 'string', 
+                        'description': 'Specific search keywords (e.g. "fade", "oil change").'
+                    }
+                },
+                'required': ['category'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'check_pricing',
+            'description': 'Get information about ZeroQwait subscription pricing tiers.',
+            'parameters': {
+                'type': 'object',
+                'properties': {},
+                'required': [],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'see_features',
+            'description': 'Get information about features offered by ZeroQwait.',
+            'parameters': {
+                'type': 'object',
+                'properties': {},
+                'required': [],
+            },
+        },
+    }
+]
 
-# --- Intent Extractor (The "Brain" for Search) ---
+# --- Native Tool-Calling Agent ---
 
-class IntentExtractor:
-    """Uses LLM to extract structured search parameters from natural language."""
-    def __init__(self, model: str = "ollama/llama3", base_url: str = "http://localhost:11434/v1"):
+class ToolCallingAgent:
+    """
+    Orchestrates the ReAct loop using Llama 3.2's native tool-calling capabilities.
+    """
+    def __init__(self, model: str = "llama3.2", base_url: str = "http://localhost:11434/v1"):
         self.model = model
         self.base_url = base_url
+        self.client = httpx.AsyncClient(timeout=30.0)
 
-    async def extract(self, user_msg: str) -> Dict[str, Any]:
-        prompt = f"""
-        Extract search parameters from the following user message: "{user_msg}"
-        Return a JSON object with:
-        - "query": The main search term (e.g., "oil change", "taper fade").
-        - "shop_type": One of [barber, salon, nail_spa, auto_repair, clinic, restaurant, vet].
-        - "city": Any city mentioned.
-        - "action": One of [search_shops, check_pricing, see_features, help].
+    async def chat(self, session_id: str, user_msg: str, latitude: float = None, longitude: float = None) -> Dict[str, Any]:
+        # 1. Load History
+        history_records = db_interface.get_conversation_history(session_id, limit=10)
+        messages = [{"role": h["role"], "content": h["content"]} for h in history_records]
+        
+        # Add current user message
+        messages.append({"role": "user", "content": user_msg})
+        db_interface.add_message_to_history(session_id, "user", user_msg)
 
-        Example: "find me a haircut in Toronto" 
-        Output: {{"query": "haircut", "shop_type": "barber", "city": "Toronto", "action": "search_shops"}}
+        # 2. ReAct Loop
+        # We allow up to 3 turns to prevent infinite loops
+        final_response_text = ""
+        actions_taken = []
+        
+        for _ in range(3):
+            try:
+                # Call LLM with Tools
+                payload = {
+                    "model": self.model,
+                    "messages": messages,
+                    "tools": MASTER_AGENT_TOOLS,
+                    "stream": False
+                }
+                
+                response = await self.client.post(f"{self.base_url}/chat/completions", json=payload)
+                
+                if response.status_code != 200:
+                    logger.warning(f"LLM Error {response.status_code}: {response.text}")
+                    # Fallback to rule-based if LLM fails cleanly
+                    return await self._fallback_rule_based(user_msg, latitude, longitude)
 
-        Only return JSON.
-        """
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    self.base_url + "/chat/completions",
-                    json={
-                        "model": self.model,
-                        "messages": [{"role": "system", "content": prompt}],
-                        "stream": False,
-                        "response_format": {"type": "json_object"}
-                    }
-                )
-                if response.status_code == 200:
-                    content = response.json()["choices"][0]["message"]["content"]
-                    return json.loads(content)
-        except Exception as e:
-            logger.warning(f"IntentExtractor LLM failed: {e}. Falling back to rules.")
+                resp_data = response.json()
+                choice = resp_data["choices"][0]
+                message = choice["message"]
+                
+                # Check for tool calls
+                if message.get("tool_calls"):
+                    # Add assistant's "thinking" step to history
+                    messages.append(message)
+                    # We don't persist full tool call objects to DB text field easily, 
+                    # but for this simplified flow, we'll store the intent.
+                    
+                    tool_calls = message["tool_calls"]
+                    
+                    for tc in tool_calls:
+                        func_name = tc["function"]["name"]
+                        args = json.loads(tc["function"]["arguments"])
+                        
+                        logger.info(f"Executing Tool: {func_name} with {args}")
+                        
+                        # EXECUTE TOOL
+                        result = None
+                        if func_name == "search_shops":
+                            result = db_interface.search_shops(
+                                query=args.get("query"),
+                                shop_type=args.get("category"),
+                                city=args.get("city"),
+                                latitude=latitude,
+                                longitude=longitude,
+                                limit=5
+                            )
+                            actions_taken.append({"tool": "search_shops", "result": result})
+                            
+                        elif func_name == "check_pricing":
+                            result = "Free Tier: $0/mo. Premium: $29/mo. Enterprise: Contact us."
+                            actions_taken.append({"tool": "navigate_to_page_section", "result": {"target": "pricing"}})
+                            
+                        elif func_name == "see_features":
+                            result = "AI Front Desk, Queue Management, Analytics, Customer CRM."
+                            actions_taken.append({"tool": "navigate_to_page_section", "result": {"target": "features"}})
+                        
+                        # Feed result back to LLM
+                        tool_msg = {
+                            "role": "tool",
+                            "content": json.dumps(result),
+                            "tool_call_id": tc["id"]
+                        }
+                        messages.append(tool_msg)
+                
+                else:
+                    # Final Answer
+                    final_response_text = message["content"]
+                    break
+                    
+            except Exception as e:
+                logger.error(f"ReAct Loop Error: {e}")
+                return await self._fallback_rule_based(user_msg, latitude, longitude)
         
-        # Fallback Rule-based Extraction
-        msg = user_msg.lower()
-        shop_type = None
-        clean_query = msg
-        
-        category_keywords = {
-            "barber": ["hair", "cut", "barber", "trim", "fade"],
-            "salon": ["salon", "style", "color", "spa"],
-            "nail_spa": ["nail", "manicure", "pedicure"],
-            "auto_repair": ["car", "repair", "auto", "mechanic", "oil", "tire"],
-            "clinic": ["clinic", "doctor", "health", "medical"],
-            "restaurant": ["food", "restaurant", "eat", "table", "menu"],
-            "vet": ["pet", "vet", "dog", "cat"]
-        }
-        
-        for stype, words in category_keywords.items():
-            if any(w in msg for w in words):
-                shop_type = stype
-                # Deep clean: remove these identifying words so they don't clog fuzzy search
-                for w in words:
-                    # Use regex or simple replace with boundaries if needed, 
-                    # but for mock fallback simple replace is okay.
-                    clean_query = clean_query.replace(w, "")
-                break
-        
-        # Remove common search junk and conversational noise
-        noise_words = ["shops", "shop", "find", "search", "me", "a", "the", "in", "near", "for", "any", "around", "with", "can", "you", "please", "to", "at", "show", "some", "nearby", "on", "zeroqwait", "could", "would", "want", "looking"]
-        for noise in noise_words:
-            # Use space padding to avoid partial word replacement
-            clean_query = clean_query.replace(f" {noise} ", " ")
-            if clean_query.startswith(f"{noise} "): clean_query = clean_query[len(noise)+1:]
-            if clean_query.endswith(f" {noise}"): clean_query = clean_query[:-len(noise)-1]
-            if clean_query == noise: clean_query = ""
+        # 3. Save Assistant Response & Return
+        if not final_response_text:
+            final_response_text = "I processed your request."
             
-        final_query = clean_query.strip(" ?!")
-        # Common orphan words after cleaning
-        if final_query.lower() in ["is", "are", "of", "to", "at", "please", "or"]:
-            final_query = ""
-
-        action = "help"
-        if any(x in msg for x in ["shop", "find", "search", "near"]): action = "search_shops"
-        elif any(x in msg for x in ["pricing", "cost", "price"]): action = "check_pricing"
-        elif any(x in msg for x in ["feature", "demo", "do"]): action = "see_features"
-
+        db_interface.add_message_to_history(session_id, "assistant", final_response_text)
+        
         return {
-            "query": final_query,
-            "shop_type": shop_type,
-            "city": None, # Complex regex needed for city fallback
-            "action": action
+            "response": final_response_text,
+            "actions": actions_taken,
+            "agent_name": "ZeroQ (Llama)"
         }
+
+    async def _fallback_rule_based(self, user_msg: str, latitude, longitude):
+        """Original robust fallback for when LLM is down."""
+        logger.info("Falling back to rule-based logic.")
+        # ... (Previous IntentExtractor Logic Simplified) ...
+        # Reuse previous logic pattern
+        msg = user_msg.lower()
+        clean_query = msg
+        shop_type = None
+        
+        # Quick Keyword Logic
+        if any(x in msg for x in ["hair", "cut", "barber"]): shop_type = "barber"
+        elif any(x in msg for x in ["auto", "car", "mechanic"]): shop_type = "auto_repair"
+        elif any(x in msg for x in ["nail", "manicure", "pedicure"]): shop_type = "nail_spa"
+        elif any(x in msg for x in ["food", "restaurant", "eat"]): shop_type = "restaurant"
+        elif any(x in msg for x in ["vet", "pet", "dog", "cat"]): shop_type = "vet"
+        elif any(x in msg for x in ["clinic", "doctor", "health"]): shop_type = "clinic"
+        elif any(x in msg for x in ["salon", "style", "color"]): shop_type = "salon"
+        
+        # Clean query logic
+        for noise in ["find", "search", "shops", "shop", "me", "a", "near", "in", "the", "for", "any", "around", "with", "can", "you", "please", "to", "at", "show", "some", "nearby", "on", "zeroqwait", "could", "would", "want", "looking"]:
+            clean_query = clean_query.replace(noise, "")
+            
+        shops = db_interface.search_shops(query=clean_query.strip(), shop_type=shop_type, limit=5, latitude=latitude, longitude=longitude)
+        
+        response_text = "I'm having trouble connecting to my brain, but here are some search results." if shops else "I'm having trouble connecting right now."
+        if shops:
+             response_text = f"I found {len(shops)} shops nearby (Offline Mode)."
+             
+        return {
+            "response": response_text,
+            "actions": [{"tool": "search_shops", "result": shops}] if shops else [],
+            "agent_name": "ZeroQ (Fallback)"
+        }
+
 
 # --- Agent Tools (The "Hands" of the Agent) ---
-
+# ... (Keep existing tool functions: get_shop_status, enroll_customer, etc.) ...
 def get_shop_status(shop_id: int) -> Dict[str, Any]:
     """Get the current load and status of all queues in a shop."""
     try:
@@ -117,9 +226,6 @@ def get_shop_status(shop_id: int) -> Dict[str, Any]:
             })
         return {"shop_id": shop_id, "queues": status}
     except Exception as e:
-        return {"error": str(e)}
-
-        logger.error(f"Enrollment error: {e}")
         return {"error": str(e)}
 
 def check_returning_customer(shop_id: int, phone: str) -> Dict[str, Any]:
@@ -190,8 +296,8 @@ def get_services(shop_id: int) -> List[Dict[str, Any]]:
     """List available services for the shop."""
     try:
         services = db_interface.get_shop_services(shop_id, include_inactive=False)
-        return services
-    except Exception:
+        return [{"id": s["id"], "name": s["name"], "cost": s["cost"]} for s in services]
+    except Exception as e:
         return []
 
 def find_best_queue(shop_id: int) -> Dict[str, Any]:

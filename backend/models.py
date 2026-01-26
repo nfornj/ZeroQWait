@@ -225,3 +225,13 @@ class ShopCustomer(Base):
 # Update Shop relationship
 Shop.close_days = relationship("ShopCloseDay", back_populates="shop", cascade="all, delete-orphan")
 Shop.customers = relationship("ShopCustomer", back_populates="shop", cascade="all, delete-orphan")
+
+class ConversationHistory(Base):
+    __tablename__ = "conversation_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, index=True, nullable=False)
+    role = Column(String, nullable=False)  # 'user', 'assistant', 'tool'
+    content = Column(Text, nullable=False)
+    tool_call_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
