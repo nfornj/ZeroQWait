@@ -73,12 +73,18 @@ class IntentExtractor:
                     clean_query = clean_query.replace(w, "")
                 break
         
-        # Remove common search junk
-        for noise in ["shops", "shop", "find", "search", "me", "a", "the", "in", "near", "for", "any", "around", "with"]:
-            clean_query = clean_query.replace(noise, "")
+        # Remove common search junk and conversational noise
+        noise_words = ["shops", "shop", "find", "search", "me", "a", "the", "in", "near", "for", "any", "around", "with", "can", "you", "please", "to", "at", "show", "some", "nearby", "on", "zeroqwait", "could", "would", "want", "looking"]
+        for noise in noise_words:
+            # Use space padding to avoid partial word replacement
+            clean_query = clean_query.replace(f" {noise} ", " ")
+            if clean_query.startswith(f"{noise} "): clean_query = clean_query[len(noise)+1:]
+            if clean_query.endswith(f" {noise}"): clean_query = clean_query[:-len(noise)-1]
+            if clean_query == noise: clean_query = ""
             
-        final_query = clean_query.strip()
-        if final_query in ["is", "are", "of", "to", "at"]: # Final sweep for orphans
+        final_query = clean_query.strip(" ?!")
+        # Common orphan words after cleaning
+        if final_query.lower() in ["is", "are", "of", "to", "at", "please", "or"]:
             final_query = ""
 
         action = "help"
@@ -680,7 +686,10 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
             )
             
             if shops:
-                text_response = f"I found {len(shops)} shops matching your request nearby. Here are the top results."
+                if not intent["query"] and not intent["shop_type"]:
+                     text_response = "Of course! I can search for any shop on our platform. Here are some verified queues nearby."
+                else:
+                     text_response = f"I found {len(shops)} shops matching your request nearby. Here are the top results."
                 actions_taken.append({"tool": "search_shops", "result": shops})
             else:
                 # If specifically structured search failed, try a broader fallback
