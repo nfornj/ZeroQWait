@@ -82,9 +82,11 @@ class ToolCallingAgent:
         # Add a strict system prompt for tool calling
         system_prompt = (
             "You are ZeroQ, the AI Assistant for ZeroQwait. "
-            "IMPORTANT: When you need to use a tool, use the native tool-calling protocol. "
-            "NEVER write raw JSON like '{\"name\": ...}' in your text response. "
-            "If you use a tool, respond with ONLY the tool call, no preamble."
+            "Your goal is to help users find shops and manage their visits. "
+            "IMPORTANT: When you use a tool like 'search_shops', the frontend will automatically display the results as cards. "
+            "DO NOT list shop names, addresses, or details in your text response. "
+            "Instead, confirm you found them with a brief message like 'I found several shops nearby that you might like.' "
+            "NEVER write raw JSON like '{\"name\": ...}' in your text response."
         )
         messages.append({"role": "system", "content": system_prompt})
         
@@ -248,8 +250,7 @@ class ToolCallingAgent:
                         content_for_llm = json.dumps(result)
                         
                         if func_name == "search_shops" and isinstance(result, list):
-                            shop_names = [str(s.get("name", "Shop")) for s in result]
-                            content_for_llm = f"Found {len(result)} shops: {', '.join(shop_names)}. The full data has been sent to the frontend for display cards. Do NOT list the shops in the text response."
+                            content_for_llm = f"Successfully found {len(result)} shops. They are already displayed to the user as cards. DO NOT list them in your response. Just say something like 'I found some shops nearby' and ask if they like any of them."
                         
                         tool_msg = {
                             "role": "tool",
