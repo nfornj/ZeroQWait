@@ -7,6 +7,70 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+import httpx
+
+# --- Intent Extractor (The "Brain" for Search) ---
+
+class IntentExtractor:
+    """Uses LLM to extract structured search parameters from natural language."""
+    def __init__(self, model: str = "ollama/llama3", base_url: str = "http://localhost:11434/v1"):
+        self.model = model
+        self.base_url = base_url
+
+    async def extract(self, user_msg: str) -> Dict[str, Any]:
+        prompt = f"""
+        Extract search parameters from the following user message: "{user_msg}"
+        Return a JSON object with:
+        - "query": The main search term (e.g., "oil change", "taper fade").
+        - "shop_type": One of [barber, salon, nail_spa, auto_repair, clinic, restaurant, vet].
+        - "city": Any city mentioned.
+        - "action": One of [search_shops, check_pricing, see_features, help].
+
+        Example: "find me a haircut in Toronto" 
+        Output: {{"query": "haircut", "shop_type": "barber", "city": "Toronto", "action": "search_shops"}}
+
+        Only return JSON.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    self.base_url + "/chat/completions",
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "system", "content": prompt}],
+                        "stream": False,
+                        "response_format": {"type": "json_object"}
+                    }
+                )
+                if response.status_code == 200:
+                    content = response.json()["choices"][0]["message"]["content"]
+                    return json.loads(content)
+        except Exception as e:
+            logger.warning(f"IntentExtractor LLM failed: {e}. Falling back to rules.")
+        
+        # Fallback Rule-based Extraction
+        msg = user_msg.lower()
+        shop_type = None
+        if any(x in msg for x in ["hair", "cut", "barber", "trim"]): shop_type = "barber"
+        elif any(x in msg for x in ["salon", "style", "color"]): shop_type = "salon"
+        elif any(x in msg for x in ["nail", "manicure", "pedicure"]): shop_type = "nail_spa"
+        elif any(x in msg for x in ["car", "repair", "auto", "mechanic", "oil"]): shop_type = "auto_repair"
+        elif any(x in msg for x in ["clinic", "doctor", "health"]): shop_type = "clinic"
+        elif any(x in msg for x in ["food", "restaurant", "eat", "table"]): shop_type = "restaurant"
+        elif any(x in msg for x in ["pet", "vet", "dog", "cat"]): shop_type = "vet"
+
+        action = "help"
+        if any(x in msg for x in ["shop", "find", "search", "near"]): action = "search_shops"
+        elif any(x in msg for x in ["pricing", "cost", "price"]): action = "check_pricing"
+        elif any(x in msg for x in ["feature", "demo", "do"]): action = "see_features"
+
+        return {
+            "query": user_msg,
+            "shop_type": shop_type,
+            "city": None, # Complex regex needed for city fallback
+            "action": action
+        }
+
 # --- Agent Tools (The "Hands" of the Agent) ---
 
 def get_shop_status(shop_id: int) -> Dict[str, Any]:
@@ -576,40 +640,40 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
         return await self._mock_master_chat(user_msg, history, latitude=latitude, longitude=longitude)
 
     async def _mock_master_chat(self, user_msg, history, latitude=None, longitude=None):
-        """Simplified rule-based logic for demo/offline use."""
-        msg = user_msg.lower()
+        """Dynamic intent extraction for better search relevance."""
+        extractor = IntentExtractor()
+        intent = await extractor.extract(user_msg)
+        
         actions_taken = []
         text_response = "I can help you navigate ZeroQwait. You can search for shops, check pricing, or see our features."
 
-        if any(x in msg for x in ["shop", "search", "find", "store", "near me"]):
-            # Extract basic query by removing noise words
-            query = msg
-            for word in ["search", "find", "shops", "shop", "stores", "store", "repair", "services", "service", "near me", "for", "the", "a", "of", "in", "an", "is", "are", "with", "around"]:
-                query = query.replace(word, "")
-            
-            final_query = query.strip()
-            # If query is just noise (like "for the"), clear it to allow proximity-based fallback
-            if final_query in ["for", "the", "with", "around", "a", "an", "is", "are", "of", "in"]:
-                final_query = ""
-                
+        if intent["action"] == "search_shops":
             shops = db_interface.search_shops(
-                query=final_query, 
+                query=intent["query"], 
+                shop_type=intent["shop_type"],
+                city=intent["city"],
                 latitude=latitude, 
                 longitude=longitude, 
                 limit=5
             )
             
             if shops:
-                text_response = f"I found {len(shops)} shops nearby. Here are the top results."
+                text_response = f"I found {len(shops)} shops matching your request nearby. Here are the top results."
                 actions_taken.append({"tool": "search_shops", "result": shops})
             else:
-                text_response = "I couldn't find any shops matching that description right now."
+                # If specifically structured search failed, try a broader fallback
+                shops_broad = db_interface.search_shops(query=user_msg, latitude=latitude, longitude=longitude, limit=5)
+                if shops_broad:
+                    text_response = f"I couldn't find an exact match for your specific terms, but here are some nearby shops you might like."
+                    actions_taken.append({"tool": "search_shops", "result": shops_broad})
+                else:
+                    text_response = "I couldn't find any shops matching that description right now."
         
-        elif "pricing" in msg or "cost" in msg:
+        elif intent["action"] == "check_pricing":
             text_response = "Our pricing is flexible! We have a Free tier for starters and a Premium tier for scaling businesses."
             actions_taken.append({"tool": "navigate_to_page_section", "result": {"target": "pricing"}})
 
-        elif "feature" in msg:
+        elif intent["action"] == "see_features":
              text_response = "ZeroQwait offers AI Front Desks, Smart Queue Analytics, and a beautiful customer interface."
              actions_taken.append({"tool": "navigate_to_page_section", "result": {"target": "features"}})
 

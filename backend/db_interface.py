@@ -166,14 +166,13 @@ class DatabaseInterface:
         if self.use_supabase:
             builder = supabase.table("shops").select("*")
             if query:
-                builder = builder.ilike("name", f"%{query}%")
+                # Use a combined OR filter for Supabase
+                builder = builder.or_(f"name.ilike.%{query}%,description.ilike.%{query}%,shop_type.ilike.%{query}%")
             if shop_type:
                 builder = builder.ilike("shop_type", f"%{shop_type}%")
             if city:
                 builder = builder.ilike("city", f"%{city}%")
             
-            # Simple sorting via supabase isn't easy for custom distance without RPC, 
-            # so we'll just return matches for now or handle client-side.
             response = builder.limit(limit).execute()
             return response.data if response.data else []
         else:
@@ -186,7 +185,8 @@ class DatabaseInterface:
                     search_filter = or_(
                         Shop.name.ilike(f"%{query}%"),
                         Shop.shop_type.ilike(f"%{query}%"),
-                        Shop.description.ilike(f"%{query}%")
+                        Shop.description.ilike(f"%{query}%"),
+                        Shop.address.ilike(f"%{query}%")
                     )
                     q = q.filter(search_filter)
                 
