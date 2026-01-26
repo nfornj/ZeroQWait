@@ -83,15 +83,32 @@ class ToolCallingAgent:
         system_prompt = (
             "You are ZeroQ, the AI Assistant for ZeroQwait. "
             "Your goal is to help users find shops and manage their visits. "
-            "IMPORTANT: When you use a tool like 'search_shops', the frontend will automatically display the results as cards. "
-            "DO NOT list shop names, addresses, or details in your text response. "
-            "Instead, confirm you found them with a brief message like 'I found several shops nearby that you might like.' "
-            "NEVER write raw JSON like '{\"name\": ...}' in your text response."
+            "CONVERSATION RULES:\n"
+            "1. When you use 'search_shops', results appear automatically as cards on the left. "
+            "DO NOT list them in text. Just confirm they are there.\n"
+            "2. If the user says 'yes', 'sure', or 'tell me more' after you found shops, "
+            "DO NOT call 'search_shops' again. Instead, tell them they can click 'Join' on any card "
+            "to check wait times, or ask if they want to see a specific shop's details.\n"
+            "3. If they ask a NEW question, feel free to use tools.\n"
+            "4. NEVER write raw JSON like '{\"name\": ...}' in your text response."
         )
         messages.append({"role": "system", "content": system_prompt})
         
         for h in history_records:
-            messages.append({"role": h["role"], "content": h["content"]})
+            msg = {"role": h["role"], "content": h["content"]}
+            if h.get("tool_call_id"):
+                msg["tool_call_id"] = h["tool_call_id"]
+            if h.get("name"): # For legacy or tool name support
+                msg["name"] = h["name"]
+            
+            # Restore tool_calls from serialized content
+            if h["role"] == "assistant" and h["content"].startswith("[TC]"):
+                try:
+                    msg["tool_calls"] = json.loads(h["content"][4:])
+                    msg["content"] = None # Standard OpenAI format: content is null when tool_calls present
+                except:
+                    pass
+            messages.append(msg)
         
         # Add current user message with location context if available
         context_msg = user_msg
@@ -200,10 +217,13 @@ class ToolCallingAgent:
 
                 # Check for tool calls (Native or Intercepted)
                 if message.get("tool_calls"):
-                    # Add assistant's "thinking" step to history
+                    # Add assistant's "thinking" step to history and DB
                     messages.append(message)
-                    # We don't persist full tool call objects to DB text field easily, 
-                    # but for this simplified flow, we'll store the intent.
+                    db_interface.add_message_to_history(
+                        session_id, 
+                        "assistant", 
+                        "[TC]" + json.dumps(message.get("tool_calls"))
+                    )
                     
                     tool_calls = message["tool_calls"]
                     
@@ -255,9 +275,16 @@ class ToolCallingAgent:
                         tool_msg = {
                             "role": "tool",
                             "content": content_for_llm,
-                            "tool_call_id": tc["id"]
+                            "tool_call_id": tc["id"],
+                            "name": func_name
                         }
                         messages.append(tool_msg)
+                        db_interface.add_message_to_history(
+                            session_id,
+                            "tool",
+                            content_for_llm,
+                            tool_call_id=tc["id"]
+                        )
                 
                 else:
                     # Final Answer
