@@ -34,6 +34,17 @@ const MasterAIAgent: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [location, setLocation] = useState<{ lat: number, lng: number } | null>(null);
+
+    // Capture Geolocation
+    useEffect(() => {
+        if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                (err) => console.warn('[MasterAIAgent] Geolocation denied or unavailable:', err)
+            );
+        }
+    }, []);
 
     // Updated State Type for Dynamic Layout
     const [chatHistory, setChatHistory] = useState<Array<{
@@ -114,8 +125,10 @@ const MasterAIAgent: React.FC = () => {
                 relatedViewer = 'faq';
             }
 
-            const response = await axios.post('/agent/master/chat', {
+            const response = await axios.post('/api/agent/master/chat', {
                 message: userText,
+                latitude: location?.lat,
+                longitude: location?.lng,
                 history: chatHistory.map(h => ({
                     role: h.role === 'ai' ? 'assistant' : 'user',
                     content: h.text
@@ -223,7 +236,7 @@ const MasterAIAgent: React.FC = () => {
                 }}
             >
                 {/* Controls Top Right */}
-                <Stack direction="row" spacing={2} sx={{ position: 'absolute', top: 40, right: 40 }}>
+                <Stack direction="row" spacing={2} sx={{ position: 'absolute', top: 40, right: 40, zIndex: 20000 }}>
                     <IconButton
                         onClick={() => setIsDarkMode(!isDarkMode)}
                         sx={{
@@ -299,23 +312,7 @@ const MasterAIAgent: React.FC = () => {
                         }}>
                             {/* The Particle Sphere */}
                             <Box sx={{ position: 'relative', width: 300, height: 300, transition: 'all 0.8s ease' }}>
-                                <ParticleSphere volume={volume} isListening={isListening} color={theme.accent} />
-                                {isProcessing && (
-                                    <CircularProgress
-                                        size={200}
-                                        thickness={1}
-                                        sx={{
-                                            position: 'absolute',
-                                            top: '50%',
-                                            left: '50%',
-                                            marginTop: '-100px',
-                                            marginLeft: '-100px',
-                                            color: theme.accent,
-                                            opacity: 0.5,
-                                            animationDuration: '1s',
-                                        }}
-                                    />
-                                )}
+                                <ParticleSphere volume={volume} isListening={isListening} color={theme.accent} isProcessing={isProcessing} />
                             </Box>
 
                             {/* Scrollable Transcript - More compact when split */}

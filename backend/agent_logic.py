@@ -553,31 +553,52 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
                     text = message.get("content", "I'm here to help!")
 
                 # --- LEAKAGE INTERCEPTOR ---
+                # --- LEAKAGE INTERCEPTOR ---
                 if detect_leakage(text):
                     logger.warning(f"MasterAgent leakage intercepted: {text[:100]}...")
-                    text = get_fallback_persona_response(self.ai_agent_name)
+                    text = "I'm here to help you find the best shops and services on ZeroQwait."
 
                 return {
                     "response": text,
                     "actions": actions_taken,
                     "agent_name": self.ai_agent_name
                 }
-        except Exception:
-            return self._mock_master_chat(user_message, history)
+        except Exception as e:
+            logger.error(f"MasterAgent error: {str(e)}")
+            return await self._mock_master_chat(user_message, history)
 
-    def _mock_master_chat(self, user_message: str, history):
-        """Fallback logic using Regex when LLM is down."""
-        msg = user_message.lower()
+    async def chat(self, user_msg, history=None, latitude=None, longitude=None):
+        if not history:
+            history = []
+        
+        # In demo mode, we use mock chat. In prod, we'd try LLM first if available.
+        # But per requirements, let's just use the robust fallback for now.
+        return await self._mock_master_chat(user_msg, history, latitude=latitude, longitude=longitude)
+
+    async def _mock_master_chat(self, user_msg, history, latitude=None, longitude=None):
+        """Simplified rule-based logic for demo/offline use."""
+        msg = user_msg.lower()
         actions_taken = []
         text_response = "I can help you navigate ZeroQwait. You can search for shops, check pricing, or see our features."
 
         if any(x in msg for x in ["shop", "search", "find", "store", "near me"]):
             # Extract basic query by removing noise words
             query = msg
-            for word in ["search", "find", "shops", "shop", "stores", "store", "repair", "services", "service", "near me"]:
+            for word in ["search", "find", "shops", "shop", "stores", "store", "repair", "services", "service", "near me", "for", "the", "a", "of", "in", "an", "is", "are", "with", "around"]:
                 query = query.replace(word, "")
             
-            shops = db_interface.search_shops(query=query.strip(), limit=5)
+            final_query = query.strip()
+            # If query is just noise (like "for the"), clear it to allow proximity-based fallback
+            if final_query in ["for", "the", "with", "around", "a", "an", "is", "are", "of", "in"]:
+                final_query = ""
+                
+            shops = db_interface.search_shops(
+                query=final_query, 
+                latitude=latitude, 
+                longitude=longitude, 
+                limit=5
+            )
+            
             if shops:
                 text_response = f"I found {len(shops)} shops nearby. Here are the top results."
                 actions_taken.append({"tool": "search_shops", "result": shops})
@@ -595,5 +616,5 @@ Your goal is to demonstrate our revolutionary AI-powered queue ecosystem.
         return {
             "response": text_response,
             "actions": actions_taken,
-            "agent_name": self.ai_agent_name
+            "agent_name": "ZeroQ"
         }

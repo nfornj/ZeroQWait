@@ -25,6 +25,8 @@ shop_data = {
     "website": "https://mikesauto.com",
     "average_service_time": 60,
     "slug": f"mikes-auto-{random.randint(100,999)}",
+    "latitude": 43.6532,
+    "longitude": -79.3832,
     "is_active": True
 }
 

@@ -161,8 +161,8 @@ class DatabaseInterface:
             finally:
                 db.close()
     
-    def search_shops(self, query: str = None, shop_type: str = None, city: str = None, limit: int = 10) -> List[Dict]:
-        """Fuzzy search for shops by name, type, and city."""
+    def search_shops(self, query: str = None, shop_type: str = None, city: str = None, latitude: float = None, longitude: float = None, limit: int = 10) -> List[Dict]:
+        """Fuzzy search for shops by name, type, and city, with optional location-based sorting."""
         if self.use_supabase:
             builder = supabase.table("shops").select("*")
             if query:
@@ -171,13 +171,17 @@ class DatabaseInterface:
                 builder = builder.ilike("shop_type", f"%{shop_type}%")
             if city:
                 builder = builder.ilike("city", f"%{city}%")
+            
+            # Simple sorting via supabase isn't easy for custom distance without RPC, 
+            # so we'll just return matches for now or handle client-side.
             response = builder.limit(limit).execute()
             return response.data if response.data else []
         else:
             db = self.get_session()
             try:
-                from sqlalchemy import or_
+                from sqlalchemy import or_, func
                 q = db.query(Shop)
+                
                 if query:
                     search_filter = or_(
                         Shop.name.ilike(f"%{query}%"),
@@ -191,6 +195,14 @@ class DatabaseInterface:
                     q = q.filter(Shop.shop_type.ilike(f"%{shop_type}%"))
                 if city:
                     q = q.filter(Shop.city.ilike(f"%{city}%"))
+                
+                # Location-based sorting (Simple Euclidean distance for demo)
+                if latitude is not None and longitude is not None:
+                    distance = func.sqrt(
+                        func.pow(Shop.latitude - latitude, 2) + 
+                        func.pow(Shop.longitude - longitude, 2)
+                    ).label("distance")
+                    q = q.order_by(distance)
                 
                 shops = q.limit(limit).all()
                 return [self._model_to_dict(shop) for shop in shops]

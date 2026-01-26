@@ -10,6 +10,8 @@ router = APIRouter()
 class AgentChatRequest(BaseModel):
     message: str
     history: Optional[List[Dict[str, str]]] = []
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 @router.get("/health")
 async def agent_health():
@@ -60,7 +62,12 @@ async def master_agent_chat(
     print(f"[DEBUG] Master agent chat request received: {request.message}")
     try:
         agent = MasterAgent()
-        result = await agent.chat(request.message, request.history)
+        result = await agent.chat(
+            request.message, 
+            request.history, 
+            latitude=request.latitude, 
+            longitude=request.longitude
+        )
         print(f"[DEBUG] Master agent response: {result['response'][:50]}...")
         return result
     except Exception as e:
