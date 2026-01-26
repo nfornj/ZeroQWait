@@ -190,9 +190,16 @@ class ToolCallingAgent:
                             actions_taken.append({"tool": "navigate_to_page_section", "result": {"target": "features"}})
                         
                         # Feed result back to LLM
+                        # [SANITIZATION] Summarize for the brain, but keep full data for the frontend
+                        content_for_llm = json.dumps(result)
+                        
+                        if func_name == "search_shops" and isinstance(result, list):
+                            shop_names = [str(s.get("name", "Shop")) for s in result]
+                            content_for_llm = f"Found {len(result)} shops: {', '.join(shop_names)}. The full data has been sent to the frontend for display cards. Do NOT list the shops in the text response."
+                        
                         tool_msg = {
                             "role": "tool",
-                            "content": json.dumps(result),
+                            "content": content_for_llm,
                             "tool_call_id": tc["id"]
                         }
                         messages.append(tool_msg)
