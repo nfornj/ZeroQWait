@@ -68,9 +68,10 @@ class ToolCallingAgent:
     """
     Orchestrates the ReAct loop using Llama 3.2's native tool-calling capabilities.
     """
-    def __init__(self, model: str = "llama3.2", base_url: str = "http://localhost:11434/v1"):
+    def __init__(self, model: str = "llama3.2", base_url: str = None):
         self.model = model
-        self.base_url = base_url
+        # Use env var or default to internal K8s service for prod, localhost for local
+        self.base_url = base_url or os.getenv("OLLAMA_URL", "http://ollama.llm.svc.cluster.local:11434/v1")
         self.client = httpx.AsyncClient(timeout=30.0)
 
     async def chat(self, session_id: str, user_msg: str, latitude: float = None, longitude: float = None) -> Dict[str, Any]:
@@ -176,7 +177,6 @@ class ToolCallingAgent:
     async def _fallback_rule_based(self, user_msg: str, latitude, longitude):
         """Original robust fallback for when LLM is down."""
         logger.info("Falling back to rule-based logic.")
-        # ... (Previous IntentExtractor Logic Simplified) ...
         # Reuse previous logic pattern
         msg = user_msg.lower()
         clean_query = msg
@@ -195,7 +195,10 @@ class ToolCallingAgent:
         for noise in ["find", "search", "shops", "shop", "me", "a", "near", "in", "the", "for", "any", "around", "with", "can", "you", "please", "to", "at", "show", "some", "nearby", "on", "zeroqwait", "could", "would", "want", "looking"]:
             clean_query = clean_query.replace(noise, "")
             
-        shops = db_interface.search_shops(query=clean_query.strip(), shop_type=shop_type, limit=5, latitude=latitude, longitude=longitude)
+        final_query = clean_query.strip() or None
+        logger.info(f"Fallback Search Params: query='{final_query}', shop_type='{shop_type}', lat={latitude}, long={longitude}")
+        
+        shops = db_interface.search_shops(query=final_query, shop_type=shop_type, limit=5, latitude=latitude, longitude=longitude)
         
         response_text = "I'm having trouble connecting to my brain, but here are some search results." if shops else "I'm having trouble connecting right now."
         if shops:
