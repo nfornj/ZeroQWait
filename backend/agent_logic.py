@@ -15,7 +15,7 @@ MASTER_AGENT_TOOLS = [
         'type': 'function',
         'function': {
             'name': 'search_shops',
-            'description': 'Search for local businesses based on a category and optional location. Returns a list of matches.',
+            'description': 'Search for local businesses. You have access to the user\'s location, so "near me" queries are supported automatically via the city/location arguments.',
             'parameters': {
                 'type': 'object',
                 'properties': {
@@ -79,8 +79,12 @@ class ToolCallingAgent:
         history_records = db_interface.get_conversation_history(session_id, limit=10)
         messages = [{"role": h["role"], "content": h["content"]} for h in history_records]
         
-        # Add current user message
-        messages.append({"role": "user", "content": user_msg})
+        # Add current user message with location context if available
+        context_msg = user_msg
+        if latitude and longitude:
+            context_msg = f"[User Location: Lat {latitude}, Long {longitude}] {user_msg}"
+        
+        messages.append({"role": "user", "content": context_msg})
         db_interface.add_message_to_history(session_id, "user", user_msg)
 
         # 2. ReAct Loop
@@ -127,8 +131,19 @@ class ToolCallingAgent:
                         # EXECUTE TOOL
                         result = None
                         if func_name == "search_shops":
+                            # Pre-processing: Clean query of noise to help fuzzy search
+                            raw_query = args.get("query", "")
+                            clean_query = raw_query
+                            if clean_query:
+                                 for noise in ["find", "search", "shops", "shop", "me", "a", "near", "in", "the", "for", "any", "around", "with", "can", "you", "please", "to", "at", "show", "some", "nearby", "on", "zeroqwait", "could", "would", "want", "looking"]:
+                                     clean_query = clean_query.replace(noise, "")
+                                 clean_query = clean_query.strip()
+                            
+                            # If query became empty (e.g. "shops near me" -> ""), treat as pure proximity search
+                            final_query = clean_query if clean_query else None
+                            
                             result = db_interface.search_shops(
-                                query=args.get("query"),
+                                query=final_query,
                                 shop_type=args.get("category"),
                                 city=args.get("city"),
                                 latitude=latitude,
