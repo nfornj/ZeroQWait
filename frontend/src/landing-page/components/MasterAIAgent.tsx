@@ -112,19 +112,6 @@ const MasterAIAgent: React.FC = () => {
         setIsProcessing(true);
 
         try {
-            // MOCK INTENT DETECTION FOR DEMO PURPOSES
-            // In a real app, the backend would return 'relatedViewer' or 'action'
-            const lowerText = userText.toLowerCase();
-            let relatedViewer: 'shops' | 'pricing' | 'features' | 'faq' | null = null;
-
-            if (lowerText.includes('pricing') || lowerText.includes('cost') || lowerText.includes('plan')) {
-                relatedViewer = 'pricing';
-            } else if (lowerText.includes('feature') || lowerText.includes('what can you do')) {
-                relatedViewer = 'features';
-            } else if (lowerText.includes('help') || lowerText.includes('faq') || lowerText.includes('question')) {
-                relatedViewer = 'faq';
-            }
-
             const response = await axios.post('/api/agent/master/chat', {
                 message: userText,
                 latitude: location?.lat,
@@ -137,18 +124,12 @@ const MasterAIAgent: React.FC = () => {
 
             const { response: agentText, actions } = response.data;
             let shopResults: any[] = [];
+            let relatedViewer: 'shops' | 'pricing' | 'features' | 'faq' | null = null;
 
             actions.forEach((action: any) => {
                 if (action.tool === 'navigate_to_page_section') {
-                    // We might handle scroll here, OR if we have relatedViewer, we stay in overlay
-                    if (!relatedViewer) {
-                        const sectionId = action.result.target;
-                        const element = document.getElementById(sectionId);
-                        if (element) {
-                            element.scrollIntoView({ behavior: 'smooth' });
-                            setTimeout(() => setIsOpen(false), 2000);
-                        }
-                    }
+                    const sectionId = action.result.target;
+                    relatedViewer = sectionId as any; // pricing, features, etc.
                 } else if (action.tool === 'search_shops') {
                     shopResults = action.result;
                     if (shopResults.length > 0) relatedViewer = 'shops';
@@ -156,47 +137,11 @@ const MasterAIAgent: React.FC = () => {
             });
 
             setChatHistory(prev => [...prev, { role: 'ai', text: agentText, shops: shopResults, relatedViewer }]);
-            setIsProcessing(false);
             speak(agentText);
-        } catch (err) {
-            console.warn('[MasterAIAgent] Backend unreachable, using offline fallback for demo');
-
-            // Fallback logic for demo purposes (if backend is down)
-            const lowerText = userText.toLowerCase();
-            let fallbackText = "I'm having trouble connecting to the server, but I can still help navigate.";
-            let fallbackViewer: any = null;
-
-            if (lowerText.includes('pricing') || lowerText.includes('cost')) {
-                fallbackText = "Here are our pricing plans. We offer flexible tiers for every business size.";
-                fallbackViewer = 'pricing';
-            } else if (lowerText.includes('feature')) {
-                fallbackText = "Check out our key features. We simplify queue management for you.";
-                fallbackViewer = 'features';
-            } else if (lowerText.includes('help') || lowerText.includes('faq')) {
-                fallbackText = "Here are some frequently asked questions to help you get started.";
-                fallbackViewer = 'faq';
-            } else if (lowerText.includes('shop') || lowerText.includes('store') || lowerText.includes('near me')) {
-                fallbackText = "Here are some verified queues nearby.";
-                fallbackViewer = 'shops';
-                // Mock shops for demo
-                const mockShops = [
-                    { id: 1, name: "City Barber", address: "123 Main St", city: "New York", logo_url: "https://mui.com/static/images/avatar/1.jpg", slug: "city-barber", average_service_time: 15 },
-                    { id: 2, name: "Downtown Salon", address: "456 Market Ave", city: "New York", logo_url: "https://mui.com/static/images/avatar/2.jpg", slug: "downtown-salon", average_service_time: 25 },
-                    { id: 3, name: "Dr. Smith Clinic", address: "789 Health Blvd", city: "Brooklyn", logo_url: "https://mui.com/static/images/avatar/3.jpg", slug: "dr-smith", average_service_time: 40 }
-                ];
-                setChatHistory(prev => [...prev, { role: 'ai', text: fallbackText, shops: mockShops, relatedViewer: fallbackViewer }]);
-                speak(fallbackText);
-                setIsProcessing(false);
-                return;
-            }
-
-            if (fallbackViewer) {
-                setChatHistory(prev => [...prev, { role: 'ai', text: fallbackText, relatedViewer: fallbackViewer }]);
-                speak(fallbackText);
-            } else {
-                setChatHistory(prev => [...prev, { role: 'ai', text: "I'm sorry, I cannot connect to the brain right now. Please try again later." }]);
-            }
-
+        } catch (error) {
+            console.error('[DEBUG] MasterAgent API Error:', error);
+            setChatHistory(prev => [...prev, { role: 'ai', text: "I'm sorry, I'm having trouble connecting to my database. Please check your internet or try again in a moment." }]);
+        } finally {
             setIsProcessing(false);
         }
     };

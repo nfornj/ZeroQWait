@@ -5,9 +5,10 @@ interface ParticleSphereProps {
     volume: number;
     isListening: boolean;
     color?: string;
+    isProcessing?: boolean;
 }
 
-const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, color = '#f5e1c0' }) => {
+const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, color = '#f5e1c0', isProcessing = false }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const particles = useRef<any[]>([]);
     const animationFrameId = useRef<number>();
@@ -36,8 +37,13 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
 
         let rotationX = 0;
         let rotationY = 0;
+        let lastTime = performance.now();
 
         const render = () => {
+            const currentTime = performance.now();
+            const deltaTime = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+
             const width = canvas.width;
             const height = canvas.height;
             const centerX = width / 2;
@@ -45,14 +51,18 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
 
             ctx.clearRect(0, 0, width, height);
 
-            // Dynamic rotation based on volume (faster when speaking)
-            const baseSpeed = 0.003;
-            const speedMultiplier = 1 + (volume * 8); // Significantly fast when loud
-            rotationX += baseSpeed * speedMultiplier;
-            rotationY += (baseSpeed * 1.5) * speedMultiplier;
+            // Dynamic rotation based on volume OR processing state
+            const baseSpeed = 0.5;
+            // Spin fast if processing, or react to volume
+            const speedMultiplier = isProcessing ? 12 : (1 + (volume * 10));
+
+            rotationX += baseSpeed * speedMultiplier * deltaTime;
+            rotationY += (baseSpeed * 1.5) * speedMultiplier * deltaTime;
 
             // Audio reaction factor - Stronger pulse
-            const scale = 1 + (volume * 1.5);
+            // If processing, breathe deeply
+            const processingPulse = isProcessing ? (1 + Math.sin(currentTime / 1000 * 6) * 0.15) : 1;
+            const scale = (1 + (volume * 1.5)) * processingPulse;
 
             particles.current.forEach((p) => {
                 // Rotation logic
@@ -89,7 +99,7 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
                 cancelAnimationFrame(animationFrameId.current);
             }
         };
-    }, [volume, color]);
+    }, [volume, color, isProcessing]);
 
     return (
         <Box sx={{ width: '100%', height: 400, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
