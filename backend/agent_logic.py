@@ -84,13 +84,15 @@ class ToolCallingAgent:
             "You are ZeroQ, the AI Assistant for ZeroQwait. "
             "Your goal is to help users find shops and manage their visits. "
             "CONVERSATION RULES:\n"
-            "1. When you use 'search_shops', results appear automatically as cards on the left. "
+            "1. ALWAYS call the 'search_shops' tool if the user is looking for a place, "
+            "uses terms like 'near me', 'find', or mentions a shop category (barber, salon, etc.). "
+            "DO NOT just talk about finding shops; actually use the tool.\n"
+            "2. Results from 'search_shops' appear automatically as cards on the left. "
             "DO NOT list them in text. Just confirm they are there.\n"
-            "2. If the user says 'yes', 'sure', or 'tell me more' after you found shops, "
-            "DO NOT call 'search_shops' again. Instead, tell them they can click 'Join' on any card "
-            "to check wait times, or ask if they want to see a specific shop's details.\n"
-            "3. If they ask a NEW question, feel free to use tools.\n"
-            "4. NEVER write raw JSON like '{\"name\": ...}' in your text response."
+            "3. If the user says 'yes', 'sure', or 'tell me more' after you found shops, "
+            "DO NOT call 'search_shops' again. Guide them to use the cards.\n"
+            "4. NEVER write raw JSON or technical strings like 'search_shops' in your output.\n"
+            "5. If you call a tool, respond with a very brief confirmation (e.g., 'Checking that for you...')."
         )
         messages.append({"role": "system", "content": system_prompt})
         
@@ -244,17 +246,22 @@ class ToolCallingAgent:
                                      clean_query = clean_query.replace(noise, "")
                                  clean_query = clean_query.strip()
                             
-                            # If query became empty (e.g. "shops near me" -> ""), treat as pure proximity search
+                            # City Hallucination Fix: If LLM guess Toronto but we have no city in user msg, prioritze Lat/Long
+                            final_city = args.get("city")
+                            if final_city == "Toronto" and "toronto" not in user_msg.lower():
+                                final_city = None # Be flexible
+                            
                             final_query = clean_query if clean_query else None
                             
                             result = db_interface.search_shops(
                                 query=final_query,
                                 shop_type=args.get("category"),
-                                city=args.get("city"),
+                                city=final_city,
                                 latitude=latitude,
                                 longitude=longitude,
-                                limit=5
+                                limit=10
                             )
+                            logger.info(f"Search Shops Result: Found {len(result)} items")
                             actions_taken.append({"tool": "search_shops", "result": result})
                             
                         elif func_name == "check_pricing":

@@ -249,40 +249,38 @@ const MasterAIAgent: React.FC = () => {
                     <Box sx={{
                         flex: 1,
                         display: 'flex',
-                        flexDirection: latestAIResponse?.relatedViewer ? { xs: 'column', md: 'row-reverse' } : 'column',
-                        alignItems: latestAIResponse?.relatedViewer ? 'flex-start' : 'center',
-                        justifyContent: latestAIResponse?.relatedViewer ? 'space-between' : 'center', // Spread out
-                        py: latestAIResponse?.relatedViewer ? 4 : 10,
-                        px: latestAIResponse?.relatedViewer ? 8 : 0, // More padding on sides
+                        flexDirection: activeViewer ? { xs: 'column', md: 'row-reverse' } : 'column',
+                        alignItems: activeViewer ? 'flex-start' : 'center',
+                        justifyContent: activeViewer ? 'space-between' : 'center',
+                        py: activeViewer ? 4 : 10,
+                        px: activeViewer ? 8 : 0,
                         gap: 2,
                         width: '100%',
-                        maxWidth: '1600px', // Allow wider layout
+                        maxWidth: '1600px',
                         mx: 'auto',
                         height: '100%',
                         minHeight: 'min-content'
                     }}>
 
-                        {/* LEFT COLUMN: Agent, Transcript & Controls (Moves left when content shows) */}
+                        {/* LEFT COLUMN: Agent, Transcript & Controls */}
                         <Box sx={{
-                            flex: activeViewer ? '0 0 400px' : 'none', // Fixed width when split
+                            flex: activeViewer ? '0 0 400px' : 'none',
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
-                            justifyContent: 'center', // Vertically center the content
+                            justifyContent: 'center',
                             gap: 4,
                             transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
                             width: activeViewer ? '400px' : 'auto',
                             maxWidth: activeViewer ? '400px' : '800px',
-                            minHeight: activeViewer ? '100vh' : 'auto', // Full height to allow centering
+                            minHeight: activeViewer ? '100vh' : 'auto',
                             position: activeViewer ? 'sticky' : 'relative',
                             top: 0,
                         }}>
-                            {/* The Particle Sphere */}
                             <Box sx={{ position: 'relative', width: 300, height: 300, transition: 'all 0.8s ease' }}>
                                 <ParticleSphere volume={volume} isListening={isListening} color={theme.accent} isProcessing={isProcessing} />
                             </Box>
 
-                            {/* Scrollable Transcript - More compact when split */}
                             <Box
                                 ref={scrollRef}
                                 sx={{
@@ -314,63 +312,28 @@ const MasterAIAgent: React.FC = () => {
                                         </Typography>
                                     </Box>
                                 ))}
-
-                                {isListening && transcript && (
-                                    <Typography
-                                        variant="body1"
-                                        sx={{
-                                            fontWeight: 300,
-                                            lineHeight: 1.6,
-                                            color: isDarkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
-                                            fontSize: '1.2rem',
-                                            fontStyle: 'italic',
-                                        }}
-                                    >
-                                        {transcript}
-                                    </Typography>
-                                )}
                             </Box>
 
-                            {/* Interaction Footer - MOVED INSIDE LEFT COLUMN */}
-                            <Box
-                                sx={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    gap: 2,
-                                    width: '100%'
-                                }}
-                            >
+                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%' }}>
                                 <IconButton
-                                    onClick={() => {
-                                        if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-                                            alert("Microphone access requires a secure connection (HTTPS). Please try accessing via localhost or a secure domain.");
-                                            return;
-                                        }
-                                        isListening ? stopListening() : startListening();
-                                    }}
+                                    onClick={() => isListening ? stopListening() : startListening()}
                                     sx={{
-                                        width: 80,
-                                        height: 80,
+                                        width: 80, height: 80,
                                         bgcolor: isListening ? theme.accent : theme.cardBg,
                                         color: isListening ? (isDarkMode ? 'black' : 'white') : theme.text,
-                                        '&:hover': { bgcolor: isListening ? theme.accent : theme.inputBg },
-                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                                         border: `2px solid ${theme.cardBorder}`,
                                         boxShadow: isListening ? `0 0 50px ${theme.accent}88` : 'none'
                                     }}
                                 >
                                     {isListening ? <MicIcon sx={{ fontSize: 40 }} /> : <MicOffIcon sx={{ fontSize: 40 }} />}
                                 </IconButton>
-
                                 <Typography variant="caption" sx={{ opacity: 0.6, letterSpacing: '0.1em', fontWeight: 600 }}>
                                     {isListening ? "LISTENING..." : "START VOICE CONVERSATION"}
                                 </Typography>
-
                                 {!isListening && (
                                     <TextField
                                         fullWidth
-                                        placeholder="Type or speak to ZeroQ..."
+                                        placeholder="Type to ZeroQ..."
                                         variant="outlined"
                                         sx={{ maxWidth: 400 }}
                                         onKeyPress={(e) => {
@@ -382,15 +345,7 @@ const MasterAIAgent: React.FC = () => {
                                         }}
                                         slotProps={{
                                             input: {
-                                                sx: {
-                                                    borderRadius: '30px',
-                                                    bgcolor: theme.inputBg,
-                                                    color: theme.text,
-                                                    backdropFilter: 'blur(10px)',
-                                                    '& fieldset': { borderColor: theme.cardBorder },
-                                                    '&:hover fieldset': { borderColor: theme.accent },
-                                                    '&.Mui-focused fieldset': { borderColor: theme.accent, borderWidth: '2px' }
-                                                },
+                                                sx: { borderRadius: '30px', bgcolor: theme.inputBg, color: theme.text },
                                                 endAdornment: <SearchIcon sx={{ color: theme.textSecondary, mr: 1 }} />
                                             }
                                         }}
@@ -399,151 +354,57 @@ const MasterAIAgent: React.FC = () => {
                             </Box>
                         </Box>
 
-                        {/* RIGHT COLUMN: Dynamic Content Viewer */}
-                        {activeViewer && (
+                        {/* RIGHT COLUMN: Content Viewer */}
+                        {(activeViewer || isProcessing) && (
                             <Fade in={true} timeout={1000}>
                                 <Box sx={{
-                                    flex: 1, // Take all remaining space
-                                    width: '100%',
-                                    height: '100%',
-                                    maxHeight: '95vh', // Slightly taller
-                                    overflowY: 'auto',
-                                    p: 4,
+                                    flex: 1, width: '100%', minWidth: 400, height: '95vh',
+                                    overflowY: 'auto', p: 4, borderRadius: '32px',
                                     bgcolor: isDarkMode ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.7)',
-                                    borderRadius: '32px',
                                     border: `1px solid ${theme.cardBorder}`,
                                     backdropFilter: 'blur(20px)',
                                     boxShadow: '0 20px 80px rgba(0,0,0,0.1)',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center', // Center content horizontally inside
-                                    justifyContent: 'center', // Vertically center the content
-                                    '&::-webkit-scrollbar': { width: '4px' },
-                                    '&::-webkit-scrollbar-thumb': { bgcolor: theme.accent, borderRadius: '4px' }
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                    justifyContent: (isProcessing && !activeViewer) ? 'center' : 'flex-start',
                                 }}>
-                                    {/* Shops View */}
-                                    {activeViewer === 'shops' && (
+                                    {isProcessing && (
+                                        <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                            <Box sx={{ height: 40, width: '60%', bgcolor: theme.cardBorder, borderRadius: 2, animation: 'pulse 1.5s infinite' }} />
+                                            {[1, 2, 3].map(i => (
+                                                <Box key={i} sx={{ height: 120, width: '100%', bgcolor: theme.cardBg, borderRadius: '24px', border: `1px solid ${theme.cardBorder}`, animation: 'pulse 1.5s infinite', animationDelay: `${i * 0.2}s` }} />
+                                            ))}
+                                            <style>{`@keyframes pulse { 0% { opacity: 0.3; } 50% { opacity: 0.6; } 100% { opacity: 0.3; } }`}</style>
+                                        </Box>
+                                    )}
+
+                                    {!isProcessing && activeViewer === 'shops' && (
                                         <Stack spacing={3} sx={{ width: '100%' }}>
                                             <Typography variant="h5" sx={{ fontWeight: 600 }}>Nearby Verified Queues</Typography>
-                                            {activeShops?.map((shop: any) => (
-                                                <Card
-                                                    key={shop.id}
-                                                    onClick={() => navigate(`/s/${shop.slug}`)}
-                                                    sx={{
-                                                        bgcolor: theme.cardBg,
-                                                        borderRadius: '24px',
-                                                        border: `1px solid ${theme.cardBorder}`,
-                                                        cursor: 'pointer',
-                                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                                        overflow: 'visible',
-                                                        position: 'relative',
-                                                        '&:hover': {
-                                                            transform: 'translateY(-4px) scale(1.02)',
-                                                            boxShadow: `0 20px 40px -10px ${isDarkMode ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.1)'}`,
-                                                            borderColor: theme.accent,
-                                                            '& .shop-glow': { opacity: 0.5 }
-                                                        }
-                                                    }}
-                                                >
-                                                    {/* Glow Effect */}
-                                                    <Box
-                                                        className="shop-glow"
-                                                        sx={{
-                                                            position: 'absolute',
-                                                            inset: 0,
-                                                            opacity: 0,
-                                                            transition: 'opacity 0.3s ease',
-                                                            background: `radial-gradient(circle at 50% 0%, ${theme.accent}33, transparent 70%)`,
-                                                            borderRadius: '24px',
-                                                            pointerEvents: 'none'
-                                                        }}
-                                                    />
-
-                                                    <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 3, p: 3, '&:last-child': { pb: 3 } }}>
-                                                        <Avatar
-                                                            src={shop.logo_url}
-                                                            variant="rounded"
-                                                            sx={{
-                                                                width: 80,
-                                                                height: 80,
-                                                                borderRadius: '16px',
-                                                                bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                                                                border: `1px solid ${theme.cardBorder}`
-                                                            }}
-                                                        >
-                                                            {shop.name.charAt(0)}
-                                                        </Avatar>
-
-                                                        <Box sx={{ flex: 1 }}>
-                                                            <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>
-                                                                {shop.name}
-                                                            </Typography>
-                                                            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1, opacity: 0.8 }}>
-                                                                <LocationOnIcon fontSize="small" sx={{ color: theme.accent }} />
-                                                                <Typography variant="body2">
-                                                                    {shop.city}
-                                                                </Typography>
-                                                            </Stack>
-                                                            {/* Status Pill */}
-                                                            <Chip
-                                                                label="Queue Active"
-                                                                size="small"
-                                                                sx={{
-                                                                    height: 24,
-                                                                    bgcolor: `${theme.accent}22`,
-                                                                    color: theme.accent,
-                                                                    border: `1px solid ${theme.accent}44`,
-                                                                    fontWeight: 600,
-                                                                    fontSize: '0.75rem'
-                                                                }}
-                                                            />
-                                                        </Box>
-
-                                                        <Button
-                                                            variant="contained"
-                                                            sx={{
-                                                                bgcolor: theme.accent,
-                                                                borderRadius: '14px',
-                                                                px: 3,
-                                                                py: 1.5,
-                                                                fontWeight: 700,
-                                                                textTransform: 'none',
-                                                                boxShadow: `0 8px 20px -8px ${theme.accent}`,
-                                                                '&:hover': {
-                                                                    bgcolor: theme.accent,
-                                                                    filter: 'brightness(1.1)',
-                                                                    transform: 'translateY(-1px)'
-                                                                }
-                                                            }}
-                                                        >
-                                                            Join
-                                                        </Button>
-                                                    </CardContent>
-                                                </Card>
-                                            ))}
+                                            {activeShops.length === 0 ? (
+                                                <Box sx={{ textAlign: 'center', py: 10, opacity: 0.6 }}>
+                                                    <SearchIcon sx={{ fontSize: 60, mb: 2 }} />
+                                                    <Typography variant="h6">No shops found.</Typography>
+                                                </Box>
+                                            ) : (
+                                                activeShops.map((shop: any) => (
+                                                    <Card key={shop.id} onClick={() => navigate(`/s/${shop.slug}`)} sx={{ bgcolor: theme.cardBg, borderRadius: '24px', border: `1px solid ${theme.cardBorder}`, cursor: 'pointer' }}>
+                                                        <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 3, p: 3 }}>
+                                                            <Avatar src={shop.logo_url} sx={{ width: 64, height: 64, borderRadius: '16px', bgcolor: theme.accent }}>{shop.name[0]}</Avatar>
+                                                            <Box sx={{ flex: 1 }}>
+                                                                <Typography variant="h6" sx={{ fontWeight: 700 }}>{shop.name}</Typography>
+                                                                <Typography variant="body2" sx={{ opacity: 0.7 }}>{shop.address}, {shop.city}</Typography>
+                                                            </Box>
+                                                            <Button variant="contained" sx={{ bgcolor: theme.accent, color: isDarkMode ? 'black' : 'white', borderRadius: '12px', fontWeight: 700 }}>JOIN</Button>
+                                                        </CardContent>
+                                                    </Card>
+                                                ))
+                                            )}
                                         </Stack>
                                     )}
 
-                                    {/* Pricing View */}
-                                    {activeViewer === 'pricing' && (
-                                        <Box sx={{ width: '100%', py: 4 }}>
-                                            <Pricing />
-                                        </Box>
-                                    )}
-
-                                    {/* Features View */}
-                                    {activeViewer === 'features' && (
-                                        <Box sx={{ width: '100%', py: 4 }}>
-                                            <Features />
-                                        </Box>
-                                    )}
-
-                                    {/* Highlights/FAQ View */}
-                                    {activeViewer === 'faq' && (
-                                        <Box sx={{ width: '100%', py: 4 }}>
-                                            <FAQ />
-                                        </Box>
-                                    )}
+                                    {!isProcessing && activeViewer === 'pricing' && <Pricing />}
+                                    {!isProcessing && activeViewer === 'features' && <Features />}
+                                    {!isProcessing && activeViewer === 'faq' && <FAQ />}
                                 </Box>
                             </Fade>
                         )}
