@@ -114,31 +114,57 @@ class ToolCallingAgent:
                 message = choice["message"]
                 
                 # [INTERCEPTOR] Check for text-based tool calls (Llama 3.2 outputting raw JSON)
-                if not message.get("tool_calls") and message.get("content", "").strip().startswith("{"):
+                # [INTERCEPTOR] Check for text-based tool calls (Llama 3.2 outputting raw JSON)
+                # Matches simple JSON object-like strings, possibly wrapped in markdown or extra text
+                # We specifically look for known tool names to avoid false positives
+                content_str = message.get("content", "")
+                if not message.get("tool_calls") and content_str:
                     try:
-                        content_str = message["content"].strip()
-                        # Simple heuristic: must contain a known tool name
-                        if any(tool["function"]["name"] in content_str for tool in MASTER_AGENT_TOOLS):
-                            data = json.loads(content_str)
-                            
-                            # Handle various hallucinated formats
-                            # 1. Direct: {"name": "search_shops", "arguments": {...}}
-                            # 2. Function wrapper: {"function": {"name": "..."}}
-                            func_name = data.get("name") or data.get("function", {}).get("name")
-                            args = data.get("arguments") or data.get("parameters") or data.get("function", {}).get("arguments")
-                            
-                            if func_name and args:
-                                logger.info(f"Intercepted Text-Based Tool Call: {func_name}")
-                                message["tool_calls"] = [{
-                                    "id": f"call_{datetime.now().strftime('%f')}",
-                                    "type": "function",
-                                    "function": {
-                                        "name": func_name,
-                                        "arguments": json.dumps(args) if isinstance(args, dict) else str(args)
-                                    }
-                                }]
-                    except json.JSONDecodeError:
-                        pass # Not JSON
+                        import re
+                        
+                        # 1. Clean Markdown code blocks (```json ... ```)
+                        if "```" in content_str:
+                            match = re.search(r"```(?:json)?(.*?)```", content_str, re.DOTALL)
+                            if match:
+                                content_str = match.group(1).strip()
+                        
+                        # 2. Extract potential JSON object { ... }
+                        # This regex finds the first outer-most {} block
+                        json_match = re.search(r"(\{.*\})", content_str, re.DOTALL)
+                        if json_match:
+                             potential_json = json_match.group(1).strip()
+                             
+                             # Simple heuristic: must contain a known tool name to be worth parsing
+                             if any(tool["function"]["name"] in potential_json for tool in MASTER_AGENT_TOOLS):
+                                 try:
+                                     data = json.loads(potential_json)
+                                 except json.JSONDecodeError:
+                                     # Try to repair common Llama3 mistakes like single quotes
+                                     import ast
+                                     try:
+                                         data = ast.literal_eval(potential_json)
+                                     except:
+                                         data = None
+                                 
+                                 if data and isinstance(data, dict):
+                                     # Handle various hallucinated formats
+                                     # 1. Direct: {"name": "search_shops", "arguments": {...}}
+                                     # 2. Function wrapper: {"function": {"name": "..."}}
+                                     func_name = data.get("name") or data.get("function", {}).get("name")
+                                     args = data.get("arguments") or data.get("parameters") or data.get("function", {}).get("arguments")
+                                     
+                                     if func_name and args:
+                                         logger.info(f"Intercepted Text-Based Tool Call: {func_name}")
+                                         message["tool_calls"] = [{
+                                             "id": f"call_{datetime.now().strftime('%f')}",
+                                             "type": "function",
+                                             "function": {
+                                                 "name": func_name,
+                                                 "arguments": json.dumps(args) if isinstance(args, dict) else str(args)
+                                             }
+                                         }]
+                                         # Clear content so we don't show the JSON to the user
+                                         message["content"] = None
                     except Exception as e:
                         logger.warning(f"Failed to parse text-based tool call: {e}")
 
