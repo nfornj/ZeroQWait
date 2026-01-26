@@ -301,6 +301,8 @@ class ToolCallingAgent:
             
         db_interface.add_message_to_history(session_id, "assistant", final_response_text)
         
+        logger.info(f"Final response for {session_id}: {final_response_text[:50]}... with {len(actions_taken)} actions")
+        
         return {
             "response": final_response_text,
             "actions": actions_taken,

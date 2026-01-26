@@ -129,7 +129,7 @@ const MasterAIAgent: React.FC = () => {
             let currentShops = [...activeShops];
             let currentViewer = activeViewer;
 
-            console.log('[DEBUG] Agent Response:', { agentText, actions });
+            console.log('[DEBUG] MasterAgent COMPLETE Response:', response.data);
 
             if (actions && Array.isArray(actions)) {
                 // Actions OVERRIDE current state
