@@ -116,7 +116,7 @@ class ToolCallingAgent:
             context_msg = f"[User Location: Lat {latitude}, Long {longitude}] {user_msg}"
         
         messages.append({"role": "user", "content": context_msg})
-        db_interface.add_message_to_history(session_id, "user", user_msg)
+        db_interface.add_message_to_history(session_id, "user", context_msg)
 
         # 2. ReAct Loop
         # We allow up to 3 turns to prevent infinite loops

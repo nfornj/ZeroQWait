@@ -56,8 +56,11 @@ const MasterAIAgent: React.FC = () => {
         { role: 'ai', text: "Welcome to ZeroQwait! I'm ZeroQ. How can I help you today?" }
     ]);
 
+    const [activeViewer, setActiveViewer] = useState<'shops' | 'pricing' | 'features' | 'faq' | null>(null);
+    const [activeShops, setActiveShops] = useState<any[]>([]);
+
     const scrollRef = useRef<HTMLDivElement>(null);
-    const latestAIResponse = chatHistory[chatHistory.length - 1]?.role === 'ai' ? chatHistory[chatHistory.length - 1] : null;
+    const latestAIResponse = chatHistory[chatHistory.length - 1];
     const navigate = useNavigate();
 
     const { isListening, transcript, startListening, stopListening, speak } = useVoiceInterface({
@@ -123,37 +126,39 @@ const MasterAIAgent: React.FC = () => {
             });
 
             const { response: agentText, actions } = response.data;
-            let shopResults: any[] = [];
-            let relatedViewer: 'shops' | 'pricing' | 'features' | 'faq' | null = null;
+            let currentShops = [...activeShops];
+            let currentViewer = activeViewer;
 
-            // Inheritance: Look at the previous history state to keep the view active during conversation
-            const lastAI = [...chatHistory].reverse().find(h => h.role === 'ai');
-            if (lastAI) {
-                shopResults = lastAI.shops || [];
-                relatedViewer = (lastAI.relatedViewer as any) || null;
-            }
-
-            console.log('[DEBUG] Agent Response:', { agentText, actions, previousState: { shopResults, relatedViewer } });
+            console.log('[DEBUG] Agent Response:', { agentText, actions });
 
             if (actions && Array.isArray(actions)) {
-                // If the new response has specific actions, they OVERRIDE the inherited state
+                // Actions OVERRIDE current state
                 actions.forEach((action: any) => {
                     if (action.tool === 'navigate_to_page_section') {
                         const sectionId = action.result.target;
-                        relatedViewer = sectionId as any; // pricing, features, etc.
-                        shopResults = []; // Clear shops if we move to features/pricing
+                        currentViewer = sectionId as any;
+                        currentShops = []; // Clear shops if moving to other sections
                     } else if (action.tool === 'search_shops') {
-                        // Ensure we handle both direct array and wrapped result
                         const shops = Array.isArray(action.result) ? action.result : (action.result?.shops || []);
                         if (shops.length > 0) {
-                            shopResults = shops;
-                            relatedViewer = 'shops';
+                            currentShops = shops;
+                            currentViewer = 'shops';
                         }
                     }
                 });
             }
 
-            setChatHistory(prev => [...prev, { role: 'ai', text: agentText, shops: shopResults, relatedViewer }]);
+            // Persistence
+            setActiveShops(currentShops);
+            setActiveViewer(currentViewer);
+
+            setChatHistory(prev => [...prev, {
+                role: 'ai',
+                text: agentText,
+                shops: currentShops,
+                relatedViewer: currentViewer
+            }]);
+
             speak(agentText);
         } catch (error) {
             console.error('[DEBUG] MasterAgent API Error:', error);
@@ -259,17 +264,17 @@ const MasterAIAgent: React.FC = () => {
 
                         {/* LEFT COLUMN: Agent, Transcript & Controls (Moves left when content shows) */}
                         <Box sx={{
-                            flex: latestAIResponse?.relatedViewer ? '0 0 400px' : 'none', // Fixed width when split
+                            flex: activeViewer ? '0 0 400px' : 'none', // Fixed width when split
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
                             justifyContent: 'center', // Vertically center the content
                             gap: 4,
                             transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
-                            width: latestAIResponse?.relatedViewer ? '400px' : 'auto',
-                            maxWidth: latestAIResponse?.relatedViewer ? '400px' : '800px',
-                            minHeight: latestAIResponse?.relatedViewer ? '100vh' : 'auto', // Full height to allow centering
-                            position: latestAIResponse?.relatedViewer ? 'sticky' : 'relative',
+                            width: activeViewer ? '400px' : 'auto',
+                            maxWidth: activeViewer ? '400px' : '800px',
+                            minHeight: activeViewer ? '100vh' : 'auto', // Full height to allow centering
+                            position: activeViewer ? 'sticky' : 'relative',
                             top: 0,
                         }}>
                             {/* The Particle Sphere */}
@@ -282,7 +287,7 @@ const MasterAIAgent: React.FC = () => {
                                 ref={scrollRef}
                                 sx={{
                                     textAlign: 'center',
-                                    maxHeight: latestAIResponse?.relatedViewer ? '25vh' : '30vh',
+                                    maxHeight: activeViewer ? '25vh' : '30vh',
                                     overflowY: 'auto',
                                     width: '100%',
                                     display: 'flex',
@@ -301,7 +306,7 @@ const MasterAIAgent: React.FC = () => {
                                                 fontWeight: index === chatHistory.length - 1 ? 500 : 300,
                                                 lineHeight: 1.6,
                                                 color: chat.role === 'user' ? theme.accent : theme.text,
-                                                fontSize: latestAIResponse?.relatedViewer ? '1.1rem' : '1.3rem',
+                                                fontSize: activeViewer ? '1.1rem' : '1.3rem',
                                                 transition: 'all 0.5s ease'
                                             }}
                                         >
@@ -395,7 +400,7 @@ const MasterAIAgent: React.FC = () => {
                         </Box>
 
                         {/* RIGHT COLUMN: Dynamic Content Viewer */}
-                        {latestAIResponse?.relatedViewer && (
+                        {activeViewer && (
                             <Fade in={true} timeout={1000}>
                                 <Box sx={{
                                     flex: 1, // Take all remaining space
@@ -417,10 +422,10 @@ const MasterAIAgent: React.FC = () => {
                                     '&::-webkit-scrollbar-thumb': { bgcolor: theme.accent, borderRadius: '4px' }
                                 }}>
                                     {/* Shops View */}
-                                    {latestAIResponse.relatedViewer === 'shops' && (
+                                    {activeViewer === 'shops' && (
                                         <Stack spacing={3} sx={{ width: '100%' }}>
                                             <Typography variant="h5" sx={{ fontWeight: 600 }}>Nearby Verified Queues</Typography>
-                                            {latestAIResponse.shops?.map((shop: any) => (
+                                            {activeShops?.map((shop: any) => (
                                                 <Card
                                                     key={shop.id}
                                                     onClick={() => navigate(`/s/${shop.slug}`)}
@@ -520,22 +525,22 @@ const MasterAIAgent: React.FC = () => {
                                     )}
 
                                     {/* Pricing View */}
-                                    {latestAIResponse.relatedViewer === 'pricing' && (
-                                        <Box sx={{ width: '100%', pointerEvents: 'auto' }}>
+                                    {activeViewer === 'pricing' && (
+                                        <Box sx={{ width: '100%', py: 4 }}>
                                             <Pricing />
                                         </Box>
                                     )}
 
                                     {/* Features View */}
-                                    {latestAIResponse.relatedViewer === 'features' && (
-                                        <Box sx={{ width: '100%', pointerEvents: 'auto', transform: 'scale(0.95)', transformOrigin: 'top center' }}>
+                                    {activeViewer === 'features' && (
+                                        <Box sx={{ width: '100%', py: 4 }}>
                                             <Features />
                                         </Box>
                                     )}
 
-                                    {/* FAQ View */}
-                                    {latestAIResponse.relatedViewer === 'faq' && (
-                                        <Box sx={{ width: '100%', pointerEvents: 'auto' }}>
+                                    {/* Highlights/FAQ View */}
+                                    {activeViewer === 'faq' && (
+                                        <Box sx={{ width: '100%', py: 4 }}>
                                             <FAQ />
                                         </Box>
                                     )}
