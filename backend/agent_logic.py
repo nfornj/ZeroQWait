@@ -51,13 +51,35 @@ class IntentExtractor:
         # Fallback Rule-based Extraction
         msg = user_msg.lower()
         shop_type = None
-        if any(x in msg for x in ["hair", "cut", "barber", "trim"]): shop_type = "barber"
-        elif any(x in msg for x in ["salon", "style", "color"]): shop_type = "salon"
-        elif any(x in msg for x in ["nail", "manicure", "pedicure"]): shop_type = "nail_spa"
-        elif any(x in msg for x in ["car", "repair", "auto", "mechanic", "oil"]): shop_type = "auto_repair"
-        elif any(x in msg for x in ["clinic", "doctor", "health"]): shop_type = "clinic"
-        elif any(x in msg for x in ["food", "restaurant", "eat", "table"]): shop_type = "restaurant"
-        elif any(x in msg for x in ["pet", "vet", "dog", "cat"]): shop_type = "vet"
+        clean_query = msg
+        
+        category_keywords = {
+            "barber": ["hair", "cut", "barber", "trim", "fade"],
+            "salon": ["salon", "style", "color", "spa"],
+            "nail_spa": ["nail", "manicure", "pedicure"],
+            "auto_repair": ["car", "repair", "auto", "mechanic", "oil", "tire"],
+            "clinic": ["clinic", "doctor", "health", "medical"],
+            "restaurant": ["food", "restaurant", "eat", "table", "menu"],
+            "vet": ["pet", "vet", "dog", "cat"]
+        }
+        
+        for stype, words in category_keywords.items():
+            if any(w in msg for w in words):
+                shop_type = stype
+                # Deep clean: remove these identifying words so they don't clog fuzzy search
+                for w in words:
+                    # Use regex or simple replace with boundaries if needed, 
+                    # but for mock fallback simple replace is okay.
+                    clean_query = clean_query.replace(w, "")
+                break
+        
+        # Remove common search junk
+        for noise in ["shops", "shop", "find", "search", "me", "a", "the", "in", "near", "for", "any", "around", "with"]:
+            clean_query = clean_query.replace(noise, "")
+            
+        final_query = clean_query.strip()
+        if final_query in ["is", "are", "of", "to", "at"]: # Final sweep for orphans
+            final_query = ""
 
         action = "help"
         if any(x in msg for x in ["shop", "find", "search", "near"]): action = "search_shops"
@@ -65,7 +87,7 @@ class IntentExtractor:
         elif any(x in msg for x in ["feature", "demo", "do"]): action = "see_features"
 
         return {
-            "query": user_msg,
+            "query": final_query,
             "shop_type": shop_type,
             "city": None, # Complex regex needed for city fallback
             "action": action
