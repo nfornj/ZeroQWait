@@ -126,15 +126,32 @@ const MasterAIAgent: React.FC = () => {
             let shopResults: any[] = [];
             let relatedViewer: 'shops' | 'pricing' | 'features' | 'faq' | null = null;
 
-            actions.forEach((action: any) => {
-                if (action.tool === 'navigate_to_page_section') {
-                    const sectionId = action.result.target;
-                    relatedViewer = sectionId as any; // pricing, features, etc.
-                } else if (action.tool === 'search_shops') {
-                    shopResults = action.result;
-                    if (shopResults.length > 0) relatedViewer = 'shops';
-                }
-            });
+            // Inheritance: Look at the previous history state to keep the view active during conversation
+            const lastAI = [...chatHistory].reverse().find(h => h.role === 'ai');
+            if (lastAI) {
+                shopResults = lastAI.shops || [];
+                relatedViewer = (lastAI.relatedViewer as any) || null;
+            }
+
+            console.log('[DEBUG] Agent Response:', { agentText, actions, previousState: { shopResults, relatedViewer } });
+
+            if (actions && Array.isArray(actions)) {
+                // If the new response has specific actions, they OVERRIDE the inherited state
+                actions.forEach((action: any) => {
+                    if (action.tool === 'navigate_to_page_section') {
+                        const sectionId = action.result.target;
+                        relatedViewer = sectionId as any; // pricing, features, etc.
+                        shopResults = []; // Clear shops if we move to features/pricing
+                    } else if (action.tool === 'search_shops') {
+                        // Ensure we handle both direct array and wrapped result
+                        const shops = Array.isArray(action.result) ? action.result : (action.result?.shops || []);
+                        if (shops.length > 0) {
+                            shopResults = shops;
+                            relatedViewer = 'shops';
+                        }
+                    }
+                });
+            }
 
             setChatHistory(prev => [...prev, { role: 'ai', text: agentText, shops: shopResults, relatedViewer }]);
             speak(agentText);
@@ -404,14 +421,98 @@ const MasterAIAgent: React.FC = () => {
                                         <Stack spacing={3} sx={{ width: '100%' }}>
                                             <Typography variant="h5" sx={{ fontWeight: 600 }}>Nearby Verified Queues</Typography>
                                             {latestAIResponse.shops?.map((shop: any) => (
-                                                <Card key={shop.id} sx={{ bgcolor: theme.cardBg, borderRadius: '20px', border: `1px solid ${theme.cardBorder}` }}>
-                                                    <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                                                        <Avatar src={shop.logo_url} sx={{ width: 60, height: 60, borderRadius: '12px' }} />
+                                                <Card
+                                                    key={shop.id}
+                                                    onClick={() => navigate(`/s/${shop.slug}`)}
+                                                    sx={{
+                                                        bgcolor: theme.cardBg,
+                                                        borderRadius: '24px',
+                                                        border: `1px solid ${theme.cardBorder}`,
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                        overflow: 'visible',
+                                                        position: 'relative',
+                                                        '&:hover': {
+                                                            transform: 'translateY(-4px) scale(1.02)',
+                                                            boxShadow: `0 20px 40px -10px ${isDarkMode ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.1)'}`,
+                                                            borderColor: theme.accent,
+                                                            '& .shop-glow': { opacity: 0.5 }
+                                                        }
+                                                    }}
+                                                >
+                                                    {/* Glow Effect */}
+                                                    <Box
+                                                        className="shop-glow"
+                                                        sx={{
+                                                            position: 'absolute',
+                                                            inset: 0,
+                                                            opacity: 0,
+                                                            transition: 'opacity 0.3s ease',
+                                                            background: `radial-gradient(circle at 50% 0%, ${theme.accent}33, transparent 70%)`,
+                                                            borderRadius: '24px',
+                                                            pointerEvents: 'none'
+                                                        }}
+                                                    />
+
+                                                    <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 3, p: 3, '&:last-child': { pb: 3 } }}>
+                                                        <Avatar
+                                                            src={shop.logo_url}
+                                                            variant="rounded"
+                                                            sx={{
+                                                                width: 80,
+                                                                height: 80,
+                                                                borderRadius: '16px',
+                                                                bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                                                                border: `1px solid ${theme.cardBorder}`
+                                                            }}
+                                                        >
+                                                            {shop.name.charAt(0)}
+                                                        </Avatar>
+
                                                         <Box sx={{ flex: 1 }}>
-                                                            <Typography variant="h6">{shop.name}</Typography>
-                                                            <Typography variant="body2" sx={{ opacity: 0.7 }}>{shop.address}, {shop.city}</Typography>
+                                                            <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>
+                                                                {shop.name}
+                                                            </Typography>
+                                                            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1, opacity: 0.8 }}>
+                                                                <LocationOnIcon fontSize="small" sx={{ color: theme.accent }} />
+                                                                <Typography variant="body2">
+                                                                    {shop.city}
+                                                                </Typography>
+                                                            </Stack>
+                                                            {/* Status Pill */}
+                                                            <Chip
+                                                                label="Queue Active"
+                                                                size="small"
+                                                                sx={{
+                                                                    height: 24,
+                                                                    bgcolor: `${theme.accent}22`,
+                                                                    color: theme.accent,
+                                                                    border: `1px solid ${theme.accent}44`,
+                                                                    fontWeight: 600,
+                                                                    fontSize: '0.75rem'
+                                                                }}
+                                                            />
                                                         </Box>
-                                                        <Button variant="contained" sx={{ bgcolor: theme.accent, borderRadius: '12px' }} onClick={() => navigate(`/s/${shop.slug}`)}>Join</Button>
+
+                                                        <Button
+                                                            variant="contained"
+                                                            sx={{
+                                                                bgcolor: theme.accent,
+                                                                borderRadius: '14px',
+                                                                px: 3,
+                                                                py: 1.5,
+                                                                fontWeight: 700,
+                                                                textTransform: 'none',
+                                                                boxShadow: `0 8px 20px -8px ${theme.accent}`,
+                                                                '&:hover': {
+                                                                    bgcolor: theme.accent,
+                                                                    filter: 'brightness(1.1)',
+                                                                    transform: 'translateY(-1px)'
+                                                                }
+                                                            }}
+                                                        >
+                                                            Join
+                                                        </Button>
                                                     </CardContent>
                                                 </Card>
                                             ))}
