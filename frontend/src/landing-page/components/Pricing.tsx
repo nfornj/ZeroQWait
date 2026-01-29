@@ -111,7 +111,7 @@ export default function Pricing() {
                   flexDirection: 'column',
                   gap: 4,
                 },
-                tier.title === 'Professional' &&
+                tier.title === 'Premium' &&
                 ((theme) => ({
                   border: 'none',
                   background:
@@ -135,7 +135,7 @@ export default function Pricing() {
                       alignItems: 'center',
                       gap: 2,
                     },
-                    tier.title === 'Professional'
+                    tier.title === 'Premium'
                       ? { color: 'grey.100' }
                       : { color: '' },
                   ]}
@@ -143,7 +143,7 @@ export default function Pricing() {
                   <Typography component="h3" variant="h6">
                     {tier.title}
                   </Typography>
-                  {tier.title === 'Professional' && (
+                  {tier.title === 'Premium' && (
                     <Chip icon={<AutoAwesomeIcon />} label={tier.subheader} />
                   )}
                 </Box>
@@ -153,7 +153,7 @@ export default function Pricing() {
                       display: 'flex',
                       alignItems: 'baseline',
                     },
-                    tier.title === 'Professional'
+                    tier.title === 'Premium'
                       ? { color: 'grey.50' }
                       : { color: null },
                   ]}
@@ -176,7 +176,7 @@ export default function Pricing() {
                         {
                           width: 20,
                         },
-                        tier.title === 'Professional'
+                        tier.title === 'Premium'
                           ? { color: 'primary.light' }
                           : { color: 'primary.main' },
                       ]}

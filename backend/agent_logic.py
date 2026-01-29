@@ -8,6 +8,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, ModelRetry
 from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
 from db_interface import db_interface
 
@@ -35,11 +36,10 @@ class MasterResponse(BaseModel):
     response: str = Field(description="The friendly response to show the user.")
 
 # Configure Ollama Model
-ollama_url = os.getenv("OLLAMA_URL", "http://ollama.llm.svc.cluster.local:11434/v1")
+ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
 model = OpenAIModel(
-    model_name='llama3.2',
-    base_url=ollama_url,
-    api_key='ollama',
+    'llama3.2',
+    provider=OpenAIProvider(base_url=ollama_url, api_key='ollama'),
 )
 
 # --- MASTER AGENT (Marketing Page Assistant) ---
@@ -190,7 +190,7 @@ class MasterAgent:
         
         try:
             result = await self.agent.run(full_msg, deps=deps)
-            final_text = result.data
+            final_text = result.output
             
             # Privacy: Add to history
             db_interface.add_message_to_history(session_id, "user", full_msg)
@@ -219,6 +219,6 @@ class FrontDeskAgent:
         
         try:
             result = await self.agent.run(user_message, deps=deps)
-            return {"response": result.data, "actions": actions, "agent_name": self.ai_agent_name}
+            return {"response": result.output, "actions": actions, "agent_name": self.ai_agent_name}
         except Exception as e:
              return {"response": "Glitch in the front desk logic.", "actions": []}

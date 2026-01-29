@@ -8,21 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies (no dev packages)
-RUN pip install --no-cache-dir \
-    fastapi==0.104.1 \
-    uvicorn==0.23.2 \
-    supabase==2.16.0 \
-    pydantic==2.4.2 \
-    python-jose==3.3.0 \
-    passlib==1.7.4 \
-    python-multipart==0.0.6 \
-    httpx[http2]==0.28.1 \
-    python-dotenv==1.0.0 \
-    bcrypt==4.0.1 \
-    email-validator==2.1.0.post1 \
-    sqlalchemy==2.0.36 \
-    psycopg2-binary==2.9.10
+# Install Python dependencies from requirements.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY main.py auth_utils.py database.py email_utils.py permissions.py \
