@@ -46,6 +46,18 @@ const MasterAIAgent: React.FC = () => {
         }
     }, []);
 
+    // Session Management
+    const [sessionId, setSessionId] = useState<string>("");
+
+    useEffect(() => {
+        let sid = sessionStorage.getItem("zeroq_session_id");
+        if (!sid) {
+            sid = Math.random().toString(36).substring(2) + Date.now().toString(36);
+            sessionStorage.setItem("zeroq_session_id", sid);
+        }
+        setSessionId(sid);
+    }, []);
+
     // Updated State Type for Dynamic Layout
     const [chatHistory, setChatHistory] = useState<Array<{
         role: 'ai' | 'user',
@@ -117,12 +129,17 @@ const MasterAIAgent: React.FC = () => {
         try {
             const response = await axios.post('/agent/master/chat', {
                 message: userText,
+                session_id: sessionId,
                 latitude: location?.lat,
                 longitude: location?.lng,
                 history: chatHistory.map(h => ({
                     role: h.role === 'ai' ? 'assistant' : 'user',
                     content: h.text
-                }))
+                })),
+                context: {
+                    active_view: activeViewer,
+                    visible_shops: activeShops.map(s => s.name)
+                }
             });
 
             const { response: agentText, actions } = response.data;
@@ -131,7 +148,7 @@ const MasterAIAgent: React.FC = () => {
 
             console.log('[DEBUG] MasterAgent COMPLETE Response:', response.data);
 
-            if (actions && Array.isArray(actions)) {
+            if (actions && Array.isArray(actions) && actions.length > 0) {
                 // Actions OVERRIDE current state
                 actions.forEach((action: any) => {
                     if (action.tool === 'navigate_to_page_section') {
@@ -146,6 +163,10 @@ const MasterAIAgent: React.FC = () => {
                         }
                     }
                 });
+            } else {
+                // No navigation actions returned - reset back to centered chat for simple conversation
+                currentViewer = null;
+                currentShops = [];
             }
 
             // Persistence
