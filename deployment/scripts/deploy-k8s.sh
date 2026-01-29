@@ -71,6 +71,12 @@ kubectl apply -f "$K8S_MANIFESTS/backend-deployment.yaml"
 echo -e "${BLUE}📋 Deploying frontend...${NC}"
 kubectl apply -f "$K8S_MANIFESTS/frontend-deployment.yaml"
 
+
+# Restart deployments to pick up code changes immediately
+echo -e "${BLUE}🔄 Restarting deployments to apply latest code...${NC}"
+kubectl rollout restart deployment/backend -n $NAMESPACE
+kubectl rollout restart deployment/frontend -n $NAMESPACE
+
 echo "⏳ Waiting for deployments..."
 kubectl wait --for=condition=available --timeout=300s deployment/backend -n $NAMESPACE 2>/dev/null || echo "⚠️  Backend deploying..."
 echo ""
@@ -79,13 +85,6 @@ echo ""
 echo -e "${BLUE}📋 Setting up Traefik Ingress...${NC}"
 kubectl apply -f "$K8S_MANIFESTS/ingress-traefik.yaml"
 echo "✓ Ingress configured"
-echo ""
-
-# Restart deployments to pick up code changes
-echo -e "${BLUE}🔄 Restarting deployments to apply latest code...${NC}"
-kubectl rollout restart deployment/backend -n $NAMESPACE
-kubectl rollout restart deployment/frontend -n $NAMESPACE
-echo "✓ Restart triggered"
 echo ""
 
 # Status
