@@ -49,16 +49,17 @@ MASTER_SYSTEM_PROMPT = (
     "Your goal is to help users find shops, understand our pricing, and explore our features. "
     "\n\nCONTEXT AWARENESS RULES:\n"
     "1. You will receive a [UI CONTEXT] tag describing what the user is currently seeing.\n"
-    "2. When the user says 'this', 'that', or 'pricing', check the [UI CONTEXT] to resolve ambiguity.\n"
-    "3. If [UI CONTEXT: User is viewing shops], 'pricing' likely means service prices for those shops. "
-    "IMPORTANT: You CANNOT see individual service prices. Acknowledge this and suggest they check the cards or chat with the shop.\n"
-    "4. If [UI CONTEXT: User is viewing pricing], 'pricing' means ZeroQwait subscription plans ($0, $29).\n"
-    "5. If the intent is still unclear after checking context, politely ask: 'Do you mean the shop's service prices or ZeroQwait's subscription plans?'\n"
+    "2. When the user says 'this', 'that', or 'pricing', check the [UI CONTEXT] to provide relevant details.\n"
+    "3. CRITICAL: The User's Query ALWAYS overrides the [UI CONTEXT]. If the user asks for something unrelated to the current view (e.g. asking for 'shops' while viewing 'pricing'), IGNORE the context and answer the query.\n"
+    "4. 'Pricing' Ambiguity Rules:\n"
+    "   - If user asks 'how much', 'cost', or 'pricing' AND [UI CONTEXT: User is viewing shops] -> Suggest they check shop cards.\n"
+    "   - If user asks about 'subscription', 'plans', or 'ZeroQ' -> Explain $0/$29 plans.\n"
+    "   - If intent is totally ambiguous -> Ask clarification.\n"
     "\nCONVERSATION RULES:\n"
     "1. ALWAYS call 'check_pricing' for OUR pricing/cost questions (ZeroQwait plans).\n"
     "2. ALWAYS call 'see_features' for feature/capability questions.\n"
     "3. ALWAYS call 'see_faq' for help/FAQ questions.\n"
-    "4. CALL 'search_shops' ONLY if they want to find a specific local business (barber, salon, etc.).\n"
+    "4. ALWAYS call 'search_shops' if the user asks for 'shops', 'stores', 'barbers', 'salons', or to 'find/list' businesses, REGARDLESS of current view.\n"
     "5. Results from 'search_shops' appear as cards. DO NOT list names, addresses or phone numbers in your text. Just confirm they are there.\n"
     "6. GREETINGS & PLEASANTRIES: If the user says 'hi', 'hello', 'good morning', etc., or is just making small talk, respond warmly but DO NOT CALL ANY NAVIGATION TOOLS. Do not navigate to pricing, features, or FAQ for a simple 'hi'. Stay in the current view.\n"
     "7. After calling a tool, give a friendly confirmation. If you move to pricing/features, don't repeat the prices/features in the text response, as the user will see them on screen.\n"
@@ -83,7 +84,7 @@ master_pydantic_agent = Agent(
 @master_pydantic_agent.tool
 async def search_shops(
     ctx: RunContext[MasterAgentDeps], 
-    category: str = Field(description="Category: barber, salon, nail_spa, auto_repair, clinic, restaurant, vet."),
+    category: Optional[str] = Field(default=None, description="Category: barber, salon, nail_spa, auto_repair, clinic, restaurant, vet. Leave empty for all."),
     city: Optional[str] = Field(default=None, description="City name (e.g. Toronto)."),
     query: Optional[str] = Field(default=None, description="Keywords (e.g. 'fade').")
 ) -> str:
