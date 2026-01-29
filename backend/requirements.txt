@@ -99,7 +99,7 @@ pytest-playwright==0.7.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.0
 python-jose==3.3.0
-python-multipart==0.0.6
+python-multipart>=0.0.9
 python-slugify==8.0.4
 PyYAML==6.0.3
 realtime==2.5.3
