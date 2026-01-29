@@ -6,10 +6,12 @@ authors = [
     {name = "ZeroQwait Team", email = "team@zeroqwait.com"}
 ]
 dependencies = [
-    "fastapi==0.104.1",
-    "uvicorn==0.23.2",
+    "fastapi>=0.109.0",
+    "uvicorn>=0.23.2",
     "supabase>=2.9.0",
     "pydantic>=2.10.0",
+    "typing-inspection",
+    "eval-type-backport",
     "python-jose==3.3.0",
     "passlib==1.7.4",
     "python-multipart==0.0.6",
