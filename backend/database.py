@@ -25,16 +25,27 @@ if not DATABASE_URL:
     db_password = os.getenv("DB_PASSWORD")
     
     if not db_password:
-        raise ValueError("Database connection requires either DATABASE_URL or DB_PASSWORD")
-    
-    DATABASE_URL = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+        print("WARNING: No DB_PASSWORD found, falling back to SQLite for local development.")
+        DATABASE_URL = "sqlite:///./zeroqwait.db"
+    else:
+        DATABASE_URL = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
 # Create engine
+# Create engine
+engine_args = {
+    "pool_pre_ping": True,
+    "pool_size": 5,
+    "max_overflow": 10
+}
+
+if DATABASE_URL.startswith("sqlite"):
+    engine_args = {
+        "connect_args": {"check_same_thread": False} # Needed for SQLite + FastAPI
+    }
+
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,  # Test connections before using
-    pool_size=5,
-    max_overflow=10
+    **engine_args
 )
 
 # Create session factory
