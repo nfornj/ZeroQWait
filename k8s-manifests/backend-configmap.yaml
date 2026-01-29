@@ -10,3 +10,4 @@ data:
   FRONTEND_URL: "http://192.168.2.88.nip.io"
   PYTHONUNBUFFERED: "1"
   USE_SUPABASE: "false"
+  OLLAMA_URL: "http://192.168.2.88:11434/v1"
