@@ -31,6 +31,9 @@ class FrontDeskDeps:
     session_id: str
     actions: List[Dict[str, Any]] = field(default_factory=list)
 
+class MasterResponse(BaseModel):
+    response: str = Field(description="The friendly response to show the user.")
+
 # Configure Ollama Model
 ollama_url = os.getenv("OLLAMA_URL", "http://ollama.llm.svc.cluster.local:11434/v1")
 model = OpenAIModel(
@@ -65,6 +68,7 @@ MASTER_SYSTEM_PROMPT = (
 master_pydantic_agent = Agent(
     model,
     deps_type=MasterAgentDeps,
+    result_type=MasterResponse,
     system_prompt=MASTER_SYSTEM_PROMPT,
     retries=2
 )
@@ -179,7 +183,7 @@ class MasterAgent:
         
         try:
             result = await self.agent.run(full_msg, deps=deps)
-            final_text = result.data
+            final_text = result.data.response
             
             # Privacy: Add to history
             db_interface.add_message_to_history(session_id, "user", full_msg)
