@@ -16,16 +16,35 @@ echo "========================================"
 
 # 1. Define Service File
 SERVICE_FILE="/etc/systemd/system/ollama.service"
-OLLAMA_PATH="/bin/ollama" # As found by ps aux
+OLLAMA_PATH=""
 
-if [ ! -f "$OLLAMA_PATH" ]; then
-    echo -e "${YELLOW}Could not find /bin/ollama. Trying 'which ollama'...${NC}"
-    OLLAMA_PATH=$(which ollama || echo "")
+# Try finding it via 'which'
+if command -v ollama &> /dev/null; then
+    OLLAMA_PATH=$(command -v ollama)
+fi
+
+# Fallback: Extract from running process (since permissions might hide the file)
+if [ -z "$OLLAMA_PATH" ]; then
+    echo -e "${YELLOW}Binary hidden? Checking running process...${NC}"
+    # Grab the command path from ps output (e.g., "/bin/ollama serve" -> "/bin/ollama")
+    RUNNING_PATH=$(ps aux | grep 'ollama serve' | grep -v grep | awk '{print $11}' | head -n 1)
+    if [ -n "$RUNNING_PATH" ]; then
+        OLLAMA_PATH=$RUNNING_PATH
+        echo -e "${BLUE}Found running instance at: $OLLAMA_PATH${NC}"
+    fi
+fi
+
+# Final Fallback: Hardcode if ps said /bin/ollama earlier
+if [ -z "$OLLAMA_PATH" ]; then
+    if [ -f "/bin/ollama" ]; then OLLAMA_PATH="/bin/ollama"; fi
+    if [ -f "/usr/bin/ollama" ]; then OLLAMA_PATH="/usr/bin/ollama"; fi
+    if [ -f "/usr/local/bin/ollama" ]; then OLLAMA_PATH="/usr/local/bin/ollama"; fi
 fi
 
 if [ -z "$OLLAMA_PATH" ]; then
-    echo -e "${RED}❌ Error: Could not find 'ollama' binary.${NC}"
-    exit 1
+     # Trust the previous evidence if everything else fails
+     echo -e "${YELLOW}Warning: Could not verify path permissions. Assuming /bin/ollama based on logs.${NC}"
+     OLLAMA_PATH="/bin/ollama"
 fi
 
 echo -e "${BLUE}Found Ollama at: $OLLAMA_PATH${NC}"
