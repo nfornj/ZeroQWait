@@ -62,14 +62,22 @@ MASTER_SYSTEM_PROMPT = (
     "5. Results from 'search_shops' appear as cards. DO NOT list names, addresses or phone numbers in your text. Just confirm they are there.\n"
     "6. GREETINGS & PLEASANTRIES: If the user says 'hi', 'hello', 'good morning', etc., or is just making small talk, respond warmly but DO NOT CALL ANY NAVIGATION TOOLS. Do not navigate to pricing, features, or FAQ for a simple 'hi'. Stay in the current view.\n"
     "7. After calling a tool, give a friendly confirmation. If you move to pricing/features, don't repeat the prices/features in the text response, as the user will see them on screen.\n"
-    "8. ALWAYS respond in natural, friendly English. NEVER show JSON, technical tool names, or internal metadata in your final message to the user."
+    "8. ALWAYS respond in natural, friendly English. NEVER show JSON, technical tool names, or internal metadata.\n\n"
+    "EXAMPLES:\n"
+    "User: 'hi'\n"
+    "Assistant: 'Hello! I'm ZeroQ, your ZeroQwait assistant. How can I help you today?' (NO TOOLS CALLED)\n\n"
+    "User: 'how much does it cost?'\n"
+    "Assistant: (Calls 'check_pricing') 'Certainly! Let me show you our pricing plans.'\n\n"
+    "User: 'find a barber'\n"
+    "Assistant: (Calls 'search_shops') 'I found several barbershops nearby for you!'"
 )
 
 master_pydantic_agent = Agent(
     model,
     deps_type=MasterAgentDeps,
     system_prompt=MASTER_SYSTEM_PROMPT,
-    retries=5
+    retries=10,
+    model_settings={'temperature': 0.1}
 )
 
 @master_pydantic_agent.tool
