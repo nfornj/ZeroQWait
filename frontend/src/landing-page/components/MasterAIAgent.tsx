@@ -297,7 +297,9 @@ const MasterAIAgent: React.FC = () => {
                             minHeight: 'auto',
                             position: { xs: 'relative', md: activeViewer ? 'sticky' : 'relative' },
                             top: { xs: 'auto', md: 0 },
-                            py: { xs: 2, md: 0 }
+                            py: { xs: 2, md: 0 },
+                            mx: 'auto',
+                            textAlign: 'center'
                         }}>
                             <Box sx={{
                                 position: 'relative',
