@@ -102,12 +102,25 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
     }, [volume, color, isProcessing]);
 
     return (
-        <Box sx={{ width: '100%', height: 400, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <Box sx={{
+            width: '100%',
+            maxWidth: { xs: 200, sm: 280, md: 400 },
+            aspectRatio: '1',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            mx: 'auto'
+        }}>
             <canvas
                 ref={canvasRef}
                 width={800}
                 height={800}
-                style={{ width: 400, height: 400, transform: 'scale(1.2)' }}
+                style={{
+                    width: '100%',
+                    height: '100%',
+                    maxWidth: '100%',
+                    maxHeight: '100%'
+                }}
             />
         </Box>
     );

@@ -271,34 +271,40 @@ const MasterAIAgent: React.FC = () => {
                         flex: 1,
                         display: 'flex',
                         flexDirection: activeViewer ? { xs: 'column', md: 'row-reverse' } : 'column',
-                        alignItems: activeViewer ? 'flex-start' : 'center',
-                        justifyContent: activeViewer ? 'space-between' : 'center',
-                        py: activeViewer ? 4 : 10,
-                        px: activeViewer ? 8 : 0,
-                        gap: 2,
+                        alignItems: activeViewer ? { xs: 'center', md: 'flex-start' } : 'center',
+                        justifyContent: activeViewer ? { xs: 'flex-start', md: 'space-between' } : 'center',
+                        py: activeViewer ? { xs: 2, md: 4 } : { xs: 4, md: 10 },
+                        px: activeViewer ? { xs: 2, sm: 4, md: 6 } : { xs: 2, md: 0 },
+                        gap: { xs: 2, md: 3 },
                         width: '100%',
                         maxWidth: '1600px',
                         mx: 'auto',
-                        height: '100%',
                         minHeight: 'min-content'
                     }}>
 
                         {/* LEFT COLUMN: Agent, Transcript & Controls */}
                         <Box sx={{
-                            flex: activeViewer ? '0 0 400px' : 'none',
+                            flex: activeViewer ? { xs: 'none', md: '0 0 35%' } : 'none',
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: 4,
-                            transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
-                            width: activeViewer ? '400px' : 'auto',
-                            maxWidth: activeViewer ? '400px' : '800px',
-                            minHeight: activeViewer ? '100vh' : 'auto',
-                            position: activeViewer ? 'sticky' : 'relative',
-                            top: 0,
+                            gap: { xs: 2, md: 4 },
+                            transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                            width: activeViewer ? { xs: '100%', md: '35%' } : 'auto',
+                            minWidth: activeViewer ? { xs: 'auto', md: 280 } : 'auto',
+                            maxWidth: activeViewer ? { xs: '100%', md: 420 } : { xs: '100%', md: 800 },
+                            minHeight: 'auto',
+                            position: { xs: 'relative', md: activeViewer ? 'sticky' : 'relative' },
+                            top: { xs: 'auto', md: 0 },
+                            py: { xs: 2, md: 0 }
                         }}>
-                            <Box sx={{ position: 'relative', width: 300, height: 300, transition: 'all 0.8s ease' }}>
+                            <Box sx={{
+                                position: 'relative',
+                                width: { xs: 180, sm: 220, md: 280 },
+                                height: { xs: 180, sm: 220, md: 280 },
+                                transition: 'all 0.5s ease'
+                            }}>
                                 <ParticleSphere volume={volume} isListening={isListening} color={theme.accent} isProcessing={isProcessing} />
                             </Box>
 
@@ -379,13 +385,20 @@ const MasterAIAgent: React.FC = () => {
                         {(activeViewer || isProcessing) && (
                             <Fade in={true} timeout={1000}>
                                 <Box sx={{
-                                    flex: 1, width: '100%', minWidth: 400, height: '95vh',
-                                    overflowY: 'auto', p: 4, borderRadius: '32px',
+                                    flex: 1,
+                                    width: '100%',
+                                    minWidth: { xs: 'auto', md: 350 },
+                                    maxHeight: { xs: '55vh', md: '90vh' },
+                                    overflowY: 'auto',
+                                    p: { xs: 2, sm: 3, md: 4 },
+                                    borderRadius: { xs: '20px', md: '32px' },
                                     bgcolor: isDarkMode ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.7)',
                                     border: `1px solid ${theme.cardBorder}`,
                                     backdropFilter: 'blur(20px)',
                                     boxShadow: '0 20px 80px rgba(0,0,0,0.1)',
-                                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
                                     justifyContent: (isProcessing && !activeViewer) ? 'center' : 'flex-start',
                                 }}>
                                     {isProcessing && (
