@@ -100,12 +100,26 @@ async def search_shops(
     """Search for local businesses. Use ONLY if the user is looking for a specific place to visit."""
     clean_query = query
     if clean_query:
-        for noise in ["find", "search", "shops", "shop", "me", "a", "near", "in", "the", "for", "any", "around", "nearby"]:
-            clean_query = clean_query.replace(noise, "")
-        clean_query = clean_query.strip()
+        # Extended noise word list for common shop search phrases
+        noise_words = [
+            "find", "search", "show", "list", "get", "display",
+            "shops", "shop", "stores", "store", "places", "place", "businesses", "business",
+            "me", "a", "the", "some", "any", "all",
+            "near", "nearby", "around", "close", "closest", "local",
+            "in", "for", "to", "with", "by", "at",
+            "please", "can", "you", "could", "would", "i", "want"
+        ]
+        clean_query = clean_query.lower()
+        for noise in noise_words:
+            clean_query = clean_query.replace(noise, " ")
+        clean_query = " ".join(clean_query.split()).strip()  # Normalize whitespace
+    
+    # If query is empty after cleaning, treat as "show all shops"
+    if not clean_query:
+        clean_query = None
     
     result = db_interface.search_shops(
-        query=clean_query if clean_query else None,
+        query=clean_query,
         shop_type=category,
         city=city,
         latitude=ctx.deps.latitude,
@@ -114,6 +128,7 @@ async def search_shops(
     )
     ctx.deps.actions.append({"tool": "search_shops", "result": result})
     return f"Successfully found {len(result)} shops. They are already visible to the user as cards. DO NOT list details."
+
 
 @master_pydantic_agent.tool
 async def check_pricing(ctx: RunContext[MasterAgentDeps]) -> str:
