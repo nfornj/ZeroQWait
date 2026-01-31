@@ -190,6 +190,39 @@ class MasterAgent:
         actions = []
         deps = MasterAgentDeps(session_id=session_id, latitude=latitude, longitude=longitude, context=context, actions=actions)
         
+        # GREETING BYPASS: Don't call LLM for simple greetings - prevents unwanted tool calls
+        greeting_patterns = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'yo']
+        thanks_patterns = ['thank', 'thx', 'thanks']
+        smalltalk_patterns = ['who are you', 'what can you do', 'how are you', 'whats up', "what's up"]
+        
+        msg_lower = user_msg.strip().lower().replace('?', '').replace('!', '')
+        
+        # Check for greetings (exact match or starts with)
+        is_greeting = any(msg_lower == g or msg_lower.startswith(g + ' ') for g in greeting_patterns)
+        is_thanks = any(t in msg_lower for t in thanks_patterns)
+        is_smalltalk = any(s in msg_lower for s in smalltalk_patterns)
+        
+        if is_greeting:
+            return {
+                "response": "Hello! I'm ZeroQ, your ZeroQwait assistant. Would you like me to help you find nearby shops, explore our pricing, or learn about our features?",
+                "actions": [],
+                "agent_name": "ZeroQ (PydanticAI)"
+            }
+        
+        if is_thanks:
+            return {
+                "response": "You're welcome! Is there anything else I can help you with?",
+                "actions": [],
+                "agent_name": "ZeroQ (PydanticAI)"
+            }
+        
+        if is_smalltalk:
+            return {
+                "response": "I'm ZeroQ, your AI assistant for ZeroQwait! I can help you find nearby shops, answer questions about our pricing and features, or guide you through our queue system. What would you like to explore?",
+                "actions": [],
+                "agent_name": "ZeroQ (PydanticAI)"
+            }
+        
         # UI Context Injection
         ui_ctx_str = ""
         if context:
@@ -214,6 +247,7 @@ class MasterAgent:
                 "response": "I'm having a technical glitch. Let's try again.",
                 "actions": []
             }
+
 
 class FrontDeskAgent:
     def __init__(self, shop_id: int, shop_name: str, ai_agent_name: Optional[str] = None):
