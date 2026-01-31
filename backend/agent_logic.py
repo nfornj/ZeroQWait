@@ -209,11 +209,15 @@ class MasterAgent:
         
         # ============ INTENT DETECTION (Bypass LLM for reliability) ============
         
-        # 1. GREETING PATTERNS - No actions needed
-        greeting_patterns = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'yo']
-        is_greeting = any(msg_lower == g or msg_lower.startswith(g + ' ') for g in greeting_patterns)
+        # 1. GREETING PATTERNS - No actions needed (with typo tolerance)
+        greeting_patterns = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'yo', 'sup', 'hiya']
+        # Common typos
+        greeting_typos = ['hell', 'helo', 'hallo', 'hii', 'hiii', 'helllo', 'heloo', 'helloo', 'heyy', 'heyyy', 'hy']
         
-        if is_greeting:
+        is_greeting = any(msg_lower == g or msg_lower.startswith(g + ' ') for g in greeting_patterns)
+        is_typo_greeting = any(msg_lower == t or msg_lower.startswith(t + ' ') for t in greeting_typos)
+        
+        if is_greeting or is_typo_greeting:
             return {
                 "response": "Hello! I'm ZeroQ, your ZeroQwait assistant. Would you like me to help you find nearby shops, explore our pricing, or learn about our features?",
                 "actions": [],
