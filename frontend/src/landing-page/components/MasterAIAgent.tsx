@@ -317,7 +317,9 @@ const MasterAIAgent: React.FC = () => {
                                     width: '100%',
                                     display: 'flex',
                                     flexDirection: 'column',
+                                    alignItems: 'center',
                                     gap: 2,
+                                    px: { xs: 2, md: 0 },
                                     maskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)',
                                     WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)',
                                     '&::-webkit-scrollbar': { display: 'none' },
@@ -357,27 +359,6 @@ const MasterAIAgent: React.FC = () => {
                                 <Typography variant="caption" sx={{ opacity: 0.6, letterSpacing: '0.1em', fontWeight: 600 }}>
                                     {isListening ? "LISTENING..." : "START VOICE CONVERSATION"}
                                 </Typography>
-                                {!isListening && (
-                                    <TextField
-                                        fullWidth
-                                        placeholder="Type to ZeroQ..."
-                                        variant="outlined"
-                                        sx={{ maxWidth: 400 }}
-                                        onKeyPress={(e) => {
-                                            if (e.key === 'Enter') {
-                                                const target = e.target as HTMLInputElement;
-                                                handleChat(target.value);
-                                                target.value = '';
-                                            }
-                                        }}
-                                        slotProps={{
-                                            input: {
-                                                sx: { borderRadius: '30px', bgcolor: theme.inputBg, color: theme.text },
-                                                endAdornment: <SearchIcon sx={{ color: theme.textSecondary, mr: 1 }} />
-                                            }
-                                        }}
-                                    />
-                                )}
                             </Box>
                         </Box>
 
@@ -444,6 +425,43 @@ const MasterAIAgent: React.FC = () => {
                         )}
                     </Box>
                 </Box>
+
+                {/* STICKY INPUT FIELD - Always visible at bottom */}
+                {!isListening && (
+                    <Box sx={{
+                        position: 'sticky',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        p: { xs: 2, md: 3 },
+                        bgcolor: isDarkMode ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.95)',
+                        backdropFilter: 'blur(10px)',
+                        borderTop: `1px solid ${theme.cardBorder}`,
+                        display: 'flex',
+                        justifyContent: 'center',
+                        zIndex: 10
+                    }}>
+                        <TextField
+                            fullWidth
+                            placeholder="Type to ZeroQ..."
+                            variant="outlined"
+                            sx={{ maxWidth: 500 }}
+                            onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                    const target = e.target as HTMLInputElement;
+                                    handleChat(target.value);
+                                    target.value = '';
+                                }
+                            }}
+                            slotProps={{
+                                input: {
+                                    sx: { borderRadius: '30px', bgcolor: theme.inputBg, color: theme.text },
+                                    endAdornment: <SearchIcon sx={{ color: theme.textSecondary, mr: 1 }} />
+                                }
+                            }}
+                        />
+                    </Box>
+                )}
             </Box>
         </Fade>
     );
