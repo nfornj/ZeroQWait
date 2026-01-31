@@ -271,10 +271,10 @@ const MasterAIAgent: React.FC = () => {
                         flex: 1,
                         display: 'flex',
                         flexDirection: activeViewer ? { xs: 'column', md: 'row-reverse' } : 'column',
-                        alignItems: activeViewer ? { xs: 'center', md: 'flex-start' } : 'center',
+                        alignItems: 'center',
                         justifyContent: activeViewer ? { xs: 'flex-start', md: 'space-between' } : 'center',
                         py: activeViewer ? { xs: 2, md: 4 } : { xs: 4, md: 10 },
-                        px: activeViewer ? { xs: 2, sm: 4, md: 6 } : { xs: 2, md: 0 },
+                        px: { xs: 2, sm: 4, md: 6 },
                         gap: { xs: 2, md: 3 },
                         width: '100%',
                         maxWidth: '1600px',
@@ -291,14 +291,12 @@ const MasterAIAgent: React.FC = () => {
                             justifyContent: 'center',
                             gap: { xs: 2, md: 4 },
                             transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-                            width: activeViewer ? { xs: '100%', md: '35%' } : 'auto',
-                            minWidth: activeViewer ? { xs: 'auto', md: 280 } : 'auto',
+                            width: '100%',
                             maxWidth: activeViewer ? { xs: '100%', md: 420 } : { xs: '100%', md: 800 },
                             minHeight: 'auto',
                             position: { xs: 'relative', md: activeViewer ? 'sticky' : 'relative' },
                             top: { xs: 'auto', md: 0 },
                             py: { xs: 2, md: 0 },
-                            mx: 'auto',
                             textAlign: 'center'
                         }}>
                             <Box sx={{
@@ -370,7 +368,7 @@ const MasterAIAgent: React.FC = () => {
                                 <Box sx={{
                                     flex: 1,
                                     width: '100%',
-                                    minWidth: { xs: 'auto', md: 350 },
+                                    maxWidth: { xs: '100%', md: 'none' },
                                     maxHeight: { xs: '55vh', md: '90vh' },
                                     overflowY: 'auto',
                                     p: { xs: 2, sm: 3, md: 4 },
