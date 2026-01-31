@@ -205,17 +205,13 @@ class MasterAgent:
         actions = []
         deps = MasterAgentDeps(session_id=session_id, latitude=latitude, longitude=longitude, context=context, actions=actions)
         
-        # GREETING BYPASS: Don't call LLM for simple greetings - prevents unwanted tool calls
+        msg_lower = user_msg.strip().lower().replace('?', '').replace('!', '').replace(',', '')
+        
+        # ============ INTENT DETECTION (Bypass LLM for reliability) ============
+        
+        # 1. GREETING PATTERNS - No actions needed
         greeting_patterns = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'yo']
-        thanks_patterns = ['thank', 'thx', 'thanks']
-        smalltalk_patterns = ['who are you', 'what can you do', 'how are you', 'whats up', "what's up"]
-        
-        msg_lower = user_msg.strip().lower().replace('?', '').replace('!', '')
-        
-        # Check for greetings (exact match or starts with)
         is_greeting = any(msg_lower == g or msg_lower.startswith(g + ' ') for g in greeting_patterns)
-        is_thanks = any(t in msg_lower for t in thanks_patterns)
-        is_smalltalk = any(s in msg_lower for s in smalltalk_patterns)
         
         if is_greeting:
             return {
@@ -224,12 +220,20 @@ class MasterAgent:
                 "agent_name": "ZeroQ (PydanticAI)"
             }
         
+        # 2. THANKS PATTERNS - No actions needed
+        thanks_patterns = ['thank', 'thx', 'thanks']
+        is_thanks = any(t in msg_lower for t in thanks_patterns)
+        
         if is_thanks:
             return {
                 "response": "You're welcome! Is there anything else I can help you with?",
                 "actions": [],
                 "agent_name": "ZeroQ (PydanticAI)"
             }
+        
+        # 3. SMALL TALK PATTERNS - No actions needed
+        smalltalk_patterns = ['who are you', 'what can you do', 'how are you', 'whats up', "what's up"]
+        is_smalltalk = any(s in msg_lower for s in smalltalk_patterns)
         
         if is_smalltalk:
             return {
@@ -238,7 +242,72 @@ class MasterAgent:
                 "agent_name": "ZeroQ (PydanticAI)"
             }
         
-        # UI Context Injection
+        # 4. SHOP SEARCH PATTERNS - Trigger search_shops directly
+        shop_keywords = ['shop', 'shops', 'store', 'stores', 'barber', 'salon', 'restaurant', 'clinic', 'spa', 'near me', 'nearby', 'find', 'search', 'show me', 'list', 'where can i']
+        is_shop_search = any(kw in msg_lower for kw in shop_keywords)
+        
+        if is_shop_search:
+            # Directly call the database instead of relying on LLM
+            shops = db_interface.search_shops(
+                query=None,  # Get all shops
+                shop_type=None,
+                city=None,
+                latitude=latitude,
+                longitude=longitude,
+                limit=10
+            )
+            actions.append({"tool": "search_shops", "result": shops})
+            
+            if shops:
+                response_text = f"I found {len(shops)} shops near you! Take a look at the cards on the right."
+            else:
+                response_text = "I couldn't find any shops in your area right now. Would you like me to help with something else?"
+            
+            return {
+                "response": response_text,
+                "actions": actions,
+                "agent_name": "ZeroQ (PydanticAI)"
+            }
+        
+        # 5. PRICING PATTERNS - Trigger navigate_to_page_section
+        pricing_keywords = ['pricing', 'price', 'cost', 'how much', 'subscription', 'plan', 'plans', 'free', 'premium', 'enterprise', 'pay']
+        is_pricing = any(kw in msg_lower for kw in pricing_keywords)
+        
+        if is_pricing:
+            actions.append({"tool": "navigate_to_page_section", "result": {"target": "pricing"}})
+            return {
+                "response": "Here's our pricing! We offer a free tier, a $29/month Premium plan, and custom Enterprise solutions.",
+                "actions": actions,
+                "agent_name": "ZeroQ (PydanticAI)"
+            }
+        
+        # 6. FEATURES PATTERNS - Trigger navigate_to_page_section
+        features_keywords = ['feature', 'features', 'what does', 'capabilities', 'what can zeroqwait', 'benefits']
+        is_features = any(kw in msg_lower for kw in features_keywords)
+        
+        if is_features:
+            actions.append({"tool": "navigate_to_page_section", "result": {"target": "features"}})
+            return {
+                "response": "Let me show you what ZeroQwait can do! Check out our features.",
+                "actions": actions,
+                "agent_name": "ZeroQ (PydanticAI)"
+            }
+        
+        # 7. FAQ/HELP PATTERNS - Trigger navigate_to_page_section
+        faq_keywords = ['faq', 'help', 'support', 'question', 'how do i', 'how to']
+        is_faq = any(kw in msg_lower for kw in faq_keywords)
+        
+        if is_faq:
+            actions.append({"tool": "navigate_to_page_section", "result": {"target": "faq"}})
+            return {
+                "response": "Here's our FAQ section with common questions and answers!",
+                "actions": actions,
+                "agent_name": "ZeroQ (PydanticAI)"
+            }
+        
+        # ============ FALLBACK TO LLM FOR COMPLEX/UNKNOWN QUERIES ============
+        # Only use LLM for queries that don't match any known patterns
+        
         ui_ctx_str = ""
         if context:
             v = context.get("active_view")
@@ -262,6 +331,7 @@ class MasterAgent:
                 "response": "I'm having a technical glitch. Let's try again.",
                 "actions": []
             }
+
 
 
 class FrontDeskAgent:
