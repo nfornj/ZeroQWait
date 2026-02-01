@@ -366,4 +366,8 @@ class FrontDeskAgent:
             result = await self.agent.run(user_message, deps=deps, message_history=message_history)
             return {"response": result.output, "actions": actions, "agent_name": self.ai_agent_name}
         except Exception as e:
-             return {"response": "Glitch in the front desk logic.", "actions": []}
+            import logging
+            import traceback
+            logging.error(f"Error in FrontDeskAgent run: {e}")
+            logging.error(traceback.format_exc())
+            return {"response": "Glitch in the front desk logic.", "actions": []}
