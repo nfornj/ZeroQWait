@@ -47,6 +47,7 @@ import AIShopPublicPage from "./pages/AIShopPublicPage";
 import SignInSide from "./auth-sign-in/SignInSide";
 import ShopOwnerSignUp from "./auth-sign-up/ShopOwnerSignUp";
 import LandingPage from "./landing-page/LandingPage";
+import SubdomainHandler from "./components/SubdomainHandler";
 
 function App() {
   return (
@@ -61,7 +62,12 @@ function App() {
           <Route path="/register/shop-owner" element={<ShopOwnerSignUp />} />
           <Route path="/register/customer" element={<ShopOwnerSignUp />} />
 
-          <Route path="/" element={<LandingPage />} />
+
+
+
+          {/* Subdomain Handler replaces specific Landing Page route to handle both root and subdomains */}
+          <Route path="/" element={<SubdomainHandler />} />
+          <Route path="/ai" element={<SubdomainHandler />} />
 
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>

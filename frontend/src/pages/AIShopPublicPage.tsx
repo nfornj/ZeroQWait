@@ -23,10 +23,16 @@ import CloseIcon from '@mui/icons-material/Close';
 import axios from 'axios';
 import { useVoiceInterface } from '../hooks/useVoiceInterface';
 import { useAudioVisualizer } from '../hooks/useAudioVisualizer';
-import CanvasOrb from '../components/agent/CanvasOrb';
+import ParticleSphere from '../components/agent/ParticleSphere';
 
-const AIShopPublicPage: React.FC = () => {
+interface AIShopPublicPageProps {
+    shopSlug?: string;
+}
+
+const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
     const { shopId } = useParams<{ shopId: string }>();
+    // If rendered via subdomain, use slug. Else use route param.
+    const effectiveId = shopSlug || shopId;
     const navigate = useNavigate();
     const theme = { palette: { primary: { main: '#1976d2' } } }; // Fallback
 
@@ -58,13 +64,13 @@ const AIShopPublicPage: React.FC = () => {
     });
 
     useEffect(() => {
-        fetchShopData();
-    }, [shopId]);
+        if (effectiveId) fetchShopData();
+    }, [effectiveId]);
 
     const fetchShopData = async () => {
         try {
-            const isSlug = isNaN(Number(shopId));
-            const endpoint = isSlug ? `/shops/s/${shopId}` : `/shops/${shopId}`;
+            const isSlug = isNaN(Number(effectiveId));
+            const endpoint = isSlug ? `/shops/s/${effectiveId}` : `/shops/${effectiveId}`;
             const response = await axios.get(endpoint);
             setShop(response.data);
             setLoading(false);
@@ -264,10 +270,11 @@ const AIShopPublicPage: React.FC = () => {
                                     if (!isProcessing) isListening ? stopListening() : startListening();
                                 }}
                             >
-                                <CanvasOrb
+                                <ParticleSphere
                                     volume={volume}
                                     isListening={isListening}
-                                    primaryColor={primaryColor}
+                                    color={primaryColor}
+                                    isProcessing={isProcessing}
                                 />
                             </Box>
 

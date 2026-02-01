@@ -29,47 +29,18 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import axios from 'axios';
 
 
-const PublicShopPage: React.FC = () => {
+interface PublicShopPageProps {
+    shopSlug?: string;
+}
+
+const PublicShopPage: React.FC<PublicShopPageProps> = ({ shopSlug }) => {
     const { slug } = useParams<{ slug: string }>();
+    const effectiveSlug = shopSlug || slug;
     const navigate = useNavigate();
     const [shop, setShop] = useState<any>(null);
     const [queues, setQueues] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-
-    useEffect(() => {
-        fetchShopAndQueues();
-    }, [slug]);
-
-    const fetchShopAndQueues = async () => {
-        try {
-            const response = await axios.get(`/shops/s/${slug}`);
-            setShop(response.data);
-
-            // Redirect if already in queue
-            const savedItemId = localStorage.getItem(`queue_item_${response.data.id}`);
-            if (savedItemId) {
-                navigate(`/queue/${response.data.id}`);
-                return;
-            }
-
-            if (response.data.queues) {
-                setQueues(response.data.queues.filter((q: any) => q.is_active));
-            } else {
-                setQueues([]);
-            }
-
-            // Fetch services for the shop
-            const servicesRes = await axios.get(`/shops/${response.data.id}/services`);
-            setServices(servicesRes.data.filter((s: any) => s.is_active));
-
-            setLoading(false);
-        } catch (err) {
-            setError('Shop not found');
-            setLoading(false);
-        }
-    };
-
     const [services, setServices] = useState<any[]>([]);
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
@@ -78,6 +49,49 @@ const PublicShopPage: React.FC = () => {
     const [selectedServiceId, setSelectedServiceId] = useState<number | ''>('');
     const [joinLoading, setJoinLoading] = useState(false);
     const [joinError, setJoinError] = useState('');
+
+    useEffect(() => {
+        const fetchShopAndQueues = async () => {
+            try {
+                if (!effectiveSlug) return;
+                setLoading(true);
+                // Endpoint uses slug
+                const response = await axios.get(`/shops/s/${effectiveSlug}`);
+                setShop(response.data);
+
+                // Redirect if already in queue
+                const savedItemId = localStorage.getItem(`queue_item_${response.data.id}`);
+                if (savedItemId) {
+                    navigate(`/queue/${response.data.id}`);
+                    return;
+                }
+
+                if (response.data.queues) {
+                    setQueues(response.data.queues.filter((q: any) => q.is_active));
+                } else {
+                    setQueues([]);
+                }
+
+                // Fetch services for the shop
+                try {
+                    const servicesRes = await axios.get(`/shops/${response.data.id}/services`);
+                    setServices(servicesRes.data.filter((s: any) => s.is_active));
+                } catch (e) {
+                    console.warn("Failed to fetch services", e);
+                    setServices([]);
+                }
+
+                setLoading(false);
+            } catch (err) {
+                console.error(err);
+                setError('Shop not found');
+                setLoading(false);
+            }
+        };
+
+        fetchShopAndQueues();
+    }, [slug, shopSlug]); // Update dependency
+
 
     const handleJoinQueue = async (e: React.FormEvent) => {
         e.preventDefault();

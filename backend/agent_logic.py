@@ -11,6 +11,7 @@ from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from db_interface import db_interface
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 logger = logging.getLogger(__name__)
 
@@ -350,8 +351,19 @@ class FrontDeskAgent:
         actions = []
         deps = FrontDeskDeps(shop_id=self.shop_id, shop_name=self.shop_name, ai_agent_name=self.ai_agent_name, session_id="shop_session", actions=actions)
         
+        # Convert history to PydanticAI messages
+        message_history: List[ModelMessage] = []
+        for msg in history:
+            role = msg.get("role")
+            content = msg.get("content") or msg.get("text", "")
+            
+            if role == "user":
+                message_history.append(ModelRequest(parts=[UserPromptPart(content=content)]))
+            elif role in ["assistant", "ai"]:
+                message_history.append(ModelResponse(parts=[TextPart(content=content)]))
+
         try:
-            result = await self.agent.run(user_message, deps=deps)
+            result = await self.agent.run(user_message, deps=deps, message_history=message_history)
             return {"response": result.output, "actions": actions, "agent_name": self.ai_agent_name}
         except Exception as e:
              return {"response": "Glitch in the front desk logic.", "actions": []}

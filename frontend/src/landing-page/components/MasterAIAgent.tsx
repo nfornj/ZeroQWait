@@ -29,6 +29,7 @@ import DarkModeIcon from '@mui/icons-material/DarkMode';
 import Pricing from './Pricing';
 import Features from './Features';
 import FAQ from './FAQ';
+import { constructShopUrl, isLocalhost } from '../../utils/domainUtils';
 
 const MasterAIAgent: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
@@ -209,17 +210,16 @@ const MasterAIAgent: React.FC = () => {
                     top: 0,
                     left: 0,
                     width: '100vw',
-                    height: '100vh',
+                    height: { xs: '100dvh', md: '100vh' },
                     zIndex: 10000,
                     background: theme.bg,
                     backdropFilter: theme.glass,
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    justifyContent: 'center',
+                    justifyContent: 'flex-start',
                     color: theme.text,
-                    overflowY: 'auto',
-                    overflowX: 'hidden',
+                    overflow: 'hidden', // Changed to hidden - scrolling happens inside child
                     transition: 'all 0.5s ease'
                 }}
             >
@@ -251,7 +251,6 @@ const MasterAIAgent: React.FC = () => {
                     sx={{
                         flex: 1,
                         width: '100%',
-                        height: '100%',
                         overflowY: 'auto',
                         overflowX: 'hidden',
                         display: 'flex',
@@ -279,7 +278,8 @@ const MasterAIAgent: React.FC = () => {
                         width: '100%',
                         maxWidth: '1600px',
                         mx: 'auto',
-                        minHeight: 'min-content'
+                        minHeight: 'min-content',
+                        pb: { xs: 4, md: 10 } // Added bottom padding to ensure content isn't cut off by input
                     }}>
 
                         {/* LEFT COLUMN: Agent, Transcript & Controls */}
@@ -311,13 +311,13 @@ const MasterAIAgent: React.FC = () => {
                             <Box
                                 ref={scrollRef}
                                 sx={{
-                                    textAlign: 'center',
+                                    textAlign: { xs: 'center', md: 'left' },
                                     maxHeight: activeViewer ? '25vh' : '30vh',
                                     overflowY: 'auto',
                                     width: '100%',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    alignItems: 'center',
+                                    alignItems: { xs: 'center', md: 'flex-start' },
                                     gap: 2,
                                     px: { xs: 2, md: 0 },
                                     maskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)',
@@ -326,7 +326,16 @@ const MasterAIAgent: React.FC = () => {
                                 }}
                             >
                                 {chatHistory.map((chat, index) => (
-                                    <Box key={index} sx={{ opacity: index === chatHistory.length - 1 ? 1 : 0.6 }}>
+                                    <Box
+                                        key={index}
+                                        sx={{
+                                            opacity: index === chatHistory.length - 1 ? 1 : 0.6,
+                                            width: '100%',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: { xs: 'center', md: chat.role === 'user' ? 'flex-end' : 'flex-start' }
+                                        }}
+                                    >
                                         <Typography
                                             variant="body1"
                                             sx={{
@@ -334,7 +343,10 @@ const MasterAIAgent: React.FC = () => {
                                                 lineHeight: 1.6,
                                                 color: chat.role === 'user' ? theme.accent : theme.text,
                                                 fontSize: activeViewer ? '1.1rem' : '1.3rem',
-                                                transition: 'all 0.5s ease'
+                                                textAlign: { xs: 'center', md: chat.role === 'user' ? 'right' : 'left' },
+                                                transition: 'all 0.5s ease',
+                                                maxWidth: { xs: '95%', md: '85%' },
+                                                mx: { xs: 'auto', md: 0 }
                                             }}
                                         >
                                             {chat.role === 'user' ? `“${chat.text}”` : chat.text}
@@ -409,7 +421,23 @@ const MasterAIAgent: React.FC = () => {
                                                                 <Typography variant="h6" sx={{ fontWeight: 700 }}>{shop.name}</Typography>
                                                                 <Typography variant="body2" sx={{ opacity: 0.7 }}>{shop.address}, {shop.city}</Typography>
                                                             </Box>
-                                                            <Button variant="contained" sx={{ bgcolor: theme.accent, color: isDarkMode ? 'black' : 'white', borderRadius: '12px', fontWeight: 700 }}>JOIN</Button>
+                                                            <Button
+                                                                variant="contained"
+                                                                onClick={() => {
+                                                                    const targetSlug = shop.slug || `shop-${shop.id}`;
+
+                                                                    if (isLocalhost()) {
+                                                                        // Keeps dev flow simple (SPA routing)
+                                                                        navigate(`/shop-ai/${shop.id}`);
+                                                                    } else {
+                                                                        // Full redirect to subdomain
+                                                                        window.location.href = constructShopUrl(targetSlug, '/ai');
+                                                                    }
+                                                                }}
+                                                                sx={{ bgcolor: theme.accent, color: isDarkMode ? 'black' : 'white', borderRadius: '12px', fontWeight: 700 }}
+                                                            >
+                                                                JOIN
+                                                            </Button>
                                                         </CardContent>
                                                     </Card>
                                                 ))
@@ -426,42 +454,56 @@ const MasterAIAgent: React.FC = () => {
                     </Box>
                 </Box>
 
-                {/* STICKY INPUT FIELD - Always visible at bottom */}
-                {!isListening && (
-                    <Box sx={{
-                        position: 'sticky',
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        p: { xs: 2, md: 3 },
-                        bgcolor: isDarkMode ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.95)',
-                        backdropFilter: 'blur(10px)',
-                        borderTop: `1px solid ${theme.cardBorder}`,
-                        display: 'flex',
-                        justifyContent: 'center',
-                        zIndex: 10
-                    }}>
-                        <TextField
-                            fullWidth
-                            placeholder="Type to ZeroQ..."
-                            variant="outlined"
-                            sx={{ maxWidth: 500 }}
-                            onKeyPress={(e) => {
-                                if (e.key === 'Enter') {
-                                    const target = e.target as HTMLInputElement;
+                {/* INPUT FIELD - Stick to bottom regardless of scroll */}
+                <Box sx={{
+                    width: '100%',
+                    p: { xs: 2, md: 3 },
+                    bgcolor: isDarkMode ? 'rgba(5, 5, 10, 0.98)' : 'rgba(255, 255, 255, 0.98)',
+                    backdropFilter: 'blur(10px)',
+                    borderTop: `1px solid ${theme.cardBorder}`,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    zIndex: 100,
+                    flexShrink: 0
+                }}>
+                    <TextField
+                        fullWidth
+                        placeholder="Type to ZeroQ..."
+                        variant="outlined"
+                        sx={{ maxWidth: 600 }}
+                        onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                                const target = e.target as HTMLInputElement;
+                                if (target.value.trim()) {
                                     handleChat(target.value);
                                     target.value = '';
                                 }
-                            }}
-                            slotProps={{
-                                input: {
-                                    sx: { borderRadius: '30px', bgcolor: theme.inputBg, color: theme.text },
-                                    endAdornment: <SearchIcon sx={{ color: theme.textSecondary, mr: 1 }} />
-                                }
-                            }}
-                        />
-                    </Box>
-                )}
+                            }
+                        }}
+                        slotProps={{
+                            input: {
+                                sx: {
+                                    borderRadius: '30px',
+                                    bgcolor: theme.inputBg,
+                                    color: theme.text,
+                                    height: { xs: '50px', md: '60px' },
+                                    fontSize: '1.1rem'
+                                },
+                                endAdornment: (
+                                    <Stack direction="row" spacing={1} sx={{ mr: 1, alignItems: 'center' }}>
+                                        <IconButton
+                                            onClick={() => isListening ? stopListening() : startListening()}
+                                            sx={{ color: isListening ? theme.accent : theme.textSecondary }}
+                                        >
+                                            {isListening ? <MicIcon /> : <MicOffIcon />}
+                                        </IconButton>
+                                        <SearchIcon sx={{ color: theme.textSecondary }} />
+                                    </Stack>
+                                )
+                            }
+                        }}
+                    />
+                </Box>
             </Box>
         </Fade>
     );
