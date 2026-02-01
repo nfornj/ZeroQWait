@@ -13,8 +13,12 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
     const particles = useRef<any[]>([]);
     const animationFrameId = useRef<number>();
 
-    // Initial constants
-    const PARTICLE_COUNT = 1500;
+    // Interaction Refs
+    const mouseRef = useRef({ x: 0, y: 0 });
+    const isHoveredRef = useRef(false);
+
+    // Initial constants - Boosted for brightness
+    const PARTICLE_COUNT = 2000;
     const RADIUS = 180;
 
     useEffect(() => {
@@ -31,13 +35,14 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
                 phi,
                 theta,
                 size: Math.random() * 1.5 + 0.5,
-                opacity: Math.random() * 0.5 + 0.2
+                opacity: Math.random() * 0.5 + 0.5 // Boosted basal opacity for brightness
             };
         });
 
         let rotationX = 0;
         let rotationY = 0;
         let lastTime = performance.now();
+        let currentScale = 1;
 
         const render = () => {
             const currentTime = performance.now();
@@ -51,30 +56,36 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
 
             ctx.clearRect(0, 0, width, height);
 
-            // Dynamic rotation based on volume OR processing state
+            // Dynamic rotation logic
             const baseSpeed = 0.5;
-            // Spin fast if processing, or react to volume
             const speedMultiplier = isProcessing ? 12 : (1 + (volume * 10));
 
-            rotationX += baseSpeed * speedMultiplier * deltaTime;
-            rotationY += (baseSpeed * 1.5) * speedMultiplier * deltaTime;
+            // Mouse Interaction Logic
+            // Mouse X affects Y-rotation (Spin), Mouse Y affects X-rotation (Tilt)
+            const mouseX = mouseRef.current.x;
+            const mouseY = mouseRef.current.y;
 
-            // Audio reaction factor - Stronger pulse
-            // If processing, breathe deeply
+            const mouseInfluenceX = isHoveredRef.current ? (mouseY * 2) : 0;
+            const mouseInfluenceY = isHoveredRef.current ? (mouseX * 2) : 0;
+
+            rotationX += (baseSpeed * speedMultiplier + mouseInfluenceX) * deltaTime;
+            rotationY += ((baseSpeed * 1.5) * speedMultiplier + mouseInfluenceY) * deltaTime;
+
+            // Scale Logic (Breathing on hover)
+            const targetScale = isHoveredRef.current ? 1.1 : 1.0;
+            currentScale += (targetScale - currentScale) * 5 * deltaTime; // Smooth Lerp
+
+            // Audio reaction factor
             const processingPulse = isProcessing ? (1 + Math.sin(currentTime / 1000 * 6) * 0.15) : 1;
-            const scale = (1 + (volume * 1.5)) * processingPulse;
+            const scale = (currentScale + (volume * 1.5)) * processingPulse;
 
             particles.current.forEach((p) => {
                 // 1. Base Spherical -> Cartesian
-                // phi (0..pi) is angle from UP (Y axis)
-                // theta (0..2pi) is angle around Y axis
                 let x = RADIUS * Math.sin(p.phi) * Math.cos(p.theta);
                 let y = RADIUS * Math.cos(p.phi);
                 let z = RADIUS * Math.sin(p.phi) * Math.sin(p.theta);
 
                 // 2. Rotate around Y axis (Spin)
-                // x' = x cos(ry) - z sin(ry)
-                // z' = x sin(ry) + z cos(ry)
                 const cosY = Math.cos(rotationY);
                 const sinY = Math.sin(rotationY);
                 let x1 = x * cosY - z * sinY;
@@ -82,8 +93,6 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
                 let y1 = y;
 
                 // 3. Rotate around X axis (Tilt)
-                // y' = y cos(rx) - z sin(rx)
-                // z' = y sin(rx) + z cos(rx)
                 const cosX = Math.cos(rotationX);
                 const sinX = Math.sin(rotationX);
                 let y2 = y1 * cosX - z1 * sinX;
@@ -104,13 +113,15 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
 
                 // Depth-based opacity and size
                 const zNorm = (pz + RADIUS) / (RADIUS * 2);
-                // Boost opacity with volume for "glowing" effect
-                const alpha = (p.opacity * zNorm) + (volume * 0.8);
+
+                // Opacity Calculation - Brighter Base
+                let alpha = (p.opacity * zNorm) + (volume * 0.8);
+                if (isHoveredRef.current) alpha += 0.15; // Extra brightness on hover
 
                 ctx.beginPath();
                 ctx.arc(sx, sy, (p.size * fov) * (1 + volume), 0, Math.PI * 2);
                 ctx.fillStyle = color;
-                ctx.globalAlpha = Math.min(alpha, 1);
+                ctx.globalAlpha = Math.min(Math.max(alpha, 0), 1);
                 ctx.fill();
             });
 
@@ -126,16 +137,33 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
         };
     }, [volume, color, isProcessing]);
 
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 2 - 1; // -1 to 1
+        const y = ((e.clientY - rect.top) / rect.height) * 2 - 1; // -1 to 1
+        mouseRef.current = { x, y };
+    };
+
     return (
-        <Box sx={{
-            width: '100%',
-            maxWidth: { xs: 200, sm: 280, md: 400 },
-            aspectRatio: '1',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            mx: 'auto'
-        }}>
+        <Box
+            onMouseEnter={() => isHoveredRef.current = true}
+            onMouseLeave={() => {
+                isHoveredRef.current = false;
+                mouseRef.current = { x: 0, y: 0 };
+            }}
+            onMouseMove={handleMouseMove}
+            sx={{
+                width: '100%',
+                maxWidth: { xs: 200, sm: 280, md: 400 },
+                aspectRatio: '1',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                mx: 'auto',
+                cursor: 'pointer', // Indicate interactivity
+                transition: 'transform 0.3s ease' // CSS transition for the container itself optionally
+            }}
+        >
             <canvas
                 ref={canvasRef}
                 width={800}
