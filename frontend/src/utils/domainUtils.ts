@@ -28,11 +28,9 @@ export const getSubdomain = (): string | null => {
         // Standard nip.io is ip.nip.io (4 parts? no, 192.168.x.x.nip.io)
         // If we have an extra part at the beginning, it's a subdomain.
         const parts = host.split('.');
-        // 192.168.x.x.nip.io is 6 parts. sub.192.168... is 7 parts?
-        // Let's assume the root is the last 6 parts for nip.io/IPv4?
-        // Actually simplest is: if not starting with 'www' and has enough parts.
-        // Let's stick to the previous logic: if length >= 6, first part is sub.
-        if (parts.length >= 6) {
+        // 192.168.x.x.nip.io is 6 parts. sub.192.168.x.x.nip.io is 7 parts.
+        // We only want to extract 'sub' if we have 7 or more parts.
+        if (parts.length >= 7) {
             sub = parts[0];
         }
     } else {

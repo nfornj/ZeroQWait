@@ -128,7 +128,7 @@ const MasterAIAgent: React.FC = () => {
         setIsProcessing(true);
 
         try {
-            const response = await axios.post('agent/master/chat', {
+            const response = await axios.post('/agent/master/chat', {
                 message: userText,
                 session_id: sessionId,
                 latitude: location?.lat,
@@ -333,7 +333,7 @@ const MasterAIAgent: React.FC = () => {
                                             width: '100%',
                                             display: 'flex',
                                             flexDirection: 'column',
-                                            alignItems: { xs: 'center', md: chat.role === 'user' ? 'flex-end' : 'flex-start' }
+                                            alignItems: chat.role === 'user' ? 'flex-end' : 'flex-start'
                                         }}
                                     >
                                         <Typography
@@ -343,7 +343,7 @@ const MasterAIAgent: React.FC = () => {
                                                 lineHeight: 1.6,
                                                 color: chat.role === 'user' ? theme.accent : theme.text,
                                                 fontSize: activeViewer ? '1.1rem' : '1.3rem',
-                                                textAlign: { xs: 'center', md: chat.role === 'user' ? 'right' : 'left' },
+                                                textAlign: chat.role === 'user' ? 'right' : 'left',
                                                 transition: 'all 0.5s ease',
                                                 maxWidth: { xs: '95%', md: '85%' },
                                                 mx: { xs: 'auto', md: 0 }
@@ -454,56 +454,44 @@ const MasterAIAgent: React.FC = () => {
                     </Box>
                 </Box>
 
-                {/* INPUT FIELD - Stick to bottom regardless of scroll */}
-                <Box sx={{
-                    width: '100%',
-                    p: { xs: 2, md: 3 },
-                    bgcolor: isDarkMode ? 'rgba(5, 5, 10, 0.98)' : 'rgba(255, 255, 255, 0.98)',
-                    backdropFilter: 'blur(10px)',
-                    borderTop: `1px solid ${theme.cardBorder}`,
-                    display: 'flex',
-                    justifyContent: 'center',
-                    zIndex: 100,
-                    flexShrink: 0
-                }}>
-                    <TextField
-                        fullWidth
-                        placeholder="Type to ZeroQ..."
-                        variant="outlined"
-                        sx={{ maxWidth: 600 }}
-                        onKeyPress={(e) => {
-                            if (e.key === 'Enter') {
-                                const target = e.target as HTMLInputElement;
-                                if (target.value.trim()) {
-                                    handleChat(target.value);
-                                    target.value = '';
+                {/* STICKY INPUT FIELD - Always visible at bottom */}
+                {!isListening && (
+                    <Box sx={{
+                        position: 'sticky',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        p: { xs: 2, md: 3 },
+                        bgcolor: isDarkMode ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.95)',
+                        backdropFilter: 'blur(10px)',
+                        borderTop: `1px solid ${theme.cardBorder}`,
+                        display: 'flex',
+                        justifyContent: 'center',
+                        zIndex: 10
+                    }}>
+                        <TextField
+                            fullWidth
+                            placeholder="Type to ZeroQ..."
+                            variant="outlined"
+                            sx={{ maxWidth: 500 }}
+                            onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                    const target = e.target as HTMLInputElement;
+                                    if (target.value.trim()) {
+                                        handleChat(target.value);
+                                        target.value = '';
+                                    }
                                 }
-                            }
-                        }}
-                        slotProps={{
-                            input: {
-                                sx: {
-                                    borderRadius: '30px',
-                                    bgcolor: theme.inputBg,
-                                    color: theme.text,
-                                    height: { xs: '50px', md: '60px' },
-                                    fontSize: '1.1rem'
-                                },
-                                endAdornment: (
-                                    <Stack direction="row" spacing={1} sx={{ mr: 1, alignItems: 'center' }}>
-                                        <IconButton
-                                            onClick={() => isListening ? stopListening() : startListening()}
-                                            sx={{ color: isListening ? theme.accent : theme.textSecondary }}
-                                        >
-                                            {isListening ? <MicIcon /> : <MicOffIcon />}
-                                        </IconButton>
-                                        <SearchIcon sx={{ color: theme.textSecondary }} />
-                                    </Stack>
-                                )
-                            }
-                        }}
-                    />
-                </Box>
+                            }}
+                            slotProps={{
+                                input: {
+                                    sx: { borderRadius: '30px', bgcolor: theme.inputBg, color: theme.text },
+                                    endAdornment: <SearchIcon sx={{ color: theme.textSecondary, mr: 1 }} />
+                                }
+                            }}
+                        />
+                    </Box>
+                )}
             </Box>
         </Fade>
     );

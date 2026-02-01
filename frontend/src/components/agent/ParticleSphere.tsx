@@ -65,10 +65,35 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
             const scale = (1 + (volume * 1.5)) * processingPulse;
 
             particles.current.forEach((p) => {
-                // Rotation logic
-                let px = RADIUS * Math.sin(p.phi) * Math.cos(p.theta + rotationY);
-                let py = RADIUS * Math.cos(p.phi + rotationX);
-                let pz = RADIUS * Math.sin(p.phi) * Math.sin(p.theta + rotationY);
+                // 1. Base Spherical -> Cartesian
+                // phi (0..pi) is angle from UP (Y axis)
+                // theta (0..2pi) is angle around Y axis
+                let x = RADIUS * Math.sin(p.phi) * Math.cos(p.theta);
+                let y = RADIUS * Math.cos(p.phi);
+                let z = RADIUS * Math.sin(p.phi) * Math.sin(p.theta);
+
+                // 2. Rotate around Y axis (Spin)
+                // x' = x cos(ry) - z sin(ry)
+                // z' = x sin(ry) + z cos(ry)
+                const cosY = Math.cos(rotationY);
+                const sinY = Math.sin(rotationY);
+                let x1 = x * cosY - z * sinY;
+                let z1 = x * sinY + z * cosY;
+                let y1 = y;
+
+                // 3. Rotate around X axis (Tilt)
+                // y' = y cos(rx) - z sin(rx)
+                // z' = y sin(rx) + z cos(rx)
+                const cosX = Math.cos(rotationX);
+                const sinX = Math.sin(rotationX);
+                let y2 = y1 * cosX - z1 * sinX;
+                let z2 = y1 * sinX + z1 * cosX;
+                let x2 = x1;
+
+                // Final Coordinates
+                const px = x2;
+                const py = y2;
+                const pz = z2;
 
                 // Simple 3D projection
                 const perspective = 600;
