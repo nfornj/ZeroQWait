@@ -128,7 +128,7 @@ const MasterAIAgent: React.FC = () => {
         setIsProcessing(true);
 
         try {
-            const response = await axios.post('/agent/master/chat', {
+            const response = await axios.post('agent/master/chat', {
                 message: userText,
                 session_id: sessionId,
                 latitude: location?.lat,
