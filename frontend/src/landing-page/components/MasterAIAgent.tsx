@@ -311,13 +311,13 @@ const MasterAIAgent: React.FC = () => {
                             <Box
                                 ref={scrollRef}
                                 sx={{
-                                    textAlign: { xs: 'center', md: 'left' },
+                                    textAlign: activeViewer ? { xs: 'center', md: 'left' } : 'center',
                                     maxHeight: activeViewer ? '25vh' : '30vh',
                                     overflowY: 'auto',
                                     width: '100%',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    alignItems: { xs: 'center', md: 'flex-start' },
+                                    alignItems: activeViewer ? { xs: 'center', md: 'flex-start' } : 'center',
                                     gap: 2,
                                     px: { xs: 2, md: 0 },
                                     maskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)',
@@ -333,7 +333,7 @@ const MasterAIAgent: React.FC = () => {
                                             width: '100%',
                                             display: 'flex',
                                             flexDirection: 'column',
-                                            alignItems: chat.role === 'user' ? 'flex-end' : 'flex-start'
+                                            alignItems: chat.role === 'user' ? 'flex-end' : (activeViewer ? 'flex-start' : 'center')
                                         }}
                                     >
                                         <Typography
@@ -343,7 +343,7 @@ const MasterAIAgent: React.FC = () => {
                                                 lineHeight: 1.6,
                                                 color: chat.role === 'user' ? theme.accent : theme.text,
                                                 fontSize: activeViewer ? '1.1rem' : '1.3rem',
-                                                textAlign: chat.role === 'user' ? 'right' : 'left',
+                                                textAlign: chat.role === 'user' ? 'right' : (activeViewer ? 'left' : 'center'),
                                                 transition: 'all 0.5s ease',
                                                 maxWidth: { xs: '95%', md: '85%' },
                                                 mx: { xs: 'auto', md: 0 }
