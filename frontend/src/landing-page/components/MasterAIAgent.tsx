@@ -355,7 +355,7 @@ const MasterAIAgent: React.FC = () => {
                                 ))}
                             </Box>
 
-                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%' }}>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%', maxWidth: '500px' }}>
                                 <IconButton
                                     onClick={() => isListening ? stopListening() : startListening()}
                                     sx={{
@@ -363,7 +363,8 @@ const MasterAIAgent: React.FC = () => {
                                         bgcolor: isListening ? theme.accent : theme.cardBg,
                                         color: isListening ? (isDarkMode ? 'black' : 'white') : theme.text,
                                         border: `2px solid ${theme.cardBorder}`,
-                                        boxShadow: isListening ? `0 0 50px ${theme.accent}88` : 'none'
+                                        boxShadow: isListening ? `0 0 50px ${theme.accent}88` : 'none',
+                                        transition: 'all 0.3s ease'
                                     }}
                                 >
                                     {isListening ? <MicIcon sx={{ fontSize: 40 }} /> : <MicOffIcon sx={{ fontSize: 40 }} />}
@@ -371,6 +372,37 @@ const MasterAIAgent: React.FC = () => {
                                 <Typography variant="caption" sx={{ opacity: 0.6, letterSpacing: '0.1em', fontWeight: 600 }}>
                                     {isListening ? "LISTENING..." : "START VOICE CONVERSATION"}
                                 </Typography>
+
+                                {/* INTEGRATED INPUT FIELD */}
+                                {!isListening && (
+                                    <TextField
+                                        fullWidth
+                                        placeholder="Type to ZeroQ..."
+                                        variant="outlined"
+                                        onKeyPress={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const target = e.target as HTMLInputElement;
+                                                if (target.value.trim()) {
+                                                    handleChat(target.value);
+                                                    target.value = '';
+                                                }
+                                            }
+                                        }}
+                                        sx={{ mt: 2 }}
+                                        slotProps={{
+                                            input: {
+                                                sx: {
+                                                    borderRadius: '30px',
+                                                    bgcolor: theme.inputBg,
+                                                    color: theme.text,
+                                                    backdropFilter: 'blur(10px)',
+                                                    border: `1px solid ${theme.cardBorder}`,
+                                                },
+                                                endAdornment: <SearchIcon sx={{ color: theme.textSecondary, mr: 1 }} />
+                                            }
+                                        }}
+                                    />
+                                )}
                             </Box>
                         </Box>
 
@@ -453,45 +485,6 @@ const MasterAIAgent: React.FC = () => {
                         )}
                     </Box>
                 </Box>
-
-                {/* STICKY INPUT FIELD - Always visible at bottom */}
-                {!isListening && (
-                    <Box sx={{
-                        position: 'sticky',
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        p: { xs: 2, md: 3 },
-                        bgcolor: isDarkMode ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.95)',
-                        backdropFilter: 'blur(10px)',
-                        borderTop: `1px solid ${theme.cardBorder}`,
-                        display: 'flex',
-                        justifyContent: 'center',
-                        zIndex: 10
-                    }}>
-                        <TextField
-                            fullWidth
-                            placeholder="Type to ZeroQ..."
-                            variant="outlined"
-                            sx={{ maxWidth: 500 }}
-                            onKeyPress={(e) => {
-                                if (e.key === 'Enter') {
-                                    const target = e.target as HTMLInputElement;
-                                    if (target.value.trim()) {
-                                        handleChat(target.value);
-                                        target.value = '';
-                                    }
-                                }
-                            }}
-                            slotProps={{
-                                input: {
-                                    sx: { borderRadius: '30px', bgcolor: theme.inputBg, color: theme.text },
-                                    endAdornment: <SearchIcon sx={{ color: theme.textSecondary, mr: 1 }} />
-                                }
-                            }}
-                        />
-                    </Box>
-                )}
             </Box>
         </Fade>
     );
