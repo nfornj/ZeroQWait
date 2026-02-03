@@ -1,6 +1,4 @@
-import os
-import logging
-from typing import List, Optional, Dict, Any, Literal
+from typing import List, Optional, Dict, Any, Literal, Annotated
 from typing_extensions import TypedDict
 
 from langchain_openai import ChatOpenAI
@@ -8,6 +6,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, Base
 from langchain_core.tools import tool
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from db_interface import db_interface
@@ -21,7 +20,7 @@ MODEL_NAME = "llama3.2"
 
 # --- STATE DEFINITION ---
 class AgentState(TypedDict):
-    messages: List[BaseMessage]
+    messages: Annotated[List[BaseMessage], add_messages]
     session_id: str
     latitude: Optional[float]
     longitude: Optional[float]
