@@ -1,109 +1,51 @@
 import os
-import json
 import logging
-from typing import List, Optional, Dict, Any, Union
-from dataclasses import dataclass, field
-from datetime import datetime
+from typing import List, Optional, Dict, Any, Literal
+from typing_extensions import TypedDict
 
-from pydantic import BaseModel, Field
-from pydantic_ai import Agent, RunContext, ModelRetry
-from pydantic_ai.models.openai import OpenAIModel
-from pydantic_ai.providers.openai import OpenAIProvider
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage, ToolMessage
+from langchain_core.tools import tool
+from langchain_core.prompts import ChatPromptTemplate
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.prebuilt import ToolNode
 
 from db_interface import db_interface
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 
+# Setup logging
 logger = logging.getLogger(__name__)
 
-# --- PydanticAI Shared Configuration ---
+# --- CONFIGURATION ---
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
+MODEL_NAME = "llama3.2"
 
-@dataclass
-class MasterAgentDeps:
+# --- STATE DEFINITION ---
+class AgentState(TypedDict):
+    messages: List[BaseMessage]
     session_id: str
-    latitude: Optional[float] = None
+    latitude: Optional[float]
+    longitude: Optional[float]
+    context: Optional[Dict[str, Any]]
+    # We'll use this to pass results back to the caller
+    actions: List[Dict[str, Any]]
+
+# --- TOOLS ---
+
+@tool
+def search_shops(
+    query: Optional[str] = None,
+    category: Optional[str] = None,
+    city: Optional[str] = None,
+    latitude: Optional[float] = None,
     longitude: Optional[float] = None
-    context: Optional[Dict[str, Any]] = None
-    actions: List[Dict[str, Any]] = field(default_factory=list)
-
-@dataclass
-class FrontDeskDeps:
-    shop_id: int
-    shop_name: str
-    ai_agent_name: str
-    session_id: str
-    actions: List[Dict[str, Any]] = field(default_factory=list)
-
-class MasterResponse(BaseModel):
-    response: str = Field(description="The friendly response to show the user.")
-
-# Configure Ollama Model
-ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
-model = OpenAIModel(
-    'llama3.2',
-    provider=OpenAIProvider(base_url=ollama_url, api_key='ollama'),
-)
-
-# --- MASTER AGENT (Marketing Page Assistant) ---
-
-MASTER_SYSTEM_PROMPT = """You are ZeroQ, the AI Assistant for ZeroQwait - a queue management platform.
-
-## YOUR ROLE
-Help users find shops, understand pricing, and explore features through natural conversation.
-
-## TOOL USAGE GUIDELINES
-
-**search_shops** - Call when user wants to:
-- Find businesses ("show me barbers", "where can I get a haircut", "salons near me")
-- Mentions a specific service type
-- Use location context when available
-
-**check_pricing** - Call when user asks about:
-- Cost, pricing, plans, subscriptions
-- "How much", "free tier", "premium features"
-
-**see_features** - Call when user wants to know:
-- What ZeroQwait does
-- Platform capabilities
-- Benefits for shop owners
-
-**see_faq** - Call for:
-- General help requests
-- "How do I..." questions
-- Support topics
-
-## CONVERSATION STYLE
-- Be concise and friendly
-- For greetings, respond warmly and offer help
-- Use UI context to avoid redundancy (if they're viewing pricing, don't explain what's already visible)
-- After calling search_shops, shops appear as cards - don't list them in text
-
-## CONTEXT AWARENESS
-[UI CONTEXT] tells you what the user sees. Use this to:
-- Avoid repeating visible information
-- Reference "the pricing you're viewing" naturally
-- Prioritize user's explicit request over context
-"""
-
-
-master_pydantic_agent = Agent(
-    model,
-    deps_type=MasterAgentDeps,
-    system_prompt=MASTER_SYSTEM_PROMPT,
-    retries=10,
-    model_settings={'temperature': 0.1}
-)
-
-@master_pydantic_agent.tool
-async def search_shops(
-    ctx: RunContext[MasterAgentDeps], 
-    category: Optional[str] = Field(default=None, description="Category: barber, salon, nail_spa, auto_repair, clinic, restaurant, vet. Leave empty for all."),
-    city: Optional[str] = Field(default=None, description="City name (e.g. Toronto)."),
-    query: Optional[str] = Field(default=None, description="Keywords (e.g. 'fade').")
 ) -> str:
-    """Search for local businesses. Use ONLY if the user is looking for a specific place to visit."""
+    """
+    Search for shops or businesses. 
+    Use this when the user asks to find a place, lists a service (like 'haircut'), or asks what is nearby.
+    """
+    # Clean query logic (ported from original)
     clean_query = query
     if clean_query:
-        # Extended noise word list for common shop search phrases
         noise_words = [
             "find", "search", "show", "list", "get", "display",
             "shops", "shop", "stores", "store", "places", "place", "businesses", "business",
@@ -115,261 +57,317 @@ async def search_shops(
         clean_query = clean_query.lower()
         for noise in noise_words:
             clean_query = clean_query.replace(noise, " ")
-        clean_query = " ".join(clean_query.split()).strip()  # Normalize whitespace
+        clean_query = " ".join(clean_query.split()).strip()
     
-    # If query is empty after cleaning, treat as "show all shops"
-    if not clean_query:
+    if not clean_query: 
         clean_query = None
-    
+
+    # Note: In LangChain tools, we don't have direct access to the state 'latitude/longitude' unless passed as args.
+    # The LLM should be instructed to populate these from context if available, or we inject them bound to the tool.
+    # For simplicity here, we assume the LLM extracts it or we pass it via binding (see MasterAgent).
+
     result = db_interface.search_shops(
         query=clean_query,
         shop_type=category,
         city=city,
-        latitude=ctx.deps.latitude,
-        longitude=ctx.deps.longitude,
+        latitude=latitude,
+        longitude=longitude,
         limit=10
     )
-    ctx.deps.actions.append({"tool": "search_shops", "result": result})
-    return f"Successfully found {len(result)} shops. They are already visible to the user as cards. DO NOT list details."
+    
+    # We return a JSON string or description, AND we need to signal the action.
+    # Since tools return strings to the LLM, we'll return a description.
+    # The 'actions' list generation happens by inspecting tool calls after the run.
+    return f"Found {len(result)} shops. The UI has been updated to show them."
 
+@tool
+def check_pricing() -> str:
+    """View the pricing page and subscription plans."""
+    return "Navigated user to pricing page."
 
-@master_pydantic_agent.tool
-async def check_pricing(ctx: RunContext[MasterAgentDeps]) -> str:
-    """View ZeroQwait subscription plans ($0 Free, $29 Premium, Enterprise)."""
-    ctx.deps.actions.append({"tool": "navigate_to_page_section", "result": {"target": "pricing"}})
-    return "Opened pricing menu."
+@tool
+def see_features() -> str:
+    """View the features page."""
+    return "Navigated user to features page."
 
-@master_pydantic_agent.tool
-async def see_features(ctx: RunContext[MasterAgentDeps]) -> str:
-    """View ZeroQwait features."""
-    ctx.deps.actions.append({"tool": "navigate_to_page_section", "result": {"target": "features"}})
-    return "Opened features page."
+@tool
+def see_faq() -> str:
+    """View the FAQ page."""
+    return "Navigated user to FAQ page."
 
-@master_pydantic_agent.tool
-async def see_faq(ctx: RunContext[MasterAgentDeps]) -> str:
-    """View FAQ."""
-    ctx.deps.actions.append({"tool": "navigate_to_page_section", "result": {"target": "faq"}})
-    return "Opened FAQ."
-
-
-# --- FRONT DESK AGENT (Shop-Specific Assistant) ---
-
-front_desk_pydantic_agent = Agent(
-    model,
-    deps_type=FrontDeskDeps,
-    retries=2
-)
-
-@front_desk_pydantic_agent.system_prompt
-def get_front_desk_prompt(ctx: RunContext[FrontDeskDeps]) -> str:
-    return f"""You are the Intelligent Front Desk Agent for '{ctx.deps.shop_name}'. Your name is '{ctx.deps.ai_agent_name}'.
-Manage the queue efficiently while providing a friendly, professional experience.
-1. Never output raw JSON.
-2. If you lack a NAME or PHONE for enrollment, ASK for them politely.
-3. Check 'check_returning_customer' if a user provides their phone number."""
-
-@front_desk_pydantic_agent.tool
-async def get_shop_status(ctx: RunContext[FrontDeskDeps]) -> Dict[str, Any]:
-    """Get current queue lengths and occupancy."""
+# --- Front Desk Tools ---
+@tool
+def get_shop_status(shop_id: int) -> str:
+    """Get current queue lengths and waiting times for a specific shop."""
     try:
-        queues = db_interface.get_queues({"shop_id": ctx.deps.shop_id, "is_active": True})
-        status = []
+        queues = db_interface.get_queues({"shop_id": shop_id, "is_active": True})
+        status_lines = []
         for q in queues:
             items = db_interface.get_queue_items({"queue_id": q["id"]})
             active = [i for i in items if i["status"] in ["waiting", "being_served"]]
-            status.append({"name": q["name"], "waiting": len([i for i in active if i["status"] == "waiting"])})
-        return {"queues": status}
+            wait_count = len([i for i in active if i["status"] == "waiting"])
+            status_lines.append(f"{q['name']}: {wait_count} waiting")
+        
+        if not status_lines:
+            return "No active queues at the moment."
+        return "\\n".join(status_lines)
     except Exception as e:
-        return {"error": str(e)}
+        return f"Error checking status: {str(e)}"
 
-@front_desk_pydantic_agent.tool
-async def check_returning_customer(ctx: RunContext[FrontDeskDeps], phone: str) -> Dict[str, Any]:
-    """Check if a customer has visited before."""
-    customer = db_interface.get_shop_customer_by_phone(ctx.deps.shop_id, phone)
-    if customer:
-        return {"is_returning": True, "name": customer["name"]}
-    return {"is_returning": False}
-
-@front_desk_pydantic_agent.tool
-async def enroll_customer(ctx: RunContext[FrontDeskDeps], name: str, phone: str) -> str:
-    """Add a customer to the queue. Requires name and phone."""
-    # Logic for enrollment (simplified for this migration)
-    # In a real tool, we might call external router logic
-    return f"Successfully added {name} to the queue."
-
-
-# --- Wrapper Classes for FastAPI ---
+# --- MASTER AGENT ---
 
 class MasterAgent:
     def __init__(self):
-        self.agent = master_pydantic_agent
+        self.llm = ChatOpenAI(
+            base_url=OLLAMA_URL,
+            api_key="ollama",
+            model=MODEL_NAME,
+            temperature=0.1
+        )
+        self.tools = [search_shops, check_pricing, see_features, see_faq]
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        
+        # Build Graph
+        builder = StateGraph(AgentState)
+        builder.add_node("agent", self._agent_node)
+        builder.add_node("tools", ToolNode(self.tools))
+        
+        builder.add_edge(START, "agent")
+        builder.add_conditional_edges("agent", self._should_continue)
+        builder.add_edge("tools", "agent")
+        
+        self.graph = builder.compile()
+
+    def _should_continue(self, state: AgentState) -> Literal["tools", END]:
+        messages = state['messages']
+        last_message = messages[-1]
+        
+        if last_message.tool_calls:
+            return "tools"
+        return END
+
+    def _agent_node(self, state: AgentState):
+        messages = state['messages']
+        last_msg = messages[-1]
+        print(f"DEBUG: Last Message Type: {type(last_msg)}")
+        print(f"DEBUG: Last Message Content: {last_msg.content}")
+        user_text = last_msg.content.lower() if isinstance(last_msg, HumanMessage) else ""
+        print(f"DEBUG: Parsed User Text: {user_text}")
+
+        # --- HYBRID INTENT DETECTION (Reliability Layer) ---
+        # Force tool calls for clear intents to avoid LLM hallucination
+        
+        # 1. Shop Search
+        shop_keywords = ['shop', 'shops', 'store', 'stores', 'barber', 'salon', 'restaurant', 'find', 'search', 'near me', 'nearby', 'looking for']
+        if any(kw in user_text for kw in shop_keywords):
+            # Extract basic query if possible, or just default
+            tool_call_id = "call_" + os.urandom(4).hex()
+            return {"messages": [AIMessage(
+                content="", 
+                tool_calls=[{
+                    "name": "search_shops", 
+                    "args": {"query": last_msg.content}, 
+                    "id": tool_call_id
+                }]
+            )]}
+
+        # 2. Pricing
+        if any(kw in user_text for kw in ['price', 'pricing', 'cost', 'how much', 'plan', 'subscription']):
+            tool_call_id = "call_" + os.urandom(4).hex()
+            return {"messages": [AIMessage(
+                content="", 
+                tool_calls=[{"name": "check_pricing", "args": {}, "id": tool_call_id}]
+            )]}
+
+        # 3. Features
+        if any(kw in user_text for kw in ['feature', 'features', 'what can you do', 'capabilities']):
+            tool_call_id = "call_" + os.urandom(4).hex()
+            return {"messages": [AIMessage(
+                content="", 
+                tool_calls=[{"name": "see_features", "args": {}, "id": tool_call_id}]
+            )]}
+
+        # 4. FAQ
+        if any(kw in user_text for kw in ['faq', 'help', 'support', 'question']):
+            tool_call_id = "call_" + os.urandom(4).hex()
+            return {"messages": [AIMessage(
+                content="", 
+                tool_calls=[{"name": "see_faq", "args": {}, "id": tool_call_id}]
+            )]}
+
+        # --- FALLBACK TO LLM ---
+        # System prompt injection
+        if not isinstance(messages[0], SystemMessage):
+            sys_msg = SystemMessage(content="""You are ZeroQ, the AI Assistant for ZeroQwait.
+You have NO internal knowledge of real-world shops, pricing, or features.
+You MUST use the provided tools to answer questions.
+
+RULES:
+1. If the user asks to find, search, or list shops/businesses, you MUST return a tool call to 'search_shops'. DO NOT make up shops.
+2. If the user asks about pricing, costs, or plans, you MUST return a tool call to 'check_pricing'.
+3. If the user asks about features or capabilities, you MUST return a tool call to 'see_features'.
+4. If the user needs help or FAQ, you MUST return a tool call to 'see_faq'.
+
+By default, keep your text response short (e.g., "Let me check that for you...") and let the tool do the work.
+""")
+            messages = [sys_msg] + messages
+            
+        response = self.llm_with_tools.invoke(messages)
+        return {"messages": [response]}
 
     async def chat(self, session_id: str, user_msg: str, latitude: float = None, longitude: float = None, history: List[Dict[str, str]] = None, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        # 1. Convert History
+        langchain_history = []
+        if history:
+            for h in history:
+                if h['role'] == 'user':
+                    langchain_history.append(HumanMessage(content=h['content']))
+                elif h['role'] in ['assistant', 'ai']:
+                    langchain_history.append(AIMessage(content=h['content']))
+        
+        # 2. Add Context Note (Hidden from user, visible to LLM)
+        context_str = f"User Context: Lat={latitude}, Lng={longitude}"
+        if context and context.get('active_view'):
+            context_str += f", ActiveView={context['active_view']}"
+        
+        # We append a hidden system/human message with context + the actual user message
+        # But for 'search_shops' to work well with args, we explicitly mention the lat/long in the prompt context
+        combined_msg = f"{user_msg}\n\n[System Context: {context_str}]"
+        
+        langchain_history.append(HumanMessage(content=combined_msg))
+
+        initial_state: AgentState = {
+            "messages": langchain_history,
+            "session_id": session_id,
+            "latitude": latitude,
+            "longitude": longitude,
+            "context": context,
+            "actions": []
+        }
+
+        # 3. Run Graph
+        final_state = await self.graph.ainvoke(initial_state)
+        
+        # 4. Extract Response and Actions
+        final_messages = final_state['messages']
+        last_msg = final_messages[-1]
+        response_text = last_msg.content
+        
+        # Reconstruct actions from tool calls found in the trace
         actions = []
-        deps = MasterAgentDeps(session_id=session_id, latitude=latitude, longitude=longitude, context=context, actions=actions)
-        
-        msg_lower = user_msg.strip().lower().replace('?', '').replace('!', '').replace(',', '')
-        
-        # ============ INTENT DETECTION (Bypass LLM for reliability) ============
-        
-        # 1. GREETING PATTERNS - No actions needed (with typo tolerance)
-        greeting_patterns = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'yo', 'sup', 'hiya']
-        # Common typos
-        greeting_typos = ['hell', 'helo', 'hallo', 'hii', 'hiii', 'helllo', 'heloo', 'helloo', 'heyy', 'heyyy', 'hy']
-        
-        is_greeting = any(msg_lower == g or msg_lower.startswith(g + ' ') for g in greeting_patterns)
-        is_typo_greeting = any(msg_lower == t or msg_lower.startswith(t + ' ') for t in greeting_typos)
-        
-        if is_greeting or is_typo_greeting:
-            return {
-                "response": "Hello! I'm ZeroQ, your ZeroQwait assistant. Would you like me to help you find nearby shops, explore our pricing, or learn about our features?",
-                "actions": [],
-                "agent_name": "ZeroQ (PydanticAI)"
-            }
-        
-        # 2. THANKS PATTERNS - No actions needed
-        thanks_patterns = ['thank', 'thx', 'thanks']
-        is_thanks = any(t in msg_lower for t in thanks_patterns)
-        
-        if is_thanks:
-            return {
-                "response": "You're welcome! Is there anything else I can help you with?",
-                "actions": [],
-                "agent_name": "ZeroQ (PydanticAI)"
-            }
-        
-        # 3. SMALL TALK PATTERNS - No actions needed
-        smalltalk_patterns = ['who are you', 'what can you do', 'how are you', 'whats up', "what's up"]
-        is_smalltalk = any(s in msg_lower for s in smalltalk_patterns)
-        
-        if is_smalltalk:
-            return {
-                "response": "I'm ZeroQ, your AI assistant for ZeroQwait! I can help you find nearby shops, answer questions about our pricing and features, or guide you through our queue system. What would you like to explore?",
-                "actions": [],
-                "agent_name": "ZeroQ (PydanticAI)"
-            }
-        
-        # 4. SHOP SEARCH PATTERNS - Trigger search_shops directly
-        shop_keywords = ['shop', 'shops', 'store', 'stores', 'barber', 'salon', 'restaurant', 'clinic', 'spa', 'near me', 'nearby', 'find', 'search', 'show me', 'list', 'where can i']
-        is_shop_search = any(kw in msg_lower for kw in shop_keywords)
-        
-        if is_shop_search:
-            # Directly call the database instead of relying on LLM
-            shops = db_interface.search_shops(
-                query=None,  # Get all shops
-                shop_type=None,
-                city=None,
-                latitude=latitude,
-                longitude=longitude,
-                limit=10
-            )
-            actions.append({"tool": "search_shops", "result": shops})
-            
-            if shops:
-                response_text = f"I found {len(shops)} shops near you! Take a look at the cards on the right."
-            else:
-                response_text = "I couldn't find any shops in your area right now. Would you like me to help with something else?"
-            
-            return {
-                "response": response_text,
-                "actions": actions,
-                "agent_name": "ZeroQ (PydanticAI)"
-            }
-        
-        # 5. PRICING PATTERNS - Trigger navigate_to_page_section
-        pricing_keywords = ['pricing', 'price', 'cost', 'how much', 'subscription', 'plan', 'plans', 'free', 'premium', 'enterprise', 'pay']
-        is_pricing = any(kw in msg_lower for kw in pricing_keywords)
-        
-        if is_pricing:
-            actions.append({"tool": "navigate_to_page_section", "result": {"target": "pricing"}})
-            return {
-                "response": "Here's our pricing! We offer a free tier, a $29/month Premium plan, and custom Enterprise solutions.",
-                "actions": actions,
-                "agent_name": "ZeroQ (PydanticAI)"
-            }
-        
-        # 6. FEATURES PATTERNS - Trigger navigate_to_page_section
-        features_keywords = ['feature', 'features', 'what does', 'capabilities', 'what can zeroqwait', 'benefits']
-        is_features = any(kw in msg_lower for kw in features_keywords)
-        
-        if is_features:
-            actions.append({"tool": "navigate_to_page_section", "result": {"target": "features"}})
-            return {
-                "response": "Let me show you what ZeroQwait can do! Check out our features.",
-                "actions": actions,
-                "agent_name": "ZeroQ (PydanticAI)"
-            }
-        
-        # 7. FAQ/HELP PATTERNS - Trigger navigate_to_page_section
-        faq_keywords = ['faq', 'help', 'support', 'question', 'how do i', 'how to']
-        is_faq = any(kw in msg_lower for kw in faq_keywords)
-        
-        if is_faq:
-            actions.append({"tool": "navigate_to_page_section", "result": {"target": "faq"}})
-            return {
-                "response": "Here's our FAQ section with common questions and answers!",
-                "actions": actions,
-                "agent_name": "ZeroQ (PydanticAI)"
-            }
-        
-        # ============ FALLBACK TO LLM FOR COMPLEX/UNKNOWN QUERIES ============
-        # Only use LLM for queries that don't match any known patterns
-        
-        ui_ctx_str = ""
-        if context:
-            v = context.get("active_view")
-            if v: ui_ctx_str = f"[UI CONTEXT: User is viewing {v}]"
-        
-        full_msg = f"{ui_ctx_str}\n{user_msg}" if ui_ctx_str else user_msg
-        
-        try:
-            result = await self.agent.run(full_msg, deps=deps)
-            final_text = result.output
-            
-            # Privacy: Add to history
-            db_interface.add_message_to_history(session_id, "user", full_msg)
-            db_interface.add_message_to_history(session_id, "assistant", final_text)
+        for msg in final_messages:
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    t_name = tc['name']
+                    t_args = tc['args']
+                    
+                    if t_name == 'search_shops':
+                        # We need to re-run the DB content for the UI artifact? 
+                        # Or we can trust that the tool execution happened and we can just pass a marker?
+                        # The original code returned the RESULT of the search in the actions.
+                        # LangGraph executed the tool, which returned a string summary.
+                        # We need the actual data object for the UI.
+                        # OPTION: Re-run search strictly for the UI payload, or modify tool to return complex obj (handled by ToolNode?)
+                        
+                        # Re-running search for actions payload (safe, read-only)
+                        # This ensures the UI gets the structured data it expects
+                        res = db_interface.search_shops(
+                            query=t_args.get('query'),
+                            shop_type=t_args.get('category'),
+                            city=t_args.get('city'),
+                            latitude=t_args.get('latitude') or latitude,
+                            longitude=t_args.get('longitude') or longitude,
+                            limit=10
+                        )
+                        actions.append({"tool": "search_shops", "result": res})
+                        
+                    elif t_name == 'check_pricing':
+                        actions.append({"tool": "navigate_to_page_section", "result": {"target": "pricing"}})
+                    elif t_name == 'see_features':
+                        actions.append({"tool": "navigate_to_page_section", "result": {"target": "features"}})
+                    elif t_name == 'see_faq':
+                        actions.append({"tool": "navigate_to_page_section", "result": {"target": "faq"}})
 
-            return {"response": final_text, "actions": actions, "agent_name": "ZeroQ (PydanticAI)"}
-        except Exception as e:
-            logger.error(f"PydanticAI Master Error: {e}")
-            return {
-                "error": str(e), 
-                "response": "I'm having a technical glitch. Let's try again.",
-                "actions": []
-            }
+        # Fallback for empty response (if tool call was the last thing)
+        if not response_text:
+            response_text = "I've updated the view for you."
 
+        return {
+            "response": str(response_text),
+            "actions": actions,
+            "agent_name": "ZeroQ (LangGraph)"
+        }
 
+# --- FRONT DESK AGENT ---
 
 class FrontDeskAgent:
     def __init__(self, shop_id: int, shop_name: str, ai_agent_name: Optional[str] = None):
         self.shop_id = shop_id
         self.shop_name = shop_name
         self.ai_agent_name = ai_agent_name or shop_name
-        self.agent = front_desk_pydantic_agent
+        
+        self.llm = ChatOpenAI(
+            base_url=OLLAMA_URL,
+            api_key="ollama",
+            model=MODEL_NAME,
+            temperature=0.2
+        )
+        self.tools = [get_shop_status] # Add more as needed
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        
+        builder = StateGraph(AgentState)
+        builder.add_node("agent", self._agent_node)
+        builder.add_node("tools", ToolNode(self.tools))
+        
+        builder.add_edge(START, "agent")
+        builder.add_conditional_edges("agent", self._should_continue)
+        builder.add_edge("tools", "agent")
+        
+        self.graph = builder.compile()
+
+    def _should_continue(self, state: AgentState) -> Literal["tools", END]:
+        if state['messages'][-1].tool_calls:
+            return "tools"
+        return END
+
+    def _agent_node(self, state: AgentState):
+        messages = state['messages']
+        if not isinstance(messages[0], SystemMessage):
+            sys_msg = SystemMessage(content=f"""You are {self.ai_agent_name}, the AI Front Desk for {self.shop_name}.
+Manage the queue and answer questions.
+Shop ID: {self.shop_id}
+Use 'get_shop_status' if asked about wait times or queue length.
+Do NOT assist with other shops.
+""")
+            messages = [sys_msg] + messages
+        return {"messages": [self.llm_with_tools.invoke(messages)]}
 
     async def chat(self, user_message: str, history: List[Dict[str, str]] = []) -> Dict[str, Any]:
-        # Using a dummy session_id for now if not provided
-        actions = []
-        deps = FrontDeskDeps(shop_id=self.shop_id, shop_name=self.shop_name, ai_agent_name=self.ai_agent_name, session_id="shop_session", actions=actions)
+        langchain_history = []
+        if history:
+            for h in history:
+                if h['role'] == 'user':
+                    langchain_history.append(HumanMessage(content=h['content']))
+                elif h['role'] in ['assistant', 'ai']:
+                    langchain_history.append(AIMessage(content=h['content']))
         
-        # Convert history to PydanticAI messages
-        message_history: List[ModelMessage] = []
-        for msg in history:
-            role = msg.get("role")
-            content = msg.get("content") or msg.get("text", "")
-            
-            if role == "user":
-                message_history.append(ModelRequest(parts=[UserPromptPart(content=content)]))
-            elif role in ["assistant", "ai"]:
-                message_history.append(ModelResponse(parts=[TextPart(content=content)]))
+        langchain_history.append(HumanMessage(content=user_message))
 
-        try:
-            result = await self.agent.run(user_message, deps=deps, message_history=message_history)
-            return {"response": result.output, "actions": actions, "agent_name": self.ai_agent_name}
-        except Exception as e:
-            import logging
-            import traceback
-            logging.error(f"Error in FrontDeskAgent run: {e}")
-            logging.error(traceback.format_exc())
-            return {"response": "Glitch in the front desk logic.", "actions": []}
+        initial_state: AgentState = {
+            "messages": langchain_history,
+            "session_id": "shop_session", # Simplified
+            "latitude": None,
+            "longitude": None,
+            "context": {},
+            "actions": []
+        }
+
+        final_state = await self.graph.ainvoke(initial_state)
+        response_text = final_state['messages'][-1].content
+        
+        # Simplified action extraction for front desk (can be expanded)
+        return {
+            "response": str(response_text),
+            "actions": [],
+            "agent_name": self.ai_agent_name
+        }
