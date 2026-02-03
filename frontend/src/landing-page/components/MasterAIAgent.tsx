@@ -369,8 +369,17 @@ const MasterAIAgent: React.FC = () => {
                                 >
                                     {isListening ? <MicIcon sx={{ fontSize: 40 }} /> : <MicOffIcon sx={{ fontSize: 40 }} />}
                                 </IconButton>
-                                <Typography variant="caption" sx={{ opacity: 0.6, letterSpacing: '0.1em', fontWeight: 600 }}>
-                                    {isListening ? "LISTENING..." : "START VOICE CONVERSATION"}
+                                <Typography variant="caption" sx={{
+                                    opacity: isListening ? 1 : 0.6,
+                                    letterSpacing: '0.1em',
+                                    fontWeight: 600,
+                                    height: '24px', // Fixed height to prevent jump
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    color: isListening ? theme.accent : 'inherit',
+                                    transition: 'all 0.2s ease'
+                                }}>
+                                    {isListening ? (transcript || "Listening...") : "START VOICE CONVERSATION"}
                                 </Typography>
 
                                 {/* INTEGRATED INPUT FIELD */}
