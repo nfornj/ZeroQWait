@@ -6,7 +6,7 @@ router = APIRouter()
 
 ASR_SERVICE_URL = os.getenv("ASR_SERVICE_URL", "http://asr-service.zeroqwait.svc.cluster.local:8000/transcribe")
 
-@router.post("/voice/transcribe")
+@router.post("/transcribe")
 async def transcribe_voice(file: UploadFile = File(...)):
     """
     Receives an audio file from the frontend, forwards it to the GPU-accelerated 
