@@ -150,24 +150,34 @@ class MasterAgent:
     def _agent_node(self, state: AgentState):
         messages = state['messages']
         last_msg = messages[-1]
-        print(f"DEBUG: Last Message Type: {type(last_msg)}")
-        print(f"DEBUG: Last Message Content: {last_msg.content}")
-        user_text = last_msg.content.lower() if isinstance(last_msg, HumanMessage) else ""
-        print(f"DEBUG: Parsed User Text: {user_text}")
-
-        # --- HYBRID INTENT DETECTION (Reliability Layer) ---
-        # Force tool calls for clear intents to avoid LLM hallucination
         
+        # Parse user text, stripping the hidden context line
+        full_text = last_msg.content.lower() if isinstance(last_msg, HumanMessage) else ""
+        if "[system context:" in full_text:
+            user_text = full_text.split("[system context:")[0].strip()
+        else:
+            user_text = full_text.strip()
+            
+        print(f"DEBUG: User Intent Text: '{user_text}'")
+
+        # --- HYBRID INTENT DETECTION ---
+
+        # 0. Greetings (Fast-track)
+        # Handle simple greetings directly to prevent LLM hallucinations
+        greetings = ['hi', 'hello', 'hey', 'greetings', 'yo', 'sup', 'good morning', 'good afternoon']
+        cleaned_input = user_text.replace('!', '').replace('.', '').replace(',', '').strip()
+        if cleaned_input in greetings or any(user_text.startswith(g + " ") for g in greetings):
+             return {"messages": [AIMessage(content="Hello! I'm ZeroQ. I can help you find shops, check pricing, or answer questions about our features.")]}
+
         # 1. Shop Search
         shop_keywords = ['shop', 'shops', 'store', 'stores', 'barber', 'salon', 'restaurant', 'find', 'search', 'near me', 'nearby', 'looking for']
         if any(kw in user_text for kw in shop_keywords):
-            # Extract basic query if possible, or just default
             tool_call_id = "call_" + os.urandom(4).hex()
             return {"messages": [AIMessage(
                 content="", 
                 tool_calls=[{
                     "name": "search_shops", 
-                    "args": {"query": last_msg.content}, 
+                    "args": {"query": user_text}, 
                     "id": tool_call_id
                 }]
             )]}
@@ -197,19 +207,14 @@ class MasterAgent:
             )]}
 
         # --- FALLBACK TO LLM ---
-        # System prompt injection
         if not isinstance(messages[0], SystemMessage):
             sys_msg = SystemMessage(content="""You are ZeroQ, the AI Assistant for ZeroQwait.
 You have NO internal knowledge of real-world shops, pricing, or features.
-You MUST use the provided tools to answer questions.
 
-RULES:
-1. If the user asks to find, search, or list shops/businesses, you MUST return a tool call to 'search_shops'. DO NOT make up shops.
-2. If the user asks about pricing, costs, or plans, you MUST return a tool call to 'check_pricing'.
-3. If the user asks about features or capabilities, you MUST return a tool call to 'see_features'.
-4. If the user needs help or FAQ, you MUST return a tool call to 'see_faq'.
-
-By default, keep your text response short (e.g., "Let me check that for you...") and let the tool do the work.
+GUIDELINES:
+1. If the user asks for DATA (shops, prices, features), you MUST use a tool.
+2. If the user is just chatting (e.g. "cool", "thanks", "who are you"), reply naturally and briefly without tools.
+3. DO NOT make up lists of shops. If a tool isn't called, assume you don't know any shops.
 """)
             messages = [sys_msg] + messages
             
