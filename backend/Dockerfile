@@ -17,7 +17,7 @@ COPY main.py auth_utils.py database.py email_utils.py permissions.py \
      scheduler.py schemas.py supabase_client.py tier_limits.py \
      models.py db_interface.py analytics_processor.py \
      agent_logic.py add_auto_shop.py \
-     update_db.py create_sample_data.py ./
+     update_db.py create_sample_data.py test_langchain.py ./
 COPY routers ./routers/
 
 # Expose port
