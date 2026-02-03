@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: asr-service
+  namespace: zeroqwait
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: asr-service
+  template:
+    metadata:
+      labels:
+        app: asr-service
+    spec:
+      containers:
+        - name: asr-service
+          image: localhost:5000/asr-service:latest
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          env:
+            - name: MODEL_SIZE
+              value: "medium"
+            - name: DEVICE
+              value: "cuda"
+          ports:
+            - containerPort: 8000

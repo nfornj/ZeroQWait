@@ -19,7 +19,7 @@ import MicOffIcon from '@mui/icons-material/MicOff';
 import SearchIcon from '@mui/icons-material/Search';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import axios from 'axios';
-import { useVoiceInterface } from '../../hooks/useVoiceInterface';
+import { useAudioRecorder } from '../../hooks/useAudioRecorder';
 import { useAudioVisualizer } from '../../hooks/useAudioVisualizer';
 import ParticleSphere from '../../components/agent/ParticleSphere';
 import { useNavigate } from 'react-router-dom';
@@ -35,6 +35,7 @@ const MasterAIAgent: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
     const [location, setLocation] = useState<{ lat: number, lng: number } | null>(null);
 
     // Capture Geolocation
@@ -76,15 +77,51 @@ const MasterAIAgent: React.FC = () => {
     const latestAIResponse = chatHistory[chatHistory.length - 1];
     const navigate = useNavigate();
 
-    const { isListening, transcript, startListening, stopListening, speak } = useVoiceInterface({
-        onResult: (text) => {
-            console.log('[DEBUG] Voice transcript result:', text);
-            handleChat(text);
-        },
-        onError: (err) => console.error('[DEBUG] Voice interface error:', err)
-    });
+    // Voice Recorder (Server-Side ASR)
+    const { isRecording, startRecording, stopRecording, hasPermission } = useAudioRecorder();
 
-    const { volume } = useAudioVisualizer(isListening);
+    // Audio Visualizer
+    const { volume } = useAudioVisualizer(isRecording);
+
+    // Text-to-Speech Helper
+    const speak = (text: string) => {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            window.speechSynthesis.speak(utterance);
+        }
+    };
+
+    const handleVoiceToggle = async () => {
+        if (isRecording) {
+            // STOP Recording & Upload
+            const audioBlob = await stopRecording();
+            if (audioBlob) {
+                setIsTranscribing(true);
+                try {
+                    const formData = new FormData();
+                    formData.append('file', audioBlob, 'recording.webm');
+
+                    const response = await axios.post('/api/voice/transcribe', formData, {
+                        headers: { 'Content-Type': 'multipart/form-data' }
+                    });
+
+                    const text = response.data.text;
+                    if (text && text.trim()) {
+                        handleChat(text);
+                    }
+                } catch (error) {
+                    console.error('Transcription failed:', error);
+                } finally {
+                    setIsTranscribing(false);
+                }
+            }
+        } else {
+            // START Recording
+            await startRecording();
+        }
+    };
 
     // Theme & Visibility Configuration
     const theme = {
@@ -198,7 +235,7 @@ const MasterAIAgent: React.FC = () => {
                 behavior: 'smooth'
             });
         }
-    }, [chatHistory, transcript]);
+    }, [chatHistory]);
 
 
     return (
@@ -305,7 +342,7 @@ const MasterAIAgent: React.FC = () => {
                                 height: { xs: 180, sm: 220, md: 280 },
                                 transition: 'all 0.5s ease'
                             }}>
-                                <ParticleSphere volume={volume} isListening={isListening} color={theme.accent} isProcessing={isProcessing} />
+                                <ParticleSphere volume={volume} isListening={isRecording} color={theme.accent} isProcessing={isProcessing} />
                             </Box>
 
                             <Box
@@ -357,33 +394,35 @@ const MasterAIAgent: React.FC = () => {
 
                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%', maxWidth: '500px' }}>
                                 <IconButton
-                                    onClick={() => isListening ? stopListening() : startListening()}
+                                    onClick={handleVoiceToggle}
+                                    disabled={isTranscribing}
                                     sx={{
                                         width: 80, height: 80,
-                                        bgcolor: isListening ? theme.accent : theme.cardBg,
-                                        color: isListening ? (isDarkMode ? 'black' : 'white') : theme.text,
+                                        bgcolor: (isRecording || isTranscribing) ? theme.accent : theme.cardBg,
+                                        color: (isRecording || isTranscribing) ? (isDarkMode ? 'black' : 'white') : theme.text,
                                         border: `2px solid ${theme.cardBorder}`,
-                                        boxShadow: isListening ? `0 0 50px ${theme.accent}88` : 'none',
+                                        boxShadow: isRecording ? `0 0 50px ${theme.accent}88` : 'none',
+                                        opacity: isTranscribing ? 0.7 : 1,
                                         transition: 'all 0.3s ease'
                                     }}
                                 >
-                                    {isListening ? <MicIcon sx={{ fontSize: 40 }} /> : <MicOffIcon sx={{ fontSize: 40 }} />}
+                                    {isTranscribing ? <CircularProgress size={30} color="inherit" /> : (isRecording ? <MicIcon sx={{ fontSize: 40 }} /> : <MicOffIcon sx={{ fontSize: 40 }} />)}
                                 </IconButton>
                                 <Typography variant="caption" sx={{
-                                    opacity: isListening ? 1 : 0.6,
+                                    opacity: (isRecording || isTranscribing) ? 1 : 0.6,
                                     letterSpacing: '0.1em',
                                     fontWeight: 600,
-                                    height: '24px', // Fixed height to prevent jump
+                                    height: '24px',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    color: isListening ? theme.accent : 'inherit',
+                                    color: (isRecording || isTranscribing) ? theme.accent : 'inherit',
                                     transition: 'all 0.2s ease'
                                 }}>
-                                    {isListening ? (transcript || "Listening...") : "START VOICE CONVERSATION"}
+                                    {isTranscribing ? "TRANSCRIBING..." : (isRecording ? "RECORDING..." : "START VOICE CONVERSATION")}
                                 </Typography>
 
                                 {/* INTEGRATED INPUT FIELD */}
-                                {!isListening && (
+                                {(!isRecording && !isTranscribing) && (
                                     <TextField
                                         fullWidth
                                         placeholder="Type to ZeroQ..."
