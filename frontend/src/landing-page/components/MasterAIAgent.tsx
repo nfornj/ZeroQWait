@@ -419,7 +419,7 @@ const MasterAIAgent: React.FC = () => {
                                     transition: 'all 0.2s ease',
                                     textAlign: 'center'
                                 }}>
-                                    {isTranscribing ? "TRANSCRIBING..." : (isRecording ? (transcript || "LISTENING...") : "START VOICE CONVERSATION")}
+                                    {isTranscribing ? "TRANSCRIBING..." : (isRecording ? (transcript || "RECORDING...") : "START VOICE CONVERSATION")}
                                 </Typography>
 
                                 {/* INTEGRATED INPUT FIELD */}

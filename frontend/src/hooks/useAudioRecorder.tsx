@@ -46,12 +46,12 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
                 recognition.lang = 'en-US';
 
                 recognition.onresult = (event: any) => {
-                    let interimTranscript = '';
-                    for (let i = event.resultIndex; i < event.results.length; ++i) {
-                        interimTranscript += event.results[i][0].transcript;
+                    let fullTranscript = '';
+                    for (let i = 0; i < event.results.length; ++i) {
+                        fullTranscript += event.results[i][0].transcript;
                     }
-                    if (interimTranscript) {
-                        setTranscript(interimTranscript);
+                    if (fullTranscript) {
+                        setTranscript(fullTranscript);
                     }
                 };
 
