@@ -16,13 +16,15 @@ spec:
       containers:
         - name: asr-service
           image: localhost:5000/asr-service:latest
-          resources:
-            limits:
-              nvidia.com/gpu: 1
+          # resources:  <-- Removed GPU Request due to driver mismatch
+          #   limits:
+          #     nvidia.com/gpu: 1
           env:
             - name: MODEL_SIZE
               value: "medium"
             - name: DEVICE
-              value: "cuda"
+              value: "cpu"      # <-- Changed to CPU
+            - name: COMPUTE_TYPE
+              value: "int8"     # <-- Optimized for CPU
           ports:
             - containerPort: 8000

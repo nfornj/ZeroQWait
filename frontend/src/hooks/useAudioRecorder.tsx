@@ -5,18 +5,24 @@ interface UseAudioRecorderReturn {
     startRecording: () => Promise<void>;
     stopRecording: () => Promise<Blob | null>;
     hasPermission: boolean;
+    transcript: string;
 }
 
 export const useAudioRecorder = (): UseAudioRecorderReturn => {
     const [isRecording, setIsRecording] = useState(false);
     const [hasPermission, setHasPermission] = useState(false);
+    const [transcript, setTranscript] = useState("");
+
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
+    const recognitionRef = useRef<any>(null);
 
     const startRecording = useCallback(async () => {
         try {
+            // 1. Start Audio Recording (Server Side)
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             setHasPermission(true);
+            setTranscript("");
 
             const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
             mediaRecorderRef.current = recorder;
@@ -30,6 +36,33 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
 
             recorder.start();
             setIsRecording(true);
+
+            // 2. Start Speech Recognition (Visual Feedback Only)
+            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+            if (SpeechRecognition) {
+                const recognition = new SpeechRecognition();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.lang = 'en-US';
+
+                recognition.onresult = (event: any) => {
+                    let interimTranscript = '';
+                    for (let i = event.resultIndex; i < event.results.length; ++i) {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                    if (interimTranscript) {
+                        setTranscript(interimTranscript);
+                    }
+                };
+
+                recognition.onerror = (event: any) => {
+                    console.warn("Browser ASR Error (Visual Only):", event.error);
+                };
+
+                recognition.start();
+                recognitionRef.current = recognition;
+            }
+
         } catch (error) {
             console.error('Error accessing microphone:', error);
             setHasPermission(false);
@@ -38,6 +71,12 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
 
     const stopRecording = useCallback((): Promise<Blob | null> => {
         return new Promise((resolve) => {
+            // Stop Browser ASR
+            if (recognitionRef.current) {
+                recognitionRef.current.stop();
+                recognitionRef.current = null;
+            }
+
             if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
                 resolve(null);
                 return;
@@ -62,6 +101,7 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
         isRecording,
         startRecording,
         stopRecording,
-        hasPermission
+        hasPermission,
+        transcript
     };
 };

@@ -77,8 +77,8 @@ const MasterAIAgent: React.FC = () => {
     const latestAIResponse = chatHistory[chatHistory.length - 1];
     const navigate = useNavigate();
 
-    // Voice Recorder (Server-Side ASR)
-    const { isRecording, startRecording, stopRecording, hasPermission } = useAudioRecorder();
+    // Voice Recorder (Server-Side ASR + Browser Preview)
+    const { isRecording, startRecording, stopRecording, hasPermission, transcript } = useAudioRecorder();
 
     // Audio Visualizer
     const { volume } = useAudioVisualizer(isRecording);
@@ -416,9 +416,10 @@ const MasterAIAgent: React.FC = () => {
                                     display: 'flex',
                                     alignItems: 'center',
                                     color: (isRecording || isTranscribing) ? theme.accent : 'inherit',
-                                    transition: 'all 0.2s ease'
+                                    transition: 'all 0.2s ease',
+                                    textAlign: 'center'
                                 }}>
-                                    {isTranscribing ? "TRANSCRIBING..." : (isRecording ? "RECORDING..." : "START VOICE CONVERSATION")}
+                                    {isTranscribing ? "TRANSCRIBING..." : (isRecording ? (transcript || "LISTENING...") : "START VOICE CONVERSATION")}
                                 </Typography>
 
                                 {/* INTEGRATED INPUT FIELD */}
