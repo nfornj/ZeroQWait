@@ -674,7 +674,7 @@ async def search_shops(
         if category and result and len(result) > 0:
             original_query = ctx.deps.context.get("original_user_message", "")
             if original_query:
-                await category_manager._learn_from_query(original_query, category)
+                category_manager._learn_from_query(original_query, category)
         
         # Log
         logger.info(
