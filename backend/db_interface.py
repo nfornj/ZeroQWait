@@ -17,7 +17,7 @@ else:
     # SQLAlchemy mode
     from database import SessionLocal, engine
     from database import SessionLocal, engine
-    from models import Base, User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, DailyAnalytics, ShopService, ShopCustomer, ConversationHistory
+    from models import Base, User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, DailyAnalytics, ShopService, ShopCustomer, ConversationHistory, CategoryAlias, LearnedSynonym
     import models
     supabase = None
 
@@ -745,6 +745,105 @@ class DatabaseInterface:
             else:
                 result[column.name] = value
         return result
+
+    # Agent / Category Support
+    def get_all_shops(self) -> List[Dict]:
+        """Wrapper for get_shops to return all shops for category analysis."""
+        return self.get_shops(limit=1000)
+
+    def get_category_aliases(self) -> List[Dict]:
+        if self.use_supabase:
+            response = supabase.table("category_aliases").select("*").execute()
+            return response.data if response.data else []
+        else:
+            db = self.get_session()
+            try:
+                aliases = db.query(CategoryAlias).all()
+                return [self._model_to_dict(a) for a in aliases]
+            except Exception as e:
+                # Table might not exist yet if migration hasn't run
+                print(f"Error fetching aliases: {e}")
+                return []
+            finally:
+                db.close()
+
+    def add_category(self, category_key: str, display_name: str, aliases: List[str]):
+        """
+        Adds a category definition. 
+        Note: Currently mainly stores aliases as the agent derives categories from shops.
+        """
+        if not aliases:
+            return
+            
+        for alias in aliases:
+            if self.use_supabase:
+                supabase.table("category_aliases").insert({
+                    "category_key": category_key, 
+                    "alias": alias
+                }).execute()
+            else:
+                db = self.get_session()
+                try:
+                    # Check existing
+                    exists = db.query(CategoryAlias).filter(
+                        CategoryAlias.category_key == category_key,
+                        CategoryAlias.alias == alias
+                    ).first()
+                    
+                    if not exists:
+                        obj = CategoryAlias(category_key=category_key, alias=alias)
+                        db.add(obj)
+                        db.commit()
+                finally:
+                    db.close()
+
+    def get_learned_synonyms(self) -> List[Dict]:
+        if self.use_supabase:
+            response = supabase.table("learned_synonyms").select("*").execute()
+            return response.data if response.data else []
+        else:
+            db = self.get_session()
+            try:
+                synonyms = db.query(LearnedSynonym).all()
+                return [self._model_to_dict(s) for s in synonyms]
+            except Exception:
+                return []
+            finally:
+                db.close()
+
+    def add_learned_synonym(self, query_term: str, category: str, full_query: str = None, timestamp: str = None):
+        data = {
+            "query_term": query_term,
+            "category": category,
+            "full_query": full_query,
+            "created_at": timestamp or datetime.utcnow().isoformat()
+        }
+        
+        if self.use_supabase:
+            supabase.table("learned_synonyms").insert(data).execute()
+        else:
+            db = self.get_session()
+            try:
+                # Check for duplicate term mapping
+                exists = db.query(LearnedSynonym).filter(
+                    LearnedSynonym.query_term == query_term,
+                    LearnedSynonym.category == category
+                ).first()
+                
+                if not exists:
+                    # Parse timestamp if string
+                    if isinstance(data['created_at'], str):
+                        try:
+                            data['created_at'] = datetime.fromisoformat(data['created_at'])
+                        except:
+                            data['created_at'] = datetime.utcnow()
+                            
+                    obj = LearnedSynonym(**data)
+                    db.add(obj)
+                    db.commit()
+            finally:
+                db.close()
+
 
 
     # Analytics operations

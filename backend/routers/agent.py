@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from auth_utils import get_current_user_optional
-from agent_logic import FrontDeskAgent, MasterAgent
+from agent_logic import MasterAgent
 from db_interface import db_interface
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -16,6 +16,7 @@ class AgentChatRequest(BaseModel):
     longitude: Optional[float] = None
     context: Optional[Dict[str, Any]] = None
     session_id: Optional[str] = None
+    is_voice: bool = False
 
 # --- Simple In-Memory Rate Limiter ---
 import time
@@ -44,39 +45,8 @@ def check_rate_limit(ip: str) -> bool:
 async def agent_health():
     return {"status": "ok", "message": "Agent router is active"}
 
-@router.post("/chat/{shop_id}")
-async def agent_chat(
-    shop_id: int,
-    request: AgentChatRequest,
-    current_user: Optional[dict] = Depends(get_current_user_optional)
-):
-    """
-    Intelligent Agent Chat Endpoint.
-    Acts as the 'Front Desk' for the shop.
-    """
-    try:
-        # Get shop info for the agent persona
-        shop = db_interface.get_shop_by_id(shop_id)
-        if not shop:
-            raise HTTPException(status_code=404, detail="Shop not found")
-        
-        # Initialize Agent
-        agent = FrontDeskAgent(
-            shop_id=shop_id, 
-            shop_name=shop["name"],
-            ai_agent_name=shop.get("ai_agent_name")
-        )
-        
-        # Process Message
-        result = await agent.chat(request.message, request.history)
-        
-        return result
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Agent Error: {str(e)}"
-        )
-
+# Remove Shop-specific FrontDesk agent for now as it was removed from core logic.
+# Can be re-enabled if MasterAgent supports shop-specific info routing.
 
 @router.post("/master/chat")
 async def master_agent_chat(
@@ -100,16 +70,22 @@ async def master_agent_chat(
         # 2. Use Session ID from request, or fallback to IP-based session for guests
         final_session_id = request.session_id or f"guest_{client_ip}"
         
+        # 3. Determine User ID
+        user_id = str(current_user["id"]) if current_user else f"anon_{client_ip}"
+
         result = await agent.chat(
             session_id=final_session_id,
             user_msg=request.message, 
             history=request.history, 
             latitude=request.latitude, 
             longitude=request.longitude,
-            context=request.context
+            context=request.context,
+            user_id=user_id,
+            is_voice=request.is_voice
         )
-        print(f"[DEBUG] Master agent response: {result['response'][:50]}...")
+        print(f"[DEBUG] Master agent response: {result.get('response', '')[:50]}...")
         return result
+
     except Exception as e:
         import traceback
         traceback.print_exc()

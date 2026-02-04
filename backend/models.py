@@ -235,3 +235,20 @@ class ConversationHistory(Base):
     content = Column(Text, nullable=False)
     tool_call_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class CategoryAlias(Base):
+    __tablename__ = "category_aliases"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    category_key = Column(String, index=True, nullable=False)
+    alias = Column(String, index=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class LearnedSynonym(Base):
+    __tablename__ = "learned_synonyms"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    query_term = Column(String, index=True, nullable=False)
+    category = Column(String, index=True, nullable=False)
+    full_query = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
