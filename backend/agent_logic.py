@@ -37,7 +37,6 @@ class QueryProcessor:
         # Lightweight LLM agent for query extraction
         self.extraction_agent = Agent(
             model,
-            result_type=str,
             system_prompt="""You are a search query optimizer.
 
 Your job: Extract ONLY the meaningful search terms from user input.
@@ -609,7 +608,6 @@ def create_master_agent():
     return Agent(
         model,
         deps_type=MasterAgentDeps,
-        result_type=MasterResponse,
         system_prompt=get_master_system_prompt(),
         retries=2,
         model_settings={'temperature': 0.3}
