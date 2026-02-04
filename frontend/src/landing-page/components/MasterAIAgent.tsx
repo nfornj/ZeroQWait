@@ -322,35 +322,37 @@ const MasterAIAgent: React.FC = () => {
                     <Box sx={{
                         flex: 1,
                         display: 'flex',
-                        flexDirection: activeViewer ? { xs: 'column', md: 'row-reverse' } : 'column',
-                        alignItems: 'center',
-                        justifyContent: activeViewer ? { xs: 'flex-start', md: 'space-between' } : 'center',
+                        flexDirection: activeViewer ? { xs: 'column', md: 'row' } : 'column',
+                        alignItems: activeViewer ? { xs: 'center', md: 'flex-start' } : 'center',
+                        justifyContent: activeViewer ? { xs: 'flex-start', md: 'center' } : 'center',
                         py: activeViewer ? { xs: 2, md: 4 } : { xs: 4, md: 10 },
-                        px: { xs: 2, sm: 4, md: 6 },
-                        gap: { xs: 2, md: 3 },
+                        px: { xs: 2, sm: 4, md: 4 },
+                        gap: { xs: 2, md: 4 },
                         width: '100%',
-                        maxWidth: '1600px',
+                        maxWidth: activeViewer ? '1400px' : '900px',
                         mx: 'auto',
                         minHeight: 'min-content',
-                        pb: { xs: 4, md: 10 } // Added bottom padding to ensure content isn't cut off by input
+                        pb: { xs: 4, md: 10 },
+                        transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
                     }}>
 
-                        {/* LEFT COLUMN: Agent, Transcript & Controls */}
+                        {/* CHAT COLUMN: Agent, Transcript & Controls */}
                         <Box sx={{
-                            flex: activeViewer ? { xs: 'none', md: '0 0 35%' } : 'none',
+                            flex: activeViewer ? { xs: 'none', md: '0 0 45%' } : 'none',
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: { xs: 2, md: 4 },
+                            justifyContent: activeViewer ? 'flex-start' : 'center',
+                            gap: { xs: 2, md: 3 },
                             transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
                             width: '100%',
-                            maxWidth: activeViewer ? { xs: '100%', md: 420 } : { xs: '100%', md: 800 },
+                            maxWidth: activeViewer ? { xs: '100%', md: 480 } : { xs: '100%', md: 700 },
                             minHeight: 'auto',
                             position: { xs: 'relative', md: activeViewer ? 'sticky' : 'relative' },
-                            top: { xs: 'auto', md: 0 },
+                            top: { xs: 'auto', md: 24 },
                             py: { xs: 2, md: 0 },
-                            textAlign: 'center'
+                            textAlign: 'center',
+                            order: { xs: 0, md: activeViewer ? 1 : 0 }
                         }}>
                             <Box sx={{
                                 position: 'relative',
@@ -477,25 +479,34 @@ const MasterAIAgent: React.FC = () => {
                             </Box>
                         </Box>
 
-                        {/* RIGHT COLUMN: Content Viewer */}
+                        {/* RESULTS PANEL: Content Viewer */}
                         {(activeViewer || isProcessing) && (
-                            <Fade in={true} timeout={1000}>
+                            <Fade in={true} timeout={600}>
                                 <Box sx={{
-                                    flex: 1,
+                                    flex: { xs: 'none', md: '1 1 55%' },
                                     width: '100%',
-                                    maxWidth: { xs: '100%', md: 'none' },
-                                    maxHeight: { xs: '55vh', md: '90vh' },
+                                    maxWidth: { xs: '100%', md: 600 },
+                                    maxHeight: { xs: '55vh', md: '80vh' },
                                     overflowY: 'auto',
-                                    p: { xs: 2, sm: 3, md: 4 },
-                                    borderRadius: { xs: '20px', md: '32px' },
-                                    bgcolor: isDarkMode ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.7)',
-                                    border: `1px solid ${theme.cardBorder}`,
-                                    backdropFilter: 'blur(20px)',
-                                    boxShadow: '0 20px 80px rgba(0,0,0,0.1)',
+                                    p: { xs: 2, sm: 3, md: 3 },
+                                    borderRadius: { xs: '20px', md: '28px' },
+                                    bgcolor: isDarkMode ? 'rgba(15,15,25,0.6)' : 'rgba(255,255,255,0.85)',
+                                    border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+                                    backdropFilter: 'blur(24px)',
+                                    boxShadow: isDarkMode
+                                        ? '0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)'
+                                        : '0 20px 60px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8)',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    alignItems: 'center',
+                                    alignItems: 'stretch',
                                     justifyContent: (isProcessing && !activeViewer) ? 'center' : 'flex-start',
+                                    transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    order: { xs: 1, md: 0 },
+                                    '&::-webkit-scrollbar': { width: '6px' },
+                                    '&::-webkit-scrollbar-thumb': {
+                                        background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                                        borderRadius: '10px'
+                                    }
                                 }}>
                                     {isProcessing && (
                                         <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 3 }}>
