@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Box,
     Typography,
@@ -77,8 +77,46 @@ const MasterAIAgent: React.FC = () => {
     const latestAIResponse = chatHistory[chatHistory.length - 1];
     const navigate = useNavigate();
 
-    // Voice Recorder (Server-Side ASR + Browser Preview)
-    const { isRecording, startRecording, stopRecording, hasPermission, transcript } = useAudioRecorder();
+    // Ref to hold the submit function (solves circular dependency)
+    const submitAudioRef = useRef<() => Promise<void>>();
+
+    // Voice Recorder (Server-Side ASR + Browser Preview + Auto-Submit)
+    // Pass wrapper that calls the ref
+    const { isRecording, startRecording, stopRecording, hasPermission, transcript } = useAudioRecorder(() => {
+        if (submitAudioRef.current) {
+            submitAudioRef.current();
+        }
+    });
+
+    // Audio Submission Logic (Extracted for Auto-Submit)
+    const submitAudio = useCallback(async () => {
+        const audioBlob = await stopRecording();
+        if (audioBlob) {
+            setIsTranscribing(true);
+            try {
+                const formData = new FormData();
+                formData.append('file', audioBlob, 'recording.webm');
+
+                const response = await axios.post('/api/voice/transcribe', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+
+                const text = response.data.text;
+                if (text && text.trim()) {
+                    handleChat(text);
+                }
+            } catch (error) {
+                console.error('Transcription failed:', error);
+            } finally {
+                setIsTranscribing(false);
+            }
+        }
+    }, [stopRecording]); // handleChat is stable
+
+    // Update ref whenever submitAudio changes
+    useEffect(() => {
+        submitAudioRef.current = submitAudio;
+    }, [submitAudio]);
 
     // Audio Visualizer
     const { volume } = useAudioVisualizer(isRecording);
@@ -95,30 +133,8 @@ const MasterAIAgent: React.FC = () => {
 
     const handleVoiceToggle = async () => {
         if (isRecording) {
-            // STOP Recording & Upload
-            const audioBlob = await stopRecording();
-            if (audioBlob) {
-                setIsTranscribing(true);
-                try {
-                    const formData = new FormData();
-                    formData.append('file', audioBlob, 'recording.webm');
-
-                    const response = await axios.post('/api/voice/transcribe', formData, {
-                        headers: { 'Content-Type': 'multipart/form-data' }
-                    });
-
-                    const text = response.data.text;
-                    if (text && text.trim()) {
-                        handleChat(text);
-                    }
-                } catch (error) {
-                    console.error('Transcription failed:', error);
-                } finally {
-                    setIsTranscribing(false);
-                }
-            }
+            await submitAudio();
         } else {
-            // START Recording
             await startRecording();
         }
     };
@@ -412,12 +428,18 @@ const MasterAIAgent: React.FC = () => {
                                     opacity: (isRecording || isTranscribing) ? 1 : 0.6,
                                     letterSpacing: '0.1em',
                                     fontWeight: 600,
-                                    height: '24px',
+                                    minHeight: '24px',
+                                    height: 'auto',
                                     display: 'flex',
                                     alignItems: 'center',
+                                    justifyContent: 'center',
                                     color: (isRecording || isTranscribing) ? theme.accent : 'inherit',
                                     transition: 'all 0.2s ease',
-                                    textAlign: 'center'
+                                    textAlign: 'center',
+                                    maxWidth: '600px',
+                                    width: '100%',
+                                    margin: '0 auto',
+                                    lineHeight: '1.6'
                                 }}>
                                     {isTranscribing ? "TRANSCRIBING..." : (isRecording ? (transcript || "RECORDING...") : "START VOICE CONVERSATION")}
                                 </Typography>

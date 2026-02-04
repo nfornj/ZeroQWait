@@ -8,7 +8,7 @@ interface UseAudioRecorderReturn {
     transcript: string;
 }
 
-export const useAudioRecorder = (): UseAudioRecorderReturn => {
+export const useAudioRecorder = (onSilence?: () => void): UseAudioRecorderReturn => {
     const [isRecording, setIsRecording] = useState(false);
     const [hasPermission, setHasPermission] = useState(false);
     const [transcript, setTranscript] = useState("");
@@ -16,6 +16,20 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
     const recognitionRef = useRef<any>(null);
+    const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    const resetSilenceTimer = useCallback(() => {
+        if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+        }
+
+        if (onSilence) {
+            silenceTimerRef.current = setTimeout(() => {
+                console.log("[useAudioRecorder] Silence detected, triggering auto-submit...");
+                onSilence();
+            }, 2500); // 2.5 seconds of silence
+        }
+    }, [onSilence]);
 
     const startRecording = useCallback(async () => {
         try {
@@ -36,6 +50,7 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
 
             recorder.start();
             setIsRecording(true);
+            resetSilenceTimer();
 
             // 2. Start Speech Recognition (Visual Feedback Only)
             const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -46,12 +61,12 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
                 recognition.lang = 'en-US';
 
                 recognition.onresult = (event: any) => {
-                    let fullTranscript = '';
-                    for (let i = 0; i < event.results.length; ++i) {
-                        fullTranscript += event.results[i][0].transcript;
-                    }
-                    if (fullTranscript) {
-                        setTranscript(fullTranscript);
+                    const currentTranscript = Array.from(event.results)
+                        .map((result: any) => result[0].transcript)
+                        .join('');
+                    if (currentTranscript.trim()) {
+                        setTranscript(currentTranscript);
+                        resetSilenceTimer(); // Reset timer on speech
                     }
                 };
 
@@ -59,8 +74,23 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
                     console.warn("Browser ASR Error (Visual Only):", event.error);
                 };
 
-                recognition.start();
-                recognitionRef.current = recognition;
+                recognition.onend = () => {
+                    // Auto-restart if still recording (handles timeouts/silence)
+                    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                        try {
+                            recognition.start();
+                        } catch (e) {
+                            console.warn("Failed to restart ASR:", e);
+                        }
+                    }
+                };
+
+                try {
+                    recognition.start();
+                    recognitionRef.current = recognition;
+                } catch (e) {
+                    console.warn("Could not start Browser ASR:", e);
+                }
             }
 
         } catch (error) {
@@ -75,6 +105,11 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
             if (recognitionRef.current) {
                 recognitionRef.current.stop();
                 recognitionRef.current = null;
+            }
+
+            if (silenceTimerRef.current) {
+                clearTimeout(silenceTimerRef.current);
+                silenceTimerRef.current = null;
             }
 
             if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
