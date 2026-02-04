@@ -136,9 +136,134 @@ Return ONLY the extracted terms, nothing else. If no meaningful terms, return em
             # Let the error propagate - no fallback
             raise
 
-
 # --- Global Query Processor ---
 query_processor = QueryProcessor()
+
+
+# --- LLM-based Intent Router ---
+
+class IntentRouter:
+    """
+    LLM-based intent classification.
+    NO hardcoded patterns - pure LLM decision making.
+    Routes to: CONVERSATION (no tools) or ACTION (needs tools)
+    """
+    
+    def __init__(self):
+        self.router_agent = Agent(
+            model,
+            system_prompt="""You are an intent classifier for a queue management assistant.
+
+Classify user messages into ONE of these categories:
+
+CONVERSATION - Greetings, small talk, general questions, thanks
+Examples:
+- "hello" → CONVERSATION
+- "hi there" → CONVERSATION  
+- "thanks" → CONVERSATION
+- "how are you" → CONVERSATION
+- "what is zeroqwait" → CONVERSATION
+- "who are you" → CONVERSATION
+- "cool" → CONVERSATION
+- "okay" → CONVERSATION
+
+ACTION - User wants to DO something specific that requires tools
+Examples:
+- "find me a barber" → ACTION
+- "show pricing" → ACTION  
+- "search for salons" → ACTION
+- "looking for restaurants" → ACTION
+- "what are the features" → ACTION
+
+Rules:
+1. If user is greeting or being social → CONVERSATION
+2. If user mentions specific business types (barber, salon, restaurant, etc.) → ACTION
+3. If user asks to "find", "search", "show me" + shops/businesses → ACTION
+4. If user asks about pricing, features, FAQ → ACTION
+5. If unsure, lean towards CONVERSATION
+
+Respond with ONLY one word: CONVERSATION or ACTION
+""",
+            model_settings={'temperature': 0.1, 'max_tokens': 10}
+        )
+        
+        # Conversational agent (no tools)
+        self.conversation_agent = Agent(
+            model,
+            system_prompt="""You are ZeroQ, the friendly AI assistant for ZeroQwait - a queue management platform.
+
+You help customers discover local businesses and join queues remotely.
+
+**About ZeroQwait:**
+- Helps customers find local businesses
+- Allows remote queue joining
+- Real-time wait time estimates
+- SMS notifications when it's your turn
+
+**Pricing Plans:**
+- Free: Basic queue management, up to 50 customers/month
+- Premium ($29/mo): Unlimited customers, analytics, SMS
+- Enterprise: Custom solutions
+
+**Your capabilities:**
+1. Help find local shops (barbers, salons, restaurants, etc.)
+2. Explain pricing plans
+3. Describe platform features
+4. Answer questions
+
+**Response style:**
+- Be warm, friendly, and concise (2-3 sentences max)
+- Use 1-2 emojis sparingly
+- For greetings, offer to help with shops, pricing, or questions
+- Don't be robotic, be human-like
+
+Respond naturally to the user's message.
+""",
+            model_settings={'temperature': 0.7}
+        )
+    
+    async def classify_intent(self, user_msg: str) -> str:
+        """Classify user intent using pure LLM."""
+        try:
+            result = await self.router_agent.run(user_msg)
+            intent = result.output.strip().upper() if hasattr(result, 'output') else str(result).strip().upper()
+            
+            # Normalize response
+            if 'CONVERSATION' in intent:
+                return 'CONVERSATION'
+            elif 'ACTION' in intent:
+                return 'ACTION'
+            else:
+                # Default to conversation if unclear
+                logger.debug(f"Unclear intent response: {intent}, defaulting to CONVERSATION")
+                return 'CONVERSATION'
+        except Exception as e:
+            logger.error(f"Intent classification error: {e}")
+            return 'CONVERSATION'  # Safe default
+    
+    async def get_conversational_response(self, user_msg: str, context: Dict[str, Any] = None) -> str:
+        """Get a conversational response without tools."""
+        try:
+            # Add any relevant context
+            context_str = ""
+            if context:
+                if context.get('active_view'):
+                    context_str += f"User is viewing: {context['active_view']} page. "
+                if context.get('city'):
+                    context_str += f"User is in: {context['city']}. "
+            
+            full_msg = f"{context_str}\n\nUser: {user_msg}" if context_str else user_msg
+            
+            result = await self.conversation_agent.run(full_msg)
+            return result.output if hasattr(result, 'output') else str(result)
+        except Exception as e:
+            logger.error(f"Conversation error: {e}")
+            return "Hello! 👋 I'm ZeroQ. How can I help you today? I can help you find shops, check pricing, or answer questions!"
+
+
+# --- Global Intent Router ---
+intent_router = IntentRouter()
+
 
 
 # --- Category Manager ---
@@ -799,16 +924,29 @@ class MasterAgent:
                 f"msg='{user_msg[:50]}...' | context_items={len(context_parts)}"
             )
             
-            # Run agent
-            result = await self.agent.run(full_msg, deps=deps)
+            # Step 1: Classify intent using LLM (no hardcoded patterns)
+            intent = await intent_router.classify_intent(user_msg)
+            logger.info(f"Intent classified as: {intent}")
             
-            # Extract response
-            if hasattr(result, 'data') and hasattr(result.data, 'response'):
-                final_text = result.data.response
-            elif hasattr(result, 'output'):
-                final_text = result.output
+            # Step 2: Route based on intent
+            if intent == 'CONVERSATION':
+                # Use conversational agent (no tools)
+                final_text = await intent_router.get_conversational_response(user_msg, context)
+                logger.info(f"Conversational response generated (no tools)")
             else:
-                final_text = str(result)
+                # Use tool-enabled agent for actions
+                full_context = "\n".join(context_parts)
+                full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
+                
+                result = await self.agent.run(full_msg, deps=deps)
+                
+                # Extract response
+                if hasattr(result, 'data') and hasattr(result.data, 'response'):
+                    final_text = result.data.response
+                elif hasattr(result, 'output'):
+                    final_text = result.output
+                else:
+                    final_text = str(result)
             
             # Voice optimization
             if is_voice and len(final_text) > 150:
