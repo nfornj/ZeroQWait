@@ -324,43 +324,41 @@ const MasterAIAgent: React.FC = () => {
                         flex: 1,
                         display: 'flex',
                         flexDirection: activeViewer ? { xs: 'column', md: 'row' } : 'column',
-                        alignItems: activeViewer ? { xs: 'center', md: 'flex-start' } : 'center',
-                        justifyContent: activeViewer ? { xs: 'flex-start', md: 'center' } : 'center',
-                        py: activeViewer ? { xs: 2, md: 4 } : { xs: 4, md: 10 },
-                        px: { xs: 2, sm: 4, md: 4 },
-                        gap: { xs: 2, md: 4 },
+                        alignItems: activeViewer ? { xs: 'stretch', md: 'flex-start' } : 'center',
+                        justifyContent: 'center',
+                        py: { xs: 2, sm: 3, md: 4 },
+                        px: { xs: 2, sm: 3, md: 4, lg: 6 },
+                        gap: { xs: 3, sm: 3, md: 4 },
                         width: '100%',
-                        maxWidth: activeViewer ? '1400px' : '900px',
+                        maxWidth: activeViewer ? '1400px' : '800px',
                         mx: 'auto',
-                        minHeight: 'min-content',
-                        pb: { xs: 4, md: 10 },
+                        minHeight: activeViewer ? 'auto' : '60vh',
                         transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
                     }}>
 
                         {/* CHAT COLUMN: Agent, Transcript & Controls */}
                         <Box sx={{
-                            flex: activeViewer ? { xs: 'none', md: '0 0 45%' } : 'none',
+                            flex: activeViewer ? { xs: '1 1 auto', md: '0 0 40%' } : 'none',
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
-                            justifyContent: activeViewer ? 'flex-start' : 'center',
-                            gap: { xs: 2, md: 3 },
+                            justifyContent: 'flex-start',
+                            gap: { xs: 2, sm: 2.5, md: 3 },
                             transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
                             width: '100%',
-                            maxWidth: activeViewer ? { xs: '100%', md: 480 } : { xs: '100%', md: 700 },
-                            minHeight: 'auto',
-                            position: { xs: 'relative', md: activeViewer ? 'sticky' : 'relative' },
-                            top: { xs: 'auto', md: 24 },
-                            py: { xs: 2, md: 0 },
-                            textAlign: 'center',
+                            maxWidth: activeViewer ? { xs: '100%', md: '420px' } : { xs: '100%', sm: '500px', md: '600px' },
+                            minHeight: activeViewer ? { xs: 'auto', md: '50vh' } : 'auto',
+                            position: 'relative',
+                            py: { xs: 1, md: 2 },
                             order: { xs: 0, md: activeViewer ? 1 : 0 }
                         }}>
                             <Box sx={{
                                 position: 'relative',
-                                width: activeViewer ? { xs: 100, md: 140 } : { xs: 180, sm: 220, md: 280 },
-                                height: activeViewer ? { xs: 100, md: 140 } : { xs: 180, sm: 220, md: 280 },
+                                width: activeViewer ? { xs: 80, sm: 100, md: 120 } : { xs: 150, sm: 180, md: 220 },
+                                height: activeViewer ? { xs: 80, sm: 100, md: 120 } : { xs: 150, sm: 180, md: 220 },
                                 transition: 'all 0.5s ease',
-                                flexShrink: 0
+                                flexShrink: 0,
+                                mb: activeViewer ? 1 : 2
                             }}>
                                 <ParticleSphere volume={volume} isListening={isRecording} color={theme.accent} isProcessing={isProcessing} />
                             </Box>
@@ -368,18 +366,21 @@ const MasterAIAgent: React.FC = () => {
                             <Box
                                 ref={scrollRef}
                                 sx={{
-                                    textAlign: activeViewer ? { xs: 'center', md: 'left' } : 'center',
-                                    maxHeight: activeViewer ? '60vh' : '30vh',
-                                    overflowY: 'auto',
                                     width: '100%',
+                                    maxHeight: activeViewer ? { xs: '35vh', sm: '40vh', md: '50vh' } : { xs: '25vh', sm: '30vh', md: '35vh' },
+                                    overflowY: 'auto',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    alignItems: 'stretch', // Fill width
-                                    gap: 2,
-                                    px: { xs: 2, md: 2 },
-                                    maskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)',
-                                    WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)',
-                                    '&::-webkit-scrollbar': { display: 'none' },
+                                    gap: 1.5,
+                                    px: { xs: 1, sm: 1.5, md: 2 },
+                                    py: 1,
+                                    maskImage: 'linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)',
+                                    WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)',
+                                    '&::-webkit-scrollbar': { width: '4px' },
+                                    '&::-webkit-scrollbar-thumb': {
+                                        background: isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                                        borderRadius: '4px'
+                                    }
                                 }}
                             >
                                 {chatHistory.map((chat, index) => (
@@ -390,30 +391,36 @@ const MasterAIAgent: React.FC = () => {
                                             display: 'flex',
                                             flexDirection: 'column',
                                             alignItems: chat.role === 'user' ? 'flex-end' : 'flex-start',
-                                            opacity: index < chatHistory.length - 2 ? 0.8 : 1, // Keep recent messages distinct
-                                            transition: 'all 0.3s ease'
+                                            opacity: index < chatHistory.length - 2 ? 0.75 : 1,
+                                            transition: 'opacity 0.3s ease'
                                         }}
                                     >
                                         <Box
                                             sx={{
                                                 bgcolor: chat.role === 'user' ? theme.accent : theme.cardBg,
                                                 color: chat.role === 'user' ? (isDarkMode ? '#000' : '#fff') : theme.text,
-                                                p: 2,
-                                                px: 2.5,
-                                                borderRadius: chat.role === 'user' ? '24px 24px 4px 24px' : '24px 24px 24px 4px',
-                                                maxWidth: { xs: '85%', md: '80%' },
+                                                py: { xs: 1.5, md: 2 },
+                                                px: { xs: 2, md: 2.5 },
+                                                borderRadius: chat.role === 'user' ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
+                                                maxWidth: { xs: '88%', sm: '85%', md: '85%' },
                                                 border: chat.role === 'user' ? 'none' : `1px solid ${theme.cardBorder}`,
-                                                boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-                                                position: 'relative',
-                                                '& p': { m: 0, mb: 1, lineHeight: 1.6, fontSize: activeViewer ? '0.95rem' : '1.1rem' },
+                                                boxShadow: chat.role === 'user'
+                                                    ? '0 2px 8px rgba(0,0,0,0.1)'
+                                                    : '0 2px 12px rgba(0,0,0,0.05)',
+                                                '& p': {
+                                                    m: 0,
+                                                    mb: 0.75,
+                                                    lineHeight: 1.5,
+                                                    fontSize: { xs: '0.9rem', sm: '0.95rem', md: '1rem' }
+                                                },
                                                 '& p:last-child': { mb: 0 },
-                                                '& ul, & ol': { pl: 2.5, m: 0, mb: 1 },
-                                                '& li': { mb: 0.5 },
-                                                '& strong': { fontWeight: 700, color: chat.role === 'user' ? 'inherit' : theme.accent }
+                                                '& ul, & ol': { pl: 2, m: 0, mb: 0.75 },
+                                                '& li': { mb: 0.25, fontSize: { xs: '0.85rem', sm: '0.9rem', md: '0.95rem' } },
+                                                '& strong': { fontWeight: 600, color: chat.role === 'user' ? 'inherit' : theme.accent }
                                             }}
                                         >
                                             {chat.role === 'user' ? (
-                                                <Typography variant="body1" sx={{ fontSize: '1rem', fontWeight: 500 }}>{chat.text}</Typography>
+                                                <Typography variant="body1" sx={{ fontSize: { xs: '0.9rem', md: '1rem' }, fontWeight: 500 }}>{chat.text}</Typography>
                                             ) : (
                                                 <ReactMarkdown>{chat.text}</ReactMarkdown>
                                             )}
@@ -495,29 +502,30 @@ const MasterAIAgent: React.FC = () => {
                         {(activeViewer || isProcessing) && (
                             <Fade in={true} timeout={600}>
                                 <Box sx={{
-                                    flex: { xs: 'none', md: '1 1 55%' },
+                                    flex: { xs: '1 1 auto', md: '1 1 60%' },
                                     width: '100%',
-                                    maxWidth: { xs: '100%', md: 600 },
-                                    maxHeight: { xs: '55vh', md: '80vh' },
+                                    maxWidth: { xs: '100%', sm: '100%', md: '650px' },
+                                    minHeight: { xs: '40vh', md: '50vh' },
+                                    maxHeight: { xs: '60vh', sm: '65vh', md: '75vh' },
                                     overflowY: 'auto',
-                                    p: { xs: 2, sm: 3, md: 3 },
-                                    borderRadius: { xs: '20px', md: '28px' },
-                                    bgcolor: isDarkMode ? 'rgba(15,15,25,0.6)' : 'rgba(255,255,255,0.85)',
-                                    border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
-                                    backdropFilter: 'blur(24px)',
+                                    p: { xs: 2, sm: 2.5, md: 3 },
+                                    borderRadius: { xs: '16px', sm: '20px', md: '24px' },
+                                    bgcolor: isDarkMode ? 'rgba(15,15,25,0.7)' : 'rgba(255,255,255,0.9)',
+                                    border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+                                    backdropFilter: 'blur(20px)',
                                     boxShadow: isDarkMode
-                                        ? '0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)'
-                                        : '0 20px 60px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8)',
+                                        ? '0 12px 40px rgba(0,0,0,0.3)'
+                                        : '0 12px 40px rgba(0,0,0,0.06)',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     alignItems: 'stretch',
                                     justifyContent: (isProcessing && !activeViewer) ? 'center' : 'flex-start',
                                     transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
                                     order: { xs: 1, md: 0 },
-                                    '&::-webkit-scrollbar': { width: '6px' },
+                                    '&::-webkit-scrollbar': { width: '5px' },
                                     '&::-webkit-scrollbar-thumb': {
-                                        background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                                        borderRadius: '10px'
+                                        background: isDarkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
+                                        borderRadius: '5px'
                                     }
                                 }}>
                                     {isProcessing && (
