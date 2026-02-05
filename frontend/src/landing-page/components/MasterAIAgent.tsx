@@ -563,6 +563,41 @@ const MasterAIAgent: React.FC = () => {
                                         </Box>
                                     </Box>
                                 )}
+
+                                {/* Live Transcript Bubble - Shows during recording/transcribing */}
+                                {(isRecording || isTranscribing) && (
+                                    <Box
+                                        sx={{
+                                            width: '100%',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'flex-end',
+                                            animation: 'fadeIn 0.3s ease',
+                                            opacity: isTranscribing ? 0.7 : 1
+                                        }}
+                                    >
+                                        <Box
+                                            sx={{
+                                                bgcolor: theme.accent,
+                                                color: isDarkMode ? '#000' : '#fff',
+                                                py: { xs: 1.5, md: 2 },
+                                                px: { xs: 2, md: 2.5 },
+                                                borderRadius: '20px 20px 4px 20px',
+                                                maxWidth: { xs: '88%', sm: '85%', md: '85%' },
+                                                boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
+                                                minWidth: '100px'
+                                            }}
+                                        >
+                                            <Typography variant="body1" sx={{ fontSize: { xs: '0.9rem', md: '1rem' }, fontWeight: 500 }}>
+                                                {transcript || (isTranscribing ? "Processing audio..." : "Listening...")}
+                                                {isRecording && !transcript && (
+                                                    <span style={{ display: 'inline-block', width: '4px', height: '14px', backgroundColor: 'currentColor', marginLeft: '4px', animation: 'blink 1s step-end infinite', verticalAlign: 'middle' }} />
+                                                )}
+                                            </Typography>
+                                            <style>{`@keyframes blink { 50% { opacity: 0; } }`}</style>
+                                        </Box>
+                                    </Box>
+                                )}
                             </Box>
 
                             {/* Text Input Section - Hidden during voice mode */}
