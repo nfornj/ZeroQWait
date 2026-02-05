@@ -37,6 +37,7 @@ const MasterAIAgent: React.FC = () => {
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [isTranscribing, setIsTranscribing] = useState(false);
+    const [isToggling, setIsToggling] = useState(false);
     const [location, setLocation] = useState<{ lat: number, lng: number } | null>(null);
 
     // Capture Geolocation
@@ -133,10 +134,19 @@ const MasterAIAgent: React.FC = () => {
     };
 
     const handleVoiceToggle = async () => {
-        if (isRecording) {
-            await submitAudio();
-        } else {
-            await startRecording();
+        if (isToggling || isProcessing || isTranscribing) return;
+
+        setIsToggling(true);
+        try {
+            if (isRecording) {
+                await submitAudio();
+            } else {
+                await startRecording();
+            }
+        } catch (error) {
+            console.error("Voice toggle failed:", error);
+        } finally {
+            setIsToggling(false);
         }
     };
 
@@ -362,7 +372,8 @@ const MasterAIAgent: React.FC = () => {
                                     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                                     flexShrink: 0,
                                     mb: activeViewer ? 1 : 2,
-                                    cursor: isTranscribing ? 'wait' : 'pointer',
+                                    cursor: (isTranscribing || isToggling) ? 'wait' : 'pointer',
+                                    opacity: isToggling ? 0.7 : 1,
                                     animation: isProcessing ? 'orbPulse 1.5s ease-in-out infinite' : (isRecording ? 'orbGlow 1s ease-in-out infinite' : 'none'),
                                     '@keyframes orbPulse': {
                                         '0%, 100%': { transform: 'scale(1)', opacity: 1 },
@@ -373,15 +384,17 @@ const MasterAIAgent: React.FC = () => {
                                         '50%': { filter: `drop-shadow(0 0 40px ${theme.accent}aa)` }
                                     },
                                     '&:hover': {
-                                        transform: 'scale(1.05)',
-                                        filter: `brightness(1.1) drop-shadow(0 0 25px ${theme.accent}55)`
+                                        transform: (isTranscribing || isToggling) ? 'none' : 'scale(1.05)',
+                                        filter: (isTranscribing || isToggling) ? 'none' : `brightness(1.1) drop-shadow(0 0 25px ${theme.accent}55)`
                                     },
                                     '&:active': {
-                                        transform: 'scale(0.98)'
+                                        transform: (isTranscribing || isToggling) ? 'none' : 'scale(0.98)'
                                     }
                                 }}
                             >
-                                <ParticleSphere volume={volume} isListening={isRecording} color={theme.accent} isProcessing={isProcessing} />
+                                <Box sx={{ pointerEvents: 'none', width: '100%', height: '100%' }}>
+                                    <ParticleSphere volume={volume} isListening={isRecording} color={theme.accent} isProcessing={isProcessing} />
+                                </Box>
 
                                 {/* Mic Icon Overlay - shows on hover or when idle */}
                                 <Box
@@ -390,7 +403,7 @@ const MasterAIAgent: React.FC = () => {
                                         top: '50%',
                                         left: '50%',
                                         transform: 'translate(-50%, -50%)',
-                                        opacity: (isRecording || isProcessing || isTranscribing) ? 0 : 0.4,
+                                        opacity: (isRecording || isProcessing || isTranscribing || isToggling) ? 0 : 0.4,
                                         transition: 'opacity 0.3s ease',
                                         pointerEvents: 'none',
                                         '& svg': {
@@ -398,11 +411,11 @@ const MasterAIAgent: React.FC = () => {
                                             color: theme.text
                                         },
                                         '.MuiBox-root:hover > &': {
-                                            opacity: (isRecording || isProcessing || isTranscribing) ? 0 : 0.7
+                                            opacity: (isRecording || isProcessing || isTranscribing || isToggling) ? 0 : 0.7
                                         }
                                     }}
                                 >
-                                    {isRecording ? <MicIcon /> : <MicOffIcon />}
+                                    {isToggling ? <CircularProgress size={30} sx={{ color: theme.accent }} /> : (isRecording ? <MicIcon /> : <MicOffIcon />)}
                                 </Box>
                             </Box>
 
@@ -410,14 +423,14 @@ const MasterAIAgent: React.FC = () => {
                             <Typography
                                 variant="caption"
                                 sx={{
-                                    opacity: (isRecording || isTranscribing) ? 1 : 0.5,
+                                    opacity: (isRecording || isTranscribing || isToggling) ? 1 : 0.5,
                                     letterSpacing: '0.1em',
                                     fontWeight: 600,
                                     minHeight: '20px',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    color: (isRecording || isTranscribing) ? theme.accent : theme.textSecondary,
+                                    color: (isRecording || isTranscribing || isToggling) ? theme.accent : theme.textSecondary,
                                     transition: 'all 0.2s ease',
                                     textAlign: 'center',
                                     fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' },
