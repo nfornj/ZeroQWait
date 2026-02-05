@@ -25,6 +25,7 @@ import ParticleSphere from '../../components/agent/ParticleSphere';
 import { useNavigate } from 'react-router-dom';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
+import ReactMarkdown from 'react-markdown';
 
 import Pricing from './Pricing';
 import Features from './Features';
@@ -356,9 +357,10 @@ const MasterAIAgent: React.FC = () => {
                         }}>
                             <Box sx={{
                                 position: 'relative',
-                                width: { xs: 180, sm: 220, md: 280 },
-                                height: { xs: 180, sm: 220, md: 280 },
-                                transition: 'all 0.5s ease'
+                                width: activeViewer ? { xs: 100, md: 140 } : { xs: 180, sm: 220, md: 280 },
+                                height: activeViewer ? { xs: 100, md: 140 } : { xs: 180, sm: 220, md: 280 },
+                                transition: 'all 0.5s ease',
+                                flexShrink: 0
                             }}>
                                 <ParticleSphere volume={volume} isListening={isRecording} color={theme.accent} isProcessing={isProcessing} />
                             </Box>
@@ -367,16 +369,16 @@ const MasterAIAgent: React.FC = () => {
                                 ref={scrollRef}
                                 sx={{
                                     textAlign: activeViewer ? { xs: 'center', md: 'left' } : 'center',
-                                    maxHeight: activeViewer ? '25vh' : '30vh',
+                                    maxHeight: activeViewer ? '60vh' : '30vh',
                                     overflowY: 'auto',
                                     width: '100%',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    alignItems: activeViewer ? { xs: 'center', md: 'flex-start' } : 'center',
+                                    alignItems: 'stretch', // Fill width
                                     gap: 2,
-                                    px: { xs: 2, md: 0 },
-                                    maskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)',
-                                    WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)',
+                                    px: { xs: 2, md: 2 },
+                                    maskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)',
+                                    WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)',
                                     '&::-webkit-scrollbar': { display: 'none' },
                                 }}
                             >
@@ -384,28 +386,38 @@ const MasterAIAgent: React.FC = () => {
                                     <Box
                                         key={index}
                                         sx={{
-                                            opacity: index === chatHistory.length - 1 ? 1 : 0.6,
                                             width: '100%',
                                             display: 'flex',
                                             flexDirection: 'column',
-                                            alignItems: chat.role === 'user' ? 'flex-end' : (activeViewer ? 'flex-start' : 'center')
+                                            alignItems: chat.role === 'user' ? 'flex-end' : 'flex-start',
+                                            opacity: index < chatHistory.length - 2 ? 0.8 : 1, // Keep recent messages distinct
+                                            transition: 'all 0.3s ease'
                                         }}
                                     >
-                                        <Typography
-                                            variant="body1"
+                                        <Box
                                             sx={{
-                                                fontWeight: index === chatHistory.length - 1 ? 500 : 300,
-                                                lineHeight: 1.6,
-                                                color: chat.role === 'user' ? theme.accent : theme.text,
-                                                fontSize: activeViewer ? '1.1rem' : '1.3rem',
-                                                textAlign: chat.role === 'user' ? 'right' : (activeViewer ? 'left' : 'center'),
-                                                transition: 'all 0.5s ease',
-                                                maxWidth: { xs: '95%', md: '85%' },
-                                                mx: { xs: 'auto', md: 0 }
+                                                bgcolor: chat.role === 'user' ? theme.accent : theme.cardBg,
+                                                color: chat.role === 'user' ? (isDarkMode ? '#000' : '#fff') : theme.text,
+                                                p: 2,
+                                                px: 2.5,
+                                                borderRadius: chat.role === 'user' ? '24px 24px 4px 24px' : '24px 24px 24px 4px',
+                                                maxWidth: { xs: '85%', md: '80%' },
+                                                border: chat.role === 'user' ? 'none' : `1px solid ${theme.cardBorder}`,
+                                                boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                                                position: 'relative',
+                                                '& p': { m: 0, mb: 1, lineHeight: 1.6, fontSize: activeViewer ? '0.95rem' : '1.1rem' },
+                                                '& p:last-child': { mb: 0 },
+                                                '& ul, & ol': { pl: 2.5, m: 0, mb: 1 },
+                                                '& li': { mb: 0.5 },
+                                                '& strong': { fontWeight: 700, color: chat.role === 'user' ? 'inherit' : theme.accent }
                                             }}
                                         >
-                                            {chat.role === 'user' ? `“${chat.text}”` : chat.text}
-                                        </Typography>
+                                            {chat.role === 'user' ? (
+                                                <Typography variant="body1" sx={{ fontSize: '1rem', fontWeight: 500 }}>{chat.text}</Typography>
+                                            ) : (
+                                                <ReactMarkdown>{chat.text}</ReactMarkdown>
+                                            )}
+                                        </Box>
                                     </Box>
                                 ))}
                             </Box>
