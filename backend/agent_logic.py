@@ -27,82 +27,170 @@ model = OpenAIModel(
 
 # --- Smart Query Processor ---
 
+from dataclasses import dataclass
+from typing import Optional
+import json as json_lib
+
+@dataclass
+class ParsedQuery:
+    """Structured query result with location intent preserved."""
+    terms: str  # Extracted search terms
+    near_me: bool  # User wants proximity search
+    city: Optional[str]  # Explicit city mentioned
+    
+    def to_dict(self) -> dict:
+        return {"terms": self.terms, "near_me": self.near_me, "city": self.city}
+
+
+
+# --- Context Extractor ---
+
+@dataclass
+class SearchContext:
+    """Structured search context extracted from history."""
+    last_category: Optional[str]
+    last_city: Optional[str]
+
+class ContextExtractor:
+    """LLM-based context extractor ensuring scalability."""
+    
+    def __init__(self):
+        self.agent = Agent(
+            model,
+            system_prompt="""Analyze conversation history to find the ACTIVE search context.
+            
+Return a JSON object with:
+- "last_category": The most recent business category/service (e.g. "auto repair", "nail salon"). Null if none.
+- "last_city": The most recent city/location (e.g. "Toronto"). PERSIST the last known city unless the user explicitly mentions a NEW city or says "near me".
+
+Prioritize the LATEST intent. If user changed topic (e.g. from "auto" to "nail") but didn't mention city, KEEP the old city.
+
+Examples:
+History: User: "find auto" -> ZeroQ: "no results" -> User: "nail salon"
+Output: {"last_category": "nail salon", "last_city": null}
+
+History: User: "auto repair" -> ZeroQ: "no results" -> User: "toronto"
+Output: {"last_category": "auto repair", "last_city": "Toronto"}
+
+Return ONLY valid JSON. NO markdown.
+""",
+            model_settings={'temperature': 0.1, 'max_tokens': 100}
+        )
+        
+    async def extract(self, history: List[Dict]) -> SearchContext:
+        if not history:
+            return SearchContext(None, None)
+            
+        # Format (last 6 messages)
+        recent = history[-6:]
+        history_str = json_lib.dumps([{"role": m["role"], "content": m["content"]} for m in recent])
+        
+        try:
+            result = await self.agent.run(history_str)
+            raw = result.output.strip() if hasattr(result, 'output') else str(result).strip()
+            
+            # Sanitize response (remove markdown)
+            if "```" in raw:
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            raw = raw.strip()
+            
+            parsed = json_lib.loads(raw)
+            return SearchContext(
+                last_category=parsed.get("last_category"),
+                last_city=parsed.get("last_city")
+            )
+        except Exception as e:
+            # Safe fallback
+            logger.error(f"Context extraction failed: {e}")
+            return SearchContext(None, None)
+
+# Initialize global instance
+context_extractor = ContextExtractor()
+
+
 class QueryProcessor:
     """
     Intelligent query processing using pure LLM extraction.
-    NO hardcoded noise words - fully dynamic and adaptive.
+    Returns structured JSON with location intent preserved.
     """
     
     def __init__(self):
         # Lightweight LLM agent for query extraction
         self.extraction_agent = Agent(
             model,
-            system_prompt="""You are a search query optimizer.
+            system_prompt="""You are a search query parser. Extract structured info from user input.
 
-Your job: Extract ONLY the meaningful search terms from user input.
+Return a JSON object with exactly these fields:
+- "terms": business type or service keywords (string)
+- "near_me": ONLY set to true if user EXPLICITLY says "near me", "nearby", "around here", "close by". Default is false!
+- "city": city name if user mentions one, otherwise null (string or null)
 
-Rules:
-1. Remove filler words (find, show, get, me, the, a, an, please, etc.)
-2. Remove location words (near, nearby, around, close, local)
-3. Remove verbs (looking, searching, wanting)
-4. Keep ONLY: business types, services, specific names, descriptive words
+**CRITICAL: near_me should be FALSE unless the exact words "near me" or "nearby" appear in the input!**
 
 Examples:
 Input: "find me barber shops near me"
-Output: "barber"
+Output: {"terms": "barber", "near_me": true, "city": null}
 
-Input: "looking for italian restaurants around here"
-Output: "italian restaurant"
+Input: "tire rotation near me"
+Output: {"terms": "tire rotation", "near_me": true, "city": null}
 
-Input: "show me places that do haircuts"
-Output: "haircut"
+Input: "oil change"
+Output: {"terms": "oil change", "near_me": false, "city": null}
 
-Input: "i want to get a fade at a barbershop please"
-Output: "fade barbershop"
+Input: "restaurants in Toronto"
+Output: {"terms": "restaurant", "near_me": false, "city": "Toronto"}
 
-Input: "find shops"
-Output: ""
+Input: "auto repair shops around here"
+Output: {"terms": "auto repair", "near_me": true, "city": null}
 
-Input: "barber"
-Output: "barber"
+Input: "salons in vancouver"
+Output: {"terms": "salon", "near_me": false, "city": "vancouver"}
 
-Input: "best nail salon for manicure"
-Output: "nail salon manicure"
+Input: "shops near me"
+Output: {"terms": "", "near_me": true, "city": null}
 
-Input: "car repair shop that does oil changes"
-Output: "car repair oil change"
+Input: "auto"
+Output: {"terms": "auto", "near_me": false, "city": null}
 
-Input: "yo where can i get a fresh cut"
-Output: "fresh cut"
+Input: "find massage"
+Output: {"terms": "massage", "near_me": false, "city": null}
 
-Input: "besoin d'un coiffeur" (French for "need a hairdresser")
-Output: "coiffeur"
+Input: "nails"
+Output: {"terms": "nails", "near_me": false, "city": null}
 
-Input: "показать парикмахерские" (Russian for "show barbershops")
-Output: "парикмахерские"
+Input: "canada"
+Output: {"terms": "", "near_me": false, "city": "canada"}
 
-Return ONLY the extracted terms, nothing else. If no meaningful terms, return empty string.
+Input: "wheel alignment"
+Output: {"terms": "wheel alignment", "near_me": false, "city": null}
+
+Input: "brakes"
+Output: {"terms": "brakes", "near_me": false, "city": null}
+
+Return ONLY valid JSON, no other text.
 """,
-            model_settings={'temperature': 0.1, 'max_tokens': 50}
+            model_settings={'temperature': 0.1, 'max_tokens': 100}
         )
         
         # Cache for common queries (performance optimization)
-        self._extraction_cache: Dict[str, str] = {}
+        self._extraction_cache: Dict[str, ParsedQuery] = {}
         self._cache_max_size = 1000
     
-    async def extract_search_terms(self, user_query: str) -> Optional[str]:
+    async def extract_search_terms(self, user_query: str) -> ParsedQuery:
         """
-        Extract meaningful search terms from user query using pure LLM.
+        Extract structured query info from user input.
         
         Args:
             user_query: Raw user input
             
         Returns:
-            Cleaned search terms or None if nothing meaningful
+            ParsedQuery with terms, near_me flag, and city
         """
         
         if not user_query or not user_query.strip():
-            return None
+            return ParsedQuery(terms="", near_me=False, city=None)
         
         # Normalize
         normalized = user_query.lower().strip()
@@ -114,27 +202,43 @@ Return ONLY the extracted terms, nothing else. If no meaningful terms, return em
             return self._extraction_cache[cache_key]
         
         try:
-            # Use LLM to extract meaningful terms
+            # Use LLM to extract structured query
             result = await self.extraction_agent.run(normalized)
+            raw_output = result.output.strip() if hasattr(result, 'output') else str(result).strip()
             
-            extracted = result.output.strip() if hasattr(result, 'output') else str(result).strip()
-            
-            # Handle empty extraction
-            if not extracted or extracted == '""' or extracted == "''":
-                extracted = None
+            # Parse JSON response
+            try:
+                parsed = json_lib.loads(raw_output)
+                query_result = ParsedQuery(
+                    terms=parsed.get("terms", "").strip(),
+                    near_me=parsed.get("near_me", False),
+                    city=parsed.get("city")
+                )
+            except json_lib.JSONDecodeError:
+                # Fallback: treat entire output as terms
+                logger.warning(f"Failed to parse JSON from: {raw_output}")
+                query_result = ParsedQuery(
+                    terms=raw_output,
+                    near_me="near" in normalized or "nearby" in normalized,
+                    city=None
+                )
             
             # Cache the result
             if len(self._extraction_cache) < self._cache_max_size:
-                self._extraction_cache[cache_key] = extracted
+                self._extraction_cache[cache_key] = query_result
             
-            logger.debug(f"Query extracted: '{normalized}' -> '{extracted}'")
+            logger.debug(f"Query extracted: '{normalized}' -> {query_result.to_dict()}")
             
-            return extracted
+            return query_result
         
         except Exception as e:
             logger.error(f"Query extraction failed: {e}", exc_info=True)
-            # Let the error propagate - no fallback
-            raise
+            # Return basic fallback
+            return ParsedQuery(
+                terms=normalized,
+                near_me="near" in normalized,
+                city=None
+            )
 
 # --- Global Query Processor ---
 query_processor = QueryProcessor()
@@ -152,35 +256,39 @@ class IntentRouter:
     def __init__(self):
         self.router_agent = Agent(
             model,
-            system_prompt="""You are an intent classifier for a queue management assistant.
+            system_prompt="""You are an intent classifier for a local business search assistant.
 
 Classify user messages into ONE of these categories:
 
-CONVERSATION - Greetings, small talk, general questions, thanks
+**CONVERSATION** - ONLY for these:
+- Greetings: "hello", "hi", "hey", "good morning"
+- Thanks: "thanks", "thank you", "thx"
+- Acknowledgments: "okay", "cool", "got it", "nice"
+- Meta questions: "what is zeroqwait", "who are you", "how does this work"
+
+**ACTION** - For EVERYTHING else, including:
+- Business types: "barber", "salon", "restaurant", "auto shop"
+- Services: "tire rotation", "oil change", "haircut", "brakes", "wheel alignment"
+- Search requests: "find me...", "show me...", "looking for..."
+- Locations: "near me", "in toronto", "canada" (when following a search)
+- Short nouns that could be search terms
+- Pricing/features/help requests
+
 Examples:
 - "hello" → CONVERSATION
-- "hi there" → CONVERSATION  
 - "thanks" → CONVERSATION
-- "how are you" → CONVERSATION
 - "what is zeroqwait" → CONVERSATION
-- "who are you" → CONVERSATION
-- "cool" → CONVERSATION
-- "okay" → CONVERSATION
+- "tire rotation" → ACTION
+- "oil change" → ACTION
+- "barber" → ACTION
+- "find me auto shops" → ACTION
+- "near me" → ACTION
+- "canada" → ACTION (could be location refinement)
+- "brakes" → ACTION
+- "wheel alignment" → ACTION
 
-ACTION - User wants to DO something specific that requires tools
-Examples:
-- "find me a barber" → ACTION
-- "show pricing" → ACTION  
-- "search for salons" → ACTION
-- "looking for restaurants" → ACTION
-- "what are the features" → ACTION
-
-Rules:
-1. If user is greeting or being social → CONVERSATION
-2. If user mentions specific business types (barber, salon, restaurant, etc.) → ACTION
-3. If user asks to "find", "search", "show me" + shops/businesses → ACTION
-4. If user asks about pricing, features, FAQ → ACTION
-5. If unsure, lean towards CONVERSATION
+**CRITICAL RULE: If unsure, default to ACTION.**
+Short noun phrases (1-3 words) that aren't greetings are almost always search terms.
 
 Respond with ONLY one word: CONVERSATION or ACTION
 """,
@@ -222,36 +330,48 @@ Respond naturally to the user's message.
             model_settings={'temperature': 0.7}
         )
     
-    async def classify_intent(self, user_msg: str) -> str:
-        """Classify user intent using pure LLM."""
+    async def classify_intent(self, user_msg: str, history_context: str = "") -> str:
+        """Classify user intent using pure LLM, considering conversation history."""
         try:
-            result = await self.router_agent.run(user_msg)
+            # Include history context for follow-up detection
+            if history_context:
+                full_prompt = f"{history_context}\n\nCurrent message: {user_msg}"
+            else:
+                full_prompt = user_msg
+            
+            result = await self.router_agent.run(full_prompt)
             intent = result.output.strip().upper() if hasattr(result, 'output') else str(result).strip().upper()
             
-            # Normalize response
+            # Normalize response - DEFAULT TO ACTION if unclear
             if 'CONVERSATION' in intent:
                 return 'CONVERSATION'
-            elif 'ACTION' in intent:
-                return 'ACTION'
             else:
-                # Default to conversation if unclear
-                logger.debug(f"Unclear intent response: {intent}, defaulting to CONVERSATION")
-                return 'CONVERSATION'
+                # Default to ACTION for anything unclear or explicitly ACTION
+                if 'ACTION' not in intent:
+                    logger.debug(f"Unclear intent response: {intent}, defaulting to ACTION")
+                return 'ACTION'
         except Exception as e:
             logger.error(f"Intent classification error: {e}")
-            return 'CONVERSATION'  # Safe default
+            return 'ACTION'  # Default to action - let the agent try to help
     
-    async def get_conversational_response(self, user_msg: str, context: Dict[str, Any] = None) -> str:
-        """Get a conversational response without tools."""
+    async def get_conversational_response(self, user_msg: str, context: Dict[str, Any] = None, history_context: str = "") -> str:
+        """Get a conversational response without tools, context-aware."""
         try:
             # Add any relevant context
-            context_str = ""
+            context_parts = []
+            
+            if history_context:
+                context_parts.append(history_context)
+            
             if context:
                 if context.get('active_view'):
-                    context_str += f"User is viewing: {context['active_view']} page. "
+                    context_parts.append(f"User is viewing: {context['active_view']} page.")
                 if context.get('city'):
-                    context_str += f"User is in: {context['city']}. "
+                    context_parts.append(f"User is in: {context['city']}.")
+                if context.get('last_search_category'):
+                    context_parts.append(f"Last search was for: {context['last_search_category']}.")
             
+            context_str = "\n".join(context_parts)
             full_msg = f"{context_str}\n\nUser: {user_msg}" if context_str else user_msg
             
             result = await self.conversation_agent.run(full_msg)
@@ -622,26 +742,29 @@ For greetings and casual conversation, respond naturally:
 
 - "how are you" → "I'm doing great, thanks for asking! Ready to help you find what you need. 😊"
 
-## WHEN TO USE TOOLS
+## WHEN TO USE search_shops
 
-**ONLY call search_shops when user:**
-- Mentions a specific business type (barber, salon, restaurant, etc.)
-- Says "find", "search", "show me", "looking for" + business/shop context
-- Asks about shops "near me" or in a specific location
+**ALWAYS call search_shops for:**
+- Business types: barber, salon, restaurant, auto shop, vet, clinic, etc.
+- Services: tire rotation, oil change, haircut, brakes, wheel alignment, inspection, tune-up
+- Anything that looks like a search term (short noun phrases 1-3 words)
+- Follow-ups with location refinement ("canada", "toronto", "near me")
 
-**Examples that REQUIRE tools:**
+**Examples that REQUIRE search_shops:**
 - "find me a barber" → search_shops(category="barber")
-- "show me salons nearby" → search_shops(category="salon")
+- "tire rotation" → search_shops(query="tire rotation")  
+- "oil change" → search_shops(query="oil change")
+- "brakes" → search_shops(query="brakes")
+- "canada" (after a search) → search_shops(category=prev_category, city="canada")
 - "restaurants in Toronto" → search_shops(category="restaurant", city="Toronto")
-- "how much does it cost" → check_pricing()
-- "show pricing" → check_pricing()
 
-**Examples that DON'T need tools (respond directly):**
-- "hello" → Greet back warmly
-- "thanks" → You're welcome!
-- "what is this" → Explain ZeroQwait
-- "cool" → Glad you like it! Need anything else?
-- "okay" → Great! Let me know if you need help.
+**ONLY these DON'T need tools (respond directly):**
+- "hello", "hi" → Greet warmly
+- "thanks", "thank you" → You're welcome!
+- "what is zeroqwait", "who are you" → Explain platform
+- "okay", "cool", "got it" → Acknowledgment
+
+**CRITICAL: When in doubt, call search_shops.** It's better to search and find nothing than to ask clarifying questions.
 
 ## RESPONSE STYLE
 
@@ -657,10 +780,23 @@ You may receive context like:
 - [USER LOCATION: city, coordinates]
 - [USER IS VIEWING: page name]
 - [INPUT METHOD: voice/text]
+- [LAST SEARCH: category='barber', city='toronto']
+- [NEAR_ME: true/false] - whether user wants proximity-based search
+- [CONVERSATION HISTORY] with recent messages
 
 Use this to personalize responses when relevant.
 
-Remember: Be conversational FIRST. Only use tools when the user is clearly asking for something that requires them.
+## FOLLOW-UP HANDLING
+
+When you see [LAST SEARCH: ...], the user may be refining:
+- "canada" after "auto repair" → search_shops(category="auto repair", city="canada")
+- "in toronto" after "barber" → search_shops(category="barber", city="toronto")
+- "tire rotation" → NEW search with query="tire rotation"
+
+**ONE CLARIFICATION RULE:** Only ask for location if:
+1. User said "near me" AND we have no lat/long AND no city
+2. Ask exactly ONE question: "What city are you in?"
+3. Otherwise, just call search_shops immediately
 """
 
 
@@ -687,7 +823,7 @@ async def search_shops(
     ctx: RunContext[MasterAgentDeps], 
     category: Optional[str] = Field(
         default=None, 
-        description="Shop category (e.g., 'barber', 'salon', 'restaurant'). Leave empty to search all."
+        description="Shop category (e.g., 'barber', 'salon', 'restaurant', 'auto repair'). Can also be a service like 'tire rotation'."
     ),
     city: Optional[str] = Field(
         default=None, 
@@ -695,40 +831,67 @@ async def search_shops(
     ),
     query: Optional[str] = Field(
         default=None, 
-        description="User's search query - will be automatically cleaned and optimized."
+        description="User's search query - will be automatically parsed for terms, location intent, and city."
     )
 ) -> str:
     """
-    Search for local businesses. 
-    Query cleaning is automatic - just pass the user's input.
+    Search for local businesses or services.
+    ALWAYS call this for any business/service-related query.
+    If category is unknown, just pass the query and we'll search across all categories.
     """
     
     try:
-        # Smart query extraction (pure LLM, no hardcoded patterns)
-        clean_query = None
-        if query:
-            clean_query = await query_processor.extract_search_terms(query)
-            logger.debug(f"Query processing: '{query}' → '{clean_query}'")
+        # Smart query extraction returns structured ParsedQuery
+        parsed_query = None
+        clean_terms = None
+        user_wants_nearby = False
+        extracted_city = city  # Start with explicit city
         
-        # Execute search
+        if query:
+            parsed_query = await query_processor.extract_search_terms(query)
+            clean_terms = parsed_query.terms if parsed_query.terms else None
+            user_wants_nearby = parsed_query.near_me
+            # Use extracted city if none provided
+            if not extracted_city and parsed_query.city:
+                extracted_city = parsed_query.city
+            logger.debug(f"Query processing: '{query}' → {parsed_query.to_dict()}")
+        
+        # ONE CLARIFICATION GATE: Only ask if near_me=true but no location info
+        has_location = (
+            ctx.deps.latitude is not None or 
+            extracted_city or 
+            (ctx.deps.context and ctx.deps.context.get('city'))
+        )
+        
+        if user_wants_nearby and not has_location:
+            # Store the pending search for when user provides location
+            ctx.deps.context["pending_search_category"] = category or clean_terms
+            return "Ask the user exactly once: 'What city or area are you in?' Then call search_shops with their response."
+        
+        # If we have city from context, use it
+        if not extracted_city and ctx.deps.context:
+            extracted_city = ctx.deps.context.get('city') or ctx.deps.context.get('last_search_city')
+        
+        # Execute search - ALWAYS try even with minimal info
         result = db_interface.search_shops(
-            query=clean_query,
+            query=clean_terms,
             shop_type=category,
-            city=city,
+            city=extracted_city,
             latitude=ctx.deps.latitude,
             longitude=ctx.deps.longitude,
             limit=10
         )
         
-        # Store results
+        # Store results and action
         ctx.deps.actions.append({
             "tool": "search_shops",
             "result": result,
             "params": {
                 "category": category,
-                "city": city,
+                "city": extracted_city,
                 "original_query": query,
-                "cleaned_query": clean_query
+                "cleaned_terms": clean_terms,
+                "near_me": user_wants_nearby
             },
             "timestamp": datetime.now().isoformat()
         })
@@ -742,26 +905,25 @@ async def search_shops(
         # Log
         logger.info(
             f"Search | user={ctx.deps.user_id} | category={category} | "
-            f"query='{query}' → '{clean_query}' | results={len(result)} | "
+            f"terms='{clean_terms}' | city={extracted_city} | results={len(result)} | "
             f"voice={ctx.deps.is_voice}"
         )
         
         # Guidance for LLM
         if len(result) == 0:
             return (
-                "No shops found. Suggest: (1) different category, "
-                "(2) broader search, or (3) different area. Stay helpful and positive."
+                f"No shops found for '{category or clean_terms}'. "
+                "Briefly say 'No results found' and suggest trying a different category or area."
             )
         elif len(result) == 1:
             return (
                 f"Found 1 shop: {result[0].get('name', 'shop')}. "
-                f"Voice: 'Found 1 shop nearby!' | Text: 'I found 1 shop!'"
+                f"Say 'I found one option!' Keep it brief."
             )
         else:
             return (
                 f"Found {len(result)} shops. They're visible as cards in UI. "
-                f"Voice: 'Found {len(result)} shops nearby!' | "
-                f"Text: 'I found {len(result)} shops near you!'"
+                f"Say 'Found {len(result)} options near you!' Keep it brief."
             )
     
     except Exception as e:
@@ -845,6 +1007,39 @@ class MasterAgent:
             "text_requests": 0
         }
     
+    def _format_history_for_llm(self, history: List[Dict]) -> str:
+        """Format conversation history as context for LLM."""
+        if not history:
+            return ""
+        
+        # Take last 6 messages (3 exchanges)
+        recent = history[-6:]
+        formatted = []
+        for msg in recent:
+            role = "User" if msg.get('role') == 'user' else "ZeroQ"
+            content = msg.get('content', '')[:200]  # Limit length
+            formatted.append(f"{role}: {content}")
+        
+        return "[CONVERSATION HISTORY]\n" + "\n".join(formatted)
+    
+    def _extract_last_search_context(self, history: List[Dict]) -> Dict[str, str]:
+        """Extract last search context (category, city) from conversation history."""
+        context = {"last_category": None, "last_city": None}
+        
+        if not history:
+            return context
+        
+    async def _extract_last_search_context(self, history: List[Dict]) -> Dict[str, str]:
+        """Extract last search context (category, city) using LLM."""
+        
+        # Use scalable, LLM-based extraction
+        search_ctx = await context_extractor.extract(history)
+        
+        return {
+            "last_category": search_ctx.last_category,
+            "last_city": search_ctx.last_city
+        }
+    
     async def chat(
         self,
         session_id: str,
@@ -883,6 +1078,17 @@ class MasterAgent:
             # Store original message for learning
             deps.context["original_user_message"] = user_msg
             
+            # Load conversation history from database for context
+            conversation_history = db_interface.get_conversation_history(session_id, limit=10)
+            history_context = self._format_history_for_llm(conversation_history)
+            search_context = await self._extract_last_search_context(conversation_history)
+            
+            # Store search context for follow-up queries
+            if search_context["last_category"]:
+                deps.context["last_search_category"] = search_context["last_category"]
+            if search_context["last_city"]:
+                deps.context["last_search_city"] = search_context["last_city"]
+            
             # Build context parts
             context_parts = []
             
@@ -907,11 +1113,17 @@ class MasterAgent:
             input_method = "voice" if is_voice else "text"
             context_parts.append(f"[INPUT METHOD: {input_method}]")
             
-            if history and len(history) > 0:
-                last_user_msg = next((h for h in reversed(history) if h.get('role') == 'user'), None)
-                if last_user_msg:
-                    snippet = last_user_msg.get('content', '')[:50]
-                    context_parts.append(f"[RECENT HISTORY: '{snippet}...']")
+            # Add conversation history context
+            if history_context:
+                context_parts.append(history_context)
+            
+            # Add last search context for follow-ups
+            if search_context["last_category"]:
+                context_parts.append(f"[LAST SEARCH: category='{search_context['last_category']}'")
+                if search_context["last_city"]:
+                    context_parts[-1] = context_parts[-1] + f", city='{search_context['last_city']}']"
+                else:
+                    context_parts[-1] = context_parts[-1] + "]"
             
             # LLM processing
             self.metrics["llm_calls"] += 1
@@ -924,29 +1136,107 @@ class MasterAgent:
                 f"msg='{user_msg[:50]}...' | context_items={len(context_parts)}"
             )
             
-            # Step 1: Classify intent using LLM (no hardcoded patterns)
-            intent = await intent_router.classify_intent(user_msg)
+            # Step 1: Classify intent using LLM (with conversation history)
+            intent = await intent_router.classify_intent(user_msg, history_context)
             logger.info(f"Intent classified as: {intent}")
             
             # Step 2: Route based on intent
             if intent == 'CONVERSATION':
                 # Use conversational agent (no tools)
-                final_text = await intent_router.get_conversational_response(user_msg, context)
+                final_text = await intent_router.get_conversational_response(user_msg, deps.context, history_context)
                 logger.info(f"Conversational response generated (no tools)")
             else:
-                # Use tool-enabled agent for actions
-                full_context = "\n".join(context_parts)
-                full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
+                # ACTION intent - be aggressive about calling search_shops
+                # First, parse the query to understand what user wants
+                parsed_query = await query_processor.extract_search_terms(user_msg)
+                logger.info(f"Parsed query: {parsed_query.to_dict()}")
                 
-                result = await self.agent.run(full_msg, deps=deps)
+                # Determine if we should directly call search_shops
+                has_search_terms = bool(parsed_query.terms)
+                has_city_only = bool(parsed_query.city) and not parsed_query.terms
+                has_near_me_only = parsed_query.near_me and not parsed_query.terms
                 
-                # Extract response
-                if hasattr(result, 'data') and hasattr(result.data, 'response'):
-                    final_text = result.data.response
-                elif hasattr(result, 'output'):
-                    final_text = result.output
+                # Case 1: Query has search terms (tire rotation, barber, auto, etc.) -> call search
+                # Case 2: Query is just a city (follow-up) -> use previous category + city
+                # Case 3: Query is just "near me" / "shops near me" -> search all
+                
+                if has_search_terms or has_city_only or has_near_me_only:
+                    # DETERMINISTIC: Call search_shops directly
+                    logger.info(f"Direct search_shops call for: terms='{parsed_query.terms}', city='{parsed_query.city}', near_me={parsed_query.near_me}")
+                    
+                    # Use previous category if this is a location-only follow-up
+                    search_category = None
+                    if has_city_only and search_context.get("last_category"):
+                        search_category = search_context["last_category"]
+                    elif parsed_query.terms:
+                        search_category = parsed_query.terms  # Use terms as category
+                    
+                    # Determine city
+                    search_city = parsed_query.city or search_context.get("last_city")
+                    if not search_city and context:
+                        search_city = context.get("city")
+                    
+                    # Check if we need to ask for location (one clarification rule)
+                    has_location = (
+                        latitude is not None or 
+                        search_city or 
+                        (context and context.get("city"))
+                    )
+                    
+                    if parsed_query.near_me and not has_location:
+                        # ONE CLARIFICATION: Ask for city
+                        term_display = parsed_query.terms if parsed_query.terms else "shops"
+                        final_text = f"I can help you find {term_display} nearby! 🔍 What city or area are you in?"
+                        deps.context["pending_search_category"] = search_category
+                    else:
+                        # Execute search directly
+                        results = db_interface.search_shops(
+                            query=parsed_query.terms if parsed_query.terms else None,
+                            shop_type=search_category,
+                            city=search_city,
+                            latitude=latitude,
+                            longitude=longitude,
+                            limit=10
+                        )
+                        
+                        # Record action
+                        actions.append({
+                            "tool": "search_shops",
+                            "result": results,
+                            "params": {
+                                "category": search_category,
+                                "city": search_city,
+                                "terms": parsed_query.terms,
+                                "near_me": parsed_query.near_me
+                            },
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        
+                        logger.info(f"Direct search | category={search_category} | city={search_city} | results={len(results)}")
+                        
+                        # Generate brief response based on results
+                        if len(results) == 0:
+                            cat_display = search_category or parsed_query.terms or "shops"
+                            final_text = f"No results found for '{cat_display}'. Try a different category or area?"
+                        elif len(results) == 1:
+                            shop_name = results[0].get('name', 'a shop')
+                            final_text = f"Found one option: {shop_name}! 🎯"
+                        else:
+                            final_text = f"Found {len(results)} options near you! 🎉"
                 else:
-                    final_text = str(result)
+                    # Let LLM decide for unclear queries (pricing, features, etc.)
+                    full_context = "\n".join(context_parts)
+                    full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
+                    
+                    result = await self.agent.run(full_msg, deps=deps)
+                    
+                    # Extract response
+                    if hasattr(result, 'data') and hasattr(result.data, 'response'):
+                        final_text = result.data.response
+                    elif hasattr(result, 'output'):
+                        final_text = result.output
+                    else:
+                        final_text = str(result)
             
             # Voice optimization
             if is_voice and len(final_text) > 150:

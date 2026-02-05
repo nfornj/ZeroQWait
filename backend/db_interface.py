@@ -163,14 +163,28 @@ class DatabaseInterface:
                 db.close()
     
     def search_shops(self, query: str = None, shop_type: str = None, city: str = None, latitude: float = None, longitude: float = None, limit: int = 10) -> List[Dict]:
-        """Fuzzy search for shops by name, type, and city, with optional location-based sorting."""
+        """Fuzzy search for shops by name, type, and city, with optional location-based sorting.
+        
+        Priority:
+        1. If shop_type is provided, filter by exact category match first
+        2. Text search in name/description (not shop_type to avoid cross-contamination)
+        3. Location-based sorting when coordinates provided
+        """
         if self.use_supabase:
             builder = supabase.table("shops").select("*")
-            if query:
-                # Use a combined OR filter for Supabase
-                builder = builder.or_(f"name.ilike.%{query}%,description.ilike.%{query}%,shop_type.ilike.%{query}%")
+            
+            # Priority 1: Exact category filter (when shop_type provided)
             if shop_type:
                 builder = builder.ilike("shop_type", f"%{shop_type}%")
+            
+            # Priority 2: Text search in name/description only (not shop_type)
+            if query and not shop_type:
+                # Only search shop_type if category not already filtered
+                builder = builder.or_(f"name.ilike.%{query}%,description.ilike.%{query}%,shop_type.ilike.%{query}%")
+            elif query:
+                # Category already filtered, just search name/description
+                builder = builder.or_(f"name.ilike.%{query}%,description.ilike.%{query}%")
+            
             if city:
                 builder = builder.ilike("city", f"%{city}%")
             
@@ -182,18 +196,30 @@ class DatabaseInterface:
                 from sqlalchemy import or_, func
                 q = db.query(Shop)
                 
-                if query:
-                    search_filter = or_(
-                        Shop.name.ilike(f"%{query}%"),
-                        Shop.shop_type.ilike(f"%{query}%"),
-                        Shop.description.ilike(f"%{query}%"),
-                        Shop.address.ilike(f"%{query}%")
-                    )
-                    q = q.filter(search_filter)
-                
-                # Apply explicit filters if provided
+                # Priority 1: Exact category filter (when shop_type provided)
                 if shop_type:
                     q = q.filter(Shop.shop_type.ilike(f"%{shop_type}%"))
+                
+                # Priority 2: Text search
+                if query:
+                    if shop_type:
+                        # Category already filtered, search name/description only
+                        search_filter = or_(
+                            Shop.name.ilike(f"%{query}%"),
+                            Shop.description.ilike(f"%{query}%"),
+                            Shop.address.ilike(f"%{query}%")
+                        )
+                    else:
+                        # No category filter, include shop_type in search
+                        search_filter = or_(
+                            Shop.name.ilike(f"%{query}%"),
+                            Shop.shop_type.ilike(f"%{query}%"),
+                            Shop.description.ilike(f"%{query}%"),
+                            Shop.address.ilike(f"%{query}%")
+                        )
+                    q = q.filter(search_filter)
+                
+                # City filter
                 if city:
                     q = q.filter(Shop.city.ilike(f"%{city}%"))
                 

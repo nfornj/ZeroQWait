@@ -358,7 +358,12 @@ const MasterAIAgent: React.FC = () => {
                                 height: activeViewer ? { xs: 80, sm: 100, md: 120 } : { xs: 150, sm: 180, md: 220 },
                                 transition: 'all 0.5s ease',
                                 flexShrink: 0,
-                                mb: activeViewer ? 1 : 2
+                                mb: activeViewer ? 1 : 2,
+                                animation: isProcessing ? 'orbPulse 1.5s ease-in-out infinite' : 'none',
+                                '@keyframes orbPulse': {
+                                    '0%, 100%': { transform: 'scale(1)', opacity: 1 },
+                                    '50%': { transform: 'scale(1.08)', opacity: 0.85 }
+                                }
                             }}>
                                 <ParticleSphere volume={volume} isListening={isRecording} color={theme.accent} isProcessing={isProcessing} />
                             </Box>
@@ -427,6 +432,73 @@ const MasterAIAgent: React.FC = () => {
                                         </Box>
                                     </Box>
                                 ))}
+                                {/* Thinking indicator - shows in chat while processing */}
+                                {isProcessing && (
+                                    <Box
+                                        sx={{
+                                            width: '100%',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'flex-start',
+                                            animation: 'fadeIn 0.3s ease'
+                                        }}
+                                    >
+                                        <Box
+                                            sx={{
+                                                bgcolor: theme.cardBg,
+                                                color: theme.textSecondary,
+                                                py: { xs: 1.5, md: 2 },
+                                                px: { xs: 2, md: 2.5 },
+                                                borderRadius: '20px 20px 20px 4px',
+                                                maxWidth: { xs: '70%', sm: '60%' },
+                                                border: `1px solid ${theme.cardBorder}`,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 1
+                                            }}
+                                        >
+                                            <Typography
+                                                variant="body2"
+                                                sx={{
+                                                    fontStyle: 'italic',
+                                                    fontSize: { xs: '0.85rem', md: '0.95rem' },
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 0.5
+                                                }}
+                                            >
+                                                Thinking
+                                                <Box
+                                                    component="span"
+                                                    sx={{
+                                                        display: 'inline-flex',
+                                                        gap: '2px',
+                                                        '& span': {
+                                                            width: 4,
+                                                            height: 4,
+                                                            borderRadius: '50%',
+                                                            bgcolor: theme.accent,
+                                                            animation: 'dotBounce 1.4s ease-in-out infinite'
+                                                        },
+                                                        '& span:nth-of-type(1)': { animationDelay: '0s' },
+                                                        '& span:nth-of-type(2)': { animationDelay: '0.2s' },
+                                                        '& span:nth-of-type(3)': { animationDelay: '0.4s' },
+                                                        '@keyframes dotBounce': {
+                                                            '0%, 80%, 100%': { transform: 'translateY(0)' },
+                                                            '40%': { transform: 'translateY(-6px)' }
+                                                        },
+                                                        '@keyframes fadeIn': {
+                                                            from: { opacity: 0, transform: 'translateY(8px)' },
+                                                            to: { opacity: 1, transform: 'translateY(0)' }
+                                                        }
+                                                    }}
+                                                >
+                                                    <span /><span /><span />
+                                                </Box>
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                )}
                             </Box>
 
                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%', maxWidth: '500px' }}>
@@ -498,47 +570,38 @@ const MasterAIAgent: React.FC = () => {
                             </Box>
                         </Box>
 
-                        {/* RESULTS PANEL: Content Viewer */}
-                        {(activeViewer || isProcessing) && (
+                        {/* RESULTS PANEL: Content Viewer - Only show when there's actual content */}
+                        {activeViewer && (
                             <Fade in={true} timeout={600}>
                                 <Box sx={{
-                                    flex: { xs: '1 1 auto', md: '1 1 60%' },
+                                    flex: { xs: '1 1 auto', md: '0 0 55%' },
                                     width: '100%',
-                                    maxWidth: { xs: '100%', sm: '100%', md: '650px' },
-                                    minHeight: { xs: '40vh', md: '50vh' },
-                                    maxHeight: { xs: '60vh', sm: '65vh', md: '75vh' },
+                                    maxWidth: { xs: '100%', md: '600px' },
+                                    minHeight: { xs: '35vh', md: '45vh' },
+                                    maxHeight: { xs: '55vh', sm: '60vh', md: '70vh' },
                                     overflowY: 'auto',
                                     p: { xs: 2, sm: 2.5, md: 3 },
                                     borderRadius: { xs: '16px', sm: '20px', md: '24px' },
-                                    bgcolor: isDarkMode ? 'rgba(15,15,25,0.7)' : 'rgba(255,255,255,0.9)',
-                                    border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
-                                    backdropFilter: 'blur(20px)',
+                                    bgcolor: isDarkMode ? 'rgba(15,15,25,0.85)' : 'rgba(255,255,255,0.95)',
+                                    border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+                                    backdropFilter: 'blur(24px)',
                                     boxShadow: isDarkMode
-                                        ? '0 12px 40px rgba(0,0,0,0.3)'
-                                        : '0 12px 40px rgba(0,0,0,0.06)',
+                                        ? '0 8px 32px rgba(0,0,0,0.4)'
+                                        : '0 8px 32px rgba(0,0,0,0.08)',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     alignItems: 'stretch',
-                                    justifyContent: (isProcessing && !activeViewer) ? 'center' : 'flex-start',
-                                    transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    justifyContent: 'flex-start',
+                                    transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                                     order: { xs: 1, md: 0 },
-                                    '&::-webkit-scrollbar': { width: '5px' },
+                                    '&::-webkit-scrollbar': { width: '4px' },
                                     '&::-webkit-scrollbar-thumb': {
-                                        background: isDarkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
-                                        borderRadius: '5px'
+                                        background: isDarkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
+                                        borderRadius: '4px'
                                     }
                                 }}>
-                                    {isProcessing && (
-                                        <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                            <Box sx={{ height: 40, width: '60%', bgcolor: theme.cardBorder, borderRadius: 2, animation: 'pulse 1.5s infinite' }} />
-                                            {[1, 2, 3].map(i => (
-                                                <Box key={i} sx={{ height: 120, width: '100%', bgcolor: theme.cardBg, borderRadius: '24px', border: `1px solid ${theme.cardBorder}`, animation: 'pulse 1.5s infinite', animationDelay: `${i * 0.2}s` }} />
-                                            ))}
-                                            <style>{`@keyframes pulse { 0% { opacity: 0.3; } 50% { opacity: 0.6; } 100% { opacity: 0.3; } }`}</style>
-                                        </Box>
-                                    )}
 
-                                    {!isProcessing && activeViewer === 'shops' && (
+                                    {activeViewer === 'shops' && (
                                         <Stack spacing={3} sx={{ width: '100%' }}>
                                             <Typography variant="h5" sx={{ fontWeight: 600 }}>Nearby Verified Queues</Typography>
                                             {activeShops.length === 0 ? (
@@ -579,9 +642,9 @@ const MasterAIAgent: React.FC = () => {
                                         </Stack>
                                     )}
 
-                                    {!isProcessing && activeViewer === 'pricing' && <Pricing />}
-                                    {!isProcessing && activeViewer === 'features' && <Features />}
-                                    {!isProcessing && activeViewer === 'faq' && <FAQ />}
+                                    {activeViewer === 'pricing' && <Pricing />}
+                                    {activeViewer === 'features' && <Features />}
+                                    {activeViewer === 'faq' && <FAQ />}
                                 </Box>
                             </Fade>
                         )}
