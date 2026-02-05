@@ -352,21 +352,85 @@ const MasterAIAgent: React.FC = () => {
                             py: { xs: 1, md: 2 },
                             order: { xs: 0, md: activeViewer ? 1 : 0 }
                         }}>
-                            <Box sx={{
-                                position: 'relative',
-                                width: activeViewer ? { xs: 80, sm: 100, md: 120 } : { xs: 150, sm: 180, md: 220 },
-                                height: activeViewer ? { xs: 80, sm: 100, md: 120 } : { xs: 150, sm: 180, md: 220 },
-                                transition: 'all 0.5s ease',
-                                flexShrink: 0,
-                                mb: activeViewer ? 1 : 2,
-                                animation: isProcessing ? 'orbPulse 1.5s ease-in-out infinite' : 'none',
-                                '@keyframes orbPulse': {
-                                    '0%, 100%': { transform: 'scale(1)', opacity: 1 },
-                                    '50%': { transform: 'scale(1.08)', opacity: 0.85 }
-                                }
-                            }}>
+                            {/* Clickable Orb for Voice Activation */}
+                            <Box
+                                onClick={handleVoiceToggle}
+                                sx={{
+                                    position: 'relative',
+                                    width: activeViewer ? { xs: 80, sm: 100, md: 120 } : { xs: 150, sm: 180, md: 220 },
+                                    height: activeViewer ? { xs: 80, sm: 100, md: 120 } : { xs: 150, sm: 180, md: 220 },
+                                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    flexShrink: 0,
+                                    mb: activeViewer ? 1 : 2,
+                                    cursor: isTranscribing ? 'wait' : 'pointer',
+                                    animation: isProcessing ? 'orbPulse 1.5s ease-in-out infinite' : (isRecording ? 'orbGlow 1s ease-in-out infinite' : 'none'),
+                                    '@keyframes orbPulse': {
+                                        '0%, 100%': { transform: 'scale(1)', opacity: 1 },
+                                        '50%': { transform: 'scale(1.08)', opacity: 0.85 }
+                                    },
+                                    '@keyframes orbGlow': {
+                                        '0%, 100%': { filter: `drop-shadow(0 0 20px ${theme.accent}66)` },
+                                        '50%': { filter: `drop-shadow(0 0 40px ${theme.accent}aa)` }
+                                    },
+                                    '&:hover': {
+                                        transform: 'scale(1.05)',
+                                        filter: `brightness(1.1) drop-shadow(0 0 25px ${theme.accent}55)`
+                                    },
+                                    '&:active': {
+                                        transform: 'scale(0.98)'
+                                    }
+                                }}
+                            >
                                 <ParticleSphere volume={volume} isListening={isRecording} color={theme.accent} isProcessing={isProcessing} />
+
+                                {/* Mic Icon Overlay - shows on hover or when idle */}
+                                <Box
+                                    sx={{
+                                        position: 'absolute',
+                                        top: '50%',
+                                        left: '50%',
+                                        transform: 'translate(-50%, -50%)',
+                                        opacity: (isRecording || isProcessing || isTranscribing) ? 0 : 0.4,
+                                        transition: 'opacity 0.3s ease',
+                                        pointerEvents: 'none',
+                                        '& svg': {
+                                            fontSize: activeViewer ? { xs: 24, md: 32 } : { xs: 40, md: 56 },
+                                            color: theme.text
+                                        },
+                                        '.MuiBox-root:hover > &': {
+                                            opacity: (isRecording || isProcessing || isTranscribing) ? 0 : 0.7
+                                        }
+                                    }}
+                                >
+                                    {isRecording ? <MicIcon /> : <MicOffIcon />}
+                                </Box>
                             </Box>
+
+                            {/* Voice Status Indicator - below orb */}
+                            <Typography
+                                variant="caption"
+                                sx={{
+                                    opacity: (isRecording || isTranscribing) ? 1 : 0.5,
+                                    letterSpacing: '0.1em',
+                                    fontWeight: 600,
+                                    minHeight: '20px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: (isRecording || isTranscribing) ? theme.accent : theme.textSecondary,
+                                    transition: 'all 0.2s ease',
+                                    textAlign: 'center',
+                                    fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' },
+                                    mb: 1,
+                                    cursor: 'pointer',
+                                    '&:hover': {
+                                        opacity: 1
+                                    }
+                                }}
+                                onClick={handleVoiceToggle}
+                            >
+                                {isTranscribing ? "TRANSCRIBING..." : (isRecording ? (transcript || "LISTENING...") : "TAP ORB TO SPEAK")}
+                            </Typography>
 
                             <Box
                                 ref={scrollRef}
@@ -501,41 +565,8 @@ const MasterAIAgent: React.FC = () => {
                                 )}
                             </Box>
 
+                            {/* Text Input Section - Hidden during voice mode */}
                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%', maxWidth: '500px' }}>
-                                <IconButton
-                                    onClick={handleVoiceToggle}
-                                    disabled={isTranscribing}
-                                    sx={{
-                                        width: 80, height: 80,
-                                        bgcolor: (isRecording || isTranscribing) ? theme.accent : theme.cardBg,
-                                        color: (isRecording || isTranscribing) ? (isDarkMode ? 'black' : 'white') : theme.text,
-                                        border: `2px solid ${theme.cardBorder}`,
-                                        boxShadow: isRecording ? `0 0 50px ${theme.accent}88` : 'none',
-                                        opacity: isTranscribing ? 0.7 : 1,
-                                        transition: 'all 0.3s ease'
-                                    }}
-                                >
-                                    {isTranscribing ? <CircularProgress size={30} color="inherit" /> : (isRecording ? <MicIcon sx={{ fontSize: 40 }} /> : <MicOffIcon sx={{ fontSize: 40 }} />)}
-                                </IconButton>
-                                <Typography variant="caption" sx={{
-                                    opacity: (isRecording || isTranscribing) ? 1 : 0.6,
-                                    letterSpacing: '0.1em',
-                                    fontWeight: 600,
-                                    minHeight: '24px',
-                                    height: 'auto',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: (isRecording || isTranscribing) ? theme.accent : 'inherit',
-                                    transition: 'all 0.2s ease',
-                                    textAlign: 'center',
-                                    maxWidth: '600px',
-                                    width: '100%',
-                                    margin: '0 auto',
-                                    lineHeight: '1.6'
-                                }}>
-                                    {isTranscribing ? "TRANSCRIBING..." : (isRecording ? (transcript || "RECORDING...") : "START VOICE CONVERSATION")}
-                                </Typography>
 
                                 {/* INTEGRATED INPUT FIELD */}
                                 {(!isRecording && !isTranscribing) && (
