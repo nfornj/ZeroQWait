@@ -30,6 +30,7 @@ import ReactMarkdown from 'react-markdown';
 import Pricing from './Pricing';
 import Features from './Features';
 import FAQ from './FAQ';
+import Testimonials from './Testimonials';
 import { constructShopUrl, isLocalhost } from '../../utils/domainUtils';
 
 const MasterAIAgent: React.FC = () => {
@@ -357,30 +358,37 @@ const MasterAIAgent: React.FC = () => {
                         flex: 1,
                         display: 'flex',
                         flexDirection: activeViewer ? { xs: 'column', md: 'row' } : 'column',
-                        alignItems: activeViewer ? { xs: 'stretch', md: 'flex-start' } : 'center',
+                        // CHANGED: Center vertically in both single and split view
+                        alignItems: 'center',
                         justifyContent: 'center',
                         py: { xs: 2, sm: 3, md: 4 },
                         px: { xs: 2, sm: 3, md: 4, lg: 6 },
                         gap: { xs: 3, sm: 3, md: 4 },
                         width: '100%',
+                        // WIDER CONTAINER for Split View (Monitor Mode)
+                        // Constrained to 1400px for better balance on large screens
                         maxWidth: activeViewer ? '1400px' : '800px',
-                        mx: 'auto',
-                        minHeight: activeViewer ? 'auto' : '60vh',
+                        m: 'auto', // Safe centering that handles overflow correctly
+                        // Removed minHeight: '100%' which was causing clipping issues
                         transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
                     }}>
 
                         {/* CHAT COLUMN: Agent, Transcript & Controls */}
                         <Box sx={{
-                            flex: activeViewer ? { xs: '1 1 auto', md: '0 0 40%' } : 'none',
+                            // FIXED WIDTH for Chat in Split View
+                            flex: activeViewer ? { xs: '1 1 auto', md: '0 0 400px' } : 'none',
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
-                            justifyContent: 'flex-start',
+                            // CHANGED: Center content vertically within the column
+                            justifyContent: 'center',
                             gap: { xs: 2, sm: 2.5, md: 3 },
                             transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
                             width: '100%',
-                            maxWidth: activeViewer ? { xs: '100%', md: '420px' } : { xs: '100%', sm: '500px', md: '600px' },
-                            minHeight: activeViewer ? { xs: 'auto', md: '50vh' } : 'auto',
+                            // Fixed width constraint
+                            maxWidth: activeViewer ? { xs: '100%', md: '400px' } : { xs: '100%', sm: '500px', md: '600px' },
+                            // CHANGED: Fixed height for desktop to match shop list
+                            height: activeViewer ? { xs: 'auto', md: '70vh' } : 'auto',
                             position: 'relative',
                             py: { xs: 1, md: 2 },
                             order: { xs: 0, md: activeViewer ? 1 : 0 }
@@ -472,7 +480,8 @@ const MasterAIAgent: React.FC = () => {
                                 ref={scrollRef}
                                 sx={{
                                     width: '100%',
-                                    maxHeight: activeViewer ? { xs: '35vh', sm: '40vh', md: '50vh' } : { xs: '25vh', sm: '30vh', md: '35vh' },
+                                    // CHANGED: Make chat history fill available space, enabling scroll
+                                    flex: 1,
                                     overflowY: 'auto',
                                     display: 'flex',
                                     flexDirection: 'column',
@@ -676,11 +685,13 @@ const MasterAIAgent: React.FC = () => {
                         {activeViewer && (
                             <Fade in={true} timeout={600}>
                                 <Box sx={{
-                                    flex: { xs: '1 1 auto', md: '0 0 55%' },
+                                    // FLEXIBLE WIDTH for Content Panel to fill screen
+                                    flex: { xs: '1 1 auto', md: '1' },
                                     width: '100%',
-                                    maxWidth: { xs: '100%', md: '600px' },
-                                    minHeight: { xs: '35vh', md: '45vh' },
-                                    maxHeight: { xs: '55vh', sm: '60vh', md: '70vh' },
+                                    // UNCONSTRAINED width to allow horizonzal expansion (Monitor Mode)
+                                    maxWidth: { xs: '100%', md: '100%' },
+                                    // CHANGED: Fixed height to match chat column for symmetry
+                                    height: { xs: '60vh', md: '70vh' },
                                     overflowY: 'auto',
                                     p: { xs: 2, sm: 2.5, md: 3 },
                                     borderRadius: { xs: '16px', sm: '20px', md: '24px' },
@@ -744,9 +755,10 @@ const MasterAIAgent: React.FC = () => {
                                         </Stack>
                                     )}
 
-                                    {activeViewer === 'pricing' && <Pricing />}
-                                    {activeViewer === 'features' && <Features />}
-                                    {activeViewer === 'faq' && <FAQ />}
+                                    {activeViewer === 'pricing' && <Pricing embedded={true} />}
+                                    {activeViewer === 'testimonials' && <Testimonials embedded={true} />}
+                                    {activeViewer === 'features' && <Features embedded={true} />}
+                                    {activeViewer === 'faq' && <FAQ embedded={true} />}
                                 </Box>
                             </Fade>
                         )}

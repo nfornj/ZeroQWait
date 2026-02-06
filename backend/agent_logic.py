@@ -123,53 +123,20 @@ class QueryProcessor:
             system_prompt="""You are a search query parser. Extract structured info from user input.
 
 Return a JSON object with exactly these fields:
-- "terms": business type or service keywords (string)
-- "near_me": ONLY set to true if user EXPLICITLY says "near me", "nearby", "around here", "close by". Default is false!
-- "city": city name if user mentions one, otherwise null (string or null)
+- "terms": business type or service keywords (string). If the input is NOT a search for a business/service (e.g. "pricing", "testimonials"), return empty string "".
+- "near_me": ONLY set to true if user EXPLICITLY says "near me", "nearby", "around here". Default is false.
+- "city": city name if user mentions one, otherwise null.
 
-**CRITICAL: near_me should be FALSE unless the exact words "near me" or "nearby" appear in the input!**
+**CRITICAL RULES:**
+1. Return ONLY valid JSON.
+2. Do NOT output code, explanations, or examples.
+3. If input is irrelevant to searching shops, return {"terms": "", "near_me": false, "city": null}.
 
-Examples:
-Input: "find me barber shops near me"
-Output: {"terms": "barber", "near_me": true, "city": null}
+Example Input: "find me barber shops near me"
+Example Output: {"terms": "barber", "near_me": true, "city": null}
 
-Input: "tire rotation near me"
-Output: {"terms": "tire rotation", "near_me": true, "city": null}
-
-Input: "oil change"
-Output: {"terms": "oil change", "near_me": false, "city": null}
-
-Input: "restaurants in Toronto"
-Output: {"terms": "restaurant", "near_me": false, "city": "Toronto"}
-
-Input: "auto repair shops around here"
-Output: {"terms": "auto repair", "near_me": true, "city": null}
-
-Input: "salons in vancouver"
-Output: {"terms": "salon", "near_me": false, "city": "vancouver"}
-
-Input: "shops near me"
-Output: {"terms": "", "near_me": true, "city": null}
-
-Input: "auto"
-Output: {"terms": "auto", "near_me": false, "city": null}
-
-Input: "find massage"
-Output: {"terms": "massage", "near_me": false, "city": null}
-
-Input: "nails"
-Output: {"terms": "nails", "near_me": false, "city": null}
-
-Input: "canada"
-Output: {"terms": "", "near_me": false, "city": "canada"}
-
-Input: "wheel alignment"
-Output: {"terms": "wheel alignment", "near_me": false, "city": null}
-
-Input: "brakes"
-Output: {"terms": "brakes", "near_me": false, "city": null}
-
-Return ONLY valid JSON, no other text.
+Example Input: "testimonials"
+Example Output: {"terms": "", "near_me": false, "city": null}
 """,
             model_settings={'temperature': 0.1, 'max_tokens': 100}
         )
@@ -686,28 +653,33 @@ def get_master_system_prompt() -> str:
 
 **FIRST, determine the user's intent:**
 
+
 1. **GREETING/SOCIAL** → Respond conversationally, NO tools
    - "hello", "hi", "hey", "good morning", "what's up"
    - "thanks", "thank you", "cool", "okay", "nice"
    - "how are you", "who are you", "what can you do"
+
+2. **PRICING INQUIRY** → Use check_pricing tool
+   - "price", "pricing", "cost", "how much", "plans", "subscription"
+
+3. **FEATURES INFO** → Use see_features tool
+   - "features", "what can zeroqwait do", "capabilities"
+
+4. **HELP/FAQ** → Use see_faq tool
+   - "help", "support", "faq", "how do I..."
+
+5. **TESTIMONIALS/REVIEWS** → Use see_testimonials tool
+   - "testimonials", "reviews", "what do people say", "customer stories", "success stories"
    
-2. **ABOUT ZEROQWAIT** → Answer from your knowledge, NO tools
+6. **ABOUT ZEROQWAIT** → Answer from your knowledge, NO tools
    - "what is zeroqwait", "how does this work", "tell me about yourself"
    - Questions about the platform's purpose
    
-3. **SHOP/BUSINESS SEARCH** → Use search_shops tool
+7. **SHOP/BUSINESS SEARCH** → Use search_shops tool
    - Mentions specific business types: "barber", "salon", "restaurant"
    - "find me a...", "looking for...", "show me shops"
    - "near me" + business type
-   
-4. **PRICING INQUIRY** → Use check_pricing tool
-   - "price", "pricing", "cost", "how much", "plans", "subscription"
-   
-5. **FEATURES INFO** → Use see_features tool
-   - "features", "what can zeroqwait do", "capabilities"
-   
-6. **HELP/FAQ** → Use see_faq tool
-   - "help", "support", "faq", "how do I..."
+   - **ANY other short noun phrase** that isn't one of the above categories (BUT NOT: pricing, features, faq, testimonials)
 
 ## ABOUT ZEROQWAIT (answer from this knowledge)
 
@@ -838,6 +810,8 @@ async def search_shops(
     Search for local businesses or services.
     ALWAYS call this for any business/service-related query.
     If category is unknown, just pass the query and we'll search across all categories.
+    
+    DO NOT use this tool for: pricing, features, faq, or testimonials.
     """
     
     try:
@@ -855,6 +829,45 @@ async def search_shops(
             if not extracted_city and parsed_query.city:
                 extracted_city = parsed_query.city
             logger.debug(f"Query processing: '{query}' → {parsed_query.to_dict()}")
+        
+        # --- INTENT MANIPULATION SAFETY NET ---
+        # If the agent mistakenly called search_shops for specific pages, handle it here.
+        # FIX: Check raw query as well, since terms might be empty for non-search queries
+        check_term = ((query or "") + " " + (category or "") + " " + (clean_terms or "")).lower()
+        
+        if any(x in check_term for x in ['testimonial', 'review', 'story']):
+            ctx.deps.actions.append({
+                "tool": "navigate_to_page_section",
+                "result": {"target": "testimonials"},
+                "timestamp": datetime.now().isoformat()
+            })
+            return "Testimonials section visible. Mention that many shop owners and customers love the platform."
+            
+        if any(x in check_term for x in ['pricing', 'cost', 'plan', 'price']):
+            ctx.deps.actions.append({
+                "tool": "navigate_to_page_section",
+                "result": {"target": "pricing"},
+                "timestamp": datetime.now().isoformat()
+            })
+            return "Pricing page now visible. Plans: Free ($0/mo), Premium ($29/mo), Enterprise (custom)."
+
+        if any(x in check_term for x in ['feature', 'capability']):
+            ctx.deps.actions.append({
+                "tool": "navigate_to_page_section",
+                "result": {"target": "features"},
+                "timestamp": datetime.now().isoformat()
+            })
+            return "Features page visible. Highlight: Queue management, SMS, Analytics."
+
+        if any(x in check_term for x in ['faq', 'help', 'support']):
+            ctx.deps.actions.append({
+                "tool": "navigate_to_page_section",
+                "result": {"target": "faq"},
+                "timestamp": datetime.now().isoformat()
+            })
+            return "FAQ section visible."
+        # ----------------------------------------
+
         
         # ONE CLARIFICATION GATE: Only ask if near_me=true but no location info
         has_location = (
@@ -977,6 +990,20 @@ async def see_faq(ctx: RunContext[MasterAgentDeps]) -> str:
     logger.info(f"FAQ viewed | user={ctx.deps.user_id} | voice={ctx.deps.is_voice}")
     
     return "FAQ section visible. Tell user they can find answers there."
+
+
+@master_pydantic_agent.tool
+async def see_testimonials(ctx: RunContext[MasterAgentDeps]) -> str:
+    """Show testimonials/reviews section."""
+    ctx.deps.actions.append({
+        "tool": "navigate_to_page_section",
+        "result": {"target": "testimonials"},
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    logger.info(f"Testimonials viewed | user={ctx.deps.user_id} | voice={ctx.deps.is_voice}")
+    
+    return "Testimonials section visible. Mention that many shop owners and customers love the platform."
 
 
 # --- Master Agent ---

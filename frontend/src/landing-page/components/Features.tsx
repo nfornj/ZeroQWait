@@ -133,7 +133,7 @@ export function MobileLayout({
   );
 }
 
-export default function Features() {
+export default function Features({ embedded = false }: { embedded?: boolean }) {
   const [selectedItemIndex, setSelectedItemIndex] = React.useState(0);
 
   const handleItemClick = (index: number) => {
@@ -143,7 +143,7 @@ export default function Features() {
   const selectedFeature = items[selectedItemIndex];
 
   return (
-    <Container id="features" sx={{ py: { xs: 8, sm: 16 } }}>
+    <Container id="features" sx={{ py: embedded ? 2 : { xs: 8, sm: 16 } }}>
       <Box sx={{ width: { sm: '100%', md: '60%' } }}>
         <Typography
           component="h2"

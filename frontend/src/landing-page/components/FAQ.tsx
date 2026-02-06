@@ -8,7 +8,7 @@ import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
-export default function FAQ() {
+export default function FAQ({ embedded = false }: { embedded?: boolean }) {
   const [expanded, setExpanded] = React.useState<string[]>([]);
 
   const handleChange =
@@ -24,13 +24,13 @@ export default function FAQ() {
     <Container
       id="faq"
       sx={{
-        pt: { xs: 4, sm: 12 },
-        pb: { xs: 8, sm: 16 },
+        pt: embedded ? 2 : { xs: 4, sm: 12 },
+        pb: embedded ? 2 : { xs: 8, sm: 16 },
         position: 'relative',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: { xs: 3, sm: 6 },
+        gap: embedded ? 2 : { xs: 3, sm: 6 },
       }}
     >
       <Typography

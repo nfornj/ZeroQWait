@@ -76,7 +76,8 @@ const logoStyle = {
   opacity: 0.3,
 };
 
-export default function Testimonials() {
+
+export default function Testimonials({ embedded = false }: { embedded?: boolean }) {
   const { mode, systemMode } = useColorScheme();
 
   let logos: string[] = darkModeLogos;
@@ -96,19 +97,20 @@ export default function Testimonials() {
     <Container
       id="testimonials"
       sx={{
-        pt: { xs: 4, sm: 12 },
-        pb: { xs: 8, sm: 16 },
+        pt: embedded ? 2 : { xs: 4, sm: 12 },
+        pb: embedded ? 2 : { xs: 8, sm: 16 },
         position: 'relative',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: { xs: 3, sm: 6 },
+        gap: embedded ? 2 : { xs: 3, sm: 6 },
       }}
     >
       <Box
         sx={{
           width: { sm: '100%', md: '60%' },
           textAlign: { sm: 'left', md: 'center' },
+          display: embedded ? 'none' : 'block',
         }}
       >
         <Typography
@@ -124,49 +126,124 @@ export default function Testimonials() {
           eliminate waiting lines and improve customer satisfaction across industries.
         </Typography>
       </Box>
-      <Grid container spacing={2}>
-        {userTestimonials.map((testimonial, index) => (
-          <Grid size={{ xs: 12, sm: 6, md: 4 }} key={index} sx={{ display: 'flex' }}>
-            <Card
-              variant="outlined"
+
+      {embedded ? (
+        // EMBEDDED LAYOUT: Horizontal Scroll
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 2,
+            overflowX: 'auto',
+            width: '100%',
+            pb: 2, // Space for scrollbar
+            scrollSnapType: 'x mandatory',
+            '&::-webkit-scrollbar': { display: 'none' },
+            px: 1,
+            mx: -2,
+            width: 'calc(100% + 32px)',
+          }}
+        >
+          {userTestimonials.map((testimonial, index) => (
+            <Box
+              key={index}
               sx={{
+                minWidth: '280px',
+                maxWidth: '280px',
+                scrollSnapAlign: 'center',
+                flexShrink: 0,
                 display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                flexGrow: 1,
               }}
             >
-              <CardContent>
-                <Typography
-                  variant="body1"
-                  gutterBottom
-                  sx={{ color: 'text.secondary' }}
-                >
-                  {testimonial.testimonial}
-                </Typography>
-              </CardContent>
-              <Box
+              <Card
+                variant="outlined"
                 sx={{
                   display: 'flex',
-                  flexDirection: 'row',
+                  flexDirection: 'column',
                   justifyContent: 'space-between',
+                  flexGrow: 1,
+                  p: 1.5,
+                  height: '100%',
                 }}
               >
-                <CardHeader
-                  avatar={testimonial.avatar}
-                  title={testimonial.name}
-                  subheader={testimonial.occupation}
-                />
-                <img
-                  src={logos[index]}
-                  alt={`Logo ${index + 1}`}
-                  style={logoStyle}
-                />
-              </Box>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
+                <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+                  <Typography
+                    variant="body2" // Smaller font
+                    gutterBottom
+                    sx={{ color: 'text.secondary', minHeight: '80px' }} // Fixed min height for alignment
+                  >
+                    "{testimonial.testimonial}"
+                  </Typography>
+                </CardContent>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    mt: 1,
+                    px: 1,
+                  }}
+                >
+                  <CardHeader
+                    avatar={testimonial.avatar}
+                    title={testimonial.name}
+                    subheader={testimonial.occupation}
+                    titleTypographyProps={{ variant: 'subtitle2' }}
+                    subheaderTypographyProps={{ variant: 'caption' }}
+                    sx={{ p: 0 }}
+                  />
+                  {/* Hide logo in embedded mode to save space/reduce clutter if needed, or keep smaller */}
+                </Box>
+              </Card>
+            </Box>
+          ))}
+        </Box>
+      ) : (
+        // DEFAULT LAYOUT: Grid
+        <Grid container spacing={2}>
+          {userTestimonials.map((testimonial, index) => (
+            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={index} sx={{ display: 'flex' }}>
+              <Card
+                variant="outlined"
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  flexGrow: 1,
+                }}
+              >
+                <CardContent>
+                  <Typography
+                    variant="body1"
+                    gutterBottom
+                    sx={{ color: 'text.secondary' }}
+                  >
+                    {testimonial.testimonial}
+                  </Typography>
+                </CardContent>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <CardHeader
+                    avatar={testimonial.avatar}
+                    title={testimonial.name}
+                    subheader={testimonial.occupation}
+                  />
+                  <img
+                    src={logos[index]}
+                    alt={`Logo ${index + 1}`}
+                    style={logoStyle}
+                  />
+                </Box>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      )}
     </Container>
   );
 }
