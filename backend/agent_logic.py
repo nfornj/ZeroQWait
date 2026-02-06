@@ -187,17 +187,31 @@ Example Output: {"terms": "", "near_me": false, "city": null}
             
             # Parse JSON response
             try:
-                parsed = json_lib.loads(raw_output)
+                # Clean up potential markdown code blocks
+                clean_output = raw_output
+                if "```json" in clean_output:
+                    clean_output = clean_output.split("```json")[1].split("```")[0].strip()
+                elif "```" in clean_output:
+                    clean_output = clean_output.split("```")[1].split("```")[0].strip()
+                
+                parsed = json_lib.loads(clean_output)
                 query_result = ParsedQuery(
                     terms=parsed.get("terms", "").strip(),
                     near_me=parsed.get("near_me", False),
                     city=parsed.get("city")
                 )
-            except json_lib.JSONDecodeError:
-                # Fallback: treat entire output as terms
+            except (json_lib.JSONDecodeError, IndexError):
+                # Fallback
                 logger.warning(f"Failed to parse JSON from: {raw_output}")
+                
+                # Sanitize: If raw output looks like JSON/code or is too long, don't use it as terms
+                term_fallback = raw_output
+                if "{" in raw_output or "}" in raw_output or len(raw_output) > 50:
+                    term_fallback = ""
+                    logger.warning("Dropped raw output from terms due to JSON-like content or length")
+                    
                 query_result = ParsedQuery(
-                    terms=raw_output,
+                    terms=term_fallback,
                     near_me="near" in normalized or "nearby" in normalized,
                     city=None
                 )
@@ -1167,7 +1181,11 @@ class MasterAgent:
                         
                         # Generate brief response based on results
                         if len(results) == 0:
+                            # Sanitize display category
                             cat_display = search_category or parsed_query.terms or "shops"
+                            if "{" in str(cat_display) or len(str(cat_display)) > 30:
+                                cat_display = "shops"
+                                
                             final_text = f"No results found for '{cat_display}'. Try a different category or area?"
                         elif len(results) == 1:
                             shop_name = results[0].get('name', 'a shop')
@@ -1179,24 +1197,29 @@ class MasterAgent:
                     full_context = "\n".join(context_parts)
                     full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
                     
-                    result = await self.agent.run(full_msg, deps=deps)
-                    
-                    # Extract response
-                    if hasattr(result, 'data') and isinstance(result.data, MasterResponse):
-                        final_text = result.data.response
-                        logger.info(f"LLM Reasoning: {result.data.reasoning}")
-                    elif hasattr(result, 'data') and hasattr(result.data, 'response'):
-                        final_text = result.data.response
-                    elif hasattr(result, 'output'):
-                         # Handle case where result might be MasterResponse directly or inside output
-                        output = result.output
-                        if isinstance(output, MasterResponse):
-                            final_text = output.response
-                            logger.info(f"LLM Reasoning: {output.reasoning}")
+                    try:
+                        result = await self.agent.run(full_msg, deps=deps)
+                        
+                        # Extract response
+                        if hasattr(result, 'data') and isinstance(result.data, MasterResponse):
+                            final_text = result.data.response
+                            logger.info(f"LLM Reasoning: {result.data.reasoning}")
+                        elif hasattr(result, 'data') and hasattr(result.data, 'response'):
+                            final_text = result.data.response
+                        elif hasattr(result, 'output'):
+                             # Handle case where result might be MasterResponse directly or inside output
+                            output = result.output
+                            if isinstance(output, MasterResponse):
+                                final_text = output.response
+                                logger.info(f"LLM Reasoning: {output.reasoning}")
+                            else:
+                                final_text = str(output)
                         else:
-                            final_text = str(output)
-                    else:
-                        final_text = str(result)
+                            final_text = str(result)
+                    
+                    except Exception as e:
+                        logger.error(f"Conversational LLM failed: {e}")
+                        final_text = "I didn't quite catch that. Could you ask in a different way? 🤔"
             
             # Voice optimization
             if is_voice and len(final_text) > 150:
