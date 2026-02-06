@@ -252,3 +252,13 @@ class LearnedSynonym(Base):
     category = Column(String, index=True, nullable=False)
     full_query = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class AgentKnowledge(Base):
+    __tablename__ = "agent_knowledge"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, unique=True, index=True, nullable=False)
+    content = Column(Text, nullable=False)
+    description = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

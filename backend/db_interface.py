@@ -17,7 +17,7 @@ else:
     # SQLAlchemy mode
     from database import SessionLocal, engine
     from database import SessionLocal, engine
-    from models import Base, User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, DailyAnalytics, ShopService, ShopCustomer, ConversationHistory, CategoryAlias, LearnedSynonym
+    from models import Base, User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, DailyAnalytics, ShopService, ShopCustomer, ConversationHistory, CategoryAlias, LearnedSynonym, AgentKnowledge
     import models
     supabase = None
 
@@ -798,6 +798,94 @@ class DatabaseInterface:
         Adds a category definition. 
         Note: Currently mainly stores aliases as the agent derives categories from shops.
         """
+        if self.use_supabase:
+            pass # Not implemented for Supabase yet
+        else:
+            db = self.get_session()
+            try:
+                # Basic implementation - just creates aliase entries for now
+                for alias in aliases:
+                    entry = CategoryAlias(
+                        category_key=category_key,
+                        alias=alias
+                    )
+                    db.add(entry)
+                db.commit()
+            except Exception as e:
+                print(f"Error adding category: {e}")
+            finally:
+                db.close()
+
+    # Agent Knowledge Support
+    def get_agent_knowledge(self, key: str) -> Optional[Dict]:
+        """Get a specific knowledge item by key."""
+        if self.use_supabase:
+            response = supabase.table("agent_knowledge").select("*").eq("key", key).execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                item = db.query(AgentKnowledge).filter(AgentKnowledge.key == key).first()
+                return self._model_to_dict(item) if item else None
+            except Exception as e:
+                # Table might not exist yet
+                return None
+            finally:
+                db.close()
+
+    def get_all_agent_knowledge(self) -> List[Dict]:
+        """Get all agent knowledge items."""
+        if self.use_supabase:
+            response = supabase.table("agent_knowledge").select("*").execute()
+            return response.data if response.data else []
+        else:
+            db = self.get_session()
+            try:
+                items = db.query(AgentKnowledge).all()
+                return [self._model_to_dict(item) for item in items]
+            except Exception as e:
+                # Table might not exist yet
+                return []
+            finally:
+                db.close()
+
+    def upsert_agent_knowledge(self, key: str, content: str, description: str = None) -> Dict:
+        """Create or update an agent knowledge item."""
+        if self.use_supabase:
+            # Upsert in Supabase
+            data = {
+                "key": key,
+                "content": content,
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            if description:
+                data["description"] = description
+                
+            response = supabase.table("agent_knowledge").upsert(data, on_conflict="key").execute()
+            return response.data[0] if response.data else None
+        else:
+            db = self.get_session()
+            try:
+                item = db.query(AgentKnowledge).filter(AgentKnowledge.key == key).first()
+                if item:
+                    item.content = content
+                    if description:
+                        item.description = description
+                    item.updated_at = datetime.utcnow()
+                    db.commit()
+                    db.refresh(item)
+                else:
+                    item = AgentKnowledge(
+                        key=key,
+                        content=content,
+                        description=description
+                    )
+                    db.add(item)
+                    db.commit()
+                    db.refresh(item)
+                return self._model_to_dict(item)
+            finally:
+                db.close()
         if not aliases:
             return
             

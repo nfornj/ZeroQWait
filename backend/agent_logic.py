@@ -131,9 +131,21 @@ Return a JSON object with exactly these fields:
 1. Return ONLY valid JSON.
 2. Do NOT output code, explanations, or examples.
 3. If input is irrelevant to searching shops, return {"terms": "", "near_me": false, "city": null}.
+4. **Strip generic plural suffixes** like "shops", "stores", "places", "locations" from the "terms". KEEP the core business type.
+   - "barber shops" -> "barber"
+   - "coffee places" -> "coffee"
+5. **Generic Queries**: If the extraction result IS ITSELF just "shops", "stores", "places", "business", return empty string "".
+   - "find generic shops" -> "" 
+   - "show me places" -> ""
 
 Example Input: "find me barber shops near me"
 Example Output: {"terms": "barber", "near_me": true, "city": null}
+
+Example Input: "find shops"
+Example Output: {"terms": "", "near_me": false, "city": null}
+
+Example Input: "barber shops"
+Example Output: {"terms": "barber", "near_me": false, "city": null}
 
 Example Input: "testimonials"
 Example Output: {"terms": "", "near_me": false, "city": null}
@@ -636,139 +648,48 @@ class MasterAgentDeps:
     request_timestamp: float = field(default_factory=lambda: datetime.now().timestamp())
 
 
+
 class MasterResponse(BaseModel):
+    reasoning: str = Field(description="Internal thought process regarding tools and decision making.")
     response: str = Field(description="The friendly response to show the user.")
 
 
 # --- Dynamic System Prompt ---
 
 def get_master_system_prompt() -> str:
-    """Generate system prompt dynamically with current categories."""
+    """Generate system prompt dynamically from database knowledge."""
     available_categories = category_manager.get_available_categories_text()
-    category_details = category_manager.get_category_details_for_llm()
     
-    return f"""You are ZeroQ, the friendly AI Assistant for ZeroQwait - a queue management platform that helps customers find local businesses and join queues.
+    # Fetch knowledge from DB with fallbacks
+    def get_knowledge(key, default):
+        item = db_interface.get_agent_knowledge(key)
+        return item['content'] if item else default
 
-## CRITICAL: RESPONSE PRIORITY
+    critical_instructions = get_knowledge("critical_instructions", "")
+    about_zeroqwait = get_knowledge("about_zeroqwait", "")
+    conversational_responses = get_knowledge("conversational_responses", "")
+    search_guidance = get_knowledge("search_guidance", "")
+    
+    # Default fallback if DB is empty for about section only to ensure basics
+    if not about_zeroqwait:
+        about_zeroqwait = """
+## ABOUT ZEROQWAIT
 
-**FIRST, determine the user's intent:**
+ZeroQwait is a queue management platform that helps customers find shops and join queues remotely.
+"""
 
+    return f"""You are ZeroQ, the friendly AI Assistant for ZeroQwait.
 
-1. **GREETING/SOCIAL** → Respond conversationally, NO tools
-   - "hello", "hi", "hey", "good morning", "what's up"
-   - "thanks", "thank you", "cool", "okay", "nice"
-   - "how are you", "who are you", "what can you do"
+{critical_instructions}
 
-2. **PRICING INQUIRY** → Use check_pricing tool
-   - "price", "pricing", "cost", "how much", "plans", "subscription"
-
-3. **FEATURES INFO** → Use see_features tool
-   - "features", "what can zeroqwait do", "capabilities"
-
-4. **HELP/FAQ** → Use see_faq tool
-   - "help", "support", "faq", "how do I..."
-
-5. **TESTIMONIALS/REVIEWS** → Use see_testimonials tool
-   - "testimonials", "reviews", "what do people say", "customer stories", "success stories"
-   
-6. **ABOUT ZEROQWAIT** → Answer from your knowledge, NO tools
-   - "what is zeroqwait", "how does this work", "tell me about yourself"
-   - Questions about the platform's purpose
-   
-7. **SHOP/BUSINESS SEARCH** → Use search_shops tool
-   - Mentions specific business types: "barber", "salon", "restaurant"
-   - "find me a...", "looking for...", "show me shops"
-   - "near me" + business type
-   - **ANY other short noun phrase** that isn't one of the above categories (BUT NOT: pricing, features, faq, testimonials)
-
-## ABOUT ZEROQWAIT (answer from this knowledge)
-
-ZeroQwait is a queue management platform that:
-- Helps customers discover local businesses
-- Allows customers to join queues remotely
-- Provides real-time wait time estimates
-- Sends SMS notifications when it's your turn
-- Helps shop owners manage their queues efficiently
-
-**Plans:**
-- Free: Basic queue management, up to 50 customers/month
-- Premium ($29/mo): Unlimited customers, analytics, SMS notifications
-- Enterprise: Custom solutions for large businesses
+{about_zeroqwait}
 
 ## AVAILABLE SHOP CATEGORIES
 {available_categories}
 
-## CONVERSATIONAL RESPONSES (NO TOOLS)
+{conversational_responses}
 
-For greetings and casual conversation, respond naturally:
-
-- "hello" → "Hello! 👋 I'm ZeroQ, your assistant for ZeroQwait. I can help you find local businesses, check our pricing, or answer questions. What would you like to do?"
-
-- "hi" → "Hi there! How can I help you today? Looking for a shop, or have questions about ZeroQwait?"
-
-- "thanks" / "thank you" → "You're welcome! Is there anything else I can help with?"
-
-- "who are you" → "I'm ZeroQ, the AI assistant for ZeroQwait! I help customers find local businesses like barbers, salons, and restaurants, and I can answer questions about our platform."
-
-- "what can you do" → "I can help you: 1) Find local shops (barbers, salons, etc.) 2) Check our pricing plans 3) Learn about ZeroQwait features 4) Answer your questions. What interests you?"
-
-- "how are you" → "I'm doing great, thanks for asking! Ready to help you find what you need. 😊"
-
-## WHEN TO USE search_shops
-
-**ALWAYS call search_shops for:**
-- Business types: barber, salon, restaurant, auto shop, vet, clinic, etc.
-- Services: tire rotation, oil change, haircut, brakes, wheel alignment, inspection, tune-up
-- Anything that looks like a search term (short noun phrases 1-3 words)
-- Follow-ups with location refinement ("canada", "toronto", "near me")
-
-**Examples that REQUIRE search_shops:**
-- "find me a barber" → search_shops(category="barber")
-- "tire rotation" → search_shops(query="tire rotation")  
-- "oil change" → search_shops(query="oil change")
-- "brakes" → search_shops(query="brakes")
-- "canada" (after a search) → search_shops(category=prev_category, city="canada")
-- "restaurants in Toronto" → search_shops(category="restaurant", city="Toronto")
-
-**ONLY these DON'T need tools (respond directly):**
-- "hello", "hi" → Greet warmly
-- "thanks", "thank you" → You're welcome!
-- "what is zeroqwait", "who are you" → Explain platform
-- "okay", "cool", "got it" → Acknowledgment
-
-**CRITICAL: When in doubt, call search_shops.** It's better to search and find nothing than to ask clarifying questions.
-
-## RESPONSE STYLE
-
-- Be warm and friendly, like a helpful concierge
-- Keep responses concise (2-3 sentences max)
-- Use emojis sparingly for friendliness
-- For voice users, be extra brief (1-2 sentences)
-- Don't over-explain or be robotic
-
-## CONTEXT AWARENESS
-
-You may receive context like:
-- [USER LOCATION: city, coordinates]
-- [USER IS VIEWING: page name]
-- [INPUT METHOD: voice/text]
-- [LAST SEARCH: category='barber', city='toronto']
-- [NEAR_ME: true/false] - whether user wants proximity-based search
-- [CONVERSATION HISTORY] with recent messages
-
-Use this to personalize responses when relevant.
-
-## FOLLOW-UP HANDLING
-
-When you see [LAST SEARCH: ...], the user may be refining:
-- "canada" after "auto repair" → search_shops(category="auto repair", city="canada")
-- "in toronto" after "barber" → search_shops(category="barber", city="toronto")
-- "tire rotation" → NEW search with query="tire rotation"
-
-**ONE CLARIFICATION RULE:** Only ask for location if:
-1. User said "near me" AND we have no lat/long AND no city
-2. Ask exactly ONE question: "What city are you in?"
-3. Otherwise, just call search_shops immediately
+{search_guidance}
 """
 
 
@@ -779,6 +700,7 @@ def create_master_agent():
     return Agent(
         model,
         deps_type=MasterAgentDeps,
+        output_type=MasterResponse,  # <--- CRITICAL: Enforce structured output
         system_prompt=get_master_system_prompt(),
         retries=2,
         model_settings={'temperature': 0.3}
@@ -924,8 +846,9 @@ async def search_shops(
         
         # Guidance for LLM
         if len(result) == 0:
+            search_desc = category or clean_terms or "any shops"
             return (
-                f"No shops found for '{category or clean_terms}'. "
+                f"No shops found for '{search_desc}'. "
                 "Briefly say 'No results found' and suggest trying a different category or area."
             )
         elif len(result) == 1:
@@ -1187,6 +1110,7 @@ class MasterAgent:
                 # Case 2: Query is just a city (follow-up) -> use previous category + city
                 # Case 3: Query is just "near me" / "shops near me" -> search all
                 
+
                 if has_search_terms or has_city_only or has_near_me_only:
                     # DETERMINISTIC: Call search_shops directly
                     logger.info(f"Direct search_shops call for: terms='{parsed_query.terms}', city='{parsed_query.city}', near_me={parsed_query.near_me}")
@@ -1258,10 +1182,19 @@ class MasterAgent:
                     result = await self.agent.run(full_msg, deps=deps)
                     
                     # Extract response
-                    if hasattr(result, 'data') and hasattr(result.data, 'response'):
+                    if hasattr(result, 'data') and isinstance(result.data, MasterResponse):
+                        final_text = result.data.response
+                        logger.info(f"LLM Reasoning: {result.data.reasoning}")
+                    elif hasattr(result, 'data') and hasattr(result.data, 'response'):
                         final_text = result.data.response
                     elif hasattr(result, 'output'):
-                        final_text = result.output
+                         # Handle case where result might be MasterResponse directly or inside output
+                        output = result.output
+                        if isinstance(output, MasterResponse):
+                            final_text = output.response
+                            logger.info(f"LLM Reasoning: {output.reasoning}")
+                        else:
+                            final_text = str(output)
                     else:
                         final_text = str(result)
             
