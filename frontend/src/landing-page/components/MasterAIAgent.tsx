@@ -137,6 +137,12 @@ const MasterAIAgent: React.FC = () => {
         if (isToggling || isProcessing || isTranscribing) return;
 
         setIsToggling(true);
+        // Safety timeout to prevent infinite loading state if promises hang (e.g. permission prompt ignored)
+        const safetyTimer = setTimeout(() => {
+            console.warn('[MasterAIAgent] Voice toggle timed out, resetting state');
+            setIsToggling(false);
+        }, 8000);
+
         try {
             if (isRecording) {
                 await submitAudio();
@@ -146,6 +152,7 @@ const MasterAIAgent: React.FC = () => {
         } catch (error) {
             console.error("Voice toggle failed:", error);
         } finally {
+            clearTimeout(safetyTimer);
             setIsToggling(false);
         }
     };
