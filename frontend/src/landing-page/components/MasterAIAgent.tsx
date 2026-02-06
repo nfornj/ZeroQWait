@@ -108,7 +108,7 @@ const MasterAIAgent: React.FC = () => {
                 formData.append('file', audioBlob, 'recording.webm');
 
                 console.log("[MasterAIAgent] Sending to /api/voice/transcribe...");
-                const response = await axios.post('/api/voice/transcribe', formData, {
+                const response = await axios.post('/voice/transcribe', formData, {
                     headers: { 'Content-Type': 'multipart/form-data' }
                 });
 
