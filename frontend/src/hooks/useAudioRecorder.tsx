@@ -33,8 +33,10 @@ export const useAudioRecorder = (onSilence?: () => void): UseAudioRecorderReturn
 
     const startRecording = useCallback(async () => {
         try {
+            console.log("[useAudioRecorder] Requesting microphone access...");
             // 1. Start Audio Recording (Server Side)
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log("[useAudioRecorder] Microphone access granted.");
             setHasPermission(true);
             setTranscript("");
 
@@ -45,25 +47,31 @@ export const useAudioRecorder = (onSilence?: () => void): UseAudioRecorderReturn
             recorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
                     chunksRef.current.push(event.data);
+                    console.log(`[useAudioRecorder] Chunk received: ${event.data.size} bytes`);
                 }
             };
 
             recorder.start();
             setIsRecording(true);
             resetSilenceTimer();
+            console.log("[useAudioRecorder] MediaRecorder started.");
 
             // 2. Start Speech Recognition (Visual Feedback Only)
             const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
             if (SpeechRecognition) {
+                console.log("[useAudioRecorder] SpeechRecognition available, initializing...");
                 const recognition = new SpeechRecognition();
                 recognition.continuous = true;
                 recognition.interimResults = true;
                 recognition.lang = 'en-US';
 
+                recognition.onstart = () => console.log("[useAudioRecorder] SpeechRecognition started.");
+
                 recognition.onresult = (event: any) => {
                     const currentTranscript = Array.from(event.results)
                         .map((result: any) => result[0].transcript)
                         .join('');
+                    console.log("[useAudioRecorder] Partial transcript:", currentTranscript);
                     if (currentTranscript.trim()) {
                         setTranscript(currentTranscript);
                         resetSilenceTimer(); // Reset timer on speech
@@ -71,13 +79,15 @@ export const useAudioRecorder = (onSilence?: () => void): UseAudioRecorderReturn
                 };
 
                 recognition.onerror = (event: any) => {
-                    console.warn("Browser ASR Error (Visual Only):", event.error);
+                    console.warn("[useAudioRecorder] Browser ASR Error:", event.error);
                 };
 
                 recognition.onend = () => {
+                    console.log("[useAudioRecorder] SpeechRecognition ended.");
                     // Auto-restart if still recording (handles timeouts/silence)
                     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
                         try {
+                            console.log("[useAudioRecorder] Restarting SpeechRecognition...");
                             recognition.start();
                         } catch (e) {
                             console.warn("Failed to restart ASR:", e);
@@ -91,16 +101,19 @@ export const useAudioRecorder = (onSilence?: () => void): UseAudioRecorderReturn
                 } catch (e) {
                     console.warn("Could not start Browser ASR:", e);
                 }
+            } else {
+                console.warn("[useAudioRecorder] SpeechRecognition NOT available in this browser.");
             }
 
         } catch (error) {
             console.error('Error accessing microphone:', error);
             setHasPermission(false);
         }
-    }, []);
+    }, [resetSilenceTimer]);
 
     const stopRecording = useCallback((): Promise<Blob | null> => {
         return new Promise((resolve) => {
+            console.log("[useAudioRecorder] Stopping recording...");
             // Stop Browser ASR
             if (recognitionRef.current) {
                 recognitionRef.current.stop();
@@ -113,12 +126,14 @@ export const useAudioRecorder = (onSilence?: () => void): UseAudioRecorderReturn
             }
 
             if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
+                console.warn("[useAudioRecorder] MediaRecorder was inactive or null.");
                 resolve(null);
                 return;
             }
 
             mediaRecorderRef.current.onstop = () => {
                 const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+                console.log(`[useAudioRecorder] Recording stopped. Total blob size: ${blob.size} bytes`);
                 chunksRef.current = [];
                 setIsRecording(false);
 

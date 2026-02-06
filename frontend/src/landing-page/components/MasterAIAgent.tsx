@@ -92,26 +92,42 @@ const MasterAIAgent: React.FC = () => {
 
     // Audio Submission Logic (Extracted for Auto-Submit)
     const submitAudio = useCallback(async () => {
+        console.log("[MasterAIAgent] submitAudio called.");
         const audioBlob = await stopRecording();
         if (audioBlob) {
+            console.log(`[MasterAIAgent] Audio blob captured. Size: ${audioBlob.size} bytes. Type: ${audioBlob.type}`);
+
+            // Warn if blob is suspiciously small
+            if (audioBlob.size < 1000) {
+                console.warn("[MasterAIAgent] Audio blob is very small, might be silence or error.");
+            }
+
             setIsTranscribing(true);
             try {
                 const formData = new FormData();
                 formData.append('file', audioBlob, 'recording.webm');
 
+                console.log("[MasterAIAgent] Sending to /api/voice/transcribe...");
                 const response = await axios.post('/api/voice/transcribe', formData, {
                     headers: { 'Content-Type': 'multipart/form-data' }
                 });
 
+                console.log("[MasterAIAgent] Transcription response:", response.data);
                 const text = response.data.text;
+
                 if (text && text.trim()) {
+                    console.log("[MasterAIAgent] Valid text received, handling chat...");
                     handleChat(text);
+                } else {
+                    console.warn("[MasterAIAgent] No text returned from transcription.");
                 }
             } catch (error) {
-                console.error('Transcription failed:', error);
+                console.error('[MasterAIAgent] Transcription request failed:', error);
             } finally {
                 setIsTranscribing(false);
             }
+        } else {
+            console.warn("[MasterAIAgent] stopRecording returned null blob.");
         }
     }, [stopRecording]); // handleChat is stable
 
