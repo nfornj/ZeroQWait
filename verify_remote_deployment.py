@@ -32,7 +32,8 @@ def run_test():
         "password": PASSWORD,
         "username": EMAIL.split('@')[0], # Use part of email as username
         "full_name": "Test User",
-        "phone": "555-0199"
+        "phone": "555-0199",
+        "role": "shop_owner" # Required to create a shop
     }
     # Using /users endpoint as per backend implementation
     r = s.post(f"{BASE_URL}/users", json=payload)
@@ -65,16 +66,23 @@ def run_test():
     shop_payload = {
         "name": SHOP_NAME,
         "slug": SLUG,
+        "shop_type": "Barber Shop", # Corrected field name
         "description": "Deployment Verification Shop",
-        "owner_id": user_data.get("id"), # Might need to fetch me first if ID not in register response
-        "logo_url": "https://via.placeholder.com/150"
+        "owner_id": user_data.get("id"),
+        "logo_url": "https://via.placeholder.com/150",
+         "address": "123 Test St",
+        "city": "Test City",
+        "state": "TS",
+        "zip_code": "12345",
+        "phone": "1234567890"
+
     }
     # Get user ID if not in register response
     if "id" not in user_data:
         me_r = s.get(f"{BASE_URL}/users/me", headers=headers)
         shop_payload["owner_id"] = me_r.json()["id"]
 
-    r = s.post(f"{BASE_URL}/shops/", json=shop_payload, headers=headers)
+    r = s.post(f"{BASE_URL}/shops", json=shop_payload, headers=headers)
     if r.status_code == 200 or r.status_code == 201:
         print("   ✅ Shop Created")
         shop_data = r.json()
