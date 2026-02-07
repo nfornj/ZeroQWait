@@ -12,20 +12,25 @@ from pathlib import Path
 
 # Load environment variables
 env_path = Path(__file__).parent / '.env'
-load_dotenv(dotenv_path=env_path, override=True)
+# Load environment variables
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path, override=False)
 
-# Get database URL from environment
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Get database connection details
+db_host = os.getenv("DB_HOST", "localhost")
+db_port = os.getenv("DB_PORT", "5432")
+db_name = os.getenv("DB_NAME", "zeroqwait")
+db_user = os.getenv("DB_USER", "postgres")
+db_password = os.getenv("DB_PASSWORD", "password")
 
-if not DATABASE_URL:
-    # Construct from individual components if not provided
-    db_host = os.getenv("DB_HOST", "localhost")
-    db_port = os.getenv("DB_PORT", "5432")
-    db_name = os.getenv("DB_NAME", "zeroqwait")
-    db_user = os.getenv("DB_USER", "postgres")
-    db_password = os.getenv("DB_PASSWORD", "password")
-    
-    DATABASE_URL = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+# Prefer constructing from components to ensure K8s ConfigMap/Secrets are used
+# even if .env defines DATABASE_URL with a hardcoded host (like 'db')
+DATABASE_URL = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+
+# Fallback to provided DATABASE_URL if explicitly set in environment (not .env) 
+# and components seem default/empty, but here we prioritize components.
+if os.getenv("DATABASE_URL") and not os.getenv("DB_HOST"):
+     DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Create engine
 engine_args = {
