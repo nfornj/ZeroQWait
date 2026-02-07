@@ -193,9 +193,13 @@ Example Output: {"terms": "", "near_me": false, "city": null}
                     clean_output = clean_output.split("```")[1].split("```")[0].strip()
                 
                 parsed = json_lib.loads(clean_output)
+                
+                # Rule: Trust regex for 'near_me' to capture "find shops near me" reliably
+                is_near_me = parsed.get("near_me", False) or "near" in normalized or "nearby" in normalized
+                
                 query_result = ParsedQuery(
                     terms=parsed.get("terms", "").strip(),
-                    near_me=parsed.get("near_me", False),
+                    near_me=is_near_me,
                     city=parsed.get("city")
                 )
             except (json_lib.JSONDecodeError, IndexError):
