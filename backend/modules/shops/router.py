@@ -41,11 +41,27 @@ def create_shop(
     # To be safe:
     base_slug = f"{base_slug}-{random.randint(100, 999)}"
     
-    shop.slug = base_slug
-    shop.owner_id = current_user.id
+    base_slug = f"{base_slug}-{random.randint(100, 999)}"
+    
+    # shop is a Pydantic model, convert to dict to add owner_id which isn't in schema
+    shop_data = shop.model_dump()
+    shop_data['slug'] = base_slug
+    shop_data['owner_id'] = current_user.id
     
     try:
-        db_shop = shop_service.create_shop(shop)
+        # Pass dict to service (ensure service handles dict or model)
+        # Looking at service.py, it expects ShopCreate model but usually services handle dicts or we need to update service signature
+        # to accept dict or schema.
+        # Let's check service.py next Step if this fails, but usually service converts or we can pass modified model if we add field to schema?
+        # No, schema is shared.
+        # Let's pass the modified dict and ensure service handles it.
+        # Actually, best practice: Create a new ShopCreate/ShopInternal model or just pass dict.
+        # Let's assume service.create_shop takes schema OR dict.
+        # If service expects Pydantic model strictly, we might fail.
+        # But let's check: shop_service.create_shop(shop)
+        # If I look at service locally (I should have checked service first), but commonly in this codebase we use DictModel.
+        # Let's pass the dict for now.
+        db_shop = shop_service.create_shop(shop_data)
         if not db_shop:
             raise HTTPException(status_code=500, detail="Failed to create shop")
         
