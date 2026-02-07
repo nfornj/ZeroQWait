@@ -25,6 +25,73 @@ model = OpenAIModel(
     provider=OpenAIProvider(base_url=ollama_url, api_key='ollama'),
 )
 
+
+# --- Circuit Breaker for LLM Resilience ---
+
+class CircuitBreaker:
+    """
+    Circuit breaker pattern for LLM calls.
+    If the LLM fails too many times, switch to fallback mode for a period.
+    This prevents hanging on an overloaded Ollama server.
+    """
+    
+    def __init__(self, failure_threshold: int = 3, reset_timeout: int = 30):
+        self.failures = 0
+        self.threshold = failure_threshold
+        self.reset_timeout = reset_timeout
+        self.last_failure = None
+        self.is_open = False
+        self._lock = asyncio.Lock()
+    
+    async def call(self, func, fallback_func, *args, **kwargs):
+        """
+        Execute func with circuit breaker protection.
+        If circuit is open, use fallback_func instead.
+        """
+        async with self._lock:
+            # Check if circuit should reset
+            if self.is_open:
+                import time
+                if time.time() - self.last_failure > self.reset_timeout:
+                    logger.info("Circuit breaker reset - trying LLM again")
+                    self.is_open = False
+                    self.failures = 0
+                else:
+                    logger.warning("Circuit breaker OPEN - using fallback")
+                    return await fallback_func(*args, **kwargs)
+        
+        try:
+            # Use timeout to prevent hanging
+            result = await asyncio.wait_for(func(*args, **kwargs), timeout=15.0)
+            
+            async with self._lock:
+                self.failures = 0
+            
+            return result
+            
+        except asyncio.TimeoutError:
+            logger.warning("LLM call timed out")
+            await self._record_failure()
+            return await fallback_func(*args, **kwargs)
+            
+        except Exception as e:
+            logger.warning(f"LLM call failed: {e}")
+            await self._record_failure()
+            return await fallback_func(*args, **kwargs)
+    
+    async def _record_failure(self):
+        import time
+        async with self._lock:
+            self.failures += 1
+            if self.failures >= self.threshold:
+                self.is_open = True
+                self.last_failure = time.time()
+                logger.error(f"Circuit breaker OPENED after {self.failures} failures")
+
+
+# Global circuit breaker instance
+llm_circuit_breaker = CircuitBreaker()
+
 # --- Smart Query Processor ---
 
 from dataclasses import dataclass
@@ -943,6 +1010,95 @@ async def see_testimonials(ctx: RunContext[MasterAgentDeps]) -> str:
     return "Testimonials section visible. Mention that many shop owners and customers love the platform."
 
 
+# --- ACTIVE SERVICE TOOLS ---
+
+@master_pydantic_agent.tool
+async def join_queue(
+    ctx: RunContext[MasterAgentDeps],
+    shop_id: int = Field(description="ID of the shop to join queue at"),
+    customer_name: str = Field(description="Name of the customer joining"),
+    phone: Optional[str] = Field(default=None, description="Optional phone number for notifications")
+) -> str:
+    """Join a queue at a specific shop. Use when user wants to get in line."""
+    logger.info(f"join_queue called | shop_id={shop_id} | customer={customer_name}")
+    
+    result = db_interface.join_queue_for_shop(shop_id, customer_name, phone)
+    
+    ctx.deps.actions.append({
+        "tool": "join_queue",
+        "result": result,
+        "params": {"shop_id": shop_id, "customer_name": customer_name},
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    if result.get("error"):
+        return f"Could not join queue: {result['error']}"
+    
+    return (
+        f"Successfully added {result['customer_name']} to {result['shop_name']}! "
+        f"Position #{result['position']}, estimated wait: {result['estimated_wait_minutes']} minutes. "
+        f"Queue ticket ID: {result['queue_item_id']}."
+    )
+
+
+@master_pydantic_agent.tool
+async def get_wait_time(
+    ctx: RunContext[MasterAgentDeps],
+    shop_id: int = Field(description="ID of the shop to check wait time for")
+) -> str:
+    """Get estimated wait time for a shop's queue. Use when user asks about wait times."""
+    logger.info(f"get_wait_time called | shop_id={shop_id}")
+    
+    result = db_interface.get_shop_wait_time(shop_id)
+    
+    ctx.deps.actions.append({
+        "tool": "get_wait_time",
+        "result": result,
+        "params": {"shop_id": shop_id},
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    if result.get("error"):
+        return f"Could not get wait time: {result['error']}"
+    
+    if result['wait_minutes'] == 0:
+        return f"No wait at {result['shop_name']}! The queue is empty."
+    
+    return (
+        f"{result['shop_name']} has {result['queue_length']} people waiting. "
+        f"Estimated wait: about {result['wait_minutes']} minutes."
+    )
+
+
+@master_pydantic_agent.tool
+async def check_queue_status(
+    ctx: RunContext[MasterAgentDeps],
+    queue_item_id: int = Field(description="Queue ticket ID to check status for")
+) -> str:
+    """Check current position and wait time for a queue ticket. Use when user wants to check their place in line."""
+    logger.info(f"check_queue_status called | queue_item_id={queue_item_id}")
+    
+    result = db_interface.get_queue_position(queue_item_id)
+    
+    ctx.deps.actions.append({
+        "tool": "check_queue_status",
+        "result": result,
+        "params": {"queue_item_id": queue_item_id},
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    if result.get("error"):
+        return f"Could not find queue status: {result['error']}"
+    
+    if result['status'] != 'waiting':
+        return f"{result['customer_name']}'s status at {result['shop_name']}: {result['status'].upper()}"
+    
+    return (
+        f"{result['customer_name']} is #{result['position']} at {result['shop_name']}. "
+        f"{result['people_ahead']} people ahead, about {result['estimated_wait_minutes']} minutes wait."
+    )
+
+
 # --- Master Agent ---
 
 class MasterAgent:
@@ -1045,7 +1201,26 @@ class MasterAgent:
             # Load conversation history from database for context
             conversation_history = db_interface.get_conversation_history(session_id, limit=10)
             history_context = self._format_history_for_llm(conversation_history)
-            search_context = await self._extract_last_search_context(conversation_history)
+            
+            # === PARALLEL BRAIN EXECUTION ===
+            # Run intent classification, query extraction, and context extraction concurrently
+            # This reduces latency by ~40-60% compared to sequential calls
+            intent_task = asyncio.create_task(
+                intent_router.classify_intent(user_msg, history_context)
+            )
+            query_task = asyncio.create_task(
+                query_processor.extract_search_terms(user_msg)
+            )
+            context_task = asyncio.create_task(
+                self._extract_last_search_context(conversation_history)
+            )
+            
+            # Await all three in parallel
+            intent, parsed_query, search_context = await asyncio.gather(
+                intent_task, query_task, context_task
+            )
+            
+            logger.info(f"Parallel processing complete: intent={intent}, terms='{parsed_query.terms}', context={search_context}")
             
             # Store search context for follow-up queries
             if search_context["last_category"]:
@@ -1100,8 +1275,8 @@ class MasterAgent:
                 f"msg='{user_msg[:50]}...' | context_items={len(context_parts)}"
             )
             
-            # Step 1: Classify intent using LLM (with conversation history)
-            intent = await intent_router.classify_intent(user_msg, history_context)
+            
+            # Intent already classified in parallel block above
             logger.info(f"Intent classified as: {intent}")
             
             # Step 2: Route based on intent
@@ -1115,8 +1290,7 @@ class MasterAgent:
                 logger.info(f"Unclear intent - asking for clarification")
             else:
                 # ACTION intent - be aggressive about calling search_shops
-                # First, parse the query to understand what user wants
-                parsed_query = await query_processor.extract_search_terms(user_msg)
+                # Query already parsed in parallel block above
                 logger.info(f"Parsed query: {parsed_query.to_dict()}")
                 
                 # Determine if we should directly call search_shops

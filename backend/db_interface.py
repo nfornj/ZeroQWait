@@ -708,6 +708,135 @@ class DatabaseInterface:
             else:
                 result[column.name] = value
         return result
+    
+    # --- Agent Active Tool Helpers ---
+    
+    def get_shop_wait_time(self, shop_id: int) -> Dict[str, Any]:
+        """Calculate estimated wait time for a shop based on queue and average service time."""
+        db = self.get_session()
+        try:
+            shop = db.query(Shop).filter(Shop.id == shop_id).first()
+            if not shop:
+                return {"error": "Shop not found", "wait_minutes": None}
+            
+            # Get active queue for this shop
+            queue = db.query(Queue).filter(
+                Queue.shop_id == shop_id,
+                Queue.is_active == True
+            ).first()
+            
+            if not queue:
+                return {"shop_name": shop.name, "wait_minutes": 0, "queue_length": 0}
+            
+            # Count waiting customers
+            waiting_count = db.query(QueueItem).filter(
+                QueueItem.queue_id == queue.id,
+                QueueItem.status == 'waiting'
+            ).count()
+            
+            # Calculate estimated wait
+            avg_service_time = shop.average_service_time or 15  # Default 15 min
+            estimated_wait = waiting_count * avg_service_time
+            
+            return {
+                "shop_name": shop.name,
+                "shop_id": shop_id,
+                "wait_minutes": estimated_wait,
+                "queue_length": waiting_count,
+                "average_service_time": avg_service_time
+            }
+        finally:
+            db.close()
+    
+    def get_queue_position(self, queue_item_id: int) -> Dict[str, Any]:
+        """Get a customer's current position in queue and estimated wait."""
+        db = self.get_session()
+        try:
+            item = db.query(QueueItem).filter(QueueItem.id == queue_item_id).first()
+            if not item:
+                return {"error": "Queue item not found"}
+            
+            # Get the queue
+            queue = db.query(Queue).filter(Queue.id == item.queue_id).first()
+            if not queue:
+                return {"error": "Queue not found"}
+            
+            # Get shop for service time
+            shop = db.query(Shop).filter(Shop.id == queue.shop_id).first()
+            avg_service_time = shop.average_service_time if shop else 15
+            
+            # Count customers ahead
+            ahead_count = db.query(QueueItem).filter(
+                QueueItem.queue_id == item.queue_id,
+                QueueItem.status == 'waiting',
+                QueueItem.position < item.position
+            ).count()
+            
+            return {
+                "queue_item_id": queue_item_id,
+                "customer_name": item.customer_name,
+                "status": item.status,
+                "position": item.position,
+                "people_ahead": ahead_count,
+                "estimated_wait_minutes": ahead_count * avg_service_time,
+                "shop_name": shop.name if shop else "Unknown"
+            }
+        finally:
+            db.close()
+    
+    def join_queue_for_shop(self, shop_id: int, customer_name: str, phone: str = None) -> Dict[str, Any]:
+        """Add a customer to a shop's active queue."""
+        db = self.get_session()
+        try:
+            # Get shop
+            shop = db.query(Shop).filter(Shop.id == shop_id).first()
+            if not shop:
+                return {"error": "Shop not found"}
+            
+            # Get active queue
+            queue = db.query(Queue).filter(
+                Queue.shop_id == shop_id,
+                Queue.is_active == True
+            ).with_for_update().first()
+            
+            if not queue:
+                return {"error": "No active queue for this shop"}
+            
+            # Calculate position
+            max_pos = db.query(func.max(QueueItem.position)).filter(
+                QueueItem.queue_id == queue.id
+            ).scalar()
+            new_pos = (max_pos or 0) + 1
+            
+            # Create queue item
+            item = QueueItem(
+                queue_id=queue.id,
+                customer_name=customer_name,
+                phone=phone,
+                position=new_pos,
+                status='waiting'
+            )
+            db.add(item)
+            db.commit()
+            db.refresh(item)
+            
+            # Calculate wait time
+            avg_service_time = shop.average_service_time or 15
+            wait_minutes = (new_pos - 1) * avg_service_time
+            
+            return {
+                "success": True,
+                "queue_item_id": item.id,
+                "position": new_pos,
+                "estimated_wait_minutes": wait_minutes,
+                "shop_name": shop.name,
+                "customer_name": customer_name
+            }
+        except Exception as e:
+            db.rollback()
+            return {"error": str(e)}
+        finally:
+            db.close()
 
 # Singleton instance
 db_interface = DatabaseInterface()

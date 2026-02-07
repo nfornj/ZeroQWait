@@ -56,7 +56,10 @@ async def master_agent_chat(
 ):
     """
     Global Master AI Chat Endpoint.
+    Uses server-side Redis session storage for conversation history.
     """
+    from redis_client import redis_client
+    
     # 1. Rate Check
     client_ip = req.client.host
     if not check_rate_limit(client_ip):
@@ -72,24 +75,44 @@ async def master_agent_chat(
         
         # 3. Determine User ID
         user_id = str(current_user["id"]) if current_user else f"anon_{client_ip}"
+        
+        # 4. SERVER-SIDE HISTORY: Fetch from Redis instead of trusting client
+        server_history = redis_client.get_session_history(final_session_id, limit=10)
+        
+        # Merge: Use server history, but allow client to pass initial context if new session
+        if server_history:
+            history_to_use = server_history
+        elif request.history:
+            # New session with client-provided context (first message)
+            history_to_use = request.history
+        else:
+            history_to_use = []
+        
+        # 5. Store the incoming user message
+        redis_client.add_session_message(final_session_id, "user", request.message)
 
         result = await agent.chat(
             session_id=final_session_id,
             user_msg=request.message, 
-            history=request.history, 
+            history=history_to_use, 
             latitude=request.latitude, 
             longitude=request.longitude,
             context=request.context,
             user_id=user_id,
             is_voice=request.is_voice
         )
-        print(f"[DEBUG] Master agent response: {result.get('response', '')[:50]}...")
+        
+        # 6. Store the agent's response
+        response_text = result.get('response', '')
+        redis_client.add_session_message(final_session_id, "assistant", response_text)
+        
+        print(f"[DEBUG] Master agent response: {response_text[:50]}...")
         return result
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        # 3. Graceful Error Handling
+        # Graceful Error Handling
         return {
             "response": "I'm encountering a temporary server issue. Please try again in a moment.",
             "actions": [],
