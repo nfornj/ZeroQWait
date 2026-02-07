@@ -3,7 +3,7 @@ from sqlalchemy import or_, func, desc
 from database import SessionLocal
 from modules.shops.models import Shop, ShopService, ShopCloseDay
 from modules.shops import schemas
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union, Any
 from datetime import date, datetime
 
 class ShopService:
@@ -31,10 +31,14 @@ class ShopService:
             db.close()
 
 
-    def create_shop(self, shop_create: schemas.ShopCreate) -> schemas.Shop:
+    def create_shop(self, shop_create: Union[schemas.ShopCreate, Dict[str, Any]]) -> schemas.Shop:
         db = self.get_db()
         try:
-            shop_data = shop_create.model_dump(exclude_unset=True)
+            if isinstance(shop_create, dict):
+                shop_data = shop_create
+            else:
+                shop_data = shop_create.model_dump(exclude_unset=True)
+            
             shop = Shop(**shop_data)
             db.add(shop)
             db.commit()
