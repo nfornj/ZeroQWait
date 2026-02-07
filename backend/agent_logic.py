@@ -1243,7 +1243,8 @@ class MasterAgent:
                 self.metrics["tool_calls"] += len(actions)
             
             # Track cache
-            self.metrics["cache_hits"] = len(query_processor._extraction_cache)
+            # Track cache
+            # self.metrics["cache_hits"] = 0 # Redis metrics not exposed directly yet
             
             # Log conversation
             try:
@@ -1393,7 +1394,7 @@ def get_learned_synonyms_admin():
 def get_extraction_cache_admin():
     """Admin: View query extraction cache."""
     return {
-        "cache": query_processor._extraction_cache,
-        "size": len(query_processor._extraction_cache),
-        "max_size": query_processor._cache_max_size
+        "cache": "redis",
+        "message": "Using Redis for caching (metrics not available via this endpoint)",
+        "size": 0
     }
