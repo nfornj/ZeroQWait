@@ -4,8 +4,8 @@ Run this before starting the application
 """
 import os
 import sys
-from database import engine
-from models import Base
+from database import engine, Base
+import models
 
 def init_db():
     """Create all tables in the database"""
