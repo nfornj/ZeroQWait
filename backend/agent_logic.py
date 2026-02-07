@@ -110,9 +110,11 @@ Return ONLY valid JSON. NO markdown.
 context_extractor = ContextExtractor()
 
 
+from redis_client import redis_client
+
 class QueryProcessor:
     """
-    Intelligent query processing using pure LLM extraction.
+    Intelligent query processing using pure LLM extraction with Redis caching.
     Returns structured JSON with location intent preserved.
     """
     
@@ -152,20 +154,10 @@ Example Output: {"terms": "", "near_me": false, "city": null}
 """,
             model_settings={'temperature': 0.1, 'max_tokens': 100}
         )
-        
-        # Cache for common queries (performance optimization)
-        self._extraction_cache: Dict[str, ParsedQuery] = {}
-        self._cache_max_size = 1000
     
     async def extract_search_terms(self, user_query: str) -> ParsedQuery:
         """
-        Extract structured query info from user input.
-        
-        Args:
-            user_query: Raw user input
-            
-        Returns:
-            ParsedQuery with terms, near_me flag, and city
+        Extract structured query info from user input using Redis cache.
         """
         
         if not user_query or not user_query.strip():
@@ -174,11 +166,17 @@ Example Output: {"terms": "", "near_me": false, "city": null}
         # Normalize
         normalized = user_query.lower().strip()
         
-        # Check cache first (performance)
-        cache_key = hashlib.md5(normalized.encode()).hexdigest()
-        if cache_key in self._extraction_cache:
-            logger.debug(f"Cache hit for query: {normalized}")
-            return self._extraction_cache[cache_key]
+        # Check Redis (performance)
+        cache_key = f"query_extract:{hashlib.md5(normalized.encode()).hexdigest()}"
+        cached_result = redis_client.get(cache_key)
+        
+        if cached_result:
+            logger.debug(f"Redis cache hit for query: {normalized}")
+            try:
+                # Reconstruct ParsedQuery from dict
+                return ParsedQuery(**cached_result)
+            except Exception:
+                pass
         
         try:
             # Use LLM to extract structured query
@@ -216,9 +214,8 @@ Example Output: {"terms": "", "near_me": false, "city": null}
                     city=None
                 )
             
-            # Cache the result
-            if len(self._extraction_cache) < self._cache_max_size:
-                self._extraction_cache[cache_key] = query_result
+            # Cache the result in Redis (TTL 1 hour)
+            redis_client.set(cache_key, query_result.to_dict(), ttl=3600)
             
             logger.debug(f"Query extracted: '{normalized}' -> {query_result.to_dict()}")
             
@@ -235,6 +232,10 @@ Example Output: {"terms": "", "near_me": false, "city": null}
 
 # --- Global Query Processor ---
 query_processor = QueryProcessor()
+
+
+# --- LLM-based Intent Router ---
+# (Keep existing IntentRouter code here...)
 
 
 # --- LLM-based Intent Router ---
@@ -259,31 +260,21 @@ Classify user messages into ONE of these categories:
 - Acknowledgments: "okay", "cool", "got it", "nice"
 - Meta questions: "what is zeroqwait", "who are you", "how does this work"
 
-**ACTION** - For EVERYTHING else, including:
+**ACTION** - For clear requests involving:
 - Business types: "barber", "salon", "restaurant", "auto shop"
-- Services: "tire rotation", "oil change", "haircut", "brakes", "wheel alignment"
+- Services: "tire rotation", "oil change", "haircut", "brakes"
 - Search requests: "find me...", "show me...", "looking for..."
-- Locations: "near me", "in toronto", "canada" (when following a search)
-- Short nouns that could be search terms
-- Pricing/features/help requests
+- Locations: "near me", "in toronto", "canada"
+- Short nouns that are clearly search terms (e.g. "brakes", "haircut")
 
-Examples:
-- "hello" → CONVERSATION
-- "thanks" → CONVERSATION
-- "what is zeroqwait" → CONVERSATION
-- "tire rotation" → ACTION
-- "oil change" → ACTION
-- "barber" → ACTION
-- "find me auto shops" → ACTION
-- "near me" → ACTION
-- "canada" → ACTION (could be location refinement)
-- "brakes" → ACTION
-- "wheel alignment" → ACTION
+**UNCLEAR** - For ambiguous inputs where you aren't sure if it's conversation or a search.
+- Very short, ambiguous words like "test", "check", "maybe"
+- Random characters
+- Inputs that don't fit CONVERSATION or ACTION clearly.
 
-**CRITICAL RULE: If unsure, default to ACTION.**
-Short noun phrases (1-3 words) that aren't greetings are almost always search terms.
+**CRITICAL RULE: If unsure, use UNCLEAR.**
 
-Respond with ONLY one word: CONVERSATION or ACTION
+Respond with ONLY one word: CONVERSATION, ACTION, or UNCLEAR
 """,
             model_settings={'temperature': 0.1, 'max_tokens': 10}
         )
@@ -335,13 +326,12 @@ Respond naturally to the user's message.
             result = await self.router_agent.run(full_prompt)
             intent = result.output.strip().upper() if hasattr(result, 'output') else str(result).strip().upper()
             
-            # Normalize response - DEFAULT TO ACTION if unclear
+            # Normalize response
             if 'CONVERSATION' in intent:
                 return 'CONVERSATION'
+            elif 'UNCLEAR' in intent:
+                return 'UNCLEAR'
             else:
-                # Default to ACTION for anything unclear or explicitly ACTION
-                if 'ACTION' not in intent:
-                    logger.debug(f"Unclear intent response: {intent}, defaulting to ACTION")
                 return 'ACTION'
         except Exception as e:
             logger.error(f"Intent classification error: {e}")
@@ -383,16 +373,14 @@ intent_router = IntentRouter()
 
 class CategoryManager:
     """
-    Dynamic category system with smart query processing.
+    Dynamic category system with smart query processing and Redis caching.
     Zero hardcoded categories - pure database-driven.
     """
     
     def __init__(self):
-        self._category_cache = None
-        self._cache_timestamp = None
-        self._cache_ttl = 300  # 5 minutes
         self._synonym_map = {}
         self._learning_queue = []
+        # We rely on Redis for category cache now
     
     def _load_categories_from_db(self) -> Dict[str, Dict[str, Any]]:
         """Load categories dynamically from database."""
@@ -411,9 +399,9 @@ class CategoryManager:
                     category_stats[shop_type] = {
                         "key": shop_type,
                         "display_name": shop.get('category_display_name', shop_type.replace('_', ' ').title()),
-                        "aliases": set([shop_type]),
+                        "aliases": [shop_type],  # Use list for JSON serialization
                         "count": 0,
-                        "keywords": set(),
+                        "keywords": [], # Use list for JSON serialization
                         "example_shops": []
                     }
                 
@@ -424,11 +412,17 @@ class CategoryManager:
                 
                 if shop.get('name'):
                     name_words = [w.lower() for w in shop['name'].split() if len(w) > 3]
-                    category_stats[shop_type]["keywords"].update(name_words[:5])
+                    # keywords is list now
+                    for w in name_words[:5]:
+                        if w not in category_stats[shop_type]["keywords"]:
+                            category_stats[shop_type]["keywords"].append(w)
                 
                 if shop.get('description'):
                     desc_words = [w.lower() for w in shop['description'].split() if len(w) > 3]
-                    category_stats[shop_type]["keywords"].update(desc_words[:5])
+                     # keywords is list now
+                    for w in desc_words[:5]:
+                        if w not in category_stats[shop_type]["keywords"]:
+                            category_stats[shop_type]["keywords"].append(w)
             
             # Load explicit aliases from database
             try:
@@ -437,8 +431,8 @@ class CategoryManager:
                     cat_key = alias_row['category_key']
                     alias = alias_row['alias']
                     
-                    if cat_key in category_stats:
-                        category_stats[cat_key]["aliases"].add(alias)
+                    if cat_key in category_stats and alias not in category_stats[cat_key]["aliases"]:
+                        category_stats[cat_key]["aliases"].append(alias)
             except Exception as e:
                 logger.warning(f"Could not load category aliases: {e}")
             
@@ -450,7 +444,8 @@ class CategoryManager:
                     category = syn_row['category']
                     
                     if category in category_stats:
-                        category_stats[category]["aliases"].add(query_term)
+                        if query_term not in category_stats[category]["aliases"]:
+                            category_stats[category]["aliases"].append(query_term)
                         self._synonym_map[query_term] = category
             except Exception as e:
                 logger.warning(f"Could not load learned synonyms: {e}")
@@ -462,20 +457,21 @@ class CategoryManager:
             return {}
     
     def get_categories(self, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
-        """Get categories with caching."""
-        now = datetime.now().timestamp()
+        """Get categories with Redis caching."""
+        cache_key = "all_categories"
         
-        if (not force_refresh and 
-            self._category_cache is not None and 
-            self._cache_timestamp is not None and 
-            (now - self._cache_timestamp) < self._cache_ttl):
-            return self._category_cache
+        if not force_refresh:
+            cached = redis_client.get(cache_key)
+            if cached:
+                return cached
         
         logger.info("Refreshing category cache from database")
-        self._category_cache = self._load_categories_from_db()
-        self._cache_timestamp = now
+        categories = self._load_categories_from_db()
         
-        return self._category_cache
+        # Cache for 5 minutes
+        redis_client.set(cache_key, categories, ttl=300)
+        
+        return categories
     
     async def detect_category(self, user_input: str, context: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
@@ -1109,6 +1105,10 @@ class MasterAgent:
                 # Use conversational agent (no tools)
                 final_text = await intent_router.get_conversational_response(user_msg, deps.context, history_context)
                 logger.info(f"Conversational response generated (no tools)")
+            elif intent == 'UNCLEAR':
+                # CLARIFICATION for ambiguous input
+                final_text = "I'm not sure if you'd like to chat or find a shop. Could you clarify? 🤔"
+                logger.info(f"Unclear intent - asking for clarification")
             else:
                 # ACTION intent - be aggressive about calling search_shops
                 # First, parse the query to understand what user wants
@@ -1302,7 +1302,6 @@ class MasterAgent:
             "error_rate": self.metrics["errors"] / max(self.metrics["total_requests"], 1),
             "tools_per_request": self.metrics["tool_calls"] / max(self.metrics["total_requests"], 1),
             "voice_percentage": self.metrics["voice_requests"] / max(self.metrics["total_requests"], 1),
-            "extraction_cache_size": len(query_processor._extraction_cache),
             "categories_count": len(category_manager.get_categories())
         }
     

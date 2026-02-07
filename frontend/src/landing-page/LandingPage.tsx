@@ -1,6 +1,6 @@
 import CssBaseline from '@mui/material/CssBaseline';
 import Divider from '@mui/material/Divider';
-import AppTheme from '../auth-shared-theme/AppTheme';
+import AppTheme from '../features/auth/components/auth-shared-theme/AppTheme';
 import AppAppBar from './components/AppAppBar';
 import Hero from './components/Hero';
 import PartnersList from './components/PartnersList';

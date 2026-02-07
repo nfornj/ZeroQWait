@@ -11,7 +11,7 @@ from models import (
     QueueStatus
 )
 from schemas import Queue, QueueItem, QueueItemCreate, QueueCreate
-from auth_utils import get_current_user
+from shared.auth_utils import get_current_user
 from datetime import datetime
 
 router = APIRouter(prefix="/queues", tags=["queues"])

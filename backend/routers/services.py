@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional
 from db_interface import db_interface
 from schemas import ShopService, ShopServiceCreate, ShopServiceUpdate
-from auth_utils import get_current_user, get_current_user_optional
+from shared.auth_utils import get_current_user, get_current_user_optional
 from permissions import check_shop_access
 
 router = APIRouter()
@@ -35,7 +35,7 @@ def create_service(
             detail=f"Failed to create service: {str(e)}"
         )
 
-from auth_utils import get_current_user, get_current_user_optional
+from shared.auth_utils import get_current_user, get_current_user_optional
 
 @router.get("/shops/{shop_id}/services", response_model=List[ShopService])
 def list_services(

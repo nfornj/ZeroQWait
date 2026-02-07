@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import AIShopPublicPage from '../pages/AIShopPublicPage';
-import PublicShopPage from '../pages/PublicShopPage';
+import AIShopPublicPage from '../features/public-booking/pages/AIShopPublicPage';
+import PublicShopPage from '../features/public-booking/pages/PublicShopPage';
 import LandingPage from '../landing-page/LandingPage';
 import { getSubdomain } from '../utils/domainUtils';
 

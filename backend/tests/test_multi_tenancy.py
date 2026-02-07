@@ -12,7 +12,7 @@ These tests verify that:
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-from supabase_client import supabase
+from db_interface import db_interface
 from auth_utils import get_password_hash, create_access_token
 
 client = TestClient(app)
@@ -31,7 +31,7 @@ def test_users():
         "role": "shop_owner",
         "is_active": True
     }
-    users["owner_a"] = supabase.table("users").insert(owner_a_data).execute().data[0]
+    users["owner_a"] = db_interface.create_user(owner_a_data)
     users["owner_a_token"] = create_access_token({"sub": "owner_a_test"})
     
     # Shop Owner B
@@ -42,7 +42,7 @@ def test_users():
         "role": "shop_owner",
         "is_active": True
     }
-    users["owner_b"] = supabase.table("users").insert(owner_b_data).execute().data[0]
+    users["owner_b"] = db_interface.create_user(owner_b_data)
     users["owner_b_token"] = create_access_token({"sub": "owner_b_test"})
     
     # Employee for Shop A
@@ -53,7 +53,7 @@ def test_users():
         "role": "employee",
         "is_active": True
     }
-    users["employee_a"] = supabase.table("users").insert(employee_a_data).execute().data[0]
+    users["employee_a"] = db_interface.create_user(employee_a_data)
     users["employee_a_token"] = create_access_token({"sub": "employee_a_test"})
     
     # Customer
@@ -64,16 +64,21 @@ def test_users():
         "role": "customer",
         "is_active": True
     }
-    users["customer"] = supabase.table("users").insert(customer_data).execute().data[0]
+    users["customer"] = db_interface.create_user(customer_data)
     users["customer_token"] = create_access_token({"sub": "customer_test"})
     
     yield users
     
     # Cleanup
-    supabase.table("users").delete().eq("username", "owner_a_test").execute()
-    supabase.table("users").delete().eq("username", "owner_b_test").execute()
-    supabase.table("users").delete().eq("username", "employee_a_test").execute()
-    supabase.table("users").delete().eq("username", "customer_test").execute()
+    # Note: In a real environment, we'd use a separate test DB or rollback transaction
+    # Here we try to clean up manually
+    db = db_interface.get_session()
+    try:
+        from models import User
+        db.query(User).filter(User.username.in_(["owner_a_test", "owner_b_test", "employee_a_test", "customer_test"])).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
 
 
 @pytest.fixture(scope="module")
@@ -95,7 +100,7 @@ def test_shops(test_users):
         "slug": "shop-a-test",
         "is_active": True
     }
-    shops["shop_a"] = supabase.table("shops").insert(shop_a_data).execute().data[0]
+    shops["shop_a"] = db_interface.create_shop(shop_a_data)
     
     # Shop B owned by Owner B
     shop_b_data = {
@@ -111,7 +116,7 @@ def test_shops(test_users):
         "slug": "shop-b-test",
         "is_active": True
     }
-    shops["shop_b"] = supabase.table("shops").insert(shop_b_data).execute().data[0]
+    shops["shop_b"] = db_interface.create_shop(shop_b_data)
     
     # Create queues for both shops
     queue_a_data = {
@@ -119,14 +124,14 @@ def test_shops(test_users):
         "name": "Main Queue",
         "is_active": True
     }
-    shops["queue_a"] = supabase.table("queues").insert(queue_a_data).execute().data[0]
+    shops["queue_a"] = db_interface.create_queue(queue_a_data)
     
     queue_b_data = {
         "shop_id": shops["shop_b"]["id"],
         "name": "Main Queue",
         "is_active": True
     }
-    shops["queue_b"] = supabase.table("queues").insert(queue_b_data).execute().data[0]
+    shops["queue_b"] = db_interface.create_queue(queue_b_data)
     
     # Link Employee A to Shop A
     employee_link_data = {
@@ -135,16 +140,20 @@ def test_shops(test_users):
         "is_active": True,
         "created_by": test_users["owner_a"]["id"]
     }
-    supabase.table("shop_employees").insert(employee_link_data).execute()
+    db_interface.create_shop_employee(employee_link_data)
     
     yield shops
     
     # Cleanup
-    supabase.table("shop_employees").delete().eq("shop_id", shops["shop_a"]["id"]).execute()
-    supabase.table("queues").delete().eq("id", shops["queue_a"]["id"]).execute()
-    supabase.table("queues").delete().eq("id", shops["queue_b"]["id"]).execute()
-    supabase.table("shops").delete().eq("id", shops["shop_a"]["id"]).execute()
-    supabase.table("shops").delete().eq("id", shops["shop_b"]["id"]).execute()
+    db = db_interface.get_session()
+    try:
+        from models import Shop, Queue, ShopEmployee
+        db.query(ShopEmployee).filter(ShopEmployee.shop_id == shops["shop_a"]["id"]).delete()
+        db.query(Queue).filter(Queue.id.in_([shops["queue_a"]["id"], shops["queue_b"]["id"]])).delete()
+        db.query(Shop).filter(Shop.id.in_([shops["shop_a"]["id"], shops["shop_b"]["id"]])).delete()
+        db.commit()
+    finally:
+        db.close()
 
 
 # =====================================================================
@@ -251,7 +260,13 @@ def test_owner_cannot_modify_other_owners_queue_items(test_users, test_shops):
     assert response.status_code == 403
     
     # Cleanup
-    supabase.table("queue_items").delete().eq("id", queue_item["id"]).execute()
+    db = db_interface.get_session()
+    try:
+        from models import QueueItem
+        db.query(QueueItem).filter(QueueItem.id == queue_item["id"]).delete()
+        db.commit()
+    finally:
+        db.close()
 
 
 # =====================================================================
@@ -359,7 +374,13 @@ def test_public_endpoint_hides_employee_data(test_users, test_shops):
                     assert item.get("assigned_employee_id") is None
     
     # Cleanup
-    supabase.table("queue_items").delete().eq("id", queue_item["id"]).execute()
+    db = db_interface.get_session()
+    try:
+        from models import QueueItem
+        db.query(QueueItem).filter(QueueItem.id == queue_item["id"]).delete()
+        db.commit()
+    finally:
+        db.close()
 
 
 def test_authenticated_staff_sees_employee_data(test_users, test_shops):
@@ -406,7 +427,13 @@ def test_authenticated_staff_sees_employee_data(test_users, test_shops):
     assert found_employee_data, "Owner should see employee assignment"
     
     # Cleanup
-    supabase.table("queue_items").delete().eq("id", queue_item["id"]).execute()
+    db = db_interface.get_session()
+    try:
+        from models import QueueItem
+        db.query(QueueItem).filter(QueueItem.id == queue_item["id"]).delete()
+        db.commit()
+    finally:
+        db.close()
 
 
 # =====================================================================
@@ -429,7 +456,13 @@ def test_customer_can_join_queue(test_users, test_shops):
     queue_item = response.json()
     
     # Cleanup
-    supabase.table("queue_items").delete().eq("id", queue_item["id"]).execute()
+    db = db_interface.get_session()
+    try:
+        from models import QueueItem
+        db.query(QueueItem).filter(QueueItem.id == queue_item["id"]).delete()
+        db.commit()
+    finally:
+        db.close()
 
 
 def test_customer_cannot_manage_queue(test_users, test_shops):
@@ -487,7 +520,13 @@ def test_unauthenticated_can_join_queue(test_shops):
     queue_item = response.json()
     
     # Cleanup
-    supabase.table("queue_items").delete().eq("id", queue_item["id"]).execute()
+    db = db_interface.get_session()
+    try:
+        from models import QueueItem
+        db.query(QueueItem).filter(QueueItem.id == queue_item["id"]).delete()
+        db.commit()
+    finally:
+        db.close()
 
 
 def test_unauthenticated_cannot_manage_shop(test_shops):

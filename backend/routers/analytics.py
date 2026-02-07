@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
 from db_interface import db_interface
-from auth_utils import get_current_user
+from shared.auth_utils import get_current_user
 from analytics_processor import get_analytics_summary, get_peak_hours_analysis, AnalyticsProcessor
 from scheduler import trigger_maintenance_now
 from typing import List, Dict, Any, Optional

@@ -15,7 +15,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 
 
-import ColorModeIconDropdown from '../../auth-shared-theme/ColorModeIconDropdown';
+import ColorModeIconDropdown from '../../features/auth/components/auth-shared-theme/ColorModeIconDropdown';
 
 const StyledToolbar = styled(Toolbar)(({ theme }) => ({
   display: 'flex',

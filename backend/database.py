@@ -1,11 +1,13 @@
 """
 SQLAlchemy database connection for direct SQL operations
-Used for analytics processing and complex queries
 """
 import os
 from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from dotenv import load_dotenv
+
+Base = declarative_base()
 from pathlib import Path
 
 # Load environment variables
@@ -13,24 +15,18 @@ env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
 
 # Get database URL from environment
-# Supabase provides a direct PostgreSQL connection string
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
     # Construct from individual components if not provided
-    db_host = os.getenv("DB_HOST", "db.yuxfpspyzyhesfuspjns.supabase.co")
+    db_host = os.getenv("DB_HOST", "localhost")
     db_port = os.getenv("DB_PORT", "5432")
-    db_name = os.getenv("DB_NAME", "postgres")
+    db_name = os.getenv("DB_NAME", "zeroqwait")
     db_user = os.getenv("DB_USER", "postgres")
-    db_password = os.getenv("DB_PASSWORD")
+    db_password = os.getenv("DB_PASSWORD", "password")
     
-    if not db_password:
-        print("WARNING: No DB_PASSWORD found, falling back to SQLite for local development.")
-        DATABASE_URL = "sqlite:///./zeroqwait.db"
-    else:
-        DATABASE_URL = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    DATABASE_URL = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
-# Create engine
 # Create engine
 engine_args = {
     "pool_pre_ping": True,
@@ -38,9 +34,10 @@ engine_args = {
     "max_overflow": 10
 }
 
+# Handle SQLite for testing/local dev if specified in env
 if DATABASE_URL.startswith("sqlite"):
     engine_args = {
-        "connect_args": {"check_same_thread": False} # Needed for SQLite + FastAPI
+        "connect_args": {"check_same_thread": False} 
     }
 
 engine = create_engine(
@@ -50,7 +47,6 @@ engine = create_engine(
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 
 def get_db() -> Session:
     """
@@ -62,7 +58,6 @@ def get_db() -> Session:
         yield db
     finally:
         db.close()
-
 
 def get_db_sync() -> Session:
     """

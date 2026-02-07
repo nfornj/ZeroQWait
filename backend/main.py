@@ -1,10 +1,16 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from contextlib import asynccontextmanager
-from routers import users, auth, shops, queues, subscriptions, analytics, uploads, employees, data_generation, services, agent, voice
+from routers import subscriptions, analytics, uploads, data_generation, services, agent, voice
+from modules.auth.router import router as auth_router
+from modules.users.router import router as users_router
+from modules.shops.router import router as shops_router
+from modules.employees.router import router as employees_router
+from modules.queues.router import router as queues_router
 from scheduler import start_scheduler, stop_scheduler
 import logging
+from websocket_manager import manager
 
 # Setup logging
 logging.basicConfig(
@@ -74,11 +80,14 @@ if not os.path.exists("static/uploads"):
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Include routers
-app.include_router(auth.router, prefix="/api", tags=["Authentication"])
-app.include_router(users.router, prefix="/api", tags=["Users"])
-app.include_router(shops.router, prefix="/api/shops", tags=["Shops"])
-app.include_router(employees.router, prefix="/api", tags=["Employees"])
-app.include_router(queues.router, prefix="/api/queues", tags=["Queues"])
+# Modular routers
+app.include_router(auth_router, prefix="/api", tags=["Authentication"])
+app.include_router(users_router, prefix="/api", tags=["Users"])
+app.include_router(shops_router, prefix="/api/shops", tags=["Shops"])
+app.include_router(employees_router, prefix="/api", tags=["Employees"])
+app.include_router(queues_router, prefix="/api/queues", tags=["Queues"])
+
+# Legacy/Shared routers (to be refactored)
 app.include_router(uploads.router, prefix="/api", tags=["Uploads"])
 app.include_router(subscriptions.router, prefix="/api/subscriptions", tags=["Subscriptions"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
@@ -86,6 +95,20 @@ app.include_router(data_generation.router, prefix="/api", tags=["Data Generation
 app.include_router(services.router, prefix="/api", tags=["Services"])
 app.include_router(agent.router, prefix="/api/agent", tags=["AI Agent"])
 app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
+
+@app.websocket("/ws/{shop_id}")
+async def websocket_endpoint(websocket: WebSocket, shop_id: str):
+    await manager.connect(websocket, shop_id)
+    try:
+        while True:
+            # We just keep the connection open to push updates
+            # Verify client is still there
+            data = await websocket.receive_text()
+            # Optional: handle client messages if needed
+            if data == "ping":
+                await websocket.send_text("pong")
+    except Exception:
+        manager.disconnect(websocket, shop_id)
 
 @app.get("/")
 async def root():

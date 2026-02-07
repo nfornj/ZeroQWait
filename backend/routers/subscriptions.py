@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from supabase_client import supabase
-from auth_utils import get_current_user
+from db_interface import db_interface
+from shared.auth_utils import get_current_user
 
 from tier_limits import TIER_LIMITS
 from pydantic import BaseModel
@@ -56,9 +56,8 @@ def upgrade_subscription(
         update_data["subscription_expires_at"] = None
     
     try:
-        response = supabase.table("users").update(update_data).eq("id", current_user["id"]).execute()
-        if response.data:
-            updated_user = response.data[0]
+        updated_user = db_interface.update_user(current_user["id"], update_data)
+        if updated_user:
             return {
                 "message": f"Successfully upgraded to {tier} tier",
                 "tier": tier,

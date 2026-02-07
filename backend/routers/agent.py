@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
-from auth_utils import get_current_user_optional
+from shared.auth_utils import get_current_user_optional
 from agent_logic import MasterAgent
 from db_interface import db_interface
 

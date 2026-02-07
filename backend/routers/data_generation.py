@@ -6,7 +6,7 @@ from analytics_processor import AnalyticsProcessor
 from datetime import datetime, timedelta
 import random
 import logging
-from auth_utils import get_current_user
+from shared.auth_utils import get_current_user
 from permissions import check_shop_access
 
 router = APIRouter()
