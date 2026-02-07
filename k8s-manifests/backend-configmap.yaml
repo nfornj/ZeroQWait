@@ -11,3 +11,5 @@ data:
   PYTHONUNBUFFERED: "1"
   USE_SUPABASE: "false"
   OLLAMA_URL: "http://ollama.llm.svc.cluster.local:11434/v1"
+  REDIS_HOST: "redis.zeroqwait.svc.cluster.local"
+  REDIS_PORT: "6379"

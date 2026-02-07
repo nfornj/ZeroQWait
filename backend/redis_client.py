@@ -8,7 +8,21 @@ logger = logging.getLogger(__name__)
 
 class RedisClient:
     def __init__(self):
-        self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        # Support both REDIS_URL and individual components (for K8s deployments)
+        redis_url = os.getenv("REDIS_URL")
+        
+        if not redis_url:
+            # Construct URL from components
+            host = os.getenv("REDIS_HOST", "localhost")
+            port = os.getenv("REDIS_PORT", "6379")
+            password = os.getenv("REDIS_PASSWORD", "")
+            
+            if password:
+                redis_url = f"redis://:{password}@{host}:{port}/0"
+            else:
+                redis_url = f"redis://{host}:{port}/0"
+        
+        self.redis_url = redis_url
         self.client = None
         self.enabled = False
         
@@ -16,7 +30,9 @@ class RedisClient:
             self.client = redis.from_url(self.redis_url, decode_responses=True)
             self.client.ping()
             self.enabled = True
-            logger.info(f"Connected to Redis at {self.redis_url}")
+            # Don't log password in URL
+            safe_url = self.redis_url.split("@")[-1] if "@" in self.redis_url else self.redis_url
+            logger.info(f"Connected to Redis at {safe_url}")
         except Exception as e:
             logger.warning(f"Failed to connect to Redis: {e}. Caching will be disabled.")
             self.client = None
