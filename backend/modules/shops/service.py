@@ -32,6 +32,10 @@ class ShopService:
 
 
     def create_shop(self, shop_create: Union[schemas.ShopCreate, Dict[str, Any]]) -> schemas.Shop:
+        from slugify import slugify
+        import random
+        import string
+        
         db = self.get_db()
         try:
             if isinstance(shop_create, dict):
@@ -39,6 +43,20 @@ class ShopService:
             else:
                 shop_data = shop_create.model_dump(exclude_unset=True)
             
+            # Generate slug if not present
+            if not shop_data.get('slug'):
+                base_slug = slugify(shop_data['name'])
+                slug = base_slug
+                # Ensure uniqueness
+                counter = 1
+                while db.query(Shop).filter(Shop.slug == slug).first():
+                    # If long name, truncate base to avoid overflow
+                    if len(base_slug) > 40:
+                        base_slug = base_slug[:40]
+                    slug = f"{base_slug}-{counter}"
+                    counter += 1
+                shop_data['slug'] = slug
+
             shop = Shop(**shop_data)
             db.add(shop)
             db.commit()
@@ -87,6 +105,14 @@ class ShopService:
                    q = q.order_by(distance)
     
             shops = q.limit(limit).all()
+            return [schemas.Shop.model_validate(s) for s in shops]
+        finally:
+            db.close()
+
+    def get_user_shops(self, owner_id: int) -> List[schemas.Shop]:
+        db = self.get_db()
+        try:
+            shops = db.query(Shop).filter(Shop.owner_id == owner_id).all()
             return [schemas.Shop.model_validate(s) for s in shops]
         finally:
             db.close()

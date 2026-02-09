@@ -38,6 +38,7 @@ const EmployeeManagementPage = React.lazy(() => import("./features/shop-dashboar
 const EmployeeQueuePage = React.lazy(() => import("./features/shop-dashboard/pages/EmployeeQueuePage"));
 const QueueManagementPage = React.lazy(() => import("./features/shop-dashboard/pages/QueueManagementPage"));
 const ShopRegistrationPage = React.lazy(() => import("./features/shop-dashboard/pages/ShopRegistrationPage"));
+const MasterDashboardPage = React.lazy(() => import("./features/admin/pages/MasterDashboardPage"));
 
 // Lazy Loaded Pages - Public Booking
 const HomePage = React.lazy(() => import("./features/public-booking/pages/HomePage"));
@@ -63,7 +64,8 @@ const LoadingFallback = () => (
   </Box>
 );
 
-function App() {
+const App: React.FC = () => {
+  console.log("App Version Check: v2.0 - Forced Update"); // CACHE BUSTER
   return (
     <ShopProvider>
       <ThemeProvider>
@@ -122,6 +124,7 @@ function App() {
               <Route path="/settings" element={<ShopSettingsPage />} />
               <Route path="/queues" element={<QueueManagementPage />} />
               <Route path="/analytics" element={<ShopAnalyticsPage />} />
+              <Route path="/master-dashboard" element={<MasterDashboardPage />} />
             </Route>
 
             <Route path="*" element={<NotFoundPage />} />

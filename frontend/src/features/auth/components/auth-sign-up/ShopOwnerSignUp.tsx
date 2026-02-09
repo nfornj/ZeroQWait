@@ -102,7 +102,7 @@ export default function ShopOwnerSignUp() {
 
     try {
       // Step 1: Create user account
-      const userResponse = await axios.post('/users', {
+      const userResponse = await axios.post('users', {
         username: formData.username,
         email: formData.email,
         password: formData.password,
@@ -114,7 +114,7 @@ export default function ShopOwnerSignUp() {
       loginFormData.append('username', formData.username);
       loginFormData.append('password', formData.password);
 
-      const tokenResponse = await axios.post('/auth/token', loginFormData, {
+      const tokenResponse = await axios.post('auth/token', loginFormData, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
 
@@ -122,7 +122,7 @@ export default function ShopOwnerSignUp() {
       localStorage.setItem('token', token);
 
       // Step 3: Create shop
-      await axios.post('/shops/', {
+      await axios.post('shops/', {
         name: formData.shopName,
         shop_type: formData.shop_type,
         description: formData.description,

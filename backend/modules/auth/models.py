@@ -9,6 +9,7 @@ class UserRole(str, enum.Enum):
     SHOP_OWNER = "shop_owner"
     MANAGER = "manager"
     EMPLOYEE = "employee"
+    SUPER_ADMIN = "super_admin"
 
 class SubscriptionTier(str, enum.Enum):
     FREE = "free"

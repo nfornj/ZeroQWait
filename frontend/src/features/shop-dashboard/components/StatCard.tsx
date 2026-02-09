@@ -78,6 +78,9 @@ export default function StatCard({
   const chartColor = theme.palette.primary.main;
   const trendValues = { up: '+25%', down: '-25%', neutral: '+5%' };
 
+  // Generate x-axis data to match the data length to avoid MUI X Charts crash
+  const xAxisData = Array.from({ length: data.length }, (_, i) => i.toString());
+
   return (
     <Card variant="outlined" sx={{ height: '100%', flexGrow: 1 }}>
       <CardContent>
@@ -111,7 +114,7 @@ export default function StatCard({
               showTooltip
               xAxis={{
                 scaleType: 'band',
-                data: daysInWeek, // Use the correct property 'data' for xAxis
+                data: xAxisData,
               }}
               sx={{
                 [`& .${areaElementClasses.root}`]: {

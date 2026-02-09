@@ -8,6 +8,7 @@ from modules.users.router import router as users_router
 from modules.shops.router import router as shops_router
 from modules.employees.router import router as employees_router
 from modules.queues.router import router as queues_router
+from modules.admin.router import router as admin_router
 from scheduler import start_scheduler, stop_scheduler
 import logging
 from websocket_manager import manager
@@ -86,6 +87,7 @@ app.include_router(users_router, prefix="/api", tags=["Users"])
 app.include_router(shops_router, prefix="/api/shops", tags=["Shops"])
 app.include_router(employees_router, prefix="/api", tags=["Employees"])
 app.include_router(queues_router, prefix="/api/queues", tags=["Queues"])
+app.include_router(admin_router, prefix="/api", tags=["Admin"])
 
 # Legacy/Shared routers (to be refactored)
 app.include_router(uploads.router, prefix="/api", tags=["Uploads"])

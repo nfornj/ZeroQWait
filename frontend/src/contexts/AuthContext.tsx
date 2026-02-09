@@ -6,7 +6,7 @@ interface User {
   id: number;
   username: string;
   email: string;
-  role: "customer" | "shop_owner" | "employee" | "manager";
+  role: "customer" | "shop_owner" | "employee" | "manager" | "SUPER_ADMIN" | "super_admin";
   profile_photo_url?: string;
 }
 
@@ -205,6 +205,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       });
 
       setUser(userResponse.data);
+      console.log("[AuthContext] Login successful. User role:", userResponse.data.role);
       setIsAuthenticated(true);
     } catch (err: any) {
       console.error("[AuthContext] Login error:", err);

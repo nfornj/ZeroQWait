@@ -100,6 +100,22 @@ def get_all_shops(
     except Exception:
         return []
 
+@router.get("/my-shops", response_model=List[schemas.Shop])
+def get_my_shops(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get shops owned by the current user"""
+    if current_user.role != "shop_owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only shop owners can view their shops"
+        )
+    try:
+        shops = shop_service.get_user_shops(current_user.id)
+        return shops
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{shop_id}", response_model=queue_schemas.ShopWithQueue)
 def get_shop(shop_id: int, current_user: Optional[dict] = Depends(get_current_user_optional)):
     """Get shop details with active queue"""

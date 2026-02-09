@@ -146,15 +146,20 @@ export default function SignInCard() {
         }
       };
 
-      console.log("[LoginPage] User role:", user.role);
-      if (user.role === "shop_owner") {
+      console.log("[SignInCard] User role:", user.role);
+      const role = user.role?.toString().toUpperCase().trim();
+
+      if (role === "SHOP_OWNER") {
         // Try to redirect to shop subdomain, but fallback to regular dashboard
         redirectToShopDashboard();
-      } else if (user.role === "employee") {
-        console.log("[LoginPage] Redirecting to /employee-dashboard");
+      } else if (role === "EMPLOYEE") {
+        console.log("[SignInCard] Redirecting to /employee-dashboard");
         navigate("/employee-dashboard");
+      } else if (role === "SUPER_ADMIN") {
+        console.log("[SignInCard] Redirecting to /master-dashboard (HARD NAV)");
+        window.location.href = "/master-dashboard";
       } else {
-        console.log("[LoginPage] Redirecting to home");
+        console.log("[SignInCard] Redirecting to home");
         navigate("/");
       }
     }

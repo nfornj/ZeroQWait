@@ -35,13 +35,13 @@ class QueueItem(Base):
     position = Column(Integer, nullable=False, index=True)
     status = Column(SQLEnum(QueueStatus), default=QueueStatus.WAITING, nullable=False, index=True)
     notes = Column(Text)
-    checked_in_at = Column(DateTime, default=datetime.utcnow)
+    checked_in_at = Column(DateTime, default=datetime.utcnow, index=True)
     service_started_at = Column(DateTime)
-    completed_at = Column(DateTime)
+    completed_at = Column(DateTime, index=True)
     assigned_employee_id = Column(Integer, ForeignKey("users.id"))
     
     # Service Link
-    service_id = Column(Integer, ForeignKey("shop_services.id"), nullable=True)
+    service_id = Column(Integer, ForeignKey("shop_services.id"), nullable=True, index=True)
     service_cost = Column(Float, default=0.0)  # Snapshot of cost at time of service
     
     # Relationships

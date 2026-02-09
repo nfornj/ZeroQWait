@@ -8,7 +8,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  # Main domain - frontend
+  # Main domain - frontend (nip.io for testing)
   - host: "192.168.2.88.nip.io"
     http:
       paths:
@@ -27,8 +27,46 @@ spec:
             port:
               number: 3000
   
-  # Wildcard subdomain for shops - routes to frontend (frontend will handle shop-specific UI)
+  # Main domain - frontend (production)
+  - host: "zeroqwait.com"
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 3000
+
+  # Wildcard subdomain for shops (nip.io for testing)
   - host: "*.192.168.2.88.nip.io"
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 3000
+
+  # Wildcard subdomain for shops (production)
+  - host: "*.zeroqwait.com"
     http:
       paths:
       - path: /api

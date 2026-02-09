@@ -37,15 +37,21 @@ const LoginPage: React.FC = () => {
       user,
     });
     if (isAuthenticated && !loading && !error && user) {
-      console.log("[LoginPage] User role:", user.role);
-      if (user.role === "shop_owner") {
+      const role = user.role?.toString().toUpperCase().trim() || "";
+      console.log("[LoginPage] Normalized role check:", `"${role}"`);
+
+      if (role === "SHOP_OWNER") {
         // Try to redirect to shop subdomain, but fallback to regular dashboard
         redirectToShopDashboard();
-      } else if (user.role === "employee") {
+      } else if (role === "EMPLOYEE") {
         console.log("[LoginPage] Redirecting to /employee-dashboard");
         navigate("/employee-dashboard");
+      } else if (role === "SUPER_ADMIN") {
+        console.log("[LoginPage] Redirecting to /master-dashboard (HARD NAV)");
+        // Force hard navigation to ensure fresh state and bypass router issues
+        window.location.href = "/master-dashboard";
       } else {
-        console.log("[LoginPage] Redirecting to home");
+        console.log("[LoginPage] Redirecting to home (Role mismatch)");
         navigate("/");
       }
     }
@@ -189,8 +195,34 @@ const LoginPage: React.FC = () => {
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
+          position: "relative",
         }}
       >
+        {/* DEBUG OVERLAY */}
+        <Box
+          sx={{
+            position: "fixed",
+            top: 10,
+            left: 10,
+            bgcolor: "error.main",
+            color: "white",
+            p: 2,
+            borderRadius: 1,
+            zIndex: 9999,
+            fontSize: "14px",
+            fontFamily: "monospace",
+          }}
+        >
+          <Typography variant="subtitle2" sx={{ fontWeight: "bold" }}>
+            DEBUG INFO (Take Screenshot)
+          </Typography>
+          <div>User: {user?.username || "null"}</div>
+          <div>Role: '{user?.role}' (len: {user?.role?.length || 0})</div>
+          <div>Auth: {isAuthenticated ? "YES" : "NO"}</div>
+          <div>Loading: {loading ? "YES" : "NO"}</div>
+          <div>Error: {error || "none"}</div>
+        </Box>
+
         <Avatar sx={{ m: 1, bgcolor: "primary.main" }}>
           <LockOutlinedIcon />
         </Avatar>

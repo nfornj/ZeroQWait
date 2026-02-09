@@ -33,8 +33,15 @@ export const getSubdomain = (): string | null => {
         if (parts.length >= 7) {
             sub = parts[0];
         }
+    } else if (host.includes('zeroqwait.com')) {
+        const parts = host.split('.');
+        if (parts.length >= 3) {
+            if (parts[0] !== 'www') {
+                sub = parts[0];
+            }
+        }
     } else {
-        // Standard domain logic (e.g. shop.zeroqwait.com)
+        // Standard domain logic (e.g. other custom domains)
         const parts = host.split('.');
         if (parts.length >= 3) {
             // Check if first part is 'www' - usually treated as root
