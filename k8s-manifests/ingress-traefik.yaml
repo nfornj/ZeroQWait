@@ -4,9 +4,14 @@ metadata:
   name: zeroqwait-ingress
   namespace: zeroqwait
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
 spec:
   ingressClassName: traefik
+  tls:
+  - hosts:
+    - "192.168.2.88.nip.io"
+    - "*.192.168.2.88.nip.io"
+    secretName: zeroqwait-wildcard-tls
   rules:
   # Wildcard for local testing (e.g. shop1.192.168.2.88.nip.io)
   - host: "192.168.2.88.nip.io"

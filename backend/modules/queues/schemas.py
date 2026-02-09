@@ -2,7 +2,8 @@ from typing import List, Optional
 from datetime import datetime
 from shared.schemas import DictModel
 from modules.queues.models import QueueStatus
-from modules.shops.schemas import Shop
+from modules.shops.schemas import Shop, ShopService
+from modules.employees.schemas import ShopEmployee
 
 # Queue Item schemas
 class QueueItemBase(DictModel):
@@ -25,9 +26,9 @@ class QueueItem(QueueItemBase):
     service_started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     assigned_employee_id: Optional[int] = None
-    assigned_employee: Optional[dict] = None  # Will be populated with employee details
+    assigned_employee: Optional[ShopEmployee] = None  # Populated with employee details
     service_cost: Optional[float] = 0.0
-    service: Optional[dict] = None # Will be populated with service details
+    service: Optional[ShopService] = None # Populated with service details
 
     class Config:
         from_attributes = True

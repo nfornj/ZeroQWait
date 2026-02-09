@@ -83,12 +83,10 @@ export const constructShopUrl = (slug: string, path: string = '/'): string => {
     // Production/Staging Logic
     const parts = host.split('.');
     let rootDomain = '';
+    const secureProtocol = 'https:'; // Force HTTPS for subdomains
 
     if (host.includes('nip.io')) {
         // preserve the long tail
-        // sub.192.168... vs 192.168...
-        // if we are currently ON a subdomain, strip it?
-        // safe bet: take the last 6 parts for nip.io
         if (parts.length >= 6) rootDomain = parts.slice(-6).join('.');
         else rootDomain = host;
     } else {
@@ -96,5 +94,5 @@ export const constructShopUrl = (slug: string, path: string = '/'): string => {
         rootDomain = parts.slice(-2).join('.');
     }
 
-    return `${protocol}//${slug}.${rootDomain}${path}`;
+    return `${secureProtocol}//${slug}.${rootDomain}${path}`;
 };

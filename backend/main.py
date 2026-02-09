@@ -11,6 +11,7 @@ from modules.queues.router import router as queues_router
 from modules.admin.router import router as admin_router
 from scheduler import start_scheduler, stop_scheduler
 import logging
+import models # Force model registration
 from websocket_manager import manager
 
 # Setup logging

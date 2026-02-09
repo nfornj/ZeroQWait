@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Box,
     Container,
@@ -31,6 +32,7 @@ import {
     AccessTime as TimeIcon
 } from '@mui/icons-material';
 import axios from 'axios';
+import { constructShopUrl } from '../../../utils/domainUtils';
 
 interface DashboardStats {
     total_shops: number;
@@ -52,6 +54,7 @@ interface ShopStatus {
 }
 
 const MasterDashboardPage: React.FC = () => {
+    const navigate = useNavigate();
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [shops, setShops] = useState<ShopStatus[]>([]);
     const [loading, setLoading] = useState(true);
@@ -169,7 +172,15 @@ const MasterDashboardPage: React.FC = () => {
                     </TableHead>
                     <TableBody>
                         {shops.map((shop) => (
-                            <TableRow key={shop.id} hover>
+                            <TableRow
+                                key={shop.id}
+                                hover
+                                onClick={() => {
+                                    const url = constructShopUrl(shop.slug);
+                                    window.location.href = url;
+                                }}
+                                sx={{ cursor: 'pointer' }}
+                            >
                                 <TableCell>
                                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
                                         <Typography variant="body1" sx={{ fontWeight: 500 }}>{shop.name}</Typography>
