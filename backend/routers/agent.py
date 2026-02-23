@@ -5,7 +5,7 @@ from shared.auth_utils import get_current_user_optional
 from agent_logic import MasterAgent
 from db_interface import db_interface
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 
 router = APIRouter()
 
@@ -18,28 +18,10 @@ class AgentChatRequest(BaseModel):
     session_id: Optional[str] = None
     is_voice: bool = False
 
-# --- Simple In-Memory Rate Limiter ---
-import time
-RATE_LIMITS = {} # ip -> {tokens, last_update}
-RATE_LIMIT_CAPACITY = 20
-RATE_LIMIT_FILL_RATE = 20 / 60.0 # tokens per second
-
+# --- Distributed Rate Limiter ---
 def check_rate_limit(ip: str) -> bool:
-    now = time.time()
-    if ip not in RATE_LIMITS:
-        RATE_LIMITS[ip] = {"tokens": RATE_LIMIT_CAPACITY, "last_update": now}
-    
-    bucket = RATE_LIMITS[ip]
-    elapsed = now - bucket["last_update"]
-    bucket["last_update"] = now
-    
-    # Refill
-    bucket["tokens"] = min(RATE_LIMIT_CAPACITY, bucket["tokens"] + elapsed * RATE_LIMIT_FILL_RATE)
-    
-    if bucket["tokens"] >= 1:
-        bucket["tokens"] -= 1
-        return True
-    return False
+    from redis_client import redis_client
+    return redis_client.check_rate_limit(ip, limit=20, window=60)
 
 @router.get("/health")
 async def agent_health():
@@ -52,6 +34,7 @@ async def agent_health():
 async def master_agent_chat(
     request: AgentChatRequest,
     req: Request, # FastAPI Request object to get IP
+    background_tasks: BackgroundTasks,
     current_user: Optional[dict] = Depends(get_current_user_optional)
 ):
     """
@@ -90,6 +73,7 @@ async def master_agent_chat(
         
         # 5. Store the incoming user message
         redis_client.add_session_message(final_session_id, "user", request.message)
+        background_tasks.add_task(db_interface.add_message_to_history, final_session_id, "user", request.message)
 
         result = await agent.chat(
             session_id=final_session_id,
@@ -105,6 +89,7 @@ async def master_agent_chat(
         # 6. Store the agent's response
         response_text = result.get('response', '')
         redis_client.add_session_message(final_session_id, "assistant", response_text)
+        background_tasks.add_task(db_interface.add_message_to_history, final_session_id, "assistant", response_text)
         
         print(f"[DEBUG] Master agent response: {response_text[:50]}...")
         return result

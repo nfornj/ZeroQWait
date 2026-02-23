@@ -120,5 +120,27 @@ class RedisClient:
             logger.error(f"Redis clear_session error: {e}")
             return False
 
+    # --- Rate Limiting ---
+    
+    def check_rate_limit(self, ip: str, limit: int = 20, window: int = 60) -> bool:
+        """Sliding window / token bucket rate limiter using Redis."""
+        if not self.enabled:
+            return True  # Fail open if Redis is down
+        try:
+            key = f"rate_limit:{ip}"
+            current = self.client.get(key)
+            if current and int(current) >= limit:
+                return False
+            
+            p = self.client.pipeline()
+            p.incr(key)
+            if not current:
+                p.expire(key, window)
+            p.execute()
+            return True
+        except Exception as e:
+            logger.error(f"Redis rate limit error: {e}")
+            return True  # Fail open on error
+
 # Global instance
 redis_client = RedisClient()

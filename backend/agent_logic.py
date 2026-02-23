@@ -153,7 +153,14 @@ Return ONLY valid JSON. NO markdown.
         history_str = json_lib.dumps([{"role": m["role"], "content": m["content"]} for m in recent])
         
         try:
-            result = await self.agent.run(history_str)
+            async def _extractor_fallback(h_str):
+                return type('MockResult', (), {'output': '{"last_category": null, "last_city": null}'})()
+                
+            result = await llm_circuit_breaker.call(
+                self.agent.run,
+                _extractor_fallback,
+                history_str
+            )
             raw = result.output.strip() if hasattr(result, 'output') else str(result).strip()
             
             # Sanitize response (remove markdown)
@@ -163,7 +170,20 @@ Return ONLY valid JSON. NO markdown.
                     raw = raw[4:]
             raw = raw.strip()
             
-            parsed = json_lib.loads(raw)
+            import re
+            try:
+                parsed = json_lib.loads(raw)
+            except json_lib.JSONDecodeError:
+                # Regex fallback for json hallucination
+                logger.warning(f"Failed to parse context JSON. Using regex fallback on: {raw}")
+                cat_match = re.search(r'"last_category"\s*:\s*"([^"]*)"', raw)
+                city_match = re.search(r'"last_city"\s*:\s*"([^"]*)"', raw)
+                
+                parsed = {
+                    "last_category": cat_match.group(1) if cat_match and cat_match.group(1) != 'null' else None,
+                    "last_city": city_match.group(1) if city_match and city_match.group(1) != 'null' else None
+                }
+                
             return SearchContext(
                 last_category=parsed.get("last_category"),
                 last_city=parsed.get("last_city")
@@ -246,11 +266,19 @@ Example Output: {"terms": "", "near_me": false, "city": null}
                 pass
         
         try:
-            # Use LLM to extract structured query
-            result = await self.extraction_agent.run(normalized)
+            async def _query_fallback(u_str):
+                return type('MockResult', (), {'output': '{"terms": "", "near_me": false, "city": null}'})()
+                
+            # Use LLM to extract structured query via circuit breaker
+            result = await llm_circuit_breaker.call(
+                self.extraction_agent.run,
+                _query_fallback,
+                normalized
+            )
             raw_output = result.output.strip() if hasattr(result, 'output') else str(result).strip()
             
             # Parse JSON response
+            import re
             try:
                 # Clean up potential markdown code blocks
                 clean_output = raw_output
@@ -269,20 +297,32 @@ Example Output: {"terms": "", "near_me": false, "city": null}
                     near_me=is_near_me,
                     city=parsed.get("city")
                 )
-            except (json_lib.JSONDecodeError, IndexError):
-                # Fallback
-                logger.warning(f"Failed to parse JSON from: {raw_output}")
+            except (json_lib.JSONDecodeError, IndexError, AttributeError):
+                # Fallback implementation with regex for tool hallucination
+                logger.warning(f"Failed to parse JSON from: {raw_output}. Falling back to regex.")
                 
-                # Sanitize: If raw output looks like JSON/code or is too long, don't use it as terms
-                term_fallback = raw_output
-                if "{" in raw_output or "}" in raw_output or len(raw_output) > 50:
+                terms_match = re.search(r'"terms"\s*:\s*"([^"]*)"', raw_output)
+                near_me_match = re.search(r'"near_me"\s*:\s*(true|false)', raw_output, re.IGNORECASE)
+                city_match = re.search(r'"city"\s*:\s*"([^"]*)"', raw_output)
+                
+                term_fallback = terms_match.group(1).strip() if terms_match else ""
+                
+                # Sanitize
+                if "{" in term_fallback or "}" in term_fallback or len(term_fallback) > 50:
                     term_fallback = ""
                     logger.warning("Dropped raw output from terms due to JSON-like content or length")
                     
+                if near_me_match and near_me_match.group(1).lower() == 'true':
+                    is_near_me = True
+                else:
+                    is_near_me = "near" in normalized or "nearby" in normalized
+                
+                city = city_match.group(1).strip() if city_match and city_match.group(1).strip() != 'null' else None
+                
                 query_result = ParsedQuery(
                     terms=term_fallback,
-                    near_me="near" in normalized or "nearby" in normalized,
-                    city=None
+                    near_me=is_near_me,
+                    city=city
                 )
             
             # Cache the result in Redis (TTL 1 hour)
@@ -395,7 +435,14 @@ Respond naturally to the user's message.
             else:
                 full_prompt = user_msg
             
-            result = await self.router_agent.run(full_prompt)
+            async def _intent_fallback(prompt):
+                return type('MockResult', (), {'output': 'ACTION'})()
+                
+            result = await llm_circuit_breaker.call(
+                self.router_agent.run,
+                _intent_fallback,
+                full_prompt
+            )
             intent = result.output.strip().upper() if hasattr(result, 'output') else str(result).strip().upper()
             
             # Normalize response
@@ -874,8 +921,9 @@ async def search_shops(
 
         
         # ONE CLARIFICATION GATE: Only ask if near_me=true but no location info
+        has_exact_coords = ctx.deps.latitude is not None and ctx.deps.longitude is not None
         has_location = (
-            ctx.deps.latitude is not None or 
+            has_exact_coords or 
             extracted_city or 
             (ctx.deps.context and ctx.deps.context.get('city'))
         )
@@ -1199,24 +1247,33 @@ class MasterAgent:
             # Store original message for learning
             deps.context["original_user_message"] = user_msg
             
-            # Load conversation history from database for context
-            conversation_history = db_interface.get_conversation_history(session_id, limit=10)
+            # Load conversation history from Redis for context
+            conversation_history = redis_client.get_session_history(session_id, limit=10)
             history_context = self._format_history_for_llm(conversation_history)
             
-            # === PARALLEL BRAIN EXECUTION ===
-            # Run intent classification, query extraction, and context extraction concurrently
-            # This reduces latency by ~40-60% compared to sequential calls
+            # === CONDITIONAL PARALLEL BRAIN EXECUTION ===
+            msg_lower = user_msg.lower().strip()
+            conversational_starters = {"hi", "hello", "hey", "thanks", "thank you", "okay", "cool", "got it", "nice", "testing", "can you hear me", "are you there"}
+            is_simple_greeting = msg_lower in conversational_starters
+            
             intent_task = asyncio.create_task(
                 intent_router.classify_intent(user_msg, history_context)
             )
-            query_task = asyncio.create_task(
-                query_processor.extract_search_terms(user_msg)
-            )
+            
             context_task = asyncio.create_task(
                 self._extract_last_search_context(conversation_history)
             )
             
-            # Await all three in parallel
+            if is_simple_greeting:
+                async def mock_query():
+                    return ParsedQuery(terms="", near_me=False, city=None)
+                query_task = asyncio.create_task(mock_query())
+            else:
+                query_task = asyncio.create_task(
+                    query_processor.extract_search_terms(user_msg)
+                )
+            
+            # Await in parallel
             intent, parsed_query, search_context = await asyncio.gather(
                 intent_task, query_task, context_task
             )
@@ -1321,8 +1378,9 @@ class MasterAgent:
                         search_city = context.get("city")
                     
                     # Check if we need to ask for location (one clarification rule)
+                    has_exact_coords = latitude is not None and longitude is not None
                     has_location = (
-                        latitude is not None or 
+                        has_exact_coords or 
                         search_city or 
                         (context and context.get("city"))
                     )
