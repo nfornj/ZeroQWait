@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # --- Configuration ---
 ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
 model = OpenAIModel(
-    'llama3.2',
+    'gpt-oss:20b',
     provider=OpenAIProvider(base_url=ollama_url, api_key='ollama'),
 )
 

@@ -140,13 +140,89 @@ const MasterAIAgent: React.FC = () => {
     // Audio Visualizer
     const { volume } = useAudioVisualizer(isRecording);
 
-    // Text-to-Speech Helper
-    const speak = (text: string) => {
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 1.0;
-            window.speechSynthesis.speak(utterance);
+    // --- Qwen TTS via Backend Proxy ---
+    const audioCtxRef = useRef<AudioContext | null>(null);
+    const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+    const [isSpeaking, setIsSpeaking] = useState(false);
+
+    const getAudioContext = () => {
+        if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+            audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        return audioCtxRef.current;
+    };
+
+    const speak = async (text: string) => {
+        // Stop any currently playing audio
+        try {
+            if (currentSourceRef.current) {
+                currentSourceRef.current.stop();
+                currentSourceRef.current = null;
+            }
+        } catch (_) { }
+
+        // Strip markdown for cleaner TTS
+        const plainText = text
+            .replace(/\*\*(.*?)\*\*/g, '$1')
+            .replace(/\*(.*?)\*/g, '$1')
+            .replace(/#{1,6}\s/g, '')
+            .replace(/`([^`]*)`/g, '$1')
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+            .replace(/\n+/g, ' ')
+            .trim();
+
+        if (!plainText) return;
+
+        setIsSpeaking(true);
+        try {
+            const response = await fetch('/api/voice/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: plainText,
+                    voice: 'serena',   // Clear, professional female receptionist voice
+                    speed: 1.0         // Normal, natural pacing
+                })
+            });
+
+            if (!response.ok) throw new Error(`TTS failed: ${response.status}`);
+
+            const arrayBuffer = await response.arrayBuffer();
+            const audioCtx = getAudioContext();
+
+            // Resume context (required after user gesture)
+            if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+            const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+            // --- NATURAL VOICE CHAIN: Source → Output (No EQ filters) ---
+            const source = audioCtx.createBufferSource();
+            source.buffer = audioBuffer;
+
+            // Direct connection for clean acoustic profile
+            source.connect(audioCtx.destination);
+
+            source.onended = () => {
+                setIsSpeaking(false);
+                currentSourceRef.current = null;
+            };
+
+            source.start(0);
+            currentSourceRef.current = source;
+
+        } catch (err) {
+            console.warn('[TTS] Qwen TTS failed, falling back to browser speech:', err);
+            // Graceful fallback to browser SpeechSynthesis
+            setIsSpeaking(false);
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(plainText);
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;     // Natural pitch
+                utterance.volume = 1.0;
+                utterance.onend = () => setIsSpeaking(false);
+                window.speechSynthesis.speak(utterance);
+            }
         }
     };
 
@@ -756,7 +832,7 @@ const MasterAIAgent: React.FC = () => {
                                     )}
 
                                     {activeViewer === 'pricing' && <Pricing embedded={true} />}
-                                    {activeViewer === 'testimonials' && <Testimonials embedded={true} />}
+                                    {(activeViewer as string) === 'testimonials' && <Testimonials embedded={true} />}
                                     {activeViewer === 'features' && <Features embedded={true} />}
                                     {activeViewer === 'faq' && <FAQ embedded={true} />}
                                 </Box>
