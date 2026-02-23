@@ -171,59 +171,64 @@ const MasterAIAgent: React.FC = () => {
             .replace(/\n+/g, ' ')
             .trim();
 
-        if (!plainText) return;
+        if (!plainText) return Promise.resolve();
 
         setIsSpeaking(true);
-        try {
-            const response = await fetch('/api/voice/tts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    text: plainText,
-                    voice: 'serena',   // Clear, professional female receptionist voice
-                    speed: 1.0         // Normal, natural pacing
-                })
-            });
+        return new Promise<void>(async (resolve) => {
+            try {
+                const response = await fetch('/api/voice/tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: plainText,
+                        voice: 'serena',   // Clear, professional female receptionist voice
+                        speed: 1.0         // Normal, natural pacing
+                    })
+                });
 
-            if (!response.ok) throw new Error(`TTS failed: ${response.status}`);
+                if (!response.ok) throw new Error(`TTS failed: ${response.status}`);
 
-            const arrayBuffer = await response.arrayBuffer();
-            const audioCtx = getAudioContext();
+                const arrayBuffer = await response.arrayBuffer();
+                const audioCtx = getAudioContext();
 
-            // Resume context (required after user gesture)
-            if (audioCtx.state === 'suspended') await audioCtx.resume();
+                // Resume context (required after user gesture)
+                if (audioCtx.state === 'suspended') await audioCtx.resume();
 
-            const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
-            // --- NATURAL VOICE CHAIN: Source → Output (No EQ filters) ---
-            const source = audioCtx.createBufferSource();
-            source.buffer = audioBuffer;
+                // --- NATURAL VOICE CHAIN: Source → Output (No EQ filters) ---
+                const source = audioCtx.createBufferSource();
+                source.buffer = audioBuffer;
 
-            // Direct connection for clean acoustic profile
-            source.connect(audioCtx.destination);
+                // Direct connection for clean acoustic profile
+                source.connect(audioCtx.destination);
 
-            source.onended = () => {
+                source.onended = () => {
+                    setIsSpeaking(false);
+                    currentSourceRef.current = null;
+                };
+
+                source.start(0);
+                currentSourceRef.current = source;
+
+            } catch (err) {
+                console.warn('[TTS] Qwen TTS failed, falling back to browser speech:', err);
+                // Graceful fallback to browser SpeechSynthesis
                 setIsSpeaking(false);
-                currentSourceRef.current = null;
-            };
-
-            source.start(0);
-            currentSourceRef.current = source;
-
-        } catch (err) {
-            console.warn('[TTS] Qwen TTS failed, falling back to browser speech:', err);
-            // Graceful fallback to browser SpeechSynthesis
-            setIsSpeaking(false);
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance(plainText);
-                utterance.rate = 1.0;
-                utterance.pitch = 1.0;     // Natural pitch
-                utterance.volume = 1.0;
-                utterance.onend = () => setIsSpeaking(false);
-                window.speechSynthesis.speak(utterance);
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel();
+                    const utterance = new SpeechSynthesisUtterance(plainText);
+                    utterance.rate = 1.0;
+                    utterance.pitch = 1.0;     // Natural pitch
+                    utterance.volume = 1.0;
+                    utterance.onend = () => setIsSpeaking(false);
+                    window.speechSynthesis.speak(utterance);
+                    resolve(); // Resolve immediately for fallback
+                } else {
+                    resolve();
+                }
             }
-        }
+        });
     };
 
     const handleVoiceToggle = async () => {
@@ -338,6 +343,9 @@ const MasterAIAgent: React.FC = () => {
             setActiveShops(currentShops);
             setActiveViewer(currentViewer);
 
+            // Wait for the audio stream to be fetched and decoded BEFORE showing the text
+            await speak(agentText);
+
             setChatHistory(prev => [...prev, {
                 role: 'ai',
                 text: agentText,
@@ -345,7 +353,6 @@ const MasterAIAgent: React.FC = () => {
                 relatedViewer: currentViewer
             }]);
 
-            speak(agentText);
         } catch (error) {
             console.error('[DEBUG] MasterAgent API Error:', error);
             setChatHistory(prev => [...prev, { role: 'ai', text: "I'm sorry, I'm having trouble connecting to my database. Please check your internet or try again in a moment." }]);

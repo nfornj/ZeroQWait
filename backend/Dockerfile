@@ -6,11 +6,16 @@ WORKDIR /app
 # Install only necessary system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies from requirements.txt
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install uv dependency manager
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Install Python dependencies using uv
+COPY pyproject.toml uv.lock ./
+# Sync dependencies to create a pristine virtual environment
+RUN uv sync --no-dev
 
 # Copy the application code
 COPY . .
@@ -18,5 +23,5 @@ COPY . .
 # Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application using the uv environment
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
