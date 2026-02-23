@@ -14,6 +14,7 @@ from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from db_interface import db_interface
+from redis_client import redis_client
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 logger = logging.getLogger(__name__)
@@ -98,393 +99,159 @@ from dataclasses import dataclass
 from typing import Optional
 import json as json_lib
 
-@dataclass
-class ParsedQuery:
-    """Structured query result with location intent preserved."""
-    terms: str  # Extracted search terms
-    near_me: bool  # User wants proximity search
-    city: Optional[str]  # Explicit city mentioned
+# --- Semantic Cache ---
+from sentence_transformers import SentenceTransformer
+import numpy as np
+embedder = SentenceTransformer('all-MiniLM-L6-v2')
+
+class SemanticCache:
+    """Lightweight semantic cache using sentence-transformers."""
+    def __init__(self, threshold=0.92):
+        self.threshold = threshold
+        self.local_cache = []  # List of (embedding_vector, QueryAnalysis_dict)
     
-    def to_dict(self) -> dict:
-        return {"terms": self.terms, "near_me": self.near_me, "city": self.city}
-
-
-
-# --- Context Extractor ---
-
-@dataclass
-class SearchContext:
-    """Structured search context extracted from history."""
-    last_category: Optional[str]
-    last_city: Optional[str]
-
-class ContextExtractor:
-    """LLM-based context extractor ensuring scalability."""
-    
-    def __init__(self):
-        self.agent = Agent(
-            model,
-            system_prompt="""Analyze conversation history to find the ACTIVE search context.
-            
-Return a JSON object with:
-- "last_category": The most recent business category/service (e.g. "auto repair", "nail salon"). Null if none.
-- "last_city": The most recent city/location (e.g. "Toronto"). PERSIST the last known city unless the user explicitly mentions a NEW city or says "near me".
-
-Prioritize the LATEST intent. If user changed topic (e.g. from "auto" to "nail") but didn't mention city, KEEP the old city.
-
-Examples:
-History: User: "find auto" -> ZeroQ: "no results" -> User: "nail salon"
-Output: {"last_category": "nail salon", "last_city": null}
-
-History: User: "auto repair" -> ZeroQ: "no results" -> User: "toronto"
-Output: {"last_category": "auto repair", "last_city": "Toronto"}
-
-Return ONLY valid JSON. NO markdown.
-""",
-            model_settings={'temperature': 0.1, 'max_tokens': 100}
-        )
-        
-    async def extract(self, history: List[Dict]) -> SearchContext:
-        if not history:
-            return SearchContext(None, None)
-            
-        # Format (last 6 messages)
-        recent = history[-6:]
-        history_str = json_lib.dumps([{"role": m["role"], "content": m["content"]} for m in recent])
-        
+    def get(self, query: str) -> Optional[dict]:
+        if not query.strip() or not self.local_cache:
+            return None
         try:
-            async def _extractor_fallback(h_str):
-                return type('MockResult', (), {'output': '{"last_category": null, "last_city": null}'})()
-                
-            result = await llm_circuit_breaker.call(
-                self.agent.run,
-                _extractor_fallback,
-                history_str
-            )
-            raw = result.output.strip() if hasattr(result, 'output') else str(result).strip()
+            vec = embedder.encode([query.strip().lower()])[0]
+            best_score = 0
+            best_match = None
             
-            # Sanitize response (remove markdown)
-            if "```" in raw:
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            raw = raw.strip()
-            
-            import re
-            try:
-                parsed = json_lib.loads(raw)
-            except json_lib.JSONDecodeError:
-                # Regex fallback for json hallucination
-                logger.warning(f"Failed to parse context JSON. Using regex fallback on: {raw}")
-                cat_match = re.search(r'"last_category"\s*:\s*"([^"]*)"', raw)
-                city_match = re.search(r'"last_city"\s*:\s*"([^"]*)"', raw)
-                
-                parsed = {
-                    "last_category": cat_match.group(1) if cat_match and cat_match.group(1) != 'null' else None,
-                    "last_city": city_match.group(1) if city_match and city_match.group(1) != 'null' else None
-                }
-                
-            return SearchContext(
-                last_category=parsed.get("last_category"),
-                last_city=parsed.get("last_city")
-            )
-        except Exception as e:
-            # Safe fallback
-            logger.error(f"Context extraction failed: {e}")
-            return SearchContext(None, None)
-
-# Initialize global instance
-context_extractor = ContextExtractor()
-
-
-from redis_client import redis_client
-
-class QueryProcessor:
-    """
-    Intelligent query processing using pure LLM extraction with Redis caching.
-    Returns structured JSON with location intent preserved.
-    """
-    
-    def __init__(self):
-        # Lightweight LLM agent for query extraction
-        self.extraction_agent = Agent(
-            model,
-            system_prompt="""You are a search query parser. Extract structured info from user input.
-
-Return a JSON object with exactly these fields:
-- "terms": business type or service keywords (string). If the input is NOT a search for a business/service (e.g. "pricing", "testimonials"), return empty string "".
-- "near_me": ONLY set to true if user EXPLICITLY says "near me", "nearby", "around here". Default is false.
-- "city": city name if user mentions one, otherwise null.
-
-**CRITICAL RULES:**
-1. Return ONLY valid JSON.
-2. Do NOT output code, explanations, or examples.
-3. If input is irrelevant to searching shops, return {"terms": "", "near_me": false, "city": null}.
-4. **Strip generic plural suffixes** like "shops", "stores", "places", "locations" from the "terms". KEEP the core business type.
-   - "barber shops" -> "barber"
-   - "coffee places" -> "coffee"
-5. **Generic Queries**: If the extraction result IS ITSELF just "shops", "stores", "places", "business", return empty string "".
-   - "find generic shops" -> "" 
-   - "show me places" -> ""
-
-Example Input: "find me barber shops near me"
-Example Output: {"terms": "barber", "near_me": true, "city": null}
-
-Example Input: "find shops"
-Example Output: {"terms": "", "near_me": false, "city": null}
-
-Example Input: "barber shops"
-Example Output: {"terms": "barber", "near_me": false, "city": null}
-
-Example Input: "testimonials"
-Example Output: {"terms": "", "near_me": false, "city": null}
-""",
-            model_settings={'temperature': 0.1, 'max_tokens': 100}
-        )
-    
-    async def extract_search_terms(self, user_query: str) -> ParsedQuery:
-        """
-        Extract structured query info from user input using Redis cache.
-        """
-        
-        if not user_query or not user_query.strip():
-            return ParsedQuery(terms="", near_me=False, city=None)
-        
-        # Normalize
-        normalized = user_query.lower().strip()
-        
-        # Check Redis (performance)
-        cache_key = f"query_extract:{hashlib.md5(normalized.encode()).hexdigest()}"
-        cached_result = redis_client.get(cache_key)
-        
-        if cached_result:
-            logger.debug(f"Redis cache hit for query: {normalized}")
-            try:
-                # Reconstruct ParsedQuery from dict
-                return ParsedQuery(**cached_result)
-            except Exception:
-                pass
-        
-        try:
-            async def _query_fallback(u_str):
-                return type('MockResult', (), {'output': '{"terms": "", "near_me": false, "city": null}'})()
-                
-            # Use LLM to extract structured query via circuit breaker
-            result = await llm_circuit_breaker.call(
-                self.extraction_agent.run,
-                _query_fallback,
-                normalized
-            )
-            raw_output = result.output.strip() if hasattr(result, 'output') else str(result).strip()
-            
-            # Parse JSON response
-            import re
-            try:
-                # Clean up potential markdown code blocks
-                clean_output = raw_output
-                if "```json" in clean_output:
-                    clean_output = clean_output.split("```json")[1].split("```")[0].strip()
-                elif "```" in clean_output:
-                    clean_output = clean_output.split("```")[1].split("```")[0].strip()
-                
-                parsed = json_lib.loads(clean_output)
-                
-                # Rule: Trust regex for 'near_me' to capture "find shops near me" reliably
-                is_near_me = parsed.get("near_me", False) or "near" in normalized or "nearby" in normalized
-                
-                query_result = ParsedQuery(
-                    terms=parsed.get("terms", "").strip(),
-                    near_me=is_near_me,
-                    city=parsed.get("city")
-                )
-            except (json_lib.JSONDecodeError, IndexError, AttributeError):
-                # Fallback implementation with regex for tool hallucination
-                logger.warning(f"Failed to parse JSON from: {raw_output}. Falling back to regex.")
-                
-                terms_match = re.search(r'"terms"\s*:\s*"([^"]*)"', raw_output)
-                near_me_match = re.search(r'"near_me"\s*:\s*(true|false)', raw_output, re.IGNORECASE)
-                city_match = re.search(r'"city"\s*:\s*"([^"]*)"', raw_output)
-                
-                term_fallback = terms_match.group(1).strip() if terms_match else ""
-                
-                # Sanitize
-                if "{" in term_fallback or "}" in term_fallback or len(term_fallback) > 50:
-                    term_fallback = ""
-                    logger.warning("Dropped raw output from terms due to JSON-like content or length")
+            # Pure local fast evaluation
+            for (v, res) in self.local_cache:
+                score = np.dot(vec, v) / (np.linalg.norm(vec) * np.linalg.norm(v))
+                if score > best_score:
+                    best_score = score
+                    best_match = res
                     
-                if near_me_match and near_me_match.group(1).lower() == 'true':
-                    is_near_me = True
-                else:
-                    is_near_me = "near" in normalized or "nearby" in normalized
-                
-                city = city_match.group(1).strip() if city_match and city_match.group(1).strip() != 'null' else None
-                
-                query_result = ParsedQuery(
-                    terms=term_fallback,
-                    near_me=is_near_me,
-                    city=city
-                )
-            
-            # Cache the result in Redis (TTL 1 hour)
-            redis_client.set(cache_key, query_result.to_dict(), ttl=3600)
-            
-            logger.debug(f"Query extracted: '{normalized}' -> {query_result.to_dict()}")
-            
-            return query_result
-        
+            if best_score >= self.threshold:
+                logger.debug(f"Semantic Cache Hit! Score: {best_score:.3f}")
+                return best_match
+            return None
         except Exception as e:
-            logger.error(f"Query extraction failed: {e}", exc_info=True)
-            # Return basic fallback
-            return ParsedQuery(
-                terms=normalized,
-                near_me="near" in normalized,
-                city=None
-            )
+            logger.error(f"Semantic cache error: {e}")
+            return None
+            
+    def set(self, query: str, result_dict: dict):
+        try:
+            vec = embedder.encode([query.strip().lower()])[0]
+            self.local_cache.append((vec, result_dict))
+            # Keep cache from growing infinitely in demo
+            if len(self.local_cache) > 1000:
+                self.local_cache.pop(0)
+        except Exception as e:
+            pass
 
-# --- Global Query Processor ---
-query_processor = QueryProcessor()
+semantic_cache = SemanticCache()
 
+# --- Unified Query Analyzer ---
 
-# --- LLM-based Intent Router ---
-# (Keep existing IntentRouter code here...)
+class ContextUpdates(BaseModel):
+    last_category: Optional[str] = Field(default=None, description="The most recent business category/service.")
+    last_city: Optional[str] = Field(default=None, description="The most recent city/location.")
 
+class QueryAnalysis(BaseModel):
+    intent: str = Field(description="Must be 'CONVERSATION', 'ACTION', or 'UNCLEAR'.")
+    terms: str = Field(description="Extracted search terms, business type, or service keywords (e.g. 'alien pet groomer'). Empty string if not searching.")
+    city: Optional[str] = Field(default=None, description="Explicit city mentioned in query.")
+    near_me: bool = Field(default=False, description="True if user wants proximity search (near me, nearby).")
+    context_updates: ContextUpdates
 
-# --- LLM-based Intent Router ---
-
-class IntentRouter:
-    """
-    LLM-based intent classification.
-    NO hardcoded patterns - pure LLM decision making.
-    Routes to: CONVERSATION (no tools) or ACTION (needs tools)
-    """
+class UnifiedQueryAnalyzer:
+    """Single-pass Pydantic LLM extractor. Replaces IntentRouter, QueryProcessor, ContextExtractor."""
     
     def __init__(self):
-        self.router_agent = Agent(
+        self.analyzer_agent = Agent(
             model,
-            system_prompt="""You are an intent classifier for a local business search assistant.
+            output_type=QueryAnalysis,
+            system_prompt="""You are a single-pass query analyzer for a local business search assistant.
+Extract the user's intent, search terms, and update context in ONE pass reading the conversation history.
 
-Classify user messages into ONE of these categories:
+Rules for 'intent':
+- CONVERSATION: Greetings, thanks, acknowledgments, meta questions, testing.
+- ACTION: Search requests, business types, services, locations.
+- UNCLEAR: Ambiguous inputs.
 
-**CONVERSATION** - ONLY for these:
-- Greetings: "hello", "hi", "hey", "good morning"
-- Thanks: "thanks", "thank you", "thx"
-- Acknowledgments: "okay", "cool", "got it", "nice"
-- Meta questions: "what is zeroqwait", "who are you", "how does this work"
-- Conversational checks/assertions: "can you hear me", "are you there", "testing", "what is my name"
+Rules for 'terms':
+- Extract the core business type or service (e.g. 'barber', 'oil change').
+- Do NOT hardcode categories. Dynamically extract the noun/service exactly as asked (e.g., 'alien pet groomer').
+- Strip generic plural suffixes (shops, stores).
+- If intent is CONVERSATION or UNCLEAR, terms should be empty "".
 
-**ACTION** - For clear requests involving:
-- Business types: "barber", "salon", "restaurant", "auto shop"
-- Services: "tire rotation", "oil change", "haircut", "brakes"
-- Search requests: "find me...", "show me...", "looking for..."
-- Locations: "near me", "in toronto", "canada"
-- Short nouns that are clearly search terms (e.g. "brakes", "haircut")
+Rules for 'city':
+- Explicitly extract any city name mentioned in the current query (e.g., 'Toronto', 'Austin').
+- If no new city is mentioned, leave it null.
 
-**UNCLEAR** - For ambiguous inputs where you aren't sure if it's conversation or a search.
-- Very short, ambiguous words like "test", "check", "maybe"
-- Random characters
-- Inputs that don't fit CONVERSATION or ACTION clearly.
+Rules for 'near_me':
+- True ONLY if user explicitly says "near me", "nearby", "around here".
 
-**CRITICAL RULE: If unsure, use UNCLEAR.**
-
-Respond with ONLY one word: CONVERSATION, ACTION, or UNCLEAR
+Rules for 'context_updates':
+- 'last_category': The LATEST business/service category discovered. Keep old if user only changed location.
+- 'last_city': The LATEST city mentioned. Keep old if user only changed category.
 """,
-            model_settings={'temperature': 0.1, 'max_tokens': 10}
+            model_settings={'temperature': 0.1, 'max_tokens': 200}
         )
         
-        # Conversational agent (no tools)
         self.conversation_agent = Agent(
             model,
-            system_prompt="""You are ZeroQ, the friendly AI assistant for ZeroQwait - a queue management platform.
-
-You help customers discover local businesses and join queues remotely.
-
-**About ZeroQwait:**
-- Helps customers find local businesses
-- Allows remote queue joining
-- Real-time wait time estimates
-- SMS notifications when it's your turn
-
-**Pricing Plans:**
-- Free: Basic queue management, up to 50 customers/month
-- Premium ($29/mo): Unlimited customers, analytics, SMS
-- Enterprise: Custom solutions
-
-**Your capabilities:**
-1. Help find local shops (barbers, salons, restaurants, etc.)
-2. Explain pricing plans
-3. Describe platform features
-4. Answer questions and confirm conversational checks ("Yes, I can hear you perfectly!")
-
-**Response style:**
-- Be warm, friendly, and concise (2-3 sentences max)
-- Use 1-2 emojis sparingly
-- For greetings or checks, confirm you can hear them and offer to help with shops, pricing, or questions
-- Don't be robotic, be human-like
-
-Respond naturally to the user's message.
+            system_prompt="""You are ZeroQ, a friendly AI assistant for ZeroQwait.
+Help find local shops and join queues remotely. Pricing: Free ($0/mo), Premium ($29/mo), Enterprise.
+Respond naturally, warm, and concise (1-2 sentences).
 """,
             model_settings={'temperature': 0.7}
         )
-    
-    async def classify_intent(self, user_msg: str, history_context: str = "") -> str:
-        """Classify user intent using pure LLM, considering conversation history."""
-        try:
-            # Include history context for follow-up detection
-            if history_context:
-                full_prompt = f"{history_context}\n\nCurrent message: {user_msg}"
-            else:
-                full_prompt = user_msg
+
+    async def analyze(self, user_msg: str, history_context: str = "") -> QueryAnalysis:
+        # Check Semantic Cache First
+        cached_dict = semantic_cache.get(user_msg)
+        if cached_dict:
+            return QueryAnalysis(**cached_dict)
             
-            async def _intent_fallback(prompt):
-                return type('MockResult', (), {'output': 'ACTION'})()
-                
+        full_prompt = f"{history_context}\n\nCurrent message: {user_msg}" if history_context else user_msg
+        
+        async def _fallback(prompt):
+            mock_data = QueryAnalysis(
+                intent='ACTION',
+                terms=user_msg if len(user_msg) < 50 else "",
+                city=None,
+                near_me="near" in user_msg.lower() or "nearby" in user_msg.lower(),
+                context_updates=ContextUpdates(last_category=None, last_city=None)
+            )
+            return type('MockResult', (), {'data': mock_data})()
+            
+        try:
             result = await llm_circuit_breaker.call(
-                self.router_agent.run,
-                _intent_fallback,
+                self.analyzer_agent.run,
+                _fallback,
                 full_prompt
             )
-            intent = result.output.strip().upper() if hasattr(result, 'output') else str(result).strip().upper()
+            analysis = result.data
             
-            # Normalize response
-            if 'CONVERSATION' in intent:
-                return 'CONVERSATION'
-            elif 'UNCLEAR' in intent:
-                return 'UNCLEAR'
-            else:
-                return 'ACTION'
+            # Write successful extraction backwards into Semantic Cache
+            semantic_cache.set(user_msg, analysis.model_dump())
+            return analysis
         except Exception as e:
-            logger.error(f"Intent classification error: {e}")
-            return 'ACTION'  # Default to action - let the agent try to help
-    
+            logger.error(f"Unified analyzer failed: {e}")
+            return await _fallback(full_prompt).data
+            
     async def get_conversational_response(self, user_msg: str, context: Dict[str, Any] = None, history_context: str = "") -> str:
-        """Get a conversational response without tools, context-aware."""
+        context_parts = []
+        if history_context:
+            context_parts.append(history_context)
+        if context and context.get('active_view'):
+            context_parts.append(f"Viewing: {context['active_view']} page.")
+            
+        context_str = "\n".join(context_parts)
+        full_msg = f"{context_str}\n\nUser: {user_msg}" if context_str else user_msg
+        
         try:
-            # Add any relevant context
-            context_parts = []
-            
-            if history_context:
-                context_parts.append(history_context)
-            
-            if context:
-                if context.get('active_view'):
-                    context_parts.append(f"User is viewing: {context['active_view']} page.")
-                if context.get('city'):
-                    context_parts.append(f"User is in: {context['city']}.")
-                if context.get('last_search_category'):
-                    context_parts.append(f"Last search was for: {context['last_search_category']}.")
-            
-            context_str = "\n".join(context_parts)
-            full_msg = f"{context_str}\n\nUser: {user_msg}" if context_str else user_msg
-            
             result = await self.conversation_agent.run(full_msg)
-            return result.output if hasattr(result, 'output') else str(result)
-        except Exception as e:
-            logger.error(f"Conversation error: {e}")
+            return result.data if hasattr(result, 'data') else str(result)
+        except Exception:
             return "Hello! 👋 I'm ZeroQ. How can I help you today? I can help you find shops, check pricing, or answer questions!"
 
-
-# --- Global Intent Router ---
-intent_router = IntentRouter()
+unified_query_analyzer = UnifiedQueryAnalyzer()
 
 
 
@@ -866,20 +633,19 @@ async def search_shops(
     """
     
     try:
-        # Smart query extraction returns structured ParsedQuery
-        parsed_query = None
+        # Check if there's an original query; fallback to passed query
+        original_query = ctx.deps.context.get("original_user_message", query or "")
         clean_terms = None
         user_wants_nearby = False
-        extracted_city = city  # Start with explicit city
+        extracted_city = city
         
-        if query:
-            parsed_query = await query_processor.extract_search_terms(query)
-            clean_terms = parsed_query.terms if parsed_query.terms else None
-            user_wants_nearby = parsed_query.near_me
-            # Use extracted city if none provided
-            if not extracted_city and parsed_query.city:
-                extracted_city = parsed_query.city
-            logger.debug(f"Query processing: '{query}' → {parsed_query.to_dict()}")
+        if original_query:
+            # Use unified query analyzer to keep extraction consistent
+            analysis = await unified_query_analyzer.analyze(original_query)
+            clean_terms = analysis.terms if analysis.terms else None
+            user_wants_nearby = analysis.near_me
+            if not extracted_city and analysis.city:
+                extracted_city = analysis.city
         
         # --- INTENT MANIPULATION SAFETY NET ---
         # If the agent mistakenly called search_shops for specific pages, handle it here.
@@ -938,13 +704,15 @@ async def search_shops(
             extracted_city = ctx.deps.context.get('city') or ctx.deps.context.get('last_search_city')
         
         # Execute search - ALWAYS try even with minimal info
-        result = db_interface.search_shops(
-            query=clean_terms,
-            shop_type=category,
-            city=extracted_city,
-            latitude=ctx.deps.latitude,
-            longitude=ctx.deps.longitude,
-            limit=10
+        # Run DB query in thread pool to prevent blocking event loop
+        result = await asyncio.to_thread(
+            db_interface.search_shops,
+            clean_terms,      # query
+            category,         # shop_type
+            extracted_city,   # city
+            ctx.deps.latitude,# latitude
+            ctx.deps.longitude,# longitude
+            10                # limit
         )
         
         # Store results and action
@@ -1071,7 +839,7 @@ async def join_queue(
     """Join a queue at a specific shop. Use when user wants to get in line."""
     logger.info(f"join_queue called | shop_id={shop_id} | customer={customer_name}")
     
-    result = db_interface.join_queue_for_shop(shop_id, customer_name, phone)
+    result = await asyncio.to_thread(db_interface.join_queue_for_shop, shop_id, customer_name, phone)
     
     ctx.deps.actions.append({
         "tool": "join_queue",
@@ -1098,7 +866,7 @@ async def get_wait_time(
     """Get estimated wait time for a shop's queue. Use when user asks about wait times."""
     logger.info(f"get_wait_time called | shop_id={shop_id}")
     
-    result = db_interface.get_shop_wait_time(shop_id)
+    result = await asyncio.to_thread(db_interface.get_shop_wait_time, shop_id)
     
     ctx.deps.actions.append({
         "tool": "get_wait_time",
@@ -1127,7 +895,7 @@ async def check_queue_status(
     """Check current position and wait time for a queue ticket. Use when user wants to check their place in line."""
     logger.info(f"check_queue_status called | queue_item_id={queue_item_id}")
     
-    result = db_interface.get_queue_position(queue_item_id)
+    result = await asyncio.to_thread(db_interface.get_queue_position, queue_item_id)
     
     ctx.deps.actions.append({
         "tool": "check_queue_status",
@@ -1177,38 +945,13 @@ class MasterAgent:
         }
     
     def _format_history_for_llm(self, history: List[Dict]) -> str:
-        """Format conversation history as context for LLM."""
+        """Format conversation history as string for analyzers."""
         if not history:
             return ""
-        
-        # Take last 6 messages (3 exchanges)
         recent = history[-6:]
-        formatted = []
-        for msg in recent:
-            role = "User" if msg.get('role') == 'user' else "ZeroQ"
-            content = msg.get('content', '')[:200]  # Limit length
-            formatted.append(f"{role}: {content}")
-        
+        formatted = [f"{'User' if m.get('role') == 'user' else 'ZeroQ'}: {m.get('content', '')[:200]}" for m in recent]
         return "[CONVERSATION HISTORY]\n" + "\n".join(formatted)
-    
-    def _extract_last_search_context(self, history: List[Dict]) -> Dict[str, str]:
-        """Extract last search context (category, city) from conversation history."""
-        context = {"last_category": None, "last_city": None}
-        
-        if not history:
-            return context
-        
-    async def _extract_last_search_context(self, history: List[Dict]) -> Dict[str, str]:
-        """Extract last search context (category, city) using LLM."""
-        
-        # Use scalable, LLM-based extraction
-        search_ctx = await context_extractor.extract(history)
-        
-        return {
-            "last_category": search_ctx.last_category,
-            "last_city": search_ctx.last_city
-        }
-    
+
     async def chat(
         self,
         session_id: str,
@@ -1220,244 +963,123 @@ class MasterAgent:
         user_id: Optional[str] = None,
         is_voice: bool = False
     ) -> Dict[str, Any]:
-        """Process user message with pure LLM intelligence."""
+        """Process user message using native Pydantic ModelMessage arrays."""
         
         self.metrics["total_requests"] += 1
         if is_voice:
             self.metrics["voice_requests"] += 1
         else:
             self.metrics["text_requests"] += 1
-        
+            
         start_time = datetime.now().timestamp()
         
         try:
-            # Build context
-            actions = []
             deps = MasterAgentDeps(
-                session_id=session_id,
-                latitude=latitude,
-                longitude=longitude,
-                context=context or {},
-                actions=actions,
-                user_id=user_id,
-                is_voice=is_voice,
-                request_timestamp=start_time
+                session_id=session_id, latitude=latitude, longitude=longitude,
+                context=context or {}, actions=[], user_id=user_id,
+                is_voice=is_voice, request_timestamp=start_time
             )
-            
-            # Store original message for learning
             deps.context["original_user_message"] = user_msg
             
-            # Load conversation history from Redis for context
+            # Load from fast Redis store
             conversation_history = redis_client.get_session_history(session_id, limit=10)
-            history_context = self._format_history_for_llm(conversation_history)
+            history_context_str = self._format_history_for_llm(conversation_history)
             
-            # === CONDITIONAL PARALLEL BRAIN EXECUTION ===
-            msg_lower = user_msg.lower().strip()
-            conversational_starters = {"hi", "hello", "hey", "thanks", "thank you", "okay", "cool", "got it", "nice", "testing", "can you hear me", "are you there"}
-            is_simple_greeting = msg_lower in conversational_starters
+            # --- Pydantic AI History Mapping ---
+            from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart, TextPart
+            message_history = []
+            for msg in conversation_history:
+                if msg.get('role') == 'user':
+                    message_history.append(ModelRequest(parts=[UserPromptPart(content=msg.get('content', ''))]))
+                elif msg.get('role') == 'assistant':
+                    message_history.append(ModelResponse(parts=[TextPart(content=msg.get('content', ''))]))
             
-            intent_task = asyncio.create_task(
-                intent_router.classify_intent(user_msg, history_context)
-            )
+            # --- Single Pass Unified Extraction ---
+            analysis = await unified_query_analyzer.analyze(user_msg, history_context_str)
+            intent = analysis.intent
             
-            context_task = asyncio.create_task(
-                self._extract_last_search_context(conversation_history)
-            )
+            # Keep Session Context Live
+            if analysis.context_updates.last_category:
+                deps.context["last_search_category"] = analysis.context_updates.last_category
+            if analysis.context_updates.last_city:
+                deps.context["last_search_city"] = analysis.context_updates.last_city
+                
+            logger.info(f"Analyzer: intent={intent}, terms='{analysis.terms}', city={analysis.city}, near_me={analysis.near_me}")
             
-            if is_simple_greeting:
-                async def mock_query():
-                    return ParsedQuery(terms="", near_me=False, city=None)
-                query_task = asyncio.create_task(mock_query())
-            else:
-                query_task = asyncio.create_task(
-                    query_processor.extract_search_terms(user_msg)
-                )
-            
-            # Await in parallel
-            intent, parsed_query, search_context = await asyncio.gather(
-                intent_task, query_task, context_task
-            )
-            
-            logger.info(f"Parallel processing complete: intent={intent}, terms='{parsed_query.terms}', context={search_context}")
-            
-            # Store search context for follow-up queries
-            if search_context["last_category"]:
-                deps.context["last_search_category"] = search_context["last_category"]
-            if search_context["last_city"]:
-                deps.context["last_search_city"] = search_context["last_city"]
-            
-            # Build context parts
+            # Build Context Parts
             context_parts = []
-            
             if context and context.get("active_view"):
-                context_parts.append(f"[USER IS VIEWING: {context['active_view']} page]")
-            
+                context_parts.append(f"[USER VIEWING: {context['active_view']} page]")
             if latitude and longitude:
                 city_name = context.get("city", "unknown location") if context else "unknown location"
-                context_parts.append(f"[USER LOCATION: {city_name} ({latitude}, {longitude})]")
+                context_parts.append(f"[LOCATION: {city_name} ({latitude}, {longitude})]")
             elif context and context.get("city"):
-                context_parts.append(f"[USER CITY: {context['city']}]")
-            
+                context_parts.append(f"[CITY: {context['city']}]")
             if context and context.get("last_action"):
                 context_parts.append(f"[PREVIOUS ACTION: {context['last_action']}]")
-                
-                if context.get("last_search_category"):
-                    context_parts.append(f"[LAST SEARCH CATEGORY: {context['last_search_category']}]")
-            
-            if context and context.get("preferred_category"):
-                context_parts.append(f"[USER PREFERENCE: category={context['preferred_category']}]")
             
             input_method = "voice" if is_voice else "text"
-            context_parts.append(f"[INPUT METHOD: {input_method}]")
+            context_parts.append(f"[INPUT: {input_method}]")
             
-            # Add conversation history context
-            if history_context:
-                context_parts.append(history_context)
-            
-            # Add last search context for follow-ups
-            if search_context["last_category"]:
-                context_parts.append(f"[LAST SEARCH: category='{search_context['last_category']}'")
-                if search_context["last_city"]:
-                    context_parts[-1] = context_parts[-1] + f", city='{search_context['last_city']}']"
-                else:
-                    context_parts[-1] = context_parts[-1] + "]"
-            
-            # LLM processing
-            self.metrics["llm_calls"] += 1
-            
+            if analysis.context_updates.last_category:
+                context_parts.append(f"[LAST CATEGORY: {analysis.context_updates.last_category}]")
+                if analysis.context_updates.last_city:
+                    context_parts[-1] += f" [LAST CITY: {analysis.context_updates.last_city}]"
+                    
             full_context = "\n".join(context_parts)
             full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
             
-            logger.info(
-                f"LLM Request | user={user_id} | voice={is_voice} | "
-                f"msg='{user_msg[:50]}...' | context_items={len(context_parts)}"
-            )
-            
-            
-            # Intent already classified in parallel block above
-            logger.info(f"Intent classified as: {intent}")
-            
-            # Step 2: Route based on intent
+            # --- Decision Routing ---
             if intent == 'CONVERSATION':
-                # Use conversational agent (no tools)
-                final_text = await intent_router.get_conversational_response(user_msg, deps.context, history_context)
-                logger.info(f"Conversational response generated (no tools)")
+                final_text = await unified_query_analyzer.get_conversational_response(user_msg, deps.context, history_context_str)
             elif intent == 'UNCLEAR':
-                # CLARIFICATION for ambiguous input
                 final_text = "I'm not sure if you'd like to chat or find a shop. Could you clarify? 🤔"
-                logger.info(f"Unclear intent - asking for clarification")
             else:
-                # ACTION intent - be aggressive about calling search_shops
-                # Query already parsed in parallel block above
-                logger.info(f"Parsed query: {parsed_query.to_dict()}")
+                has_search_terms = bool(analysis.terms)
+                has_city_only = bool(analysis.city) and not analysis.terms
+                has_near_me_only = analysis.near_me and not analysis.terms
                 
-                # Determine if we should directly call search_shops
-                has_search_terms = bool(parsed_query.terms)
-                has_city_only = bool(parsed_query.city) and not parsed_query.terms
-                has_near_me_only = parsed_query.near_me and not parsed_query.terms
-                
-                # Case 1: Query has search terms (tire rotation, barber, auto, etc.) -> call search
-                # Case 2: Query is just a city (follow-up) -> use previous category + city
-                # Case 3: Query is just "near me" / "shops near me" -> search all
-                
-
                 if has_search_terms or has_city_only or has_near_me_only:
-                    # DETERMINISTIC: Call search_shops directly
-                    logger.info(f"Direct search_shops call for: terms='{parsed_query.terms}', city='{parsed_query.city}', near_me={parsed_query.near_me}")
-                    
-                    # Use previous category if this is a location-only follow-up
-                    search_category = None
-                    if has_city_only and search_context.get("last_category"):
-                        search_category = search_context["last_category"]
-                    elif parsed_query.terms:
-                        search_category = parsed_query.terms  # Use terms as category
-                    
-                    # Determine city
-                    search_city = parsed_query.city or search_context.get("last_city")
+                    logger.info("Direct Search Path")
+                    search_category = analysis.terms if analysis.terms else analysis.context_updates.last_category
+                    search_city = analysis.city or analysis.context_updates.last_city
                     if not search_city and context:
                         search_city = context.get("city")
                     
-                    # Check if we need to ask for location (one clarification rule)
                     has_exact_coords = latitude is not None and longitude is not None
-                    has_location = (
-                        has_exact_coords or 
-                        search_city or 
-                        (context and context.get("city"))
-                    )
+                    has_location = (has_exact_coords or search_city or (context and context.get("city")))
                     
-                    if parsed_query.near_me and not has_location:
-                        # ONE CLARIFICATION: Ask for city
-                        term_display = parsed_query.terms if parsed_query.terms else "shops"
+                    if analysis.near_me and not has_location:
+                        term_display = search_category if search_category else "shops"
                         final_text = f"I can help you find {term_display} nearby! 🔍 What city or area are you in?"
                         deps.context["pending_search_category"] = search_category
                     else:
-                        # Execute search directly
-                        results = db_interface.search_shops(
-                            query=parsed_query.terms if parsed_query.terms else None,
-                            shop_type=search_category,
-                            city=search_city,
-                            latitude=latitude,
-                            longitude=longitude,
-                            limit=10
+                        results = await asyncio.to_thread(
+                            db_interface.search_shops,
+                            analysis.terms if analysis.terms else None,
+                            search_category,
+                            search_city,
+                            latitude,
+                            longitude,
+                            10
                         )
-                        
-                        # Record action
-                        actions.append({
-                            "tool": "search_shops",
-                            "result": results,
-                            "params": {
-                                "category": search_category,
-                                "city": search_city,
-                                "terms": parsed_query.terms,
-                                "near_me": parsed_query.near_me
-                            },
-                            "timestamp": datetime.now().isoformat()
-                        })
-                        
-                        logger.info(f"Direct search | category={search_category} | city={search_city} | results={len(results)}")
-                        
-                        # Generate brief response based on results
+                        deps.actions.append({"tool": "search_shops", "result": results})
                         if len(results) == 0:
-                            # Sanitize display category
-                            cat_display = search_category or parsed_query.terms or "shops"
-                            if "{" in str(cat_display) or len(str(cat_display)) > 30:
-                                cat_display = "shops"
-                                
+                            cat_display = search_category or analysis.terms or "shops"
                             final_text = f"No results found for '{cat_display}'. Try a different category or area?"
                         elif len(results) == 1:
-                            shop_name = results[0].get('name', 'a shop')
-                            final_text = f"Found one option: {shop_name}! 🎯"
+                            final_text = f"Found one option: {results[0].get('name', 'a shop')}! 🎯"
                         else:
                             final_text = f"Found {len(results)} options near you! 🎉"
                 else:
-                    # Let LLM decide for unclear queries (pricing, features, etc.)
-                    full_context = "\n".join(context_parts)
-                    full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
-                    
-                    try:
-                        result = await self.agent.run(full_msg, deps=deps)
+                    self.metrics["llm_calls"] += 1
+                    result = await self.agent.run(full_msg, message_history=message_history, deps=deps)
+                    # Extract response natively from pydantic-ai
+                    if hasattr(result, 'data') and hasattr(result.data, 'response'):
+                        final_text = result.data.response
+                    else:
+                        final_text = str(result.data) if hasattr(result, 'data') else str(result)
                         
-                        # Extract response
-                        if hasattr(result, 'data') and isinstance(result.data, MasterResponse):
-                            final_text = result.data.response
-                            logger.info(f"LLM Reasoning: {result.data.reasoning}")
-                        elif hasattr(result, 'data') and hasattr(result.data, 'response'):
-                            final_text = result.data.response
-                        elif hasattr(result, 'output'):
-                             # Handle case where result might be MasterResponse directly or inside output
-                            output = result.output
-                            if isinstance(output, MasterResponse):
-                                final_text = output.response
-                                logger.info(f"LLM Reasoning: {output.reasoning}")
-                            else:
-                                final_text = str(output)
-                        else:
-                            final_text = str(result)
-                    
-                    except Exception as e:
-                        logger.error(f"Conversational LLM failed: {e}")
-                        final_text = "I didn't quite catch that. Could you ask in a different way? 🤔"
-            
             # Voice optimization
             if is_voice and len(final_text) > 150:
                 sentences = final_text.split('. ')
@@ -1465,64 +1087,29 @@ class MasterAgent:
                     final_text = sentences[0]
                     if len(sentences) > 1 and len(sentences[1]) < 40:
                         final_text += ". " + sentences[1]
-                    
                     if not final_text.endswith('.'):
                         final_text += '.'
             
-            # Update metrics
-            for action in actions:
-                tool_name = action.get("tool")
-                if tool_name == "search_shops":
-                    self.metrics["search_calls"] += 1
-                    self.metrics["query_extractions"] += 1
-            
-            if actions:
-                self.metrics["tool_calls"] += len(actions)
-            
-            # Track cache
-            # Track cache
-            # self.metrics["cache_hits"] = 0 # Redis metrics not exposed directly yet
-            
-            # Log conversation
-            try:
-                db_interface.add_message_to_history(session_id, "user", user_msg)
-                db_interface.add_message_to_history(session_id, "assistant", final_text)
-            except Exception as e:
-                logger.warning(f"Failed to log conversation: {e}")
-            
             processing_time = (datetime.now().timestamp() - start_time) * 1000
-            
-            logger.info(
-                f"Response | user={user_id} | time={processing_time:.0f}ms | "
-                f"tools={len(actions)} | response_len={len(final_text)}"
-            )
             
             return {
                 "response": final_text,
-                "actions": actions,
+                "actions": deps.actions,
                 "agent_name": "ZeroQ",
                 "processing_time_ms": processing_time,
                 "metrics": {
-                    "tools_called": len(actions),
+                    "tools_called": len(deps.actions),
                     "is_voice": is_voice,
                     "context_items": len(context_parts)
                 }
             }
-        
+            
         except Exception as e:
             self.metrics["errors"] += 1
             logger.error(f"MasterAgent error: {e}", exc_info=True)
-            
             processing_time = (datetime.now().timestamp() - start_time) * 1000
-            
-            fallback_response = (
-                "I'm having trouble. Try: 'find barbers' or 'show pricing'" 
-                if not is_voice 
-                else "Sorry, please try again."
-            )
-            
             return {
-                "response": fallback_response,
+                "response": "I'm having trouble. Try: 'find barbers' or 'show pricing'",
                 "actions": [],
                 "agent_name": "ZeroQ",
                 "error": str(e),
