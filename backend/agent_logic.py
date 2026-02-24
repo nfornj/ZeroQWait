@@ -21,8 +21,9 @@ logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
+model_name = os.getenv("MODEL_NAME", "llama3.2:latest")
 model = OpenAIModel(
-    'llama3.2:latest',
+    model_name,
     provider=OpenAIProvider(base_url=ollama_url, api_key='ollama'),
 )
 
@@ -1079,9 +1080,117 @@ class MasterAgent:
                 }
                 
             raise e
-    
-    async def persist_learnings(self):
-        """Persist learned patterns."""
+
+    async def stream_chat(
+        self,
+        session_id: str,
+        user_msg: str,
+        history: List[Dict[str, str]] = None,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+        context: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
+        is_voice: bool = False
+    ):
+        """
+        Streaming version of chat using Server-Sent Events (SSE).
+        Yields text chunks as they are generated, and final actions at the end.
+        """
+        import json
+        
+        start_time = datetime.now().timestamp()
+        self.metrics["total_requests"] += 1
+        if is_voice:
+            self.metrics["voice_requests"] += 1
+            
+        deps = MasterAgentDeps(
+            session_id=session_id,
+            latitude=latitude,
+            longitude=longitude,
+            context=context or {},
+            user_id=user_id,
+        )
+        history_context_str = ""
+        context_parts = []
+        
+        analysis = await unified_query_analyzer.analyze(
+            user_msg, 
+            history_context_str
+        )
+        deps.context["last_query_analysis"] = analysis
+        
+        # Keep Session Context Live
+        if analysis.context_updates.last_category:
+            deps.context["last_search_category"] = analysis.context_updates.last_category
+        if analysis.context_updates.last_city:
+            deps.context["last_search_city"] = analysis.context_updates.last_city
+            
+        # Build Context Parts
+        message_history = []
+        if history:
+            for hp in history[-5:]:
+                role = hp.get("role", "user")
+                if role == "user":
+                    message_history.append(ModelRequest(parts=[UserPromptPart(content=hp.get("content", ""))]))
+                elif role == "assistant":
+                    message_history.append(ModelResponse(parts=[TextPart(content=hp.get("content", ""))]))
+            
+            recent_msgs = [h.get("content", "") for h in history[-3:] if h.get("role") == "user"]
+            history_context_str = " | ".join(recent_msgs)
+        
+        if deps.latitude and deps.longitude:
+            context_parts.append(f"[LOCATION: {deps.latitude}, {deps.longitude}]")
+        elif context and context.get("city"):
+            context_parts.append(f"[LOCATION CONTEXT: {context['city']}]")
+            
+        if context and context.get("active_view"):
+            context_parts.append(f"[ACTIVE VIEW: {context['active_view']}]")
+            
+        input_method = "voice" if is_voice else "text"
+        context_parts.append(f"[INPUT: {input_method}]")
+        
+        full_context = "\n".join(context_parts)
+        full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
+        
+        # --- DIRECT SEARCH BYPASS ---
+        is_search_intent = analysis.terms or analysis.near_me or analysis.city
+        if is_search_intent:
+            logger.info("Direct Search Bypass Triggered (Streaming)")
+            final_text = await search_shops(
+                RunContext(deps=deps, model=model, usage=None, prompt=""),
+                category=analysis.context_updates.last_category,
+                city=analysis.city,
+                query=user_msg
+            )
+            # Yield the final text as a single chunk
+            yield f"data: {json.dumps({'type': 'text', 'content': final_text})}\n\n"
+            yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+            
+        try:
+            self.metrics["llm_calls"] += 1
+            # Run stream
+            async with self.agent.run_stream(full_msg, message_history=message_history, deps=deps) as result:
+                async for chunk in result.stream():
+                    yield f"data: {json.dumps({'type': 'text', 'content': chunk})}\n\n"
+                    
+                # After stream finishes, we can access the final response and deps
+                yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions})}\n\n"
+                yield "data: [DONE]\n\n"
+                
+        except Exception as e:
+            self.metrics["errors"] += 1
+            logger.error(f"Stream MasterAgent error: {e}")
+            if "validation" in str(e).lower() or "timeout" in str(e).lower():
+                logger.info("Falling back to pure conversational response due to formatting error")
+                fallback_text = await unified_query_analyzer.get_conversational_response(user_msg, deps.context, history_context_str)
+                yield f"data: {json.dumps({'type': 'text', 'content': fallback_text})}\n\n"
+                yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            yield f"data: {json.dumps({'type': 'error', 'content': 'I encountered an error processing your request.'})}\n\n"
+            yield "data: [DONE]\n\n"
         await self.category_manager.persist_learnings()
     
     def get_metrics(self) -> Dict[str, Any]:

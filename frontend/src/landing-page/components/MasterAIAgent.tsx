@@ -289,82 +289,200 @@ const MasterAIAgent: React.FC = () => {
         }
     }, [isOpen]);
 
+    // --- Audio Queue Manager ---
+    // Handles continuous playback of streamed sentences
+    const audioQueueRef = useRef<{
+        queue: string[];
+        isPlaying: boolean;
+        activeSource: AudioBufferSourceNode | null;
+    }>({ queue: [], isPlaying: false, activeSource: null });
+
+    const processAudioQueue = async () => {
+        if (audioQueueRef.current.isPlaying || audioQueueRef.current.queue.length === 0) return;
+
+        audioQueueRef.current.isPlaying = true;
+        const textToSpeak = audioQueueRef.current.queue.shift();
+
+        if (textToSpeak) {
+            console.log(`[AudioQueue] Playing: "${textToSpeak}"`);
+            await speak(textToSpeak);
+        }
+
+        audioQueueRef.current.isPlaying = false;
+        // Continue queue
+        if (audioQueueRef.current.queue.length > 0) {
+            processAudioQueue();
+        }
+    };
+
     const handleChat = async (userText: string) => {
         if (!userText.trim()) return;
+
+        // Reset the audio queue on new user input
+        if (abortControllerRef.current) abortControllerRef.current.abort();
+        if (audioQueueRef.current.activeSource) audioQueueRef.current.activeSource.stop();
+        audioQueueRef.current = { queue: [], isPlaying: false, activeSource: null };
 
         setChatHistory(prev => [...prev, { role: 'user', text: userText }]);
         setIsProcessing(true);
 
+        const aiMessageIndex = chatHistory.length + 1; // Index where the new AI message will live
+
+        // Add empty AI message placeholder
+        setChatHistory(prev => [...prev, {
+            role: 'ai',
+            text: "",
+            shops: activeShops,
+            relatedViewer: activeViewer
+        }]);
+
         try {
-            const response = await axios.post('/agent/master/chat', {
-                message: userText,
-                session_id: sessionId,
-                latitude: location?.lat,
-                longitude: location?.lng,
-                history: chatHistory.map(h => ({
-                    role: h.role === 'ai' ? 'assistant' : 'user',
-                    content: h.text
-                })),
-                context: {
-                    active_view: activeViewer,
-                    visible_shops: activeShops.map(s => s.name)
-                }
+            const response = await fetch('/api/agent/master/chat/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: userText,
+                    session_id: sessionId,
+                    latitude: location?.lat,
+                    longitude: location?.lng,
+                    history: chatHistory.map(h => ({
+                        role: h.role === 'ai' ? 'assistant' : 'user',
+                        content: h.text
+                    })),
+                    context: {
+                        active_view: activeViewer,
+                        visible_shops: activeShops.map(s => s.name)
+                    }
+                })
             });
 
-            const { response: agentText, actions } = response.data;
-            let currentShops = [...activeShops];
-            let currentViewer = activeViewer;
+            if (!response.body) throw new Error("No response body");
 
-            console.log('[DEBUG] MasterAgent COMPLETE Response:', response.data);
+            setIsProcessing(false); // Stop loading animation, start typing
 
-            if (actions && Array.isArray(actions) && actions.length > 0) {
-                // Actions OVERRIDE current state
-                actions.forEach((action: any) => {
-                    if (action.tool === 'navigate_to_page_section') {
-                        const sectionId = action.result.target;
-                        currentViewer = sectionId as any;
-                        currentShops = []; // Clear shops if moving to other sections
-                    } else if (action.tool === 'search_shops') {
-                        const shops = Array.isArray(action.result) ? action.result : (action.result?.shops || []);
-                        if (shops.length > 0) {
-                            currentShops = shops;
-                            currentViewer = 'shops';
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            let fullText = "";
+            let unplayedTextBuffer = "";
+
+            // Regex to detect sentence boundaries
+            const sentenceBoundaryRegex = /([.?!])\s+/g;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunkStr = decoder.decode(value, { stream: true });
+                const lines = chunkStr.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.slice(6);
+                        if (dataStr === '[DONE]') continue;
+
+                        try {
+                            const data = JSON.parse(dataStr);
+
+                            if (data.type === 'text') {
+                                const newText = data.content;
+                                fullText += newText;
+                                unplayedTextBuffer += newText;
+
+                                // Update UI character by character
+                                setChatHistory(prev => {
+                                    const next = [...prev];
+                                    if (next[aiMessageIndex]) {
+                                        next[aiMessageIndex].text = fullText;
+                                    }
+                                    return next;
+                                });
+
+                                // Sentence Boundary Detection for audio queuing
+                                // If the buffer contains a punctuation mark followed by a space
+                                let match;
+                                while ((match = sentenceBoundaryRegex.exec(unplayedTextBuffer)) !== null) {
+                                    // Extract the sentence
+                                    const boundaryIndex = match.index + match[0].length;
+                                    const sentence = unplayedTextBuffer.slice(0, boundaryIndex).trim();
+
+                                    if (sentence.length > 3) {
+                                        audioQueueRef.current.queue.push(sentence);
+                                        processAudioQueue();
+                                    }
+
+                                    // Remove played sentence from buffer
+                                    unplayedTextBuffer = unplayedTextBuffer.slice(boundaryIndex);
+                                    // Reset regex back to start of modified string
+                                    sentenceBoundaryRegex.lastIndex = 0;
+                                }
+
+                            } else if (data.type === 'actions') {
+                                let currentShops = [...activeShops];
+                                let currentViewer = activeViewer;
+
+                                const actions = data.actions;
+                                if (actions && Array.isArray(actions) && actions.length > 0) {
+                                    actions.forEach((action: any) => {
+                                        if (action.tool === 'navigate_to_page_section') {
+                                            currentViewer = action.result.target as any;
+                                            currentShops = [];
+                                        } else if (action.tool === 'search_shops') {
+                                            const shops = Array.isArray(action.result) ? action.result : (action.result?.shops || []);
+                                            if (shops.length > 0) {
+                                                currentShops = shops;
+                                                currentViewer = 'shops';
+                                            }
+                                        } else if (action.tool === 'start_registration') {
+                                            const accountType = action.result?.account_type;
+                                            setRegistrationAccountType(accountType === 'shop_owner' || accountType === 'customer' ? accountType : null);
+                                            currentViewer = 'register';
+                                            currentShops = [];
+                                        }
+                                    });
+                                } else {
+                                    currentViewer = null;
+                                    currentShops = [];
+                                }
+
+                                setActiveShops(currentShops);
+                                setActiveViewer(currentViewer);
+
+                                // Update the active frame in the UI
+                                setChatHistory(prev => {
+                                    const next = [...prev];
+                                    if (next[aiMessageIndex]) {
+                                        next[aiMessageIndex].shops = currentShops;
+                                        next[aiMessageIndex].relatedViewer = currentViewer;
+                                    }
+                                    return next;
+                                });
+                            }
+                        } catch (e) {
+                            console.warn("Failed to parse SSE data chunk:", dataStr);
                         }
-                    } else if (action.tool === 'start_registration') {
-                        const accountType = action.result?.account_type;
-                        if (accountType === 'shop_owner' || accountType === 'customer') {
-                            setRegistrationAccountType(accountType);
-                        } else {
-                            setRegistrationAccountType(null);
-                        }
-                        currentViewer = 'register';
-                        currentShops = [];
                     }
-                });
-            } else {
-                // No navigation actions returned - reset back to centered chat for simple conversation
-                currentViewer = null;
-                currentShops = [];
+                }
+            } // end loop
+
+            // Flush remaining text buffer to audio queue
+            if (unplayedTextBuffer.trim().length > 0) {
+                audioQueueRef.current.queue.push(unplayedTextBuffer.trim());
+                processAudioQueue();
             }
 
-            // Persistence
-            setActiveShops(currentShops);
-            setActiveViewer(currentViewer);
-
-            // Wait for the audio stream to be fetched and decoded BEFORE showing the text
-            await speak(agentText);
-
-            setChatHistory(prev => [...prev, {
-                role: 'ai',
-                text: agentText,
-                shops: currentShops,
-                relatedViewer: currentViewer
-            }]);
-
         } catch (error) {
-            console.error('[DEBUG] MasterAgent API Error:', error);
-        } finally {
+            console.error('[DEBUG] MasterAgent API Stream Error:', error);
             setIsProcessing(false);
+            setChatHistory(prev => {
+                const next = [...prev];
+                if (next[aiMessageIndex]) {
+                    next[aiMessageIndex].text = "I encountered an error trying to process that request.";
+                }
+                return next;
+            });
         }
     };
 

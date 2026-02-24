@@ -103,3 +103,88 @@ async def master_agent_chat(
             "actions": [],
             "error": str(e)
         }
+
+@router.post("/master/chat/stream")
+async def master_agent_chat_stream(
+    request: AgentChatRequest,
+    req: Request,
+    background_tasks: BackgroundTasks,
+    current_user: Optional[dict] = Depends(get_current_user_optional)
+):
+    """
+    Global Master AI Chat Endpoint (Streaming).
+    Uses Server-Sent Events (SSE) to stream chunks to the client.
+    """
+    from redis_client import redis_client
+    from fastapi.responses import StreamingResponse
+    import json
+    
+    # 1. Rate Check
+    client_ip = req.client.host
+    if not check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please slow down.")
+
+    print(f"[DEBUG] Master agent STREAM request received: {request.message}")
+    
+    try:
+        agent = MasterAgent()
+        
+        # 2. Use Session ID from request, or fallback
+        final_session_id = request.session_id or f"guest_{client_ip}"
+        
+        # 3. Determine User ID
+        user_id = str(current_user["id"]) if current_user else f"anon_{client_ip}"
+        
+        # 4. SERVER-SIDE HISTORY
+        server_history = redis_client.get_session_history(final_session_id, limit=10)
+        
+        if server_history:
+            history_to_use = server_history
+        elif request.history:
+            history_to_use = request.history
+        else:
+            history_to_use = []
+        
+        # 5. Store the incoming user message
+        redis_client.add_session_message(final_session_id, "user", request.message)
+        background_tasks.add_task(db_interface.add_message_to_history, final_session_id, "user", request.message)
+
+        # 6. Generator Wrapper to Capture Full Assistant Response for Logging
+        async def stream_and_record():
+            full_response = ""
+            try:
+                async for chunk in agent.stream_chat(
+                    session_id=final_session_id,
+                    user_msg=request.message, 
+                    history=history_to_use, 
+                    latitude=request.latitude, 
+                    longitude=request.longitude,
+                    context=request.context,
+                    user_id=user_id,
+                    is_voice=request.is_voice
+                ):
+                    yield chunk
+                    
+                    # Intercept text chunks to build the full history record
+                    if chunk.startswith("data: "):
+                        try:
+                            data_str = chunk[6:].strip()
+                            if data_str and data_str != "[DONE]":
+                                data_obj = json.loads(data_str)
+                                if data_obj.get("type") == "text":
+                                    full_response += data_obj.get("content", "")
+                        except Exception:
+                            pass
+                            
+            finally:
+                # Log the complete response after stream finishes
+                if full_response:
+                    redis_client.add_session_message(final_session_id, "assistant", full_response)
+                    background_tasks.add_task(db_interface.add_message_to_history, final_session_id, "assistant", full_response)
+
+        return StreamingResponse(stream_and_record(), media_type="text/event-stream")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
