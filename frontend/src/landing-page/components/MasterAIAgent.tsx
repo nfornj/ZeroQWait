@@ -394,8 +394,9 @@ const MasterAIAgent: React.FC = () => {
                                 // Update UI character by character
                                 setChatHistory(prev => {
                                     const next = [...prev];
-                                    if (next[aiMessageIndex]) {
-                                        next[aiMessageIndex].text = fullText;
+                                    const index = next.length - 1;
+                                    if (index >= 0 && next[index].role === 'ai') {
+                                        next[index].text = fullText;
                                     }
                                     return next;
                                 });
