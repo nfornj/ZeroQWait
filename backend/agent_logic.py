@@ -96,13 +96,24 @@ llm_circuit_breaker = CircuitBreaker()
 # --- Smart Query Processor ---
 
 from dataclasses import dataclass
-from typing import Optional
-import json as json_lib
-
-# --- Semantic Cache ---
-from sentence_transformers import SentenceTransformer
 import numpy as np
-embedder = SentenceTransformer('all-MiniLM-L6-v2')
+
+embedder = None
+
+def get_embedder():
+    global embedder
+    if embedder is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            embedder = SentenceTransformer('all-MiniLM-L6-v2')
+        except KeyError:
+            import os
+            from sentence_transformers import SentenceTransformer
+            os.environ["SENTENCE_TRANSFORMERS_HOME"] = "/tmp/st_home"
+            embedder = SentenceTransformer('all-MiniLM-L6-v2')
+        except Exception as e:
+            logger.error(f"Failed to load embedder: {e}")
+    return embedder
 
 class SemanticCache:
     """Lightweight semantic cache using sentence-transformers."""
@@ -114,7 +125,10 @@ class SemanticCache:
         if not query.strip() or not self.local_cache:
             return None
         try:
-            vec = embedder.encode([query.strip().lower()])[0]
+            embedder_inst = get_embedder()
+            if not embedder_inst:
+                return None
+            vec = embedder_inst.encode([query.strip().lower()])[0]
             best_score = 0
             best_match = None
             
@@ -135,9 +149,16 @@ class SemanticCache:
             
     def set(self, query: str, result_dict: dict):
         try:
-            vec = embedder.encode([query.strip().lower()])[0]
+            embedder_inst = get_embedder()
+            if not embedder_inst:
+                return
+            vec = embedder_inst.encode([query.strip().lower()])[0]
             self.local_cache.append((vec, result_dict))
             # Keep cache from growing infinitely in demo
+            if len(self.local_cache) > 1000:
+                self.local_cache = self.local_cache[-1000:]
+        except Exception as e:
+            logger.error(f"Failed to set cache: {e}")
             if len(self.local_cache) > 1000:
                 self.local_cache.pop(0)
         except Exception as e:
@@ -361,19 +382,14 @@ class CategoryManager:
     
     async def detect_category(self, user_input: str, context: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
-        Detect category from user input using smart extraction.
+        Detect category from user input.
         """
-        # First, extract meaningful search terms
-        extracted_terms = await query_processor.extract_search_terms(user_input)
-        
-        if not extracted_terms:
-            # No meaningful terms, check context
+        if not user_input:
             if context and context.get("preferred_category"):
                 return context["preferred_category"]
             return None
         
-        # Now search for category matches in extracted terms
-        normalized = extracted_terms.lower()
+        normalized = user_input.lower()
         categories = self.get_categories()
         
         # Direct match in extracted terms
@@ -930,7 +946,6 @@ class MasterAgent:
     def __init__(self):
         self.agent = master_pydantic_agent
         self.category_manager = category_manager
-        self.query_processor = query_processor
         
         self.metrics = {
             "total_requests": 0,
