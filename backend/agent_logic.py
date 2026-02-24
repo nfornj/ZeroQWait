@@ -1032,7 +1032,7 @@ class MasterAgent:
                     self.agent.run(full_msg, message_history=message_history, deps=deps),
                     timeout=90.0
                 )
-                final_text = result.data.response
+                final_text = result.data
                         
             # Voice optimization
             if is_voice and len(final_text) > 150:
