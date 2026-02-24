@@ -22,76 +22,10 @@ logger = logging.getLogger(__name__)
 # --- Configuration ---
 ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
 model = OpenAIModel(
-    'gpt-oss:20b',
+    'llama3.2:latest',
     provider=OpenAIProvider(base_url=ollama_url, api_key='ollama'),
 )
 
-
-# --- Circuit Breaker for LLM Resilience ---
-
-class CircuitBreaker:
-    """
-    Circuit breaker pattern for LLM calls.
-    If the LLM fails too many times, switch to fallback mode for a period.
-    This prevents hanging on an overloaded Ollama server.
-    """
-    
-    def __init__(self, failure_threshold: int = 3, reset_timeout: int = 30):
-        self.failures = 0
-        self.threshold = failure_threshold
-        self.reset_timeout = reset_timeout
-        self.last_failure = None
-        self.is_open = False
-        self._lock = asyncio.Lock()
-    
-    async def call(self, func, fallback_func, *args, **kwargs):
-        """
-        Execute func with circuit breaker protection.
-        If circuit is open, use fallback_func instead.
-        """
-        async with self._lock:
-            # Check if circuit should reset
-            if self.is_open:
-                import time
-                if time.time() - self.last_failure > self.reset_timeout:
-                    logger.info("Circuit breaker reset - trying LLM again")
-                    self.is_open = False
-                    self.failures = 0
-                else:
-                    logger.warning("Circuit breaker OPEN - using fallback")
-                    return await fallback_func(*args, **kwargs)
-        
-        try:
-            # Use timeout to prevent hanging
-            result = await asyncio.wait_for(func(*args, **kwargs), timeout=15.0)
-            
-            async with self._lock:
-                self.failures = 0
-            
-            return result
-            
-        except asyncio.TimeoutError:
-            logger.warning("LLM call timed out")
-            await self._record_failure()
-            return await fallback_func(*args, **kwargs)
-            
-        except Exception as e:
-            logger.warning(f"LLM call failed: {e}")
-            await self._record_failure()
-            return await fallback_func(*args, **kwargs)
-    
-    async def _record_failure(self):
-        import time
-        async with self._lock:
-            self.failures += 1
-            if self.failures >= self.threshold:
-                self.is_open = True
-                self.last_failure = time.time()
-                logger.error(f"Circuit breaker OPENED after {self.failures} failures")
-
-
-# Global circuit breaker instance
-llm_circuit_breaker = CircuitBreaker()
 
 # --- Smart Query Processor ---
 
@@ -231,22 +165,8 @@ Respond naturally, warm, and concise (1-2 sentences).
             
         full_prompt = f"{history_context}\n\nCurrent message: {user_msg}" if history_context else user_msg
         
-        async def _fallback(prompt):
-            mock_data = QueryAnalysis(
-                intent='ACTION',
-                terms=user_msg if len(user_msg) < 50 else "",
-                city=None,
-                near_me="near" in user_msg.lower() or "nearby" in user_msg.lower(),
-                context_updates=ContextUpdates(last_category=None, last_city=None)
-            )
-            return type('MockResult', (), {'data': mock_data})()
-            
         try:
-            result = await llm_circuit_breaker.call(
-                self.analyzer_agent.run,
-                _fallback,
-                full_prompt
-            )
+            result = await self.analyzer_agent.run(full_prompt)
             analysis = result.data
             
             # Write successful extraction backwards into Semantic Cache
@@ -254,7 +174,14 @@ Respond naturally, warm, and concise (1-2 sentences).
             return analysis
         except Exception as e:
             logger.error(f"Unified analyzer failed: {e}")
-            return await _fallback(full_prompt).data
+            # Degrade gracefully so the main agent can still attempt to answer
+            return QueryAnalysis(
+                intent='UNCLEAR',
+                terms="",
+                city=None,
+                near_me="near" in user_msg.lower() or "nearby" in user_msg.lower(),
+                context_updates=ContextUpdates(last_category=None, last_city=None)
+            )
             
     async def get_conversational_response(self, user_msg: str, context: Dict[str, Any] = None, history_context: str = "") -> str:
         context_parts = []
@@ -268,7 +195,7 @@ Respond naturally, warm, and concise (1-2 sentences).
         
         try:
             result = await self.conversation_agent.run(full_msg)
-            return result.data if hasattr(result, 'data') else str(result)
+            return getattr(result, 'output', getattr(result, 'data', str(result)))
         except Exception:
             return "Hello! 👋 I'm ZeroQ. How can I help you today? I can help you find shops, check pricing, or answer questions!"
 
@@ -582,7 +509,17 @@ def get_master_system_prompt() -> str:
     conversational_responses = get_knowledge("conversational_responses", "")
     search_guidance = get_knowledge("search_guidance", "")
     
-    # Default fallback if DB is empty for about section only to ensure basics
+    # Default fallbacks if DB is empty to ensure basics
+    if not critical_instructions:
+        critical_instructions = """
+## CRITICAL INSTRUCTIONS
+- If the user expressed intent to sign up, join, create account, or register (either as a customer or shop owner), you MUST call the `start_registration` tool.
+- If the user explicitly or implicitly asks to find shops, see nearby businesses, or list options (e.g., "list shops near me", "find a barber"), you MUST call the `search_shops` tool immediately. Do not ask for their location first; the tool handles that.
+- If the user asks about pricing or how much it costs, call `see_pricing`.
+- If the user asks about features or what the app can do, call `see_features`.
+- If the user asks for help or FAQ, call `see_faq`.
+"""
+    
     if not about_zeroqwait:
         about_zeroqwait = """
 ## ABOUT ZEROQWAIT
@@ -612,7 +549,7 @@ def create_master_agent():
     return Agent(
         model,
         deps_type=MasterAgentDeps,
-        output_type=MasterResponse,  # <--- CRITICAL: Enforce structured output
+        output_type=MasterResponse,  # <--- Essential for reliable tool coordination
         system_prompt=get_master_system_prompt(),
         retries=2,
         model_settings={'temperature': 0.3}
@@ -627,25 +564,16 @@ master_pydantic_agent = create_master_agent()
 @master_pydantic_agent.tool
 async def search_shops(
     ctx: RunContext[MasterAgentDeps], 
-    category: Optional[str] = Field(
-        default=None, 
-        description="Shop category (e.g., 'barber', 'salon', 'restaurant', 'auto repair'). Can also be a service like 'tire rotation'."
-    ),
-    city: Optional[str] = Field(
-        default=None, 
-        description="City name if user mentioned one. Leave empty to use location."
-    ),
-    query: Optional[str] = Field(
-        default=None, 
-        description="User's search query - will be automatically parsed for terms, location intent, and city."
-    )
+    category: Optional[str] = None,
+    city: Optional[str] = None,
+    query: Optional[str] = None
 ) -> str:
     """
     Search for local businesses or services.
-    ALWAYS call this for any business/service-related query.
-    If category is unknown, just pass the query and we'll search across all categories.
-    
-    DO NOT use this tool for: pricing, features, faq, or testimonials.
+    CRITICAL INSTRUCTION: If the user asks for anything related to "shops near me", "finding a business", or "looking for *", you MUST call this tool.
+    DO NOT ATTEMPT TO ANSWER THEM CONVERSATIONALLY. DO NOT TELL THEM TO USE GOOGLE MAPS.
+    Pass whatever keywords you have to 'query'. It is completely fine if 'city' or 'category' are null/empty.
+    The system will automatically detect the user's location on the backend.
     """
     
     try:
@@ -675,6 +603,10 @@ async def search_shops(
                 "timestamp": datetime.now().isoformat()
             })
             return "Testimonials section visible. Mention that many shop owners and customers love the platform."
+            
+        # Stop the LLM from searching for "hey" or "hello"
+        if check_term.strip() in ['hi', 'hello', 'hey', 'greetings', 'sup', 'yo']:
+            return "Hello! How can I help you today?"
             
         if any(x in check_term for x in ['pricing', 'cost', 'plan', 'price']):
             ctx.deps.actions.append({
@@ -713,7 +645,7 @@ async def search_shops(
         if user_wants_nearby and not has_location:
             # Store the pending search for when user provides location
             ctx.deps.context["pending_search_category"] = category or clean_terms
-            return "Ask the user exactly once: 'What city or area are you in?' Then call search_shops with their response."
+            return "I can help with that! What city or area are you looking in?"
         
         # If we have city from context, use it
         if not extracted_city and ctx.deps.context:
@@ -761,20 +693,11 @@ async def search_shops(
         # Guidance for LLM
         if len(result) == 0:
             search_desc = category or clean_terms or "any shops"
-            return (
-                f"No shops found for '{search_desc}'. "
-                "Briefly say 'No results found' and suggest trying a different category or area."
-            )
+            return f"I couldn't find {search_desc} in that area. Would you like to try a different location or category?"
         elif len(result) == 1:
-            return (
-                f"Found 1 shop: {result[0].get('name', 'shop')}. "
-                f"Say 'I found one option!' Keep it brief."
-            )
+            return f"I found 1 shop: {result[0].get('name', 'shop')}. Would you like to join the waitlist?"
         else:
-            return (
-                f"Found {len(result)} shops. They're visible as cards in UI. "
-                f"Say 'Found {len(result)} options near you!' Keep it brief."
-            )
+            return f"I found {len(result)} options near you! I've displayed them on the screen."
     
     except Exception as e:
         logger.error(f"search_shops error: {e}", exc_info=True)
@@ -932,6 +855,50 @@ async def check_queue_status(
     )
 
 
+
+@master_pydantic_agent.tool
+async def start_registration(
+    ctx: RunContext[MasterAgentDeps],
+    account_type: Optional[str] = Field(
+        default=None,
+        description="The type of account the user wants: 'shop_owner' or 'customer'. Leave null if unknown."
+    )
+) -> str:
+    """
+    Trigger the registration/signup wizard in the UI.
+    Call this tool when:
+    - User says they want to sign up, register, create an account
+    - User asks how to get started as a shop owner
+    - User wants to list their business
+    - User says 'I want to join' or 'how do I start'
+    
+    Do NOT call this if the user is already logged in (context will indicate this).
+    """
+    ctx.deps.actions.append({
+        "tool": "start_registration",
+        "result": {"account_type": account_type or "unknown"},
+        "timestamp": datetime.now().isoformat()
+    })
+
+    logger.info(f"start_registration called | user={ctx.deps.user_id} | account_type={account_type}")
+
+    if account_type == "shop_owner":
+        return (
+            "Registration wizard is now open for a shop owner account. "
+            "Say: 'Great! Let's get your shop set up. First, what's your email address?'"
+        )
+    elif account_type == "customer":
+        return (
+            "Registration wizard is now open for a customer account. "
+            "Say: 'Perfect! Let's create your account. What's your email address?'"
+        )
+    else:
+        return (
+            "Registration wizard is now open. "
+            "Ask: 'Are you signing up as a shop owner, or as a customer looking to join queues?'"
+        )
+
+
 # --- Master Agent ---
 
 class MasterAgent:
@@ -1044,56 +1011,27 @@ class MasterAgent:
             full_context = "\n".join(context_parts)
             full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
             
-            # --- Decision Routing ---
-            if intent == 'CONVERSATION':
-                final_text = await unified_query_analyzer.get_conversational_response(user_msg, deps.context, history_context_str)
-            elif intent == 'UNCLEAR':
-                final_text = "I'm not sure if you'd like to chat or find a shop. Could you clarify? 🤔"
+            # --- DIRECT SEARCH BYPASS ---
+            # Local LLMs often refuse to invoke tools if they feel they lack GPS data.
+            # If the pre-processor identified search terms or a 'near me' request,
+            # we forcibly execute the search tool without asking the LLM.
+            is_search_intent = analysis.terms or analysis.near_me or analysis.city
+            
+            if is_search_intent:
+                logger.info("Direct Search Bypass Triggered")
+                final_text = await search_shops(
+                    RunContext(deps=deps, model=model, usage=None, prompt=""),
+                    category=analysis.context_updates.last_category,
+                    city=analysis.city,
+                    query=user_msg
+                )
             else:
-                has_search_terms = bool(analysis.terms)
-                has_city_only = bool(analysis.city) and not analysis.terms
-                has_near_me_only = analysis.near_me and not analysis.terms
-                
-                if has_search_terms or has_city_only or has_near_me_only:
-                    logger.info("Direct Search Path")
-                    search_category = analysis.terms if analysis.terms else analysis.context_updates.last_category
-                    search_city = analysis.city or analysis.context_updates.last_city
-                    if not search_city and context:
-                        search_city = context.get("city")
-                    
-                    has_exact_coords = latitude is not None and longitude is not None
-                    has_location = (has_exact_coords or search_city or (context and context.get("city")))
-                    
-                    if analysis.near_me and not has_location:
-                        term_display = search_category if search_category else "shops"
-                        final_text = f"I can help you find {term_display} nearby! 🔍 What city or area are you in?"
-                        deps.context["pending_search_category"] = search_category
-                    else:
-                        results = await asyncio.to_thread(
-                            db_interface.search_shops,
-                            analysis.terms if analysis.terms else None,
-                            search_category,
-                            search_city,
-                            latitude,
-                            longitude,
-                            10
-                        )
-                        deps.actions.append({"tool": "search_shops", "result": results})
-                        if len(results) == 0:
-                            cat_display = search_category or analysis.terms or "shops"
-                            final_text = f"No results found for '{cat_display}'. Try a different category or area?"
-                        elif len(results) == 1:
-                            final_text = f"Found one option: {results[0].get('name', 'a shop')}! 🎯"
-                        else:
-                            final_text = f"Found {len(results)} options near you! 🎉"
-                else:
-                    self.metrics["llm_calls"] += 1
-                    result = await self.agent.run(full_msg, message_history=message_history, deps=deps)
-                    # Extract response natively from pydantic-ai
-                    if hasattr(result, 'data') and hasattr(result.data, 'response'):
-                        final_text = result.data.response
-                    else:
-                        final_text = str(result.data) if hasattr(result, 'data') else str(result)
+                self.metrics["llm_calls"] += 1
+                result = await asyncio.wait_for(
+                    self.agent.run(full_msg, message_history=message_history, deps=deps),
+                    timeout=90.0
+                )
+                final_text = result.data.response
                         
             # Voice optimization
             if is_voice and len(final_text) > 150:
@@ -1121,15 +1059,26 @@ class MasterAgent:
             
         except Exception as e:
             self.metrics["errors"] += 1
-            logger.error(f"MasterAgent error: {e}", exc_info=True)
-            processing_time = (datetime.now().timestamp() - start_time) * 1000
-            return {
-                "response": "I'm having trouble. Try: 'find barbers' or 'show pricing'",
-                "actions": [],
-                "agent_name": "ZeroQ",
-                "error": str(e),
-                "processing_time_ms": processing_time
-            }
+            logger.error(f"MasterAgent error: {e}")
+            
+            # If output validation fails (e.g. LLM couldn't format a simple greeting as JSON),
+            # try to fallback to a basic text conversation to prevent a hard crash on 'hello'.
+            if "validation" in str(e).lower() or "timeout" in str(e).lower():
+                logger.info("Falling back to pure conversational response due to formatting error")
+                fallback_text = await unified_query_analyzer.get_conversational_response(user_msg, deps.context, history_context_str)
+                return {
+                    "response": fallback_text,
+                    "actions": [],
+                    "agent_name": "ZeroQ",
+                    "processing_time_ms": (datetime.now().timestamp() - start_time) * 1000,
+                    "metrics": {
+                        "tools_called": 0,
+                        "is_voice": is_voice,
+                        "context_items": len(context_parts)
+                    }
+                }
+                
+            raise e
     
     async def persist_learnings(self):
         """Persist learned patterns."""
