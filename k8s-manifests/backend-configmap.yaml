@@ -11,5 +11,6 @@ data:
   PYTHONUNBUFFERED: "1"
   USE_SUPABASE: "false"
   OLLAMA_URL: "http://192.168.2.88:30002/v1"
+  MODEL_NAME: "open-claw-model"
   REDIS_HOST: "redis.zeroqwait.svc.cluster.local"
   REDIS_PORT: "6379"
