@@ -863,8 +863,9 @@ const MasterAIAgent: React.FC = () => {
                                         fullWidth
                                         placeholder="Type to ZeroQ..."
                                         variant="outlined"
-                                        onKeyPress={(e) => {
-                                            if (e.key === 'Enter') {
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
                                                 const target = e.target as HTMLInputElement;
                                                 if (target.value.trim()) {
                                                     handleChat(target.value);
