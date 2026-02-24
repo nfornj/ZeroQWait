@@ -1,0 +1,1 @@
+{"response":"User message: What city or area are you in?\n\nUser location is requested to find nearby shops.\n\n{\"name\": \"search_shops\", \"parameters\": {\"query\":\"near me\"}}","actions":[],"agent_name":"ZeroQ","processing_time_ms":9050.318002700806,"metrics":{"tools_called":0,"is_voice":false,"context_items":1}}

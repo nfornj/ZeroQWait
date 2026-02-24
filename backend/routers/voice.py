@@ -9,13 +9,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 ASR_SERVICE_URL = os.getenv("ASR_SERVICE_URL", "http://asr-service.zeroqwait.svc.cluster.local:8000/transcribe")
-# Qwen TTS service - running on the host machine port 8880
+# TTS service - running on the host machine port 8880
 TTS_SERVICE_URL = os.getenv("TTS_SERVICE_URL", "http://192.168.2.88:8880")
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = "serena"      # Qwen TTS voice: serena=receptionist female (also: eric, ryan, aiden, dylan, vivian)
-    speed: float = 1.0         # 1.0 = normal, <1 = slower, >1 = faster
+    voice: str = "serena"      # Voice profile (e.g., serena, eric, ryan)
+    speed: float = 1.0         # 1.0 = normal
 
 @router.post("/transcribe")
 async def transcribe_voice(file: UploadFile = File(...)):
@@ -40,13 +40,12 @@ async def transcribe_voice(file: UploadFile = File(...)):
 @router.post("/tts")
 async def text_to_speech(req: TTSRequest):
     """
-    Proxy TTS request to Qwen3-TTS service.
+    Proxy TTS request to the TTS service.
     Returns buffered MP3 audio for the frontend to play.
-    Bold voice profile: lower pitch via speed, the model handles timbre.
     """
     try:
         payload = {
-            "model": "qwen3-tts",
+            "model": "tts-1",
             "input": req.text,
             "voice": req.voice,
             "speed": req.speed,

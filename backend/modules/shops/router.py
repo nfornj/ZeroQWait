@@ -221,3 +221,15 @@ def add_close_day(shop_id: int, date_str: str, reason: Optional[str] = None):
 def delete_close_day(shop_id: int, day_id: int):
     shop_service.delete_close_day(shop_id, day_id)
     return {"success": True}
+
+
+@router.get("/check-slug/{slug}")
+def check_slug_availability(slug: str):
+    """Check if a shop slug is available (for voice registration validation)."""
+    try:
+        # Normalize the slug the same way the creation endpoint does
+        normalized = slug.lower().replace(" ", "-").replace("'", "").replace(".", "")
+        shop = shop_service.get_shop_by_slug(normalized)
+        return {"available": shop is None, "slug": normalized}
+    except Exception:
+        return {"available": True, "slug": slug}

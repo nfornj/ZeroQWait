@@ -31,6 +31,7 @@ import Pricing from './Pricing';
 import Features from './Features';
 import FAQ from './FAQ';
 import Testimonials from './Testimonials';
+import VoiceRegistrationFlow from './VoiceRegistrationFlow';
 import { constructShopUrl, isLocalhost } from '../../utils/domainUtils';
 
 const MasterAIAgent: React.FC = () => {
@@ -68,12 +69,13 @@ const MasterAIAgent: React.FC = () => {
         role: 'ai' | 'user',
         text: string,
         shops?: any[],
-        relatedViewer?: 'shops' | 'pricing' | 'features' | 'faq' | null
+        relatedViewer?: 'shops' | 'pricing' | 'features' | 'faq' | 'register' | null
     }>>([
         { role: 'ai', text: "Welcome to ZeroQwait! I'm ZeroQ. How can I help you today?" }
     ]);
 
-    const [activeViewer, setActiveViewer] = useState<'shops' | 'pricing' | 'features' | 'faq' | null>(null);
+    const [activeViewer, setActiveViewer] = useState<'shops' | 'pricing' | 'features' | 'faq' | 'register' | null>(null);
+    const [registrationAccountType, setRegistrationAccountType] = useState<'customer' | 'shop_owner' | null>(null);
     const [activeShops, setActiveShops] = useState<any[]>([]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -143,6 +145,7 @@ const MasterAIAgent: React.FC = () => {
     // --- Qwen TTS via Backend Proxy ---
     const audioCtxRef = useRef<AudioContext | null>(null);
     const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
     const [isSpeaking, setIsSpeaking] = useState(false);
 
     const getAudioContext = () => {
@@ -153,11 +156,15 @@ const MasterAIAgent: React.FC = () => {
     };
 
     const speak = async (text: string) => {
-        // Stop any currently playing audio
+        // Stop any currently playing audio or pending requests
         try {
             if (currentSourceRef.current) {
                 currentSourceRef.current.stop();
                 currentSourceRef.current = null;
+            }
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+                abortControllerRef.current = null;
             }
         } catch (_) { }
 
@@ -173,6 +180,9 @@ const MasterAIAgent: React.FC = () => {
 
         if (!plainText) return Promise.resolve();
 
+        abortControllerRef.current = new AbortController();
+        const signal = abortControllerRef.current.signal;
+
         setIsSpeaking(true);
         return new Promise<void>(async (resolve) => {
             try {
@@ -183,7 +193,8 @@ const MasterAIAgent: React.FC = () => {
                         text: plainText,
                         voice: 'serena',   // Clear, professional female receptionist voice
                         speed: 1.0         // Normal, natural pacing
-                    })
+                    }),
+                    signal
                 });
 
                 if (!response.ok) throw new Error(`TTS failed: ${response.status}`);
@@ -212,21 +223,9 @@ const MasterAIAgent: React.FC = () => {
                 currentSourceRef.current = source;
 
             } catch (err) {
-                console.warn('[TTS] Qwen TTS failed, falling back to browser speech:', err);
-                // Graceful fallback to browser SpeechSynthesis
+                console.warn('[TTS] TTS failed:', err);
                 setIsSpeaking(false);
-                if ('speechSynthesis' in window) {
-                    window.speechSynthesis.cancel();
-                    const utterance = new SpeechSynthesisUtterance(plainText);
-                    utterance.rate = 1.0;
-                    utterance.pitch = 1.0;     // Natural pitch
-                    utterance.volume = 1.0;
-                    utterance.onend = () => setIsSpeaking(false);
-                    window.speechSynthesis.speak(utterance);
-                    resolve(); // Resolve immediately for fallback
-                } else {
-                    resolve();
-                }
+                resolve();
             }
         });
     };
@@ -331,6 +330,15 @@ const MasterAIAgent: React.FC = () => {
                             currentShops = shops;
                             currentViewer = 'shops';
                         }
+                    } else if (action.tool === 'start_registration') {
+                        const accountType = action.result?.account_type;
+                        if (accountType === 'shop_owner' || accountType === 'customer') {
+                            setRegistrationAccountType(accountType);
+                        } else {
+                            setRegistrationAccountType(null);
+                        }
+                        currentViewer = 'register';
+                        currentShops = [];
                     }
                 });
             } else {
@@ -355,7 +363,6 @@ const MasterAIAgent: React.FC = () => {
 
         } catch (error) {
             console.error('[DEBUG] MasterAgent API Error:', error);
-            setChatHistory(prev => [...prev, { role: 'ai', text: "I'm sorry, I'm having trouble connecting to my database. Please check your internet or try again in a moment." }]);
         } finally {
             setIsProcessing(false);
         }
@@ -842,6 +849,27 @@ const MasterAIAgent: React.FC = () => {
                                     {(activeViewer as string) === 'testimonials' && <Testimonials embedded={true} />}
                                     {activeViewer === 'features' && <Features embedded={true} />}
                                     {activeViewer === 'faq' && <FAQ embedded={true} />}
+                                    {activeViewer === 'register' && (
+                                        <VoiceRegistrationFlow
+                                            isDarkMode={isDarkMode}
+                                            theme={theme}
+                                            prefilledAccountType={registrationAccountType}
+                                            onAISpeak={(text) => {
+                                                // Append AI message to chat and speak it
+                                                speak(text);
+                                                setChatHistory(prev => [...prev, { role: 'ai', text }]);
+                                            }}
+                                            onClose={(success) => {
+                                                setActiveViewer(null);
+                                                setRegistrationAccountType(null);
+                                                if (success) {
+                                                    const msg = 'Your account is ready! Click "Sign In Now" to log in, or explore the platform first.';
+                                                    speak(msg);
+                                                    setChatHistory(prev => [...prev, { role: 'ai', text: msg }]);
+                                                }
+                                            }}
+                                        />
+                                    )}
                                 </Box>
                             </Fade>
                         )}

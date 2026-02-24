@@ -1,0 +1,1 @@
+{"response":"Ask the user exactly once: 'What city or area are you in?' Then call search_shops with their response.","actions":[],"agent_name":"ZeroQ","processing_time_ms":6420.143127441406,"metrics":{"tools_called":0,"is_voice":false,"context_items":1}}
