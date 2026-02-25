@@ -28,6 +28,23 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting analytics scheduler...")
     await start_scheduler(run_at_hour=0, run_at_minute=30)  # Run at 00:30 daily
+    
+    # Pre-warm the semantic cache (loads sentence-transformer model) before serving requests.
+    # This avoids a 60-90s stall on the first chat request after a pod restart.
+    try:
+        import asyncio
+        import concurrent.futures
+        logger.info("Pre-warming semantic cache (loading sentence-transformer model)...")
+        loop = asyncio.get_event_loop()
+        def _prewarm():
+            from agent_logic import semantic_cache  # noqa: triggers model load
+            return True
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            await loop.run_in_executor(pool, _prewarm)
+        logger.info("Semantic cache pre-warm complete.")
+    except Exception as e:
+        logger.warning(f"Semantic cache pre-warm failed (non-fatal): {e}")
+    
     logger.info("Application started")
     
     yield
@@ -36,6 +53,7 @@ async def lifespan(app: FastAPI):
     logger.info("Stopping analytics scheduler...")
     await stop_scheduler()
     logger.info("Application shutdown complete")
+
 
 
 app = FastAPI(
