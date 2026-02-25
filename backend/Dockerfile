@@ -20,6 +20,9 @@ RUN uv sync --no-dev
 # Copy the application code
 COPY . .
 
+# Pre-warm the sentence-transformer model so first requests don't block on download
+RUN uv run python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" || true
+
 # Expose port
 EXPOSE 8000
 
