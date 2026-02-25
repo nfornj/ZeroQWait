@@ -13,6 +13,7 @@ from scheduler import start_scheduler, stop_scheduler
 import logging
 import models # Force model registration
 from websocket_manager import manager
+import agent_logic  # Force eager loading of sentence-transformer model at startup  # noqa: F401
 
 # Setup logging
 logging.basicConfig(
