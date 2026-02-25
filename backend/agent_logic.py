@@ -39,13 +39,21 @@ def get_embedder():
     global embedder
     if embedder is None:
         try:
+            import json as _json
             from sentence_transformers import SentenceTransformer
-            embedder = SentenceTransformer('all-MiniLM-L6-v2')
-        except KeyError:
-            import os
-            from sentence_transformers import SentenceTransformer
-            os.environ["SENTENCE_TRANSFORMERS_HOME"] = "/tmp/st_home"
-            embedder = SentenceTransformer('all-MiniLM-L6-v2')
+
+            # Monkey-patch to handle missing '__version__' in config.json (sentence-transformers v0.2.5.1 bug)
+            _orig_load = _json.load
+            def _safe_load(f):
+                data = _orig_load(f)
+                if isinstance(data, dict) and '__version__' not in data:
+                    data.setdefault('__version__', '0.0')
+                return data
+            _json.load = _safe_load
+            try:
+                embedder = SentenceTransformer('all-MiniLM-L6-v2')
+            finally:
+                _json.load = _orig_load
         except Exception as e:
             logger.error(f"Failed to load embedder: {e}")
     return embedder
