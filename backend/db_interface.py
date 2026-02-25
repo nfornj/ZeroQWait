@@ -451,13 +451,20 @@ class DatabaseInterface:
         finally:
             db.close()
 
-    def add_message_to_history(self, session_id: str, role: str, content: str, tool_call_id: str = None) -> Dict:
+    def add_message_to_history(self, session_id: str, role: str, content, tool_call_id: str = None) -> Dict:
         db = self.get_session()
         try:
+            # Coerce content to string — guards against pydantic model objects being passed directly
+            if hasattr(content, 'response'):
+                content_str = content.response
+            elif hasattr(content, '__str__'):
+                content_str = str(content)
+            else:
+                content_str = content
             msg = ConversationHistory(
                 session_id=session_id,
                 role=role,
-                content=content,
+                content=content_str,
                 tool_call_id=tool_call_id,
                 created_at=datetime.utcnow()
             )

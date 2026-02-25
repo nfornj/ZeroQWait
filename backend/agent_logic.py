@@ -168,7 +168,7 @@ Respond naturally, warm, and concise (1-2 sentences).
         
         try:
             result = await self.analyzer_agent.run(full_prompt)
-            analysis = result.data
+            analysis = result.output
             
             # Write successful extraction backwards into Semantic Cache
             semantic_cache.set(user_msg, analysis.model_dump())
@@ -1030,9 +1030,9 @@ class MasterAgent:
                 self.metrics["llm_calls"] += 1
                 result = await asyncio.wait_for(
                     self.agent.run(full_msg, message_history=message_history, deps=deps),
-                    timeout=90.0
+                    timeout=300.0
                 )
-                final_text = result.data
+                final_text = result.output.response
                         
             # Voice optimization
             if is_voice and len(final_text) > 150:
