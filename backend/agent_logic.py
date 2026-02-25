@@ -101,6 +101,15 @@ class SemanticCache:
 
 semantic_cache = SemanticCache()
 
+# Eagerly initialize the embedder at module load time so the sentence-transformer model
+# is downloaded before any request arrives (avoids a 60-90s stall on first request).
+try:
+    get_embedder()
+    logger.info("Sentence-transformer embedder pre-loaded successfully.")
+except Exception as _e:
+    logger.warning(f"Embedder pre-load failed (non-fatal, will retry on first request): {_e}")
+
+
 # --- Unified Query Analyzer ---
 
 class ContextUpdates(BaseModel):
