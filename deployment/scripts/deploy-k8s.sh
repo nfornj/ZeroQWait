@@ -10,12 +10,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 K8S_MANIFESTS="$PROJECT_ROOT/k8s-manifests"
 
 # Set KUBECONFIG for k3s
-# Set KUBECONFIG
-if [ -f "$HOME/.kube/config" ]; then
-    export KUBECONFIG="$HOME/.kube/config"
-else
-    export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-fi
+export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 
 echo "🚀 Starting ZeroQwait Kubernetes Deployment"
 echo "=========================================================="
@@ -75,12 +70,6 @@ kubectl apply -f "$K8S_MANIFESTS/backend-deployment.yaml"
 
 echo -e "${BLUE}📋 Deploying frontend...${NC}"
 kubectl apply -f "$K8S_MANIFESTS/frontend-deployment.yaml"
-
-
-# Restart deployments to pick up code changes immediately
-echo -e "${BLUE}🔄 Restarting deployments to apply latest code...${NC}"
-kubectl rollout restart deployment/backend -n $NAMESPACE
-kubectl rollout restart deployment/frontend -n $NAMESPACE
 
 echo "⏳ Waiting for deployments..."
 kubectl wait --for=condition=available --timeout=300s deployment/backend -n $NAMESPACE 2>/dev/null || echo "⚠️  Backend deploying..."

@@ -125,7 +125,7 @@ ssh "$DESTINATION_SERVER" bash <<'DEPLOY_SCRIPT'
 set -e
 DEST_PATH="/home/neekrishrichu/apps/zeroqwait"
 cd "$DEST_PATH/deployment"
-sudo -n true && sudo bash scripts/deploy-k8s.sh || bash scripts/deploy-k8s.sh
+sudo bash scripts/deploy-k8s.sh
 DEPLOY_SCRIPT
 
 if [ $? -ne 0 ]; then

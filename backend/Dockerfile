@@ -1,5 +1,5 @@
 # Use Python slim for better compatibility and faster builds
-FROM python:3.9-slim-bullseye
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Install Python dependencies using uv
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock .python-version ./
 # Sync dependencies to create a pristine virtual environment
 RUN uv sync --no-dev
 

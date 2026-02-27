@@ -1,1003 +1,1392 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
-    Box,
-    Typography,
-    IconButton,
-    Fade,
-    Stack,
-    CircularProgress,
-    Card,
-    CardContent,
-    Button,
-    Avatar,
-    TextField,
-    Chip
-} from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
-import MicIcon from '@mui/icons-material/Mic';
-import MicOffIcon from '@mui/icons-material/MicOff';
-import SearchIcon from '@mui/icons-material/Search';
-import LocationOnIcon from '@mui/icons-material/LocationOn';
-import axios from 'axios';
-import { useAudioRecorder } from '../../hooks/useAudioRecorder';
-import { useAudioVisualizer } from '../../hooks/useAudioVisualizer';
-import ParticleSphere from '../../components/agent/ParticleSphere';
-import { useNavigate } from 'react-router-dom';
-import LightModeIcon from '@mui/icons-material/LightMode';
-import DarkModeIcon from '@mui/icons-material/DarkMode';
-import ReactMarkdown from 'react-markdown';
+  Box,
+  Typography,
+  IconButton,
+  Fade,
+  Stack,
+  CircularProgress,
+  Card,
+  CardContent,
+  Button,
+  Avatar,
+  TextField,
+  Chip,
+} from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+import MicIcon from "@mui/icons-material/Mic";
+import MicOffIcon from "@mui/icons-material/MicOff";
+import SearchIcon from "@mui/icons-material/Search";
+import LocationOnIcon from "@mui/icons-material/LocationOn";
+import axios from "axios";
+import { useAudioRecorder } from "../../hooks/useAudioRecorder";
+import { useAudioVisualizer } from "../../hooks/useAudioVisualizer";
+import ParticleSphere from "../../components/agent/ParticleSphere";
+import { useNavigate } from "react-router-dom";
+import LightModeIcon from "@mui/icons-material/LightMode";
+import DarkModeIcon from "@mui/icons-material/DarkMode";
+import ReactMarkdown from "react-markdown";
 
-import Pricing from './Pricing';
-import Features from './Features';
-import FAQ from './FAQ';
-import Testimonials from './Testimonials';
-import VoiceRegistrationFlow from './VoiceRegistrationFlow';
-import { constructShopUrl, isLocalhost } from '../../utils/domainUtils';
+import Pricing from "./Pricing";
+import Features from "./Features";
+import FAQ from "./FAQ";
+import Testimonials from "./Testimonials";
+import VoiceRegistrationFlow from "./VoiceRegistrationFlow";
+import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
 
 const MasterAIAgent: React.FC = () => {
-    const [isOpen, setIsOpen] = useState(false);
-    const [isDarkMode, setIsDarkMode] = useState(false);
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [isTranscribing, setIsTranscribing] = useState(false);
-    const [isToggling, setIsToggling] = useState(false);
-    const [location, setLocation] = useState<{ lat: number, lng: number } | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isToggling, setIsToggling] = useState(false);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
+    null,
+  );
 
-    // Capture Geolocation
-    useEffect(() => {
-        if ("geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-                (err) => console.warn('[MasterAIAgent] Geolocation denied or unavailable:', err)
-            );
+  // Capture Geolocation
+  useEffect(() => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (err) =>
+          console.warn(
+            "[MasterAIAgent] Geolocation denied or unavailable:",
+            err,
+          ),
+      );
+    }
+  }, []);
+
+  // Session Management
+  const [sessionId, setSessionId] = useState<string>("");
+
+  useEffect(() => {
+    let sid = sessionStorage.getItem("zeroq_session_id");
+    if (!sid) {
+      sid = Math.random().toString(36).substring(2) + Date.now().toString(36);
+      sessionStorage.setItem("zeroq_session_id", sid);
+    }
+    setSessionId(sid);
+  }, []);
+
+  // Updated State Type for Dynamic Layout
+  const [chatHistory, setChatHistory] = useState<
+    Array<{
+      role: "ai" | "user";
+      text: string;
+      shops?: any[];
+      relatedViewer?:
+        | "shops"
+        | "pricing"
+        | "features"
+        | "faq"
+        | "register"
+        | null;
+    }>
+  >([
+    {
+      role: "ai",
+      text: "Welcome to ZeroQwait! I'm ZeroQ. How can I help you today?",
+    },
+  ]);
+
+  const [activeViewer, setActiveViewer] = useState<
+    "shops" | "pricing" | "features" | "faq" | "register" | null
+  >(null);
+  const [registrationAccountType, setRegistrationAccountType] = useState<
+    "customer" | "shop_owner" | null
+  >(null);
+  const [activeShops, setActiveShops] = useState<any[]>([]);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const latestAIResponse = chatHistory[chatHistory.length - 1];
+  const navigate = useNavigate();
+
+  // Ref to hold the submit function (solves circular dependency)
+  const submitAudioRef = useRef<() => Promise<void>>();
+
+  // Voice Recorder (Server-Side ASR + Browser Preview + Auto-Submit)
+  // Pass wrapper that calls the ref
+  const {
+    isRecording,
+    startRecording,
+    stopRecording,
+    hasPermission,
+    transcript,
+  } = useAudioRecorder(() => {
+    if (submitAudioRef.current) {
+      submitAudioRef.current();
+    }
+  });
+
+  // Audio Submission Logic (Extracted for Auto-Submit)
+  const submitAudio = useCallback(async () => {
+    console.log("[MasterAIAgent] submitAudio called.");
+    const audioBlob = await stopRecording();
+    if (audioBlob) {
+      console.log(
+        `[MasterAIAgent] Audio blob captured. Size: ${audioBlob.size} bytes. Type: ${audioBlob.type}`,
+      );
+
+      // Warn if blob is suspiciously small
+      if (audioBlob.size < 1000) {
+        console.warn(
+          "[MasterAIAgent] Audio blob is very small, might be silence or error.",
+        );
+      }
+
+      setIsTranscribing(true);
+      try {
+        const formData = new FormData();
+        formData.append("file", audioBlob, "recording.webm");
+
+        console.log("[MasterAIAgent] Sending to /api/voice/transcribe...");
+        const response = await axios.post("/voice/transcribe", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+
+        console.log("[MasterAIAgent] Transcription response:", response.data);
+        const text = response.data.text;
+
+        if (text && text.trim()) {
+          console.log("[MasterAIAgent] Valid text received, handling chat...");
+          handleChat(text);
+        } else {
+          console.warn("[MasterAIAgent] No text returned from transcription.");
         }
-    }, []);
+      } catch (error) {
+        console.error("[MasterAIAgent] Transcription request failed:", error);
+      } finally {
+        setIsTranscribing(false);
+      }
+    } else {
+      console.warn("[MasterAIAgent] stopRecording returned null blob.");
+    }
+  }, [stopRecording]); // handleChat is stable
 
-    // Session Management
-    const [sessionId, setSessionId] = useState<string>("");
+  // Update ref whenever submitAudio changes
+  useEffect(() => {
+    submitAudioRef.current = submitAudio;
+  }, [submitAudio]);
 
-    useEffect(() => {
-        let sid = sessionStorage.getItem("zeroq_session_id");
-        if (!sid) {
-            sid = Math.random().toString(36).substring(2) + Date.now().toString(36);
-            sessionStorage.setItem("zeroq_session_id", sid);
+  // Audio Visualizer
+  const { volume } = useAudioVisualizer(isRecording);
+
+  // --- Paired-Streaming TTS: synchronized text + audio playback ---
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  // Media queue for paired sentence events: {text, audio}
+  const mediaQueueRef = useRef<Array<{ text: string; audio: string | null }>>(
+    [],
+  );
+  const isPlayingQueueRef = useRef(false);
+  const cancelQueueRef = useRef(false);
+
+  const getAudioContext = () => {
+    if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
+      audioCtxRef.current = new (
+        window.AudioContext || (window as any).webkitAudioContext
+      )();
+    }
+    return audioCtxRef.current;
+  };
+
+  /** Play base64-encoded MP3 audio. Resolves when playback ends. */
+  const playAudio = (base64Audio: string): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      const safetyTimeout = setTimeout(() => {
+        console.warn("[TTS] Audio safety timeout");
+        setIsSpeaking(false);
+        currentSourceRef.current = null;
+        resolve();
+      }, 60000);
+
+      try {
+        const binaryStr = atob(base64Audio);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
         }
-        setSessionId(sid);
-    }, []);
 
-    // Updated State Type for Dynamic Layout
-    const [chatHistory, setChatHistory] = useState<Array<{
-        role: 'ai' | 'user',
-        text: string,
-        shops?: any[],
-        relatedViewer?: 'shops' | 'pricing' | 'features' | 'faq' | 'register' | null
-    }>>([
-        { role: 'ai', text: "Welcome to ZeroQwait! I'm ZeroQ. How can I help you today?" }
+        const audioCtx = getAudioContext();
+        if (audioCtx.state === "suspended") audioCtx.resume();
+
+        audioCtx.decodeAudioData(
+          bytes.buffer.slice(0) as ArrayBuffer,
+          (audioBuffer) => {
+            if (cancelQueueRef.current) {
+              clearTimeout(safetyTimeout);
+              resolve();
+              return;
+            }
+            const source = audioCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioCtx.destination);
+
+            source.onended = () => {
+              clearTimeout(safetyTimeout);
+              setIsSpeaking(false);
+              currentSourceRef.current = null;
+              resolve();
+            };
+
+            setIsSpeaking(true);
+            source.start(0);
+            currentSourceRef.current = source;
+          },
+          (err) => {
+            clearTimeout(safetyTimeout);
+            console.warn("[TTS] Audio decode error:", err);
+            resolve();
+          },
+        );
+      } catch (err) {
+        clearTimeout(safetyTimeout);
+        console.warn("[TTS] playAudio error:", err);
+        resolve();
+      }
+    });
+  };
+
+  /** Typewriter effect: reveal text character-by-character synced to speaking rate (~30ms/char). */
+  const typeText = (
+    text: string,
+    updateFn: (textSoFar: string) => void,
+    previousText: string,
+  ): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      let charIndex = 0;
+      const speed = 15; // ms per character — faster typewriter synced to 1.25x TTS speed
+      const timer = setInterval(() => {
+        if (cancelQueueRef.current) {
+          clearInterval(timer);
+          updateFn(previousText + text); // Show full text immediately on cancel
+          resolve();
+          return;
+        }
+        charIndex++;
+        updateFn(previousText + text.slice(0, charIndex));
+        if (charIndex >= text.length) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, speed);
+    });
+  };
+
+  /** Process the paired media queue: play audio + typewrite text simultaneously per sentence. */
+  const processMediaQueue = async (aiMsgIndexFn: () => number) => {
+    if (isPlayingQueueRef.current) return;
+    isPlayingQueueRef.current = true;
+    cancelQueueRef.current = false;
+    let displayedText = "";
+
+    while (mediaQueueRef.current.length > 0) {
+      if (cancelQueueRef.current) break;
+
+      const item = mediaQueueRef.current.shift()!;
+      console.log(
+        `[PairedStream] Sentence: "${item.text.slice(0, 50)}..." audio=${item.audio ? "yes" : "no"}`,
+      );
+
+      const updateUI = (textSoFar: string) => {
+        setChatHistory((prev) => {
+          const next = [...prev];
+          const idx = next.length - 1;
+          if (idx >= 0 && next[idx].role === "ai") {
+            next[idx] = { ...next[idx], text: textSoFar };
+          }
+          return next;
+        });
+      };
+
+      const prevText = displayedText;
+
+      if (item.audio) {
+        // Paired execution: audio + typewriter run SIMULTANEOUSLY
+        await Promise.all([
+          playAudio(item.audio),
+          typeText(item.text, updateUI, prevText),
+        ]);
+      } else {
+        // No audio available — just typewrite the text
+        await typeText(item.text, updateUI, prevText);
+      }
+
+      // Add a space between sentences for display
+      displayedText = prevText + item.text + " ";
+    }
+
+    isPlayingQueueRef.current = false;
+  };
+
+  /** Stop any currently playing audio and cancel the media queue. */
+  const stopCurrentAudio = () => {
+    cancelQueueRef.current = true;
+    mediaQueueRef.current = [];
+    isPlayingQueueRef.current = false;
+    try {
+      if (currentSourceRef.current) {
+        currentSourceRef.current.stop();
+        currentSourceRef.current = null;
+      }
+    } catch (_) {}
+    setIsSpeaking(false);
+  };
+
+  /** Speak text via backend TTS API (used for welcome message only). */
+  const speak = async (text: string) => {
+    stopCurrentAudio();
+    cancelQueueRef.current = false;
+
+    // Strip markdown & emojis
+    const plainText = text
+      .replace(/\*\*(.*?)\*\*/g, "$1")
+      .replace(/\*(.*?)\*/g, "$1")
+      .replace(/#{1,6}\s/g, "")
+      .replace(/`([^`]*)`/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(
+        /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu,
+        "",
+      )
+      .replace(/\n+/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
+    if (!plainText || plainText.length < 2) return;
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setIsSpeaking(true);
+    try {
+      const response = await fetch("/api/voice/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: plainText, voice: "serena", speed: 1.0 }),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`TTS ${response.status}`);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioCtx = getAudioContext();
+      if (audioCtx.state === "suspended") await audioCtx.resume();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioCtx.destination);
+      await new Promise<void>((resolve) => {
+        source.onended = () => {
+          setIsSpeaking(false);
+          currentSourceRef.current = null;
+          resolve();
+        };
+        source.start(0);
+        currentSourceRef.current = source;
+      });
+    } catch (err: any) {
+      if (err?.name !== "AbortError")
+        console.warn("[TTS] speak fallback failed:", err);
+      setIsSpeaking(false);
+      currentSourceRef.current = null;
+    }
+  };
+
+  const handleVoiceToggle = async () => {
+    if (isToggling || isProcessing || isTranscribing) return;
+
+    setIsToggling(true);
+    // Safety timeout to prevent infinite loading state if promises hang (e.g. permission prompt ignored)
+    const safetyTimer = setTimeout(() => {
+      console.warn("[MasterAIAgent] Voice toggle timed out, resetting state");
+      setIsToggling(false);
+    }, 8000);
+
+    try {
+      if (isRecording) {
+        await submitAudio();
+      } else {
+        await startRecording();
+      }
+    } catch (error) {
+      console.error("Voice toggle failed:", error);
+    } finally {
+      clearTimeout(safetyTimer);
+      setIsToggling(false);
+    }
+  };
+
+  // Theme & Visibility Configuration
+  const theme = {
+    bg: isDarkMode
+      ? "radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 50%, 15%), #05050A)" // Deep violet dark mode
+      : "radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 80%, 90%), #FFFFFF)", // Bright violet light mode - Matches Hero
+    glass: isDarkMode ? "blur(20px)" : "blur(40px)", // Reduced blur for crisper bg visibility
+    text: isDarkMode ? "#ffffff" : "#0f172a",
+    textSecondary: isDarkMode
+      ? "rgba(255, 255, 255, 0.7)"
+      : "rgba(15, 23, 42, 0.7)",
+    accent: isDarkMode ? "#E879F9" : "#C026D3", // Fuchsia 400 (Dark) / Fuchsia 600 (Light) - Vibrant & Neon
+    cardBg: isDarkMode
+      ? "rgba(255, 255, 255, 0.05)"
+      : "rgba(255, 255, 255, 0.6)",
+    cardBorder: isDarkMode
+      ? "rgba(232, 121, 249, 0.2)"
+      : "rgba(192, 38, 211, 0.15)",
+    inputBg: isDarkMode
+      ? "rgba(255, 255, 255, 0.07)"
+      : "rgba(255, 255, 255, 0.8)",
+    iconColor: isDarkMode ? "#ffffff" : "#0f172a",
+  };
+
+  // Visibility & Global Triggers
+  useEffect(() => {
+    const handleToggle = () => {
+      console.log("[DEBUG] AI Assistant trigger received");
+      setIsOpen((prev) => !prev);
+    };
+    window.addEventListener("trigger-zeroq-assistant", handleToggle);
+
+    return () => {
+      window.removeEventListener("trigger-zeroq-assistant", handleToggle);
+    };
+  }, []);
+
+  // Handle initial speech when opening
+  useEffect(() => {
+    if (isOpen && chatHistory.length === 1) {
+      speak(chatHistory[0].text);
+    }
+  }, [isOpen]);
+
+  const handleChat = async (userText: string) => {
+    if (!userText.trim()) return;
+
+    // Cancel any in-progress playback
+    stopCurrentAudio();
+
+    setChatHistory((prev) => [...prev, { role: "user", text: userText }]);
+    setIsProcessing(true);
+
+    const aiMessageIndex = chatHistory.length + 1;
+
+    // Add empty AI message placeholder
+    setChatHistory((prev) => [
+      ...prev,
+      {
+        role: "ai",
+        text: "",
+        shops: activeShops,
+        relatedViewer: activeViewer,
+      },
     ]);
 
-    const [activeViewer, setActiveViewer] = useState<'shops' | 'pricing' | 'features' | 'faq' | 'register' | null>(null);
-    const [registrationAccountType, setRegistrationAccountType] = useState<'customer' | 'shop_owner' | null>(null);
-    const [activeShops, setActiveShops] = useState<any[]>([]);
-
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const latestAIResponse = chatHistory[chatHistory.length - 1];
-    const navigate = useNavigate();
-
-    // Ref to hold the submit function (solves circular dependency)
-    const submitAudioRef = useRef<() => Promise<void>>();
-
-    // Voice Recorder (Server-Side ASR + Browser Preview + Auto-Submit)
-    // Pass wrapper that calls the ref
-    const { isRecording, startRecording, stopRecording, hasPermission, transcript } = useAudioRecorder(() => {
-        if (submitAudioRef.current) {
-            submitAudioRef.current();
-        }
-    });
-
-    // Audio Submission Logic (Extracted for Auto-Submit)
-    const submitAudio = useCallback(async () => {
-        console.log("[MasterAIAgent] submitAudio called.");
-        const audioBlob = await stopRecording();
-        if (audioBlob) {
-            console.log(`[MasterAIAgent] Audio blob captured. Size: ${audioBlob.size} bytes. Type: ${audioBlob.type}`);
-
-            // Warn if blob is suspiciously small
-            if (audioBlob.size < 1000) {
-                console.warn("[MasterAIAgent] Audio blob is very small, might be silence or error.");
-            }
-
-            setIsTranscribing(true);
-            try {
-                const formData = new FormData();
-                formData.append('file', audioBlob, 'recording.webm');
-
-                console.log("[MasterAIAgent] Sending to /api/voice/transcribe...");
-                const response = await axios.post('/voice/transcribe', formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                });
-
-                console.log("[MasterAIAgent] Transcription response:", response.data);
-                const text = response.data.text;
-
-                if (text && text.trim()) {
-                    console.log("[MasterAIAgent] Valid text received, handling chat...");
-                    handleChat(text);
-                } else {
-                    console.warn("[MasterAIAgent] No text returned from transcription.");
-                }
-            } catch (error) {
-                console.error('[MasterAIAgent] Transcription request failed:', error);
-            } finally {
-                setIsTranscribing(false);
-            }
-        } else {
-            console.warn("[MasterAIAgent] stopRecording returned null blob.");
-        }
-    }, [stopRecording]); // handleChat is stable
-
-    // Update ref whenever submitAudio changes
-    useEffect(() => {
-        submitAudioRef.current = submitAudio;
-    }, [submitAudio]);
-
-    // Audio Visualizer
-    const { volume } = useAudioVisualizer(isRecording);
-
-    // --- Qwen TTS via Backend Proxy ---
-    const audioCtxRef = useRef<AudioContext | null>(null);
-    const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
-    const abortControllerRef = useRef<AbortController | null>(null);
-    const [isSpeaking, setIsSpeaking] = useState(false);
-
-    const getAudioContext = () => {
-        if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
-            audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        }
-        return audioCtxRef.current;
-    };
-
-    const speak = async (text: string) => {
-        // Stop any currently playing audio or pending requests
-        try {
-            if (currentSourceRef.current) {
-                currentSourceRef.current.stop();
-                currentSourceRef.current = null;
-            }
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
-                abortControllerRef.current = null;
-            }
-        } catch (_) { }
-
-        // Strip markdown for cleaner TTS
-        const plainText = text
-            .replace(/\*\*(.*?)\*\*/g, '$1')
-            .replace(/\*(.*?)\*/g, '$1')
-            .replace(/#{1,6}\s/g, '')
-            .replace(/`([^`]*)`/g, '$1')
-            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-            .replace(/\n+/g, ' ')
-            .trim();
-
-        if (!plainText) return Promise.resolve();
-
-        abortControllerRef.current = new AbortController();
-        const signal = abortControllerRef.current.signal;
-
-        setIsSpeaking(true);
-        return new Promise<void>(async (resolve) => {
-            try {
-                const response = await fetch('/api/voice/tts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        text: plainText,
-                        voice: 'serena',   // Clear, professional female receptionist voice
-                        speed: 1.0         // Normal, natural pacing
-                    }),
-                    signal
-                });
-
-                if (!response.ok) throw new Error(`TTS failed: ${response.status}`);
-
-                const arrayBuffer = await response.arrayBuffer();
-                const audioCtx = getAudioContext();
-
-                // Resume context (required after user gesture)
-                if (audioCtx.state === 'suspended') await audioCtx.resume();
-
-                const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-
-                // --- NATURAL VOICE CHAIN: Source → Output (No EQ filters) ---
-                const source = audioCtx.createBufferSource();
-                source.buffer = audioBuffer;
-
-                // Direct connection for clean acoustic profile
-                source.connect(audioCtx.destination);
-
-                source.onended = () => {
-                    setIsSpeaking(false);
-                    currentSourceRef.current = null;
-                };
-
-                source.start(0);
-                currentSourceRef.current = source;
-
-            } catch (err) {
-                console.warn('[TTS] TTS failed:', err);
-                setIsSpeaking(false);
-                resolve();
-            }
-        });
-    };
-
-    const handleVoiceToggle = async () => {
-        if (isToggling || isProcessing || isTranscribing) return;
-
-        setIsToggling(true);
-        // Safety timeout to prevent infinite loading state if promises hang (e.g. permission prompt ignored)
-        const safetyTimer = setTimeout(() => {
-            console.warn('[MasterAIAgent] Voice toggle timed out, resetting state');
-            setIsToggling(false);
-        }, 8000);
-
-        try {
-            if (isRecording) {
-                await submitAudio();
-            } else {
-                await startRecording();
-            }
-        } catch (error) {
-            console.error("Voice toggle failed:", error);
-        } finally {
-            clearTimeout(safetyTimer);
-            setIsToggling(false);
-        }
-    };
-
-    // Theme & Visibility Configuration
-    const theme = {
-        bg: isDarkMode
-            ? 'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 50%, 15%), #05050A)' // Deep violet dark mode
-            : 'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 80%, 90%), #FFFFFF)', // Bright violet light mode - Matches Hero
-        glass: isDarkMode ? 'blur(20px)' : 'blur(40px)', // Reduced blur for crisper bg visibility
-        text: isDarkMode ? '#ffffff' : '#0f172a',
-        textSecondary: isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(15, 23, 42, 0.7)',
-        accent: isDarkMode ? '#E879F9' : '#C026D3', // Fuchsia 400 (Dark) / Fuchsia 600 (Light) - Vibrant & Neon
-        cardBg: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.6)',
-        cardBorder: isDarkMode ? 'rgba(232, 121, 249, 0.2)' : 'rgba(192, 38, 211, 0.15)',
-        inputBg: isDarkMode ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.8)',
-        iconColor: isDarkMode ? '#ffffff' : '#0f172a'
-    };
-
-    // Visibility & Global Triggers
-    useEffect(() => {
-        const handleToggle = () => {
-            console.log('[DEBUG] AI Assistant trigger received');
-            setIsOpen(prev => !prev);
-        };
-        window.addEventListener('trigger-zeroq-assistant', handleToggle);
-
-        return () => {
-            window.removeEventListener('trigger-zeroq-assistant', handleToggle);
-        };
-    }, []);
-
-    // Handle initial speech when opening
-    useEffect(() => {
-        if (isOpen && chatHistory.length === 1) {
-            speak(chatHistory[0].text);
-        }
-    }, [isOpen]);
-
-    // --- Audio Queue Manager ---
-    // Handles continuous playback of streamed sentences
-    const audioQueueRef = useRef<{
-        queue: string[];
-        isPlaying: boolean;
-        activeSource: AudioBufferSourceNode | null;
-    }>({ queue: [], isPlaying: false, activeSource: null });
-
-    const processAudioQueue = async () => {
-        if (audioQueueRef.current.isPlaying || audioQueueRef.current.queue.length === 0) return;
-
-        audioQueueRef.current.isPlaying = true;
-        const textToSpeak = audioQueueRef.current.queue.shift();
-
-        if (textToSpeak) {
-            console.log(`[AudioQueue] Playing: "${textToSpeak}"`);
-            await speak(textToSpeak);
-        }
-
-        audioQueueRef.current.isPlaying = false;
-        // Continue queue
-        if (audioQueueRef.current.queue.length > 0) {
-            processAudioQueue();
-        }
-    };
-
-    const handleChat = async (userText: string) => {
-        if (!userText.trim()) return;
-
-        // Reset the audio queue on new user input
-        if (abortControllerRef.current) abortControllerRef.current.abort();
-        if (audioQueueRef.current.activeSource) audioQueueRef.current.activeSource.stop();
-        audioQueueRef.current = { queue: [], isPlaying: false, activeSource: null };
-
-        setChatHistory(prev => [...prev, { role: 'user', text: userText }]);
-        setIsProcessing(true);
-
-        const aiMessageIndex = chatHistory.length + 1; // Index where the new AI message will live
-
-        // Add empty AI message placeholder
-        setChatHistory(prev => [...prev, {
-            role: 'ai',
-            text: "",
-            shops: activeShops,
-            relatedViewer: activeViewer
-        }]);
-
-        try {
-            const response = await fetch('/api/agent/master/chat/stream', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    message: userText,
-                    session_id: sessionId,
-                    latitude: location?.lat,
-                    longitude: location?.lng,
-                    history: chatHistory.map(h => ({
-                        role: h.role === 'ai' ? 'assistant' : 'user',
-                        content: h.text
-                    })),
-                    context: {
-                        active_view: activeViewer,
-                        visible_shops: activeShops.map(s => s.name)
-                    }
-                })
-            });
-
-            if (!response.body) throw new Error("No response body");
-
-            setIsProcessing(false); // Stop loading animation, start typing
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            let fullText = "";
-            let unplayedTextBuffer = "";
-
-            // Regex to detect sentence boundaries
-            const sentenceBoundaryRegex = /([.?!])\s+/g;
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunkStr = decoder.decode(value, { stream: true });
-                const lines = chunkStr.split('\n');
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const dataStr = line.slice(6);
-                        if (dataStr === '[DONE]') continue;
-
-                        try {
-                            const data = JSON.parse(dataStr);
-
-                            if (data.type === 'text') {
-                                const newText = data.content;
-                                fullText += newText;
-                                unplayedTextBuffer += newText;
-
-                                // Update UI character by character
-                                setChatHistory(prev => {
-                                    const next = [...prev];
-                                    const index = next.length - 1;
-                                    if (index >= 0 && next[index].role === 'ai') {
-                                        next[index].text = fullText;
-                                    }
-                                    return next;
-                                });
-
-                                // Sentence Boundary Detection for audio queuing
-                                // If the buffer contains a punctuation mark followed by a space
-                                let match;
-                                while ((match = sentenceBoundaryRegex.exec(unplayedTextBuffer)) !== null) {
-                                    // Extract the sentence
-                                    const boundaryIndex = match.index + match[0].length;
-                                    const sentence = unplayedTextBuffer.slice(0, boundaryIndex).trim();
-
-                                    if (sentence.length > 3) {
-                                        audioQueueRef.current.queue.push(sentence);
-                                        processAudioQueue();
-                                    }
-
-                                    // Remove played sentence from buffer
-                                    unplayedTextBuffer = unplayedTextBuffer.slice(boundaryIndex);
-                                    // Reset regex back to start of modified string
-                                    sentenceBoundaryRegex.lastIndex = 0;
-                                }
-
-                            } else if (data.type === 'actions') {
-                                let currentShops = [...activeShops];
-                                let currentViewer = activeViewer;
-
-                                const actions = data.actions;
-                                if (actions && Array.isArray(actions) && actions.length > 0) {
-                                    actions.forEach((action: any) => {
-                                        if (action.tool === 'navigate_to_page_section') {
-                                            currentViewer = action.result.target as any;
-                                            currentShops = [];
-                                        } else if (action.tool === 'search_shops') {
-                                            const shops = Array.isArray(action.result) ? action.result : (action.result?.shops || []);
-                                            if (shops.length > 0) {
-                                                currentShops = shops;
-                                                currentViewer = 'shops';
-                                            }
-                                        } else if (action.tool === 'start_registration') {
-                                            const accountType = action.result?.account_type;
-                                            setRegistrationAccountType(accountType === 'shop_owner' || accountType === 'customer' ? accountType : null);
-                                            currentViewer = 'register';
-                                            currentShops = [];
-                                        }
-                                    });
-                                } else {
-                                    currentViewer = null;
-                                    currentShops = [];
-                                }
-
-                                setActiveShops(currentShops);
-                                setActiveViewer(currentViewer);
-
-                                // Update the active frame in the UI
-                                setChatHistory(prev => {
-                                    const next = [...prev];
-                                    if (next[aiMessageIndex]) {
-                                        next[aiMessageIndex].shops = currentShops;
-                                        next[aiMessageIndex].relatedViewer = currentViewer;
-                                    }
-                                    return next;
-                                });
-                            }
-                        } catch (e) {
-                            console.warn("Failed to parse SSE data chunk:", dataStr);
-                        }
-                    }
-                }
-            } // end loop
-
-            // Flush remaining text buffer to audio queue
-            if (unplayedTextBuffer.trim().length > 0) {
-                audioQueueRef.current.queue.push(unplayedTextBuffer.trim());
-                processAudioQueue();
-            }
-
-        } catch (error) {
-            console.error('[DEBUG] MasterAgent API Stream Error:', error);
-            setIsProcessing(false);
-            setChatHistory(prev => {
+    try {
+      const response = await fetch("/api/agent/master/chat/stream", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: userText,
+          session_id: sessionId,
+          latitude: location?.lat,
+          longitude: location?.lng,
+          history: chatHistory.map((h) => ({
+            role: h.role === "ai" ? "assistant" : "user",
+            content: h.text,
+          })),
+          context: {
+            active_view: activeViewer,
+            visible_shops: activeShops.map((s) => s.name),
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Server error ${response.status}: ${errText}`);
+      }
+      if (!response.body) throw new Error("No response body");
+
+      setIsProcessing(false);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      // Reset media queue for this response
+      mediaQueueRef.current = [];
+      cancelQueueRef.current = false;
+      isPlayingQueueRef.current = false;
+
+      let sseBuffer = ""; // Buffer for incomplete SSE lines
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split("\n");
+        // Keep the last incomplete line in the buffer
+        sseBuffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const dataStr = line.slice(6);
+          if (dataStr === "[DONE]") continue;
+
+          try {
+            const data = JSON.parse(dataStr);
+
+            if (data.type === "sentence") {
+              // --- Paired sentence event: {text, audio} ---
+              const sentenceText = data.text || "";
+              const audioB64 = data.audio || null;
+
+              console.log(
+                `[SSE] Sentence received: "${sentenceText.slice(0, 40)}..." audio=${audioB64 ? "yes" : "no"}`,
+              );
+
+              // Push to media queue
+              mediaQueueRef.current.push({
+                text: sentenceText,
+                audio: audioB64,
+              });
+
+              // Start or restart the media queue processor
+              // (it may have finished before this event arrived)
+              if (!isPlayingQueueRef.current) {
+                processMediaQueue(() => aiMessageIndex);
+              }
+            } else if (data.type === "text") {
+              // Legacy text-only event (fallback compatibility)
+              const newText = data.content;
+              setChatHistory((prev) => {
                 const next = [...prev];
-                if (next[aiMessageIndex]) {
-                    next[aiMessageIndex].text = "I encountered an error trying to process that request.";
+                const idx = next.length - 1;
+                if (idx >= 0 && next[idx].role === "ai") {
+                  next[idx] = {
+                    ...next[idx],
+                    text: (next[idx].text || "") + newText,
+                  };
                 }
                 return next;
-            });
+              });
+            } else if (data.type === "error") {
+              const errText =
+                data.content || "Something went wrong. Please try again.";
+              setChatHistory((prev) => {
+                const next = [...prev];
+                const idx = next.length - 1;
+                if (idx >= 0 && next[idx].role === "ai") {
+                  next[idx] = {
+                    ...next[idx],
+                    text: (next[idx].text || "") + errText,
+                  };
+                }
+                return next;
+              });
+            } else if (data.type === "actions") {
+              let currentShops = [...activeShops];
+              let currentViewer = activeViewer;
+
+              const actions = data.actions;
+              if (actions && Array.isArray(actions) && actions.length > 0) {
+                actions.forEach((action: any) => {
+                  if (action.tool === "navigate_to_page_section") {
+                    currentViewer = action.result.target as any;
+                    currentShops = [];
+                  } else if (action.tool === "search_shops") {
+                    const shops = Array.isArray(action.result)
+                      ? action.result
+                      : action.result?.shops || [];
+                    if (shops.length > 0) {
+                      currentShops = shops;
+                      currentViewer = "shops";
+                    }
+                  } else if (action.tool === "start_registration") {
+                    const accountType = action.result?.account_type;
+                    setRegistrationAccountType(
+                      accountType === "shop_owner" || accountType === "customer"
+                        ? accountType
+                        : null,
+                    );
+                    currentViewer = "register";
+                    currentShops = [];
+                  }
+                });
+              } else {
+                currentViewer = null;
+                currentShops = [];
+              }
+
+              setActiveShops(currentShops);
+              setActiveViewer(currentViewer);
+
+              setChatHistory((prev) => {
+                const next = [...prev];
+                if (next[aiMessageIndex]) {
+                  next[aiMessageIndex].shops = currentShops;
+                  next[aiMessageIndex].relatedViewer = currentViewer;
+                }
+                return next;
+              });
+            }
+          } catch (e) {
+            console.warn("Failed to parse SSE data chunk:", dataStr);
+          }
         }
-    };
+      } // end SSE loop
 
-    // Auto-scroll to bottom of chat
-    useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTo({
-                top: scrollRef.current.scrollHeight,
-                behavior: 'smooth'
-            });
+      // If queue has unprocessed items after SSE loop ends, ensure processing
+      if (!isPlayingQueueRef.current && mediaQueueRef.current.length > 0) {
+        processMediaQueue(() => aiMessageIndex);
+      }
+    } catch (error) {
+      console.error("[DEBUG] MasterAgent API Stream Error:", error);
+      setIsProcessing(false);
+      setChatHistory((prev) => {
+        const next = [...prev];
+        if (next[aiMessageIndex]) {
+          next[aiMessageIndex].text =
+            "I encountered an error trying to process that request.";
         }
-    }, [chatHistory]);
+        return next;
+      });
+    }
+  };
 
+  // Auto-scroll to bottom of chat
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [chatHistory]);
 
-    return (
-        <Fade in={isOpen}>
+  return (
+    <Fade in={isOpen}>
+      <Box
+        id="immersive-ai-overlay"
+        sx={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100vw",
+          height: { xs: "100dvh", md: "100vh" },
+          zIndex: 10000,
+          background: theme.bg,
+          backdropFilter: theme.glass,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "flex-start",
+          color: theme.text,
+          overflow: "hidden", // Changed to hidden - scrolling happens inside child
+          transition: "all 0.5s ease",
+        }}
+      >
+        {/* Controls Top Right */}
+        <Stack
+          direction="row"
+          spacing={2}
+          sx={{ position: "absolute", top: 40, right: 40, zIndex: 20000 }}
+        >
+          <IconButton
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            sx={{
+              color: theme.iconColor,
+              bgcolor: isDarkMode
+                ? "rgba(255,255,255,0.05)"
+                : "rgba(15,23,42,0.05)",
+              "&:hover": {
+                bgcolor: isDarkMode
+                  ? "rgba(255,255,255,0.1)"
+                  : "rgba(15,23,42,0.1)",
+              },
+            }}
+          >
+            {isDarkMode ? (
+              <LightModeIcon sx={{ fontSize: 24 }} />
+            ) : (
+              <DarkModeIcon sx={{ fontSize: 24 }} />
+            )}
+          </IconButton>
+          <IconButton
+            onClick={() => setIsOpen(false)}
+            sx={{
+              color: theme.iconColor,
+              bgcolor: isDarkMode
+                ? "rgba(255,255,255,0.05)"
+                : "rgba(15,23,42,0.05)",
+              "&:hover": {
+                bgcolor: isDarkMode
+                  ? "rgba(255,255,255,0.1)"
+                  : "rgba(15,23,42,0.1)",
+              },
+            }}
+          >
+            <CloseIcon sx={{ fontSize: 32 }} />
+          </IconButton>
+        </Stack>
+
+        <Box
+          sx={{
+            flex: 1,
+            width: "100%",
+            overflowY: "auto",
+            overflowX: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            position: "relative",
+            zIndex: 1,
+            "&::-webkit-scrollbar": { width: "6px" },
+            "&::-webkit-scrollbar-track": { background: "transparent" },
+            "&::-webkit-scrollbar-thumb": {
+              background: isDarkMode
+                ? "rgba(255,255,255,0.1)"
+                : "rgba(0,0,0,0.1)",
+              borderRadius: "10px",
+            },
+          }}
+        >
+          {/* Main Content Wrapper - Centers or Splits */}
+          <Box
+            sx={{
+              flex: 1,
+              display: "flex",
+              flexDirection: activeViewer
+                ? { xs: "column", md: "row" }
+                : "column",
+              // CHANGED: Center vertically in both single and split view
+              alignItems: "center",
+              justifyContent: "center",
+              py: { xs: 2, sm: 3, md: 4 },
+              px: { xs: 2, sm: 3, md: 4, lg: 6 },
+              gap: { xs: 3, sm: 3, md: 4 },
+              width: "100%",
+              // WIDER CONTAINER for Split View (Monitor Mode)
+              // Constrained to 1400px for better balance on large screens
+              maxWidth: activeViewer ? "1400px" : "800px",
+              m: "auto", // Safe centering that handles overflow correctly
+              // Removed minHeight: '100%' which was causing clipping issues
+              transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
+            }}
+          >
+            {/* CHAT COLUMN: Agent, Transcript & Controls */}
             <Box
-                id="immersive-ai-overlay"
-                sx={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    width: '100vw',
-                    height: { xs: '100dvh', md: '100vh' },
-                    zIndex: 10000,
-                    background: theme.bg,
-                    backdropFilter: theme.glass,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'flex-start',
-                    color: theme.text,
-                    overflow: 'hidden', // Changed to hidden - scrolling happens inside child
-                    transition: 'all 0.5s ease'
-                }}
+              sx={{
+                // FIXED WIDTH for Chat in Split View
+                flex: activeViewer
+                  ? { xs: "1 1 auto", md: "0 0 400px" }
+                  : "none",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                // CHANGED: Center content vertically within the column
+                justifyContent: "center",
+                gap: { xs: 2, sm: 2.5, md: 3 },
+                transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
+                width: "100%",
+                // Fixed width constraint
+                maxWidth: activeViewer
+                  ? { xs: "100%", md: "400px" }
+                  : { xs: "100%", sm: "500px", md: "600px" },
+                // CHANGED: Fixed height for desktop to match shop list
+                height: activeViewer ? { xs: "auto", md: "70vh" } : "auto",
+                position: "relative",
+                py: { xs: 1, md: 2 },
+                order: { xs: 0, md: activeViewer ? 1 : 0 },
+              }}
             >
-                {/* Controls Top Right */}
-                <Stack direction="row" spacing={2} sx={{ position: 'absolute', top: 40, right: 40, zIndex: 20000 }}>
-                    <IconButton
-                        onClick={() => setIsDarkMode(!isDarkMode)}
-                        sx={{
-                            color: theme.iconColor,
-                            bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.05)',
-                            '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)' }
-                        }}
-                    >
-                        {isDarkMode ? <LightModeIcon sx={{ fontSize: 24 }} /> : <DarkModeIcon sx={{ fontSize: 24 }} />}
-                    </IconButton>
-                    <IconButton
-                        onClick={() => setIsOpen(false)}
-                        sx={{
-                            color: theme.iconColor,
-                            bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.05)',
-                            '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)' }
-                        }}
-                    >
-                        <CloseIcon sx={{ fontSize: 32 }} />
-                    </IconButton>
-                </Stack>
-
+              {/* Clickable Orb for Voice Activation */}
+              <Box
+                onClick={handleVoiceToggle}
+                sx={{
+                  position: "relative",
+                  width: activeViewer
+                    ? { xs: 80, sm: 100, md: 120 }
+                    : { xs: 150, sm: 180, md: 220 },
+                  height: activeViewer
+                    ? { xs: 80, sm: 100, md: 120 }
+                    : { xs: 150, sm: 180, md: 220 },
+                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                  flexShrink: 0,
+                  mb: activeViewer ? 1 : 2,
+                  cursor: isTranscribing || isToggling ? "wait" : "pointer",
+                  opacity: isToggling ? 0.7 : 1,
+                  animation: isProcessing
+                    ? "orbPulse 1.5s ease-in-out infinite"
+                    : isRecording
+                      ? "orbGlow 1s ease-in-out infinite"
+                      : "none",
+                  "@keyframes orbPulse": {
+                    "0%, 100%": { transform: "scale(1)", opacity: 1 },
+                    "50%": { transform: "scale(1.08)", opacity: 0.85 },
+                  },
+                  "@keyframes orbGlow": {
+                    "0%, 100%": {
+                      filter: `drop-shadow(0 0 20px ${theme.accent}66)`,
+                    },
+                    "50%": {
+                      filter: `drop-shadow(0 0 40px ${theme.accent}aa)`,
+                    },
+                  },
+                  "&:hover": {
+                    transform:
+                      isTranscribing || isToggling ? "none" : "scale(1.05)",
+                    filter:
+                      isTranscribing || isToggling
+                        ? "none"
+                        : `brightness(1.1) drop-shadow(0 0 25px ${theme.accent}55)`,
+                  },
+                  "&:active": {
+                    transform:
+                      isTranscribing || isToggling ? "none" : "scale(0.98)",
+                  },
+                }}
+              >
                 <Box
-                    sx={{
-                        flex: 1,
-                        width: '100%',
-                        overflowY: 'auto',
-                        overflowX: 'hidden',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        position: 'relative',
-                        zIndex: 1,
-                        '&::-webkit-scrollbar': { width: '6px' },
-                        '&::-webkit-scrollbar-track': { background: 'transparent' },
-                        '&::-webkit-scrollbar-thumb': {
-                            background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                            borderRadius: '10px'
-                        }
-                    }}
+                  sx={{ pointerEvents: "none", width: "100%", height: "100%" }}
                 >
-                    {/* Main Content Wrapper - Centers or Splits */}
-                    <Box sx={{
-                        flex: 1,
-                        display: 'flex',
-                        flexDirection: activeViewer ? { xs: 'column', md: 'row' } : 'column',
-                        // CHANGED: Center vertically in both single and split view
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        py: { xs: 2, sm: 3, md: 4 },
-                        px: { xs: 2, sm: 3, md: 4, lg: 6 },
-                        gap: { xs: 3, sm: 3, md: 4 },
-                        width: '100%',
-                        // WIDER CONTAINER for Split View (Monitor Mode)
-                        // Constrained to 1400px for better balance on large screens
-                        maxWidth: activeViewer ? '1400px' : '800px',
-                        m: 'auto', // Safe centering that handles overflow correctly
-                        // Removed minHeight: '100%' which was causing clipping issues
-                        transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
-                    }}>
-
-                        {/* CHAT COLUMN: Agent, Transcript & Controls */}
-                        <Box sx={{
-                            // FIXED WIDTH for Chat in Split View
-                            flex: activeViewer ? { xs: '1 1 auto', md: '0 0 400px' } : 'none',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            // CHANGED: Center content vertically within the column
-                            justifyContent: 'center',
-                            gap: { xs: 2, sm: 2.5, md: 3 },
-                            transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-                            width: '100%',
-                            // Fixed width constraint
-                            maxWidth: activeViewer ? { xs: '100%', md: '400px' } : { xs: '100%', sm: '500px', md: '600px' },
-                            // CHANGED: Fixed height for desktop to match shop list
-                            height: activeViewer ? { xs: 'auto', md: '70vh' } : 'auto',
-                            position: 'relative',
-                            py: { xs: 1, md: 2 },
-                            order: { xs: 0, md: activeViewer ? 1 : 0 }
-                        }}>
-                            {/* Clickable Orb for Voice Activation */}
-                            <Box
-                                onClick={handleVoiceToggle}
-                                sx={{
-                                    position: 'relative',
-                                    width: activeViewer ? { xs: 80, sm: 100, md: 120 } : { xs: 150, sm: 180, md: 220 },
-                                    height: activeViewer ? { xs: 80, sm: 100, md: 120 } : { xs: 150, sm: 180, md: 220 },
-                                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                    flexShrink: 0,
-                                    mb: activeViewer ? 1 : 2,
-                                    cursor: (isTranscribing || isToggling) ? 'wait' : 'pointer',
-                                    opacity: isToggling ? 0.7 : 1,
-                                    animation: isProcessing ? 'orbPulse 1.5s ease-in-out infinite' : (isRecording ? 'orbGlow 1s ease-in-out infinite' : 'none'),
-                                    '@keyframes orbPulse': {
-                                        '0%, 100%': { transform: 'scale(1)', opacity: 1 },
-                                        '50%': { transform: 'scale(1.08)', opacity: 0.85 }
-                                    },
-                                    '@keyframes orbGlow': {
-                                        '0%, 100%': { filter: `drop-shadow(0 0 20px ${theme.accent}66)` },
-                                        '50%': { filter: `drop-shadow(0 0 40px ${theme.accent}aa)` }
-                                    },
-                                    '&:hover': {
-                                        transform: (isTranscribing || isToggling) ? 'none' : 'scale(1.05)',
-                                        filter: (isTranscribing || isToggling) ? 'none' : `brightness(1.1) drop-shadow(0 0 25px ${theme.accent}55)`
-                                    },
-                                    '&:active': {
-                                        transform: (isTranscribing || isToggling) ? 'none' : 'scale(0.98)'
-                                    }
-                                }}
-                            >
-                                <Box sx={{ pointerEvents: 'none', width: '100%', height: '100%' }}>
-                                    <ParticleSphere volume={volume} isListening={isRecording} color={theme.accent} isProcessing={isProcessing} />
-                                </Box>
-
-                                {/* Mic Icon Overlay - shows on hover or when idle */}
-                                <Box
-                                    sx={{
-                                        position: 'absolute',
-                                        top: '50%',
-                                        left: '50%',
-                                        transform: 'translate(-50%, -50%)',
-                                        opacity: (isRecording || isProcessing || isTranscribing || isToggling) ? 0 : 0.4,
-                                        transition: 'opacity 0.3s ease',
-                                        pointerEvents: 'none',
-                                        '& svg': {
-                                            fontSize: activeViewer ? { xs: 24, md: 32 } : { xs: 40, md: 56 },
-                                            color: theme.text
-                                        },
-                                        '.MuiBox-root:hover > &': {
-                                            opacity: (isRecording || isProcessing || isTranscribing || isToggling) ? 0 : 0.7
-                                        }
-                                    }}
-                                >
-                                    {isToggling ? <CircularProgress size={30} sx={{ color: theme.accent }} /> : (isRecording ? <MicIcon /> : <MicOffIcon />)}
-                                </Box>
-                            </Box>
-
-                            {/* Voice Status Indicator - below orb */}
-                            <Typography
-                                variant="caption"
-                                sx={{
-                                    opacity: (isRecording || isTranscribing || isToggling) ? 1 : 0.5,
-                                    letterSpacing: '0.1em',
-                                    fontWeight: 600,
-                                    minHeight: '20px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: (isRecording || isTranscribing || isToggling) ? theme.accent : theme.textSecondary,
-                                    transition: 'all 0.2s ease',
-                                    textAlign: 'center',
-                                    fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' },
-                                    mb: 1,
-                                    cursor: 'pointer',
-                                    '&:hover': {
-                                        opacity: 1
-                                    }
-                                }}
-                                onClick={handleVoiceToggle}
-                            >
-                                {isTranscribing ? "TRANSCRIBING..." : (isRecording ? (transcript || "LISTENING...") : "TAP ORB TO SPEAK")}
-                            </Typography>
-
-                            <Box
-                                ref={scrollRef}
-                                sx={{
-                                    width: '100%',
-                                    // CHANGED: Make chat history fill available space, enabling scroll
-                                    flex: 1,
-                                    overflowY: 'auto',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 1.5,
-                                    px: { xs: 1, sm: 1.5, md: 2 },
-                                    py: 1,
-                                    maskImage: 'linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)',
-                                    WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)',
-                                    '&::-webkit-scrollbar': { width: '4px' },
-                                    '&::-webkit-scrollbar-thumb': {
-                                        background: isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
-                                        borderRadius: '4px'
-                                    }
-                                }}
-                            >
-                                {chatHistory.map((chat, index) => (
-                                    <Box
-                                        key={index}
-                                        sx={{
-                                            width: '100%',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: chat.role === 'user' ? 'flex-end' : 'flex-start',
-                                            opacity: index < chatHistory.length - 2 ? 0.75 : 1,
-                                            transition: 'opacity 0.3s ease'
-                                        }}
-                                    >
-                                        <Box
-                                            sx={{
-                                                bgcolor: chat.role === 'user' ? theme.accent : theme.cardBg,
-                                                color: chat.role === 'user' ? (isDarkMode ? '#000' : '#fff') : theme.text,
-                                                py: { xs: 1.5, md: 2 },
-                                                px: { xs: 2, md: 2.5 },
-                                                borderRadius: chat.role === 'user' ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
-                                                maxWidth: { xs: '88%', sm: '85%', md: '85%' },
-                                                border: chat.role === 'user' ? 'none' : `1px solid ${theme.cardBorder}`,
-                                                boxShadow: chat.role === 'user'
-                                                    ? '0 2px 8px rgba(0,0,0,0.1)'
-                                                    : '0 2px 12px rgba(0,0,0,0.05)',
-                                                '& p': {
-                                                    m: 0,
-                                                    mb: 0.75,
-                                                    lineHeight: 1.5,
-                                                    fontSize: { xs: '0.9rem', sm: '0.95rem', md: '1rem' }
-                                                },
-                                                '& p:last-child': { mb: 0 },
-                                                '& ul, & ol': { pl: 2, m: 0, mb: 0.75 },
-                                                '& li': { mb: 0.25, fontSize: { xs: '0.85rem', sm: '0.9rem', md: '0.95rem' } },
-                                                '& strong': { fontWeight: 600, color: chat.role === 'user' ? 'inherit' : theme.accent }
-                                            }}
-                                        >
-                                            {chat.role === 'user' ? (
-                                                <Typography variant="body1" sx={{ fontSize: { xs: '0.9rem', md: '1rem' }, fontWeight: 500 }}>{chat.text}</Typography>
-                                            ) : (
-                                                <ReactMarkdown>{chat.text}</ReactMarkdown>
-                                            )}
-                                        </Box>
-                                    </Box>
-                                ))}
-                                {/* Thinking indicator - shows in chat while processing */}
-                                {isProcessing && (
-                                    <Box
-                                        sx={{
-                                            width: '100%',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'flex-start',
-                                            animation: 'fadeIn 0.3s ease'
-                                        }}
-                                    >
-                                        <Box
-                                            sx={{
-                                                bgcolor: theme.cardBg,
-                                                color: theme.textSecondary,
-                                                py: { xs: 1.5, md: 2 },
-                                                px: { xs: 2, md: 2.5 },
-                                                borderRadius: '20px 20px 20px 4px',
-                                                maxWidth: { xs: '70%', sm: '60%' },
-                                                border: `1px solid ${theme.cardBorder}`,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 1
-                                            }}
-                                        >
-                                            <Typography
-                                                variant="body2"
-                                                sx={{
-                                                    fontStyle: 'italic',
-                                                    fontSize: { xs: '0.85rem', md: '0.95rem' },
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: 0.5
-                                                }}
-                                            >
-                                                Thinking
-                                                <Box
-                                                    component="span"
-                                                    sx={{
-                                                        display: 'inline-flex',
-                                                        gap: '2px',
-                                                        '& span': {
-                                                            width: 4,
-                                                            height: 4,
-                                                            borderRadius: '50%',
-                                                            bgcolor: theme.accent,
-                                                            animation: 'dotBounce 1.4s ease-in-out infinite'
-                                                        },
-                                                        '& span:nth-of-type(1)': { animationDelay: '0s' },
-                                                        '& span:nth-of-type(2)': { animationDelay: '0.2s' },
-                                                        '& span:nth-of-type(3)': { animationDelay: '0.4s' },
-                                                        '@keyframes dotBounce': {
-                                                            '0%, 80%, 100%': { transform: 'translateY(0)' },
-                                                            '40%': { transform: 'translateY(-6px)' }
-                                                        },
-                                                        '@keyframes fadeIn': {
-                                                            from: { opacity: 0, transform: 'translateY(8px)' },
-                                                            to: { opacity: 1, transform: 'translateY(0)' }
-                                                        }
-                                                    }}
-                                                >
-                                                    <span /><span /><span />
-                                                </Box>
-                                            </Typography>
-                                        </Box>
-                                    </Box>
-                                )}
-
-                                {/* Live Transcript Bubble - Shows during recording/transcribing */}
-                                {(isRecording || isTranscribing) && (
-                                    <Box
-                                        sx={{
-                                            width: '100%',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'flex-end',
-                                            animation: 'fadeIn 0.3s ease',
-                                            opacity: isTranscribing ? 0.7 : 1
-                                        }}
-                                    >
-                                        <Box
-                                            sx={{
-                                                bgcolor: theme.accent,
-                                                color: isDarkMode ? '#000' : '#fff',
-                                                py: { xs: 1.5, md: 2 },
-                                                px: { xs: 2, md: 2.5 },
-                                                borderRadius: '20px 20px 4px 20px',
-                                                maxWidth: { xs: '88%', sm: '85%', md: '85%' },
-                                                boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
-                                                minWidth: '100px'
-                                            }}
-                                        >
-                                            <Typography variant="body1" sx={{ fontSize: { xs: '0.9rem', md: '1rem' }, fontWeight: 500 }}>
-                                                {transcript || (isTranscribing ? "Processing audio..." : "Listening...")}
-                                                {isRecording && !transcript && (
-                                                    <span style={{ display: 'inline-block', width: '4px', height: '14px', backgroundColor: 'currentColor', marginLeft: '4px', animation: 'blink 1s step-end infinite', verticalAlign: 'middle' }} />
-                                                )}
-                                            </Typography>
-                                            <style>{`@keyframes blink { 50% { opacity: 0; } }`}</style>
-                                        </Box>
-                                    </Box>
-                                )}
-                            </Box>
-
-                            {/* Text Input Section - Hidden during voice mode */}
-                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%', maxWidth: '500px' }}>
-
-                                {/* INTEGRATED INPUT FIELD */}
-                                {(!isRecording && !isTranscribing) && (
-                                    <TextField
-                                        fullWidth
-                                        placeholder="Type to ZeroQ..."
-                                        variant="outlined"
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && !e.shiftKey) {
-                                                e.preventDefault();
-                                                const target = e.target as HTMLInputElement;
-                                                if (target.value.trim()) {
-                                                    handleChat(target.value);
-                                                    target.value = '';
-                                                }
-                                            }
-                                        }}
-                                        sx={{ mt: 2 }}
-                                        slotProps={{
-                                            input: {
-                                                sx: {
-                                                    borderRadius: '30px',
-                                                    bgcolor: theme.inputBg,
-                                                    color: theme.text,
-                                                    backdropFilter: 'blur(10px)',
-                                                    border: `1px solid ${theme.cardBorder}`,
-                                                },
-                                                endAdornment: <SearchIcon sx={{ color: theme.textSecondary, mr: 1 }} />
-                                            }
-                                        }}
-                                    />
-                                )}
-                            </Box>
-                        </Box>
-
-                        {/* RESULTS PANEL: Content Viewer - Only show when there's actual content */}
-                        {activeViewer && (
-                            <Fade in={true} timeout={600}>
-                                <Box sx={{
-                                    // FLEXIBLE WIDTH for Content Panel to fill screen
-                                    flex: { xs: '1 1 auto', md: '1' },
-                                    width: '100%',
-                                    // UNCONSTRAINED width to allow horizonzal expansion (Monitor Mode)
-                                    maxWidth: { xs: '100%', md: '100%' },
-                                    // CHANGED: Fixed height to match chat column for symmetry
-                                    height: { xs: '60vh', md: '70vh' },
-                                    overflowY: 'auto',
-                                    p: { xs: 2, sm: 2.5, md: 3 },
-                                    borderRadius: { xs: '16px', sm: '20px', md: '24px' },
-                                    bgcolor: isDarkMode ? 'rgba(15,15,25,0.85)' : 'rgba(255,255,255,0.95)',
-                                    border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
-                                    backdropFilter: 'blur(24px)',
-                                    boxShadow: isDarkMode
-                                        ? '0 8px 32px rgba(0,0,0,0.4)'
-                                        : '0 8px 32px rgba(0,0,0,0.08)',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'stretch',
-                                    justifyContent: 'flex-start',
-                                    transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                                    order: { xs: 1, md: 0 },
-                                    '&::-webkit-scrollbar': { width: '4px' },
-                                    '&::-webkit-scrollbar-thumb': {
-                                        background: isDarkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
-                                        borderRadius: '4px'
-                                    }
-                                }}>
-
-                                    {activeViewer === 'shops' && (
-                                        <Stack spacing={3} sx={{ width: '100%' }}>
-                                            <Typography variant="h5" sx={{ fontWeight: 600 }}>Nearby Verified Queues</Typography>
-                                            {activeShops.length === 0 ? (
-                                                <Box sx={{ textAlign: 'center', py: 10, opacity: 0.6 }}>
-                                                    <SearchIcon sx={{ fontSize: 60, mb: 2 }} />
-                                                    <Typography variant="h6">No shops found.</Typography>
-                                                </Box>
-                                            ) : (
-                                                activeShops.map((shop: any) => (
-                                                    <Card key={shop.id} onClick={() => navigate(`/s/${shop.slug}`)} sx={{ bgcolor: theme.cardBg, borderRadius: '24px', border: `1px solid ${theme.cardBorder}`, cursor: 'pointer' }}>
-                                                        <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 3, p: 3 }}>
-                                                            <Avatar src={shop.logo_url} sx={{ width: 64, height: 64, borderRadius: '16px', bgcolor: theme.accent }}>{shop.name[0]}</Avatar>
-                                                            <Box sx={{ flex: 1 }}>
-                                                                <Typography variant="h6" sx={{ fontWeight: 700 }}>{shop.name}</Typography>
-                                                                <Typography variant="body2" sx={{ opacity: 0.7 }}>{shop.address}, {shop.city}</Typography>
-                                                            </Box>
-                                                            <Button
-                                                                variant="contained"
-                                                                onClick={() => {
-                                                                    const targetSlug = shop.slug || `shop-${shop.id}`;
-
-                                                                    if (isLocalhost()) {
-                                                                        // Keeps dev flow simple (SPA routing)
-                                                                        navigate(`/shop-ai/${shop.id}`);
-                                                                    } else {
-                                                                        // Full redirect to subdomain
-                                                                        window.location.href = constructShopUrl(targetSlug, '/ai');
-                                                                    }
-                                                                }}
-                                                                sx={{ bgcolor: theme.accent, color: isDarkMode ? 'black' : 'white', borderRadius: '12px', fontWeight: 700 }}
-                                                            >
-                                                                JOIN
-                                                            </Button>
-                                                        </CardContent>
-                                                    </Card>
-                                                ))
-                                            )}
-                                        </Stack>
-                                    )}
-
-                                    {activeViewer === 'pricing' && <Pricing embedded={true} />}
-                                    {(activeViewer as string) === 'testimonials' && <Testimonials embedded={true} />}
-                                    {activeViewer === 'features' && <Features embedded={true} />}
-                                    {activeViewer === 'faq' && <FAQ embedded={true} />}
-                                    {activeViewer === 'register' && (
-                                        <VoiceRegistrationFlow
-                                            isDarkMode={isDarkMode}
-                                            theme={theme}
-                                            prefilledAccountType={registrationAccountType}
-                                            onAISpeak={(text) => {
-                                                // Append AI message to chat and speak it
-                                                speak(text);
-                                                setChatHistory(prev => [...prev, { role: 'ai', text }]);
-                                            }}
-                                            onClose={(success) => {
-                                                setActiveViewer(null);
-                                                setRegistrationAccountType(null);
-                                                if (success) {
-                                                    const msg = 'Your account is ready! Click "Sign In Now" to log in, or explore the platform first.';
-                                                    speak(msg);
-                                                    setChatHistory(prev => [...prev, { role: 'ai', text: msg }]);
-                                                }
-                                            }}
-                                        />
-                                    )}
-                                </Box>
-                            </Fade>
-                        )}
-                    </Box>
+                  <ParticleSphere
+                    volume={volume}
+                    isListening={isRecording}
+                    color={theme.accent}
+                    isProcessing={isProcessing}
+                  />
                 </Box>
+
+                {/* Mic Icon Overlay - shows on hover or when idle */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%, -50%)",
+                    opacity:
+                      isRecording ||
+                      isProcessing ||
+                      isTranscribing ||
+                      isToggling
+                        ? 0
+                        : 0.4,
+                    transition: "opacity 0.3s ease",
+                    pointerEvents: "none",
+                    "& svg": {
+                      fontSize: activeViewer
+                        ? { xs: 24, md: 32 }
+                        : { xs: 40, md: 56 },
+                      color: theme.text,
+                    },
+                    ".MuiBox-root:hover > &": {
+                      opacity:
+                        isRecording ||
+                        isProcessing ||
+                        isTranscribing ||
+                        isToggling
+                          ? 0
+                          : 0.7,
+                    },
+                  }}
+                >
+                  {isToggling ? (
+                    <CircularProgress size={30} sx={{ color: theme.accent }} />
+                  ) : isRecording ? (
+                    <MicIcon />
+                  ) : (
+                    <MicOffIcon />
+                  )}
+                </Box>
+              </Box>
+
+              {/* Voice Status Indicator - below orb */}
+              <Typography
+                variant="caption"
+                sx={{
+                  opacity:
+                    isRecording || isTranscribing || isToggling ? 1 : 0.5,
+                  letterSpacing: "0.1em",
+                  fontWeight: 600,
+                  minHeight: "20px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color:
+                    isRecording || isTranscribing || isToggling
+                      ? theme.accent
+                      : theme.textSecondary,
+                  transition: "all 0.2s ease",
+                  textAlign: "center",
+                  fontSize: { xs: "0.65rem", sm: "0.7rem", md: "0.75rem" },
+                  mb: 1,
+                  cursor: "pointer",
+                  "&:hover": {
+                    opacity: 1,
+                  },
+                }}
+                onClick={handleVoiceToggle}
+              >
+                {isTranscribing
+                  ? "TRANSCRIBING..."
+                  : isRecording
+                    ? transcript || "LISTENING..."
+                    : "TAP ORB TO SPEAK"}
+              </Typography>
+
+              <Box
+                ref={scrollRef}
+                sx={{
+                  width: "100%",
+                  // CHANGED: Make chat history fill available space, enabling scroll
+                  flex: 1,
+                  overflowY: "auto",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1.5,
+                  px: { xs: 1, sm: 1.5, md: 2 },
+                  py: 1,
+                  maskImage:
+                    "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
+                  WebkitMaskImage:
+                    "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
+                  "&::-webkit-scrollbar": { width: "4px" },
+                  "&::-webkit-scrollbar-thumb": {
+                    background: isDarkMode
+                      ? "rgba(255,255,255,0.2)"
+                      : "rgba(0,0,0,0.15)",
+                    borderRadius: "4px",
+                  },
+                }}
+              >
+                {chatHistory.map((chat, index) => (
+                  <Box
+                    key={index}
+                    sx={{
+                      width: "100%",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems:
+                        chat.role === "user" ? "flex-end" : "flex-start",
+                      opacity: index < chatHistory.length - 2 ? 0.75 : 1,
+                      transition: "opacity 0.3s ease",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        bgcolor:
+                          chat.role === "user" ? theme.accent : theme.cardBg,
+                        color:
+                          chat.role === "user"
+                            ? isDarkMode
+                              ? "#000"
+                              : "#fff"
+                            : theme.text,
+                        py: { xs: 1.5, md: 2 },
+                        px: { xs: 2, md: 2.5 },
+                        borderRadius:
+                          chat.role === "user"
+                            ? "20px 20px 4px 20px"
+                            : "20px 20px 20px 4px",
+                        maxWidth: { xs: "88%", sm: "85%", md: "85%" },
+                        border:
+                          chat.role === "user"
+                            ? "none"
+                            : `1px solid ${theme.cardBorder}`,
+                        boxShadow:
+                          chat.role === "user"
+                            ? "0 2px 8px rgba(0,0,0,0.1)"
+                            : "0 2px 12px rgba(0,0,0,0.05)",
+                        "& p": {
+                          m: 0,
+                          mb: 0.75,
+                          lineHeight: 1.5,
+                          fontSize: { xs: "0.9rem", sm: "0.95rem", md: "1rem" },
+                        },
+                        "& p:last-child": { mb: 0 },
+                        "& ul, & ol": { pl: 2, m: 0, mb: 0.75 },
+                        "& li": {
+                          mb: 0.25,
+                          fontSize: {
+                            xs: "0.85rem",
+                            sm: "0.9rem",
+                            md: "0.95rem",
+                          },
+                        },
+                        "& strong": {
+                          fontWeight: 600,
+                          color:
+                            chat.role === "user" ? "inherit" : theme.accent,
+                        },
+                      }}
+                    >
+                      {chat.role === "user" ? (
+                        <Typography
+                          variant="body1"
+                          sx={{
+                            fontSize: { xs: "0.9rem", md: "1rem" },
+                            fontWeight: 500,
+                          }}
+                        >
+                          {chat.text}
+                        </Typography>
+                      ) : (
+                        <ReactMarkdown>{chat.text}</ReactMarkdown>
+                      )}
+                    </Box>
+                  </Box>
+                ))}
+                {/* Thinking indicator - shows in chat while processing */}
+                {isProcessing && (
+                  <Box
+                    sx={{
+                      width: "100%",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-start",
+                      animation: "fadeIn 0.3s ease",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        bgcolor: theme.cardBg,
+                        color: theme.textSecondary,
+                        py: { xs: 1.5, md: 2 },
+                        px: { xs: 2, md: 2.5 },
+                        borderRadius: "20px 20px 20px 4px",
+                        maxWidth: { xs: "70%", sm: "60%" },
+                        border: `1px solid ${theme.cardBorder}`,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                      }}
+                    >
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontStyle: "italic",
+                          fontSize: { xs: "0.85rem", md: "0.95rem" },
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 0.5,
+                        }}
+                      >
+                        Thinking
+                        <Box
+                          component="span"
+                          sx={{
+                            display: "inline-flex",
+                            gap: "2px",
+                            "& span": {
+                              width: 4,
+                              height: 4,
+                              borderRadius: "50%",
+                              bgcolor: theme.accent,
+                              animation: "dotBounce 1.4s ease-in-out infinite",
+                            },
+                            "& span:nth-of-type(1)": { animationDelay: "0s" },
+                            "& span:nth-of-type(2)": { animationDelay: "0.2s" },
+                            "& span:nth-of-type(3)": { animationDelay: "0.4s" },
+                            "@keyframes dotBounce": {
+                              "0%, 80%, 100%": { transform: "translateY(0)" },
+                              "40%": { transform: "translateY(-6px)" },
+                            },
+                            "@keyframes fadeIn": {
+                              from: {
+                                opacity: 0,
+                                transform: "translateY(8px)",
+                              },
+                              to: { opacity: 1, transform: "translateY(0)" },
+                            },
+                          }}
+                        >
+                          <span />
+                          <span />
+                          <span />
+                        </Box>
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+
+                {/* Live Transcript Bubble - Shows during recording/transcribing */}
+                {(isRecording || isTranscribing) && (
+                  <Box
+                    sx={{
+                      width: "100%",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                      animation: "fadeIn 0.3s ease",
+                      opacity: isTranscribing ? 0.7 : 1,
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        bgcolor: theme.accent,
+                        color: isDarkMode ? "#000" : "#fff",
+                        py: { xs: 1.5, md: 2 },
+                        px: { xs: 2, md: 2.5 },
+                        borderRadius: "20px 20px 4px 20px",
+                        maxWidth: { xs: "88%", sm: "85%", md: "85%" },
+                        boxShadow: "0 2px 12px rgba(0,0,0,0.1)",
+                        minWidth: "100px",
+                      }}
+                    >
+                      <Typography
+                        variant="body1"
+                        sx={{
+                          fontSize: { xs: "0.9rem", md: "1rem" },
+                          fontWeight: 500,
+                        }}
+                      >
+                        {transcript ||
+                          (isTranscribing
+                            ? "Processing audio..."
+                            : "Listening...")}
+                        {isRecording && !transcript && (
+                          <span
+                            style={{
+                              display: "inline-block",
+                              width: "4px",
+                              height: "14px",
+                              backgroundColor: "currentColor",
+                              marginLeft: "4px",
+                              animation: "blink 1s step-end infinite",
+                              verticalAlign: "middle",
+                            }}
+                          />
+                        )}
+                      </Typography>
+                      <style>{`@keyframes blink { 50% { opacity: 0; } }`}</style>
+                    </Box>
+                  </Box>
+                )}
+              </Box>
+
+              {/* Text Input Section - Hidden during voice mode */}
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 2,
+                  width: "100%",
+                  maxWidth: "500px",
+                }}
+              >
+                {/* INTEGRATED INPUT FIELD */}
+                {!isRecording && !isTranscribing && (
+                  <TextField
+                    fullWidth
+                    placeholder="Type to ZeroQ..."
+                    variant="outlined"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        const target = e.target as HTMLInputElement;
+                        if (target.value.trim()) {
+                          handleChat(target.value);
+                          target.value = "";
+                        }
+                      }
+                    }}
+                    sx={{ mt: 2 }}
+                    slotProps={{
+                      input: {
+                        sx: {
+                          borderRadius: "30px",
+                          bgcolor: theme.inputBg,
+                          color: theme.text,
+                          backdropFilter: "blur(10px)",
+                          border: `1px solid ${theme.cardBorder}`,
+                        },
+                        endAdornment: (
+                          <SearchIcon
+                            sx={{ color: theme.textSecondary, mr: 1 }}
+                          />
+                        ),
+                      },
+                    }}
+                  />
+                )}
+              </Box>
             </Box>
-        </Fade>
-    );
+
+            {/* RESULTS PANEL: Content Viewer - Only show when there's actual content */}
+            {activeViewer && (
+              <Fade in={true} timeout={600}>
+                <Box
+                  sx={{
+                    // FLEXIBLE WIDTH for Content Panel to fill screen
+                    flex: { xs: "1 1 auto", md: "1" },
+                    width: "100%",
+                    // UNCONSTRAINED width to allow horizonzal expansion (Monitor Mode)
+                    maxWidth: { xs: "100%", md: "100%" },
+                    // CHANGED: Fixed height to match chat column for symmetry
+                    height: { xs: "60vh", md: "70vh" },
+                    overflowY: "auto",
+                    p: { xs: 2, sm: 2.5, md: 3 },
+                    borderRadius: { xs: "16px", sm: "20px", md: "24px" },
+                    bgcolor: isDarkMode
+                      ? "rgba(15,15,25,0.85)"
+                      : "rgba(255,255,255,0.95)",
+                    border: `1px solid ${isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}`,
+                    backdropFilter: "blur(24px)",
+                    boxShadow: isDarkMode
+                      ? "0 8px 32px rgba(0,0,0,0.4)"
+                      : "0 8px 32px rgba(0,0,0,0.08)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "stretch",
+                    justifyContent: "flex-start",
+                    transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+                    order: { xs: 1, md: 0 },
+                    "&::-webkit-scrollbar": { width: "4px" },
+                    "&::-webkit-scrollbar-thumb": {
+                      background: isDarkMode
+                        ? "rgba(255,255,255,0.12)"
+                        : "rgba(0,0,0,0.1)",
+                      borderRadius: "4px",
+                    },
+                  }}
+                >
+                  {activeViewer === "shops" && (
+                    <Stack spacing={3} sx={{ width: "100%" }}>
+                      <Typography variant="h5" sx={{ fontWeight: 600 }}>
+                        Nearby Verified Queues
+                      </Typography>
+                      {activeShops.length === 0 ? (
+                        <Box sx={{ textAlign: "center", py: 10, opacity: 0.6 }}>
+                          <SearchIcon sx={{ fontSize: 60, mb: 2 }} />
+                          <Typography variant="h6">No shops found.</Typography>
+                        </Box>
+                      ) : (
+                        activeShops.map((shop: any) => (
+                          <Card
+                            key={shop.id}
+                            onClick={() => navigate(`/s/${shop.slug}`)}
+                            sx={{
+                              bgcolor: theme.cardBg,
+                              borderRadius: "24px",
+                              border: `1px solid ${theme.cardBorder}`,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <CardContent
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 3,
+                                p: 3,
+                              }}
+                            >
+                              <Avatar
+                                src={shop.logo_url}
+                                sx={{
+                                  width: 64,
+                                  height: 64,
+                                  borderRadius: "16px",
+                                  bgcolor: theme.accent,
+                                }}
+                              >
+                                {shop.name[0]}
+                              </Avatar>
+                              <Box sx={{ flex: 1 }}>
+                                <Typography
+                                  variant="h6"
+                                  sx={{ fontWeight: 700 }}
+                                >
+                                  {shop.name}
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  sx={{ opacity: 0.7 }}
+                                >
+                                  {shop.address}, {shop.city}
+                                </Typography>
+                              </Box>
+                              <Button
+                                variant="contained"
+                                onClick={() => {
+                                  const targetSlug =
+                                    shop.slug || `shop-${shop.id}`;
+
+                                  if (isLocalhost()) {
+                                    // Keeps dev flow simple (SPA routing)
+                                    navigate(`/shop-ai/${shop.id}`);
+                                  } else {
+                                    // Full redirect to subdomain
+                                    window.location.href = constructShopUrl(
+                                      targetSlug,
+                                      "/ai",
+                                    );
+                                  }
+                                }}
+                                sx={{
+                                  bgcolor: theme.accent,
+                                  color: isDarkMode ? "black" : "white",
+                                  borderRadius: "12px",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                JOIN
+                              </Button>
+                            </CardContent>
+                          </Card>
+                        ))
+                      )}
+                    </Stack>
+                  )}
+
+                  {activeViewer === "pricing" && <Pricing embedded={true} />}
+                  {(activeViewer as string) === "testimonials" && (
+                    <Testimonials embedded={true} />
+                  )}
+                  {activeViewer === "features" && <Features embedded={true} />}
+                  {activeViewer === "faq" && <FAQ embedded={true} />}
+                  {activeViewer === "register" && (
+                    <VoiceRegistrationFlow
+                      isDarkMode={isDarkMode}
+                      theme={theme}
+                      prefilledAccountType={registrationAccountType}
+                      onAISpeak={(text) => {
+                        // Append AI message to chat and speak it
+                        speak(text);
+                        setChatHistory((prev) => [
+                          ...prev,
+                          { role: "ai", text },
+                        ]);
+                      }}
+                      onClose={(success) => {
+                        setActiveViewer(null);
+                        setRegistrationAccountType(null);
+                        if (success) {
+                          const msg =
+                            'Your account is ready! Click "Sign In Now" to log in, or explore the platform first.';
+                          speak(msg);
+                          setChatHistory((prev) => [
+                            ...prev,
+                            { role: "ai", text: msg },
+                          ]);
+                        }
+                      }}
+                    />
+                  )}
+                </Box>
+              </Fade>
+            )}
+          </Box>
+        </Box>
+      </Box>
+    </Fade>
+  );
 };
 
 export default MasterAIAgent;

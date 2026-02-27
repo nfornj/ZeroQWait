@@ -39,21 +39,8 @@ def get_embedder():
     global embedder
     if embedder is None:
         try:
-            import json as _json
             from sentence_transformers import SentenceTransformer
-
-            # Monkey-patch to handle missing '__version__' in config.json (sentence-transformers v0.2.5.1 bug)
-            _orig_load = _json.load
-            def _safe_load(f):
-                data = _orig_load(f)
-                if isinstance(data, dict) and '__version__' not in data:
-                    data.setdefault('__version__', '0.0')
-                return data
-            _json.load = _safe_load
-            try:
-                embedder = SentenceTransformer('all-MiniLM-L6-v2')
-            finally:
-                _json.load = _orig_load
+            embedder = SentenceTransformer('all-MiniLM-L6-v2')
         except Exception as e:
             logger.error(f"Failed to load embedder: {e}")
     return embedder
@@ -102,10 +89,6 @@ class SemanticCache:
                 self.local_cache = self.local_cache[-1000:]
         except Exception as e:
             logger.error(f"Failed to set cache: {e}")
-            if len(self.local_cache) > 1000:
-                self.local_cache.pop(0)
-        except Exception as e:
-            pass
 
 semantic_cache = SemanticCache()
 
@@ -143,36 +126,55 @@ Extract the user's intent, search terms, and update context in ONE pass reading 
 
 Rules for 'intent':
 - CONVERSATION: Greetings, thanks, acknowledgments, meta questions, testing.
-- ACTION: Search requests, business types, services, locations.
+- CONVERSATION: The user is ANSWERING a question that ZeroQ asked (e.g. providing a name, address, email, shop details, confirmation). This is critical — look at the conversation history to see if ZeroQ asked for information.
+- ACTION: The user is making a NEW search request for businesses, services, or locations.
 - UNCLEAR: Ambiguous inputs.
 
+CRITICAL — Follow-up detection:
+If the conversation history shows ZeroQ just asked the user a question (e.g. "Could you share your shop name?", "What type of shop?", "What's your email?"), then the current message is a FOLLOW-UP ANSWER, NOT a new search.
+Example:
+  ZeroQ: "Could you share: 1. Shop name 2. Shop type 3. Address"
+  User: "tutubaba is the shopname, shoptype is spa, address is 2570 bromus path, oshawa"
+  → intent=CONVERSATION, terms="", city=null (the user is answering, NOT searching for a spa in oshawa)
+
 Rules for 'terms':
-- Extract the core business type or service (e.g. 'barber', 'oil change').
-- Do NOT hardcode categories. Dynamically extract the noun/service exactly as asked (e.g., 'alien pet groomer').
+- Extract the core business type or service ONLY when the user is making a NEW search request.
+- Do NOT extract terms from follow-up answers to ZeroQ's questions.
+- Do NOT hardcode categories. Dynamically extract the noun/service exactly as asked.
 - Strip generic plural suffixes (shops, stores).
-- If intent is CONVERSATION or UNCLEAR, terms should be empty "".
+- If intent is CONVERSATION or UNCLEAR, terms MUST be empty "".
 
 Rules for 'city':
-- Explicitly extract any city name mentioned in the current query (e.g., 'Toronto', 'Austin').
-- If no new city is mentioned, leave it null.
+- Extract city ONLY from NEW search requests, NOT from follow-up answers.
+- If no new city is mentioned in a search context, leave it null.
 
 Rules for 'near_me':
-- True ONLY if user explicitly says "near me", "nearby", "around here".
+- True ONLY if user explicitly says "near me", "nearby", "around here" in a NEW search request.
 
 Rules for 'context_updates':
-- 'last_category': The LATEST business/service category discovered. Keep old if user only changed location.
-- 'last_city': The LATEST city mentioned. Keep old if user only changed category.
+- 'last_category': The LATEST business/service category from a search. Keep old if no new search.
+- 'last_city': The LATEST city from a search. Keep old if no new search.
 """,
             model_settings={'temperature': 0.1, 'max_tokens': 200}
         )
         
         self.conversation_agent = Agent(
             model,
-            system_prompt="""You are ZeroQ, a friendly AI assistant for ZeroQwait.
-Help find local shops and join queues remotely. Pricing: Free ($0/mo), Premium ($29/mo), Enterprise.
-Respond naturally, warm, and concise (1-2 sentences).
+            system_prompt="""You are ZeroQ, the AI receptionist for ZeroQwait — a queue management platform.
+
+Your ONLY purpose is helping users with:
+1. Finding local service businesses (barbers, salons, clinics, auto shops, etc.)
+2. Joining queues remotely and checking wait times
+3. Explaining ZeroQwait features, pricing (Free $0/mo, Premium $29/mo, Enterprise), or FAQ
+4. Registering as a customer or shop owner
+
+RULES:
+- NEVER discuss topics outside ZeroQwait (no weather, no general knowledge, no recommendations unrelated to queue management)
+- If the user says "hello" or greets you, introduce yourself and ask what service they're looking for or if they want to join a queue
+- Keep responses to 1-2 sentences maximum
+- Always guide users toward searching for shops, joining queues, or exploring features
 """,
-            model_settings={'temperature': 0.7}
+            model_settings={'temperature': 0.3}
         )
 
     async def analyze(self, user_msg: str, history_context: str = "") -> QueryAnalysis:
@@ -1030,10 +1032,15 @@ class MasterAgent:
             full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
             
             # --- DIRECT SEARCH BYPASS ---
-            # Local LLMs often refuse to invoke tools if they feel they lack GPS data.
-            # If the pre-processor identified search terms or a 'near me' request,
-            # we forcibly execute the search tool without asking the LLM.
-            is_search_intent = analysis.terms or analysis.near_me or analysis.city
+            # Only bypass when analyzer explicitly identifies a NEW search intent (ACTION).
+            # If intent is CONVERSATION or UNCLEAR (e.g. user answering a follow-up question),
+            # defer to the LLM — this is scalable across all conversational flows.
+            is_search_intent = (
+                analysis.intent == 'ACTION' 
+                and (analysis.terms or analysis.near_me or analysis.city)
+            )
+            
+            logger.info(f"Search bypass decision: intent={analysis.intent}, terms='{analysis.terms}', is_search={is_search_intent}")
             
             if is_search_intent:
                 logger.info("Direct Search Bypass Triggered")
@@ -1098,6 +1105,75 @@ class MasterAgent:
                 
             raise e
 
+    @staticmethod
+    def _strip_for_tts(text: str) -> str:
+        """Strip markdown, emojis, and special characters for clean TTS input."""
+        import re
+        plain = text
+        plain = re.sub(r'\*\*(.*?)\*\*', r'\1', plain)
+        plain = re.sub(r'\*(.*?)\*', r'\1', plain)
+        plain = re.sub(r'#{1,6}\s', '', plain)
+        plain = re.sub(r'`([^`]*)`', r'\1', plain)
+        plain = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', plain)
+        # Remove emojis
+        plain = re.sub(
+            r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF'
+            r'\U0001F1E0-\U0001F1FF\U00002600-\U000026FF\U00002700-\U000027BF'
+            r'\U0000FE00-\U0000FE0F\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F'
+            r'\U0001FA70-\U0001FAFF\U0000200D\U000020E3\U000E0020-\U000E007F]',
+            '', plain
+        )
+        plain = re.sub(r'\n+', ' ', plain)
+        plain = re.sub(r'\s{2,}', ' ', plain)
+        return plain.strip()
+
+    @staticmethod
+    async def _generate_tts_audio(text: str) -> Tuple[Optional[str], Optional[str]]:
+        """Generate TTS audio for a sentence, return (base64_audio, audio_format)."""
+        import httpx
+        import base64
+        
+        tts_url = os.getenv("TTS_SERVICE_URL", "http://192.168.2.88:8880")
+        clean_text = MasterAgent._strip_for_tts(text)
+        if not clean_text or len(clean_text) < 2:
+            return None, None
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{tts_url}/v1/audio/speech",
+                    json={
+                        "model": "tts-1",
+                        "input": clean_text,
+                        "voice": "serena",
+                        "speed": 1.25,
+                        "response_format": "mp3"
+                    },
+                    headers={"Content-Type": "application/json"}
+                )
+                if response.status_code == 200:
+                    audio_bytes = response.content
+                    audio_format = "unknown"
+                    if len(audio_bytes) >= 12 and audio_bytes[:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE":
+                        audio_format = "wav"
+                    elif (len(audio_bytes) >= 3 and audio_bytes[:3] == b"ID3") or (len(audio_bytes) >= 2 and audio_bytes[:2] == b"\xff\xfb"):
+                        audio_format = "mp3"
+                    return base64.b64encode(audio_bytes).decode('ascii'), audio_format
+                else:
+                    logger.warning(f"TTS failed ({response.status_code}): {response.text[:100]}")
+                    return None, None
+        except Exception as e:
+            logger.warning(f"TTS generation error: {e}")
+            return None, None
+
+    @staticmethod
+    def _split_into_sentences(text: str) -> List[str]:
+        """Split text into sentences at . ? ! boundaries."""
+        import re
+        # Split on sentence-ending punctuation followed by a space or end-of-string
+        parts = re.split(r'(?<=[.?!])\s+', text.strip())
+        return [p for p in parts if p.strip()]
+
     async def stream_chat(
         self,
         session_id: str,
@@ -1110,11 +1186,52 @@ class MasterAgent:
         is_voice: bool = False
     ):
         """
-        Streaming version of chat using Server-Sent Events (SSE).
-        Yields text chunks as they are generated, and final actions at the end.
+        Paired-Streaming SSE: buffers LLM tokens into sentences, generates TTS audio
+        concurrently, and yields paired {text, audio} events in order.
+
+        Event types:
+        - {type: 'sentence', text: str, audio: str|null}  → paired text + base64 MP3
+        - {type: 'actions', actions: [...]}                → tool results
+        - [DONE]                                           → stream end
+        
+        Strategy:
+        - CONVERSATION intent → stream tokens, buffer sentences, TTS each sentence
+        - Search intent → direct bypass (single sentence event)
+        - ACTION/UNCLEAR → non-streaming run(), split result into sentence events
         """
         import json
+        import re
         
+        def _safe_json(obj):
+            """JSON-serialize with fallback for Pydantic models and other non-serializable types."""
+            if isinstance(obj, BaseModel):
+                return obj.model_dump()
+            if isinstance(obj, (datetime,)):
+                return obj.isoformat()
+            if isinstance(obj, set):
+                return list(obj)
+            raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+        
+        async def _yield_sentences_with_tts(full_text: str):
+            """Split text into sentences, generate TTS for each concurrently, yield in order."""
+            sentences = self._split_into_sentences(full_text)
+            if not sentences:
+                yield f"data: {json.dumps({'type': 'sentence', 'text': full_text, 'audio': None, 'audio_format': None})}\n\n"
+                return
+            
+            # Fire off all TTS tasks concurrently
+            tts_tasks = [asyncio.create_task(self._generate_tts_audio(s)) for s in sentences]
+            
+            # Yield in order as each completes (but maintain sequence)
+            for i, (sentence, task) in enumerate(zip(sentences, tts_tasks)):
+                try:
+                    audio_b64, audio_format = await asyncio.wait_for(task, timeout=30.0)
+                except Exception as e:
+                    logger.warning(f"TTS task {i} failed: {e}")
+                    audio_b64 = None
+                    audio_format = None
+                yield f"data: {json.dumps({'type': 'sentence', 'text': sentence, 'audio': audio_b64, 'audio_format': audio_format})}\n\n"
+
         start_time = datetime.now().timestamp()
         self.metrics["total_requests"] += 1
         if is_voice:
@@ -1127,16 +1244,20 @@ class MasterAgent:
             context=context or {},
             user_id=user_id,
         )
-        history_context_str = ""
         context_parts = []
+        
+        # Build history context for analyzer (was missing — caused context loss)
+        history_context_str = ""
+        if history:
+            recent_msgs = [f"{'User' if h.get('role') == 'user' else 'ZeroQ'}: {h.get('content', '')[:200]}" for h in history[-6:]]
+            history_context_str = "[CONVERSATION HISTORY]\n" + "\n".join(recent_msgs)
         
         analysis = await unified_query_analyzer.analyze(
             user_msg, 
             history_context_str
         )
-        deps.context["last_query_analysis"] = analysis
+        deps.context["last_query_analysis"] = analysis.model_dump()
         
-        # Keep Session Context Live
         if analysis.context_updates.last_category:
             deps.context["last_search_category"] = analysis.context_updates.last_category
         if analysis.context_updates.last_city:
@@ -1170,7 +1291,16 @@ class MasterAgent:
         full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
         
         # --- DIRECT SEARCH BYPASS ---
-        is_search_intent = analysis.terms or analysis.near_me or analysis.city
+        # Only bypass when analyzer explicitly identifies a NEW search intent (ACTION).
+        # If intent is CONVERSATION or UNCLEAR (e.g. user answering a follow-up question),
+        # defer to the LLM — scalable across all conversational flows.
+        is_search_intent = (
+            analysis.intent == 'ACTION'
+            and (analysis.terms or analysis.near_me or analysis.city)
+        )
+        
+        logger.info(f"Search bypass decision (stream): intent={analysis.intent}, terms='{analysis.terms}', is_search={is_search_intent}")
+        
         if is_search_intent:
             logger.info("Direct Search Bypass Triggered (Streaming)")
             final_text = await search_shops(
@@ -1179,36 +1309,121 @@ class MasterAgent:
                 city=analysis.city,
                 query=user_msg
             )
-            # Yield the final text as a single chunk
-            yield f"data: {json.dumps({'type': 'text', 'content': final_text})}\n\n"
-            yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions})}\n\n"
+            # Send search result as paired sentence events
+            async for event in _yield_sentences_with_tts(final_text):
+                yield event
+            yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
             yield "data: [DONE]\n\n"
             return
-            
+        
+        intent = analysis.intent
+        
+        # --- CONVERSATION INTENT: Token streaming + sentence-buffered TTS ---
+        if intent == 'CONVERSATION':
+            logger.info("Paired streaming via conversation agent")
+            try:
+                self.metrics["llm_calls"] += 1
+                sentence_buffer = ""
+                pending_tts_tasks: List[asyncio.Task] = []
+                pending_sentences: List[str] = []
+                sentence_boundary = re.compile(r'(?<=[.?!])\s+')
+                
+                async with unified_query_analyzer.conversation_agent.run_stream(
+                    full_msg, message_history=message_history
+                ) as stream_result:
+                    async for text_delta in stream_result.stream_text(delta=True):
+                        if not text_delta:
+                            continue
+                        sentence_buffer += text_delta
+                        
+                        # Check for sentence boundaries in buffer
+                        while True:
+                            match = sentence_boundary.search(sentence_buffer)
+                            if not match:
+                                break
+                            # Extract complete sentence
+                            boundary_end = match.end()
+                            complete_sentence = sentence_buffer[:boundary_end].strip()
+                            sentence_buffer = sentence_buffer[boundary_end:]
+                            
+                            if complete_sentence and len(complete_sentence) > 2:
+                                # Fire TTS immediately (don't wait)
+                                tts_task = asyncio.create_task(
+                                    self._generate_tts_audio(complete_sentence)
+                                )
+                                pending_tts_tasks.append(tts_task)
+                                pending_sentences.append(complete_sentence)
+                
+                # Handle remaining buffer as final sentence
+                if sentence_buffer.strip() and len(sentence_buffer.strip()) > 2:
+                    final_sentence = sentence_buffer.strip()
+                    tts_task = asyncio.create_task(
+                        self._generate_tts_audio(final_sentence)
+                    )
+                    pending_tts_tasks.append(tts_task)
+                    pending_sentences.append(final_sentence)
+                
+                # Now yield all sentence events in order (TTS tasks were fired concurrently)
+                for i, (sentence, task) in enumerate(zip(pending_sentences, pending_tts_tasks)):
+                    try:
+                        audio_b64, audio_format = await asyncio.wait_for(task, timeout=30.0)
+                    except Exception as e:
+                        logger.warning(f"TTS task {i} failed: {e}")
+                        audio_b64 = None
+                        audio_format = None
+                    yield f"data: {json.dumps({'type': 'sentence', 'text': sentence, 'audio': audio_b64, 'audio_format': audio_format})}\n\n"
+                
+                yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            except Exception as e:
+                logger.warning(f"Conversation paired-stream failed ({e}), falling back")
+                try:
+                    fallback_text = await unified_query_analyzer.get_conversational_response(
+                        user_msg, deps.context, history_context_str
+                    )
+                except Exception:
+                    fallback_text = "Hello! I'm ZeroQ. How can I help you today?"
+                async for event in _yield_sentences_with_tts(fallback_text):
+                    yield event
+                yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+        
+        # --- ACTION / UNCLEAR INTENT: Non-streaming run(), then sentence-split ---
+        logger.info(f"Non-streaming master agent run (intent={intent})")
         try:
             self.metrics["llm_calls"] += 1
-            # Run stream
-            async with self.agent.run_stream(full_msg, message_history=message_history, deps=deps) as result:
-                async for chunk in result.stream():
-                    yield f"data: {json.dumps({'type': 'text', 'content': chunk})}\n\n"
-                    
-                # After stream finishes, we can access the final response and deps
-                yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions})}\n\n"
-                yield "data: [DONE]\n\n"
+            result = await asyncio.wait_for(
+                self.agent.run(full_msg, message_history=message_history, deps=deps),
+                timeout=300.0
+            )
+            response_text = result.output.response
+            
+            # Send as paired sentence events
+            async for event in _yield_sentences_with_tts(response_text):
+                yield event
+            yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
+            yield "data: [DONE]\n\n"
                 
         except Exception as e:
             self.metrics["errors"] += 1
             logger.error(f"Stream MasterAgent error: {e}")
-            if "validation" in str(e).lower() or "timeout" in str(e).lower():
-                logger.info("Falling back to pure conversational response due to formatting error")
-                fallback_text = await unified_query_analyzer.get_conversational_response(user_msg, deps.context, history_context_str)
-                yield f"data: {json.dumps({'type': 'text', 'content': fallback_text})}\n\n"
-                yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-            yield f"data: {json.dumps({'type': 'error', 'content': 'I encountered an error processing your request.'})}\n\n"
+            try:
+                fallback_text = await unified_query_analyzer.get_conversational_response(
+                    user_msg, deps.context, history_context_str
+                )
+            except Exception:
+                fallback_text = "I'm sorry, I had trouble processing that. Could you try again?"
+            async for event in _yield_sentences_with_tts(fallback_text):
+                yield event
+            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
             yield "data: [DONE]\n\n"
-        await self.category_manager.persist_learnings()
+        
+        try:
+            await self.category_manager.persist_learnings()
+        except Exception:
+            pass
     
     def get_metrics(self) -> Dict[str, Any]:
         """Return comprehensive metrics."""

@@ -165,7 +165,7 @@ async def master_agent_chat_stream(
                 ):
                     yield chunk
                     
-                    # Intercept text chunks to build the full history record
+                    # Intercept text/sentence chunks to build the full history record
                     if chunk.startswith("data: "):
                         try:
                             data_str = chunk[6:].strip()
@@ -173,6 +173,8 @@ async def master_agent_chat_stream(
                                 data_obj = json.loads(data_str)
                                 if data_obj.get("type") == "text":
                                     full_response += data_obj.get("content", "")
+                                elif data_obj.get("type") == "sentence":
+                                    full_response += data_obj.get("text", "") + " "
                         except Exception:
                             pass
                             

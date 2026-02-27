@@ -1,0 +1,4 @@
+data: {"type": "error", "content": "I encountered an error processing your request."}
+
+data: [DONE]
+

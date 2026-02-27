@@ -12,6 +12,17 @@ ASR_SERVICE_URL = os.getenv("ASR_SERVICE_URL", "http://asr-service.zeroqwait.svc
 # TTS service - running on the host machine port 8880
 TTS_SERVICE_URL = os.getenv("TTS_SERVICE_URL", "http://192.168.2.88:8880")
 
+
+def detect_audio_format(audio_bytes: bytes) -> tuple[str, str]:
+    """Detect audio format from magic bytes and return (format, mime_type)."""
+    if len(audio_bytes) >= 12 and audio_bytes[:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE":
+        return "wav", "audio/wav"
+    if len(audio_bytes) >= 3 and audio_bytes[:3] == b"ID3":
+        return "mp3", "audio/mpeg"
+    if len(audio_bytes) >= 2 and audio_bytes[:2] == b"\xff\xfb":
+        return "mp3", "audio/mpeg"
+    return "unknown", "application/octet-stream"
+
 class TTSRequest(BaseModel):
     text: str
     voice: str = "serena"      # Voice profile (e.g., serena, eric, ryan)
@@ -41,7 +52,8 @@ async def transcribe_voice(file: UploadFile = File(...)):
 async def text_to_speech(req: TTSRequest):
     """
     Proxy TTS request to the TTS service.
-    Returns buffered MP3 audio for the frontend to play.
+    Returns buffered audio for the frontend to play.
+    The response media type is derived from actual bytes returned by the TTS backend.
     """
     try:
         payload = {
@@ -64,10 +76,17 @@ async def text_to_speech(req: TTSRequest):
             
             audio_bytes = response.content
 
+        audio_format, media_type = detect_audio_format(audio_bytes)
+        if audio_format != "mp3":
+            logger.info(f"TTS backend returned non-mp3 audio format: {audio_format}")
+
         return Response(
             content=audio_bytes,
-            media_type="audio/mpeg",
-            headers={"Cache-Control": "no-cache"}
+            media_type=media_type,
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Audio-Format": audio_format,
+            }
         )
 
     except HTTPException:
