@@ -28,7 +28,7 @@ A **universal queue management platform** where service businesses (barbers, sal
 | **AI/LLM**                  | pydantic-ai 0.8.1 + Ollama               | Model: `gpt-oss:20b` (13.8GB, MXFP4 quantized)                      |
 | **Embeddings**              | sentence-transformers (all-MiniLM-L6-v2) | Semantic cache for query analysis                                   |
 | **Voice ASR**               | Whisper (via `asr_service/`)             | GPU-accelerated, separate K8s pod                                   |
-| **Voice TTS**               | Kokoro TTS at `192.168.2.88:8880`        | `/v1/audio/speech` endpoint, voice: `af_heart`                      |
+| **Voice TTS**               | Qwen3-TTS 0.6B (via `tts_service/`)     | `/v1/audio/speech` OpenAI-compatible, voice: `Serena`, port 8880    |
 | **Container Orchestration** | K3s (lightweight K8s)                    | Namespace: `zeroqwait`, Traefik ingress                             |
 | **Deployment**              | Self-hosted Linux server                 | `neekrishrichu@192.168.2.88`                                        |
 
@@ -118,6 +118,11 @@ zeroqwait/
 │   ├── Dockerfile
 │   └── requirements.txt
 │
+├── tts_service/                      # Qwen3-TTS microservice
+│   ├── main.py                       # FastAPI wrapper, /v1/audio/speech (OpenAI-compatible)
+│   ├── Dockerfile                    # nvidia/cuda:12.8 based
+│   └── requirements.txt              # qwen-tts, fastapi, uvicorn, soundfile
+│
 ├── k8s-manifests/                    # Kubernetes deployment configs
 │   ├── backend-deployment.yaml       # Backend pod (hostPath mount, init containers)
 │   ├── backend-configmap.yaml        # Environment variables
@@ -192,15 +197,40 @@ The AI agent (`agent_logic.py`) is powered by **pydantic-ai 0.8.1** and runs on 
 
 The agent has a **direct search bypass** — if the `UnifiedQueryAnalyzer` detects search terms, `near_me`, or a city, it calls `search_shops` directly without waiting for the LLM to decide. This overcomes local LLMs refusing to invoke tools when they feel they lack GPS data.
 
+### Direct Registration Bypass
+
+Similar to search bypass, the agent has a **registration intent direct bypass** (`_REGISTRATION_RE`). When the user's message matches registration keywords (register, sign up, create account, set up shop, etc.), the system:
+
+1. Skips the LLM entirely
+2. Calls `registration_agent.start()` to create a Redis-backed registration session
+3. Streams an intro message + emits a `form_step` SSE event
+4. Frontend renders the `InlineRegistrationForm` widget inline in the chat
+
+**Active registration protection**: Before any processing, `stream_chat()` checks if a registration session exists in Redis. If so:
+- Normal messages → Reminder to complete the form
+- Cancel keywords → Clears the session
+
+This prevents context loss (e.g., "yes" being caught by the greeting prefilter mid-registration).
+
+**Registration state machine** (`registration_agent.py`):
+- Steps (shop_owner): `account_type → email → username → password → shop_name → shop_type → shop_address → confirm → done`
+- Steps (customer): `account_type → email → username → password → confirm → done`
+- State persisted in Redis with 30-min TTL
+- Each step validated server-side before advancing
+- Frontend renders forms via `InlineRegistrationForm` component in chat bubbles
+
 ### Chat Flow
 
 1. User message → Redis rate limit check (20/min per IP)
 2. Server-side history loaded from Redis (last 10 messages)
-3. `UnifiedQueryAnalyzer.analyze()` — single-pass intent/terms extraction
-4. If search intent → direct bypass to `search_shops` tool
-5. Otherwise → `pydantic-ai Agent.run()` with 300s timeout
-6. Response + actions returned; history persisted to Redis + PostgreSQL
-7. On validation/timeout errors → fallback to conversational response
+3. **Active registration check** → if session exists, remind or cancel
+4. **Registration intent bypass** → if match, start form flow directly
+5. **Greeting prefilter** → trivial greetings return canned response
+6. `UnifiedQueryAnalyzer.analyze()` — single-pass intent/terms extraction
+7. If search intent → direct bypass to `search_shops` tool
+8. Otherwise → `pydantic-ai Agent.run()` with 300s timeout
+9. Response + actions returned; history persisted to Redis + PostgreSQL
+10. On validation/timeout errors → fallback to conversational response
 
 ### Streaming (SSE)
 
@@ -215,12 +245,30 @@ The agent has a **direct search bypass** — if the `UnifiedQueryAnalyzer` detec
 ```
 [Browser Mic] → useAudioRecorder (blob) → POST /api/voice/transcribe → Whisper ASR pod
      → transcribed text → MasterAgent.chat() → response text
-     → POST /api/voice/tts → Qwen TTS (192.168.2.88:8880) → MP3 audio → AudioContext playback
+     → POST /api/voice/tts → Qwen3-TTS (192.168.2.88:8880) → WAV/MP3 audio → AudioContext playback
 ```
 
 - ASR: Whisper model in dedicated K8s pod (`asr-service`)
-- TTS: Kokoro TTS running as host service on port 8880 (voice: `af_heart`)
+- TTS: Qwen3-TTS 0.6B CustomVoice running as Docker service on port 8880 (voice: `Serena` — warm, gentle young female)
 - Frontend queues TTS sentences and plays them sequentially
+- **Paired Streaming**: Backend splits LLM response into sentences, generates TTS audio concurrently per sentence, sends `{type: 'sentence', text, audio}` SSE events. Frontend plays audio + typewriter text simultaneously for synchronized output.
+
+### Voice Mode vs Chat Mode
+
+Users toggle between **Voice Mode** and **Chat Mode** via a pill button in the top-right controls:
+
+| Feature            | Voice Mode                                         | Chat Mode                                      |
+| -------------------| -------------------------------------------------- | ---------------------------------------------- |
+| **TTS Audio**      | Enabled — audio plays with each response sentence  | Disabled — text-only, silent                   |
+| **Orb**            | Large, clickable for voice recording               | Small, decorative (no recording)               |
+| **Text Input**     | Hidden during recording, visible otherwise         | Always visible                                 |
+| **SSE `is_voice`** | `true` — backend may optimize for voice            | `false`                                        |
+| **Registration**   | Form prompts spoken via TTS + inline form widgets  | Form displayed as text + inline form widgets   |
+
+- Default: Voice Mode (TTS enabled)
+- Switching to Chat Mode stops any active audio playback and recording
+- State: `interactionMode` ("voice" | "chat") in `MasterAIAgent.tsx`
+- Ref: `interactionModeRef` keeps callbacks in sync with React state
 
 ---
 
@@ -454,7 +502,7 @@ ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend 
 | `REDIS_PORT`      | `6379`                                                           | Redis port          |
 | `FRONTEND_URL`    | —                                                                | CORS allowed origin |
 | `ASR_SERVICE_URL` | `http://asr-service.zeroqwait.svc.cluster.local:8000/transcribe` | Whisper ASR         |
-| `TTS_SERVICE_URL` | `http://192.168.2.88:8880`                                       | Qwen TTS            |
+| `TTS_SERVICE_URL` | `http://192.168.2.88:8880`                                       | Qwen3-TTS           |
 | `JWT_SECRET_KEY`  | —                                                                | JWT signing key     |
 | `COOKIE_DOMAIN`   | —                                                                | Auth cookie domain  |
 

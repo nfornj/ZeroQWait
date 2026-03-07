@@ -38,8 +38,21 @@ _EMOJI_RE = re.compile(
 _WHITESPACE_MULTI_RE = re.compile(r'\s{2,}')
 
 # Fast greeting prefilter — skips analyzer LLM call for trivial messages
+# NOTE: Do NOT include confirmations (yes/ok/sure) — they break multi-turn flows like registration
 _GREETING_RE = re.compile(
-    r'^(hi|hello|hey|hola|thanks|thank you|thx|ok|okay|sure|yes|no|yep|nope|bye|goodbye|cool|great|awesome|got it|sounds good)\b',
+    r'^(hi|hello|hey|hola|thanks|thank you|thx|bye|goodbye)\b',
+    re.IGNORECASE
+)
+
+# Registration intent detection — direct bypass like search
+_REGISTRATION_RE = re.compile(
+    r'(?:register|sign\s*up|create\s*(?:an?\s*)?account|list\s*my\s*(?:business|shop)|set\s*up\s*(?:my\s*)?(?:shop|business|store)|get\s*started|open\s*(?:a\s*)?shop)',
+    re.IGNORECASE
+)
+
+# Registration cancellation detection
+_CANCEL_REGISTRATION_RE = re.compile(
+    r'(?:cancel|stop|quit|abort|nevermind|never\s*mind|start\s*over)',
     re.IGNORECASE
 )
 
@@ -1291,6 +1304,65 @@ class MasterAgent:
         if history:
             recent_msgs = [f"{'User' if h.get('role') == 'user' else 'ZeroQ'}: {h.get('content', '')[:200]}" for h in history[-6:]]
             history_context_str = "[CONVERSATION HISTORY]\n" + "\n".join(recent_msgs)
+        
+        # --- ACTIVE REGISTRATION CHECK ---
+        # If a registration session is active, remind user to complete the form
+        # (prevents greeting prefilter from resetting mid-registration)
+        from registration_agent import registration_agent as reg_agent
+        active_reg = reg_agent.get_session(session_id)
+        if active_reg and not active_reg.get("completed"):
+            current_step = active_reg.get("step", "unknown")
+            # Check if user wants to cancel
+            if _CANCEL_REGISTRATION_RE.search(user_msg.strip()):
+                reg_agent._clear_session(session_id)
+                logger.info(f"Registration cancelled by user at step={current_step}")
+                cancel_msg = "Registration cancelled. How else can I help you?\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works"
+                async for event in _yield_sentences_with_tts(cancel_msg):
+                    yield event
+                yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            
+            logger.info(f"Active registration session found at step={current_step}, reminding user")
+            reminder_msg = f"You have a registration in progress (step: **{current_step}**). Please complete the form above, or say **cancel registration** to start over."
+            async for event in _yield_sentences_with_tts(reminder_msg):
+                yield event
+            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        
+        # --- REGISTRATION INTENT DIRECT BYPASS ---
+        # Like search bypass: if the user clearly wants to register, skip LLM and start form flow
+        if _REGISTRATION_RE.search(user_msg.strip()):
+            logger.info(f"Registration intent detected: '{user_msg.strip()[:50]}' — direct bypass")
+            # Determine account type from message
+            msg_lower = user_msg.lower()
+            if any(kw in msg_lower for kw in ("shop", "business", "store", "owner", "list my")):
+                account_type = "shop_owner"
+            elif any(kw in msg_lower for kw in ("customer", "join", "queue")):
+                account_type = "customer"
+            else:
+                account_type = None  # Will show account_type selection step
+            
+            form_event = reg_agent.start(session_id=session_id, account_type=account_type)
+            
+            if account_type == "shop_owner":
+                intro_text = "Let's get your business registered! I'll walk you through it step by step."
+            elif account_type == "customer":
+                intro_text = "Let's create your account! I'll guide you through it."
+            else:
+                intro_text = "Let's get you registered! First, are you a shop owner or a customer?"
+            
+            async for event in _yield_sentences_with_tts(intro_text):
+                yield event
+            
+            # Emit the form_step event so frontend renders the inline form
+            yield f"data: {json.dumps(form_event)}\n\n"
+            
+            # Emit actions so frontend knows registration started
+            yield f"data: {json.dumps({'type': 'actions', 'actions': [{'tool': 'start_registration', 'result': {'account_type': account_type or 'unknown'}}]})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
         
         # --- FAST GREETING PREFILTER ---
         # Skip the full LLM analyzer for trivial greetings → go straight to conversation agent

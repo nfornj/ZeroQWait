@@ -18,6 +18,8 @@ import MicIcon from "@mui/icons-material/Mic";
 import MicOffIcon from "@mui/icons-material/MicOff";
 import SearchIcon from "@mui/icons-material/Search";
 import LocationOnIcon from "@mui/icons-material/LocationOn";
+import VolumeUpIcon from "@mui/icons-material/VolumeUp";
+import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import axios from "axios";
 import { useAudioRecorder } from "../../hooks/useAudioRecorder";
 import { useAudioVisualizer } from "../../hooks/useAudioVisualizer";
@@ -44,6 +46,9 @@ const MasterAIAgent: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
+  // "voice" = TTS enabled + orb prominent, "chat" = text-only, no TTS audio
+  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">("voice");
+  const interactionModeRef = useRef<"voice" | "chat">("voice");
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
     null,
   );
@@ -181,6 +186,11 @@ const MasterAIAgent: React.FC = () => {
   // Audio Visualizer
   const { volume } = useAudioVisualizer(isRecording);
 
+  // Keep interaction mode ref in sync with state
+  useEffect(() => {
+    interactionModeRef.current = interactionMode;
+  }, [interactionMode]);
+
   // --- Paired-Streaming TTS: synchronized text + audio playback ---
   const audioCtxRef = useRef<AudioContext | null>(null);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -313,14 +323,14 @@ const MasterAIAgent: React.FC = () => {
 
       const prevText = displayedText;
 
-      if (item.audio) {
+      if (item.audio && interactionModeRef.current === "voice") {
         // Paired execution: audio + typewriter run SIMULTANEOUSLY
         await Promise.all([
           playAudio(item.audio),
           typeText(item.text, updateUI, prevText),
         ]);
       } else {
-        // No audio available — just typewrite the text
+        // No audio or chat mode — just typewrite the text
         await typeText(item.text, updateUI, prevText);
       }
 
@@ -347,6 +357,9 @@ const MasterAIAgent: React.FC = () => {
 
   /** Speak text via backend TTS API (used for welcome message only). */
   const speak = async (text: string) => {
+    // Skip TTS in chat mode
+    if (interactionModeRef.current === "chat") return;
+
     stopCurrentAudio();
     cancelQueueRef.current = false;
 
@@ -559,6 +572,7 @@ const MasterAIAgent: React.FC = () => {
             active_view: activeViewer,
             visible_shops: activeShops.map((s) => s.name),
           },
+          is_voice: interactionMode === "voice",
         }),
       });
 
@@ -788,6 +802,55 @@ const MasterAIAgent: React.FC = () => {
               <DarkModeIcon sx={{ fontSize: 24 }} />
             )}
           </IconButton>
+          {/* Voice / Chat Mode Toggle */}
+          <Box
+            onClick={() => {
+              const newMode = interactionMode === "voice" ? "chat" : "voice";
+              if (newMode === "chat") {
+                stopCurrentAudio();
+                // Stop recording if switching to chat during active recording
+                if (isRecording) stopRecording();
+              }
+              setInteractionMode(newMode);
+            }}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+              px: 1.5,
+              py: 0.75,
+              borderRadius: "20px",
+              cursor: "pointer",
+              bgcolor: isDarkMode
+                ? "rgba(255,255,255,0.05)"
+                : "rgba(15,23,42,0.05)",
+              border: `1px solid ${interactionMode === "voice" ? theme.accent + "44" : theme.cardBorder}`,
+              transition: "all 0.2s ease",
+              "&:hover": {
+                bgcolor: isDarkMode
+                  ? "rgba(255,255,255,0.1)"
+                  : "rgba(15,23,42,0.1)",
+              },
+            }}
+          >
+            {interactionMode === "voice" ? (
+              <VolumeUpIcon sx={{ fontSize: 18, color: theme.accent }} />
+            ) : (
+              <VolumeOffIcon sx={{ fontSize: 18, color: theme.textSecondary }} />
+            )}
+            <Typography
+              variant="caption"
+              sx={{
+                fontWeight: 600,
+                fontSize: "0.65rem",
+                letterSpacing: "0.05em",
+                color: interactionMode === "voice" ? theme.accent : theme.textSecondary,
+                userSelect: "none",
+              }}
+            >
+              {interactionMode === "voice" ? "VOICE" : "CHAT"}
+            </Typography>
+          </Box>
           <IconButton
             onClick={() => setIsOpen(false)}
             sx={{
@@ -877,20 +940,26 @@ const MasterAIAgent: React.FC = () => {
             >
               {/* Clickable Orb for Voice Activation */}
               <Box
-                onClick={handleVoiceToggle}
+                onClick={interactionMode === "voice" ? handleVoiceToggle : undefined}
                 sx={{
                   position: "relative",
-                  width: activeViewer
-                    ? { xs: 80, sm: 100, md: 120 }
-                    : { xs: 150, sm: 180, md: 220 },
-                  height: activeViewer
-                    ? { xs: 80, sm: 100, md: 120 }
-                    : { xs: 150, sm: 180, md: 220 },
+                  width: interactionMode === "chat"
+                    ? { xs: 60, sm: 70, md: 80 }
+                    : activeViewer
+                      ? { xs: 80, sm: 100, md: 120 }
+                      : { xs: 150, sm: 180, md: 220 },
+                  height: interactionMode === "chat"
+                    ? { xs: 60, sm: 70, md: 80 }
+                    : activeViewer
+                      ? { xs: 80, sm: 100, md: 120 }
+                      : { xs: 150, sm: 180, md: 220 },
                   transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                   flexShrink: 0,
-                  mb: activeViewer ? 1 : 2,
-                  cursor: isTranscribing || isToggling ? "wait" : "pointer",
-                  opacity: isToggling ? 0.7 : 1,
+                  mb: interactionMode === "chat" ? 1 : activeViewer ? 1 : 2,
+                  cursor: interactionMode === "chat"
+                    ? "default"
+                    : isTranscribing || isToggling ? "wait" : "pointer",
+                  opacity: interactionMode === "chat" ? 0.6 : isToggling ? 0.7 : 1,
                   animation: isProcessing
                     ? "orbPulse 1.5s ease-in-out infinite"
                     : isRecording
@@ -933,7 +1002,8 @@ const MasterAIAgent: React.FC = () => {
                   />
                 </Box>
 
-                {/* Mic Icon Overlay - shows on hover or when idle */}
+                {/* Mic Icon Overlay - shows on hover or when idle (voice mode only) */}
+                {interactionMode === "voice" && (
                 <Box
                   sx={{
                     position: "absolute",
@@ -974,6 +1044,7 @@ const MasterAIAgent: React.FC = () => {
                     <MicOffIcon />
                   )}
                 </Box>
+                )}
               </Box>
 
               {/* Voice Status Indicator - below orb */}
@@ -981,7 +1052,8 @@ const MasterAIAgent: React.FC = () => {
                 variant="caption"
                 sx={{
                   opacity:
-                    isRecording || isTranscribing || isToggling ? 1 : 0.5,
+                    interactionMode === "chat" ? 0.4
+                    : isRecording || isTranscribing || isToggling ? 1 : 0.5,
                   letterSpacing: "0.1em",
                   fontWeight: 600,
                   minHeight: "20px",
@@ -989,25 +1061,28 @@ const MasterAIAgent: React.FC = () => {
                   alignItems: "center",
                   justifyContent: "center",
                   color:
-                    isRecording || isTranscribing || isToggling
+                    interactionMode === "chat" ? theme.textSecondary
+                    : isRecording || isTranscribing || isToggling
                       ? theme.accent
                       : theme.textSecondary,
                   transition: "all 0.2s ease",
                   textAlign: "center",
                   fontSize: { xs: "0.65rem", sm: "0.7rem", md: "0.75rem" },
                   mb: 1,
-                  cursor: "pointer",
+                  cursor: interactionMode === "voice" ? "pointer" : "default",
                   "&:hover": {
                     opacity: 1,
                   },
                 }}
-                onClick={handleVoiceToggle}
+                onClick={interactionMode === "voice" ? handleVoiceToggle : undefined}
               >
-                {isTranscribing
-                  ? "TRANSCRIBING..."
-                  : isRecording
-                    ? transcript || "LISTENING..."
-                    : "TAP ORB TO SPEAK"}
+                {interactionMode === "chat"
+                  ? "CHAT MODE"
+                  : isTranscribing
+                    ? "TRANSCRIBING..."
+                    : isRecording
+                      ? transcript || "LISTENING..."
+                      : "TAP ORB TO SPEAK"}
               </Typography>
 
               <Box
@@ -1243,8 +1318,8 @@ const MasterAIAgent: React.FC = () => {
                   </Box>
                 )}
 
-                {/* Live Transcript Bubble - Shows during recording/transcribing */}
-                {(isRecording || isTranscribing) && (
+                {/* Live Transcript Bubble - Shows during recording/transcribing in voice mode */}
+                {interactionMode === "voice" && (isRecording || isTranscribing) && (
                   <Box
                     sx={{
                       width: "100%",
@@ -1298,7 +1373,7 @@ const MasterAIAgent: React.FC = () => {
                 )}
               </Box>
 
-              {/* Text Input Section - Hidden during voice mode */}
+              {/* Text Input Section */}
               <Box
                 sx={{
                   display: "flex",
@@ -1309,11 +1384,11 @@ const MasterAIAgent: React.FC = () => {
                   maxWidth: "500px",
                 }}
               >
-                {/* INTEGRATED INPUT FIELD */}
-                {!isRecording && !isTranscribing && (
+                {/* INTEGRATED INPUT FIELD — always visible in chat mode, hidden during recording in voice mode */}
+                {(interactionMode === "chat" || (!isRecording && !isTranscribing)) && (
                   <TextField
                     fullWidth
-                    placeholder="Type to ZeroQ..."
+                    placeholder={interactionMode === "chat" ? "Type your message..." : "Type to ZeroQ..."}
                     variant="outlined"
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
@@ -1325,7 +1400,7 @@ const MasterAIAgent: React.FC = () => {
                         }
                       }
                     }}
-                    sx={{ mt: 2 }}
+                    sx={{ mt: interactionMode === "chat" ? 1 : 2 }}
                     slotProps={{
                       input: {
                         sx: {
