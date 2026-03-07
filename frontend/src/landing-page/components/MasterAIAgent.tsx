@@ -375,7 +375,7 @@ const MasterAIAgent: React.FC = () => {
       const response = await fetch("/api/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: plainText, voice: "af_heart", speed: 1.0 }),
+        body: JSON.stringify({ text: plainText, voice: "Serena", speed: 1.0 }),
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`TTS ${response.status}`);

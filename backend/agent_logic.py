@@ -1187,7 +1187,7 @@ class MasterAgent:
                 json={
                     "model": "tts-1",
                     "input": clean_text,
-                    "voice": "af_heart",
+                    "voice": "Serena",
                     "speed": 1.25,
                     "response_format": "mp3"
                 },
