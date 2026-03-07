@@ -28,7 +28,7 @@ A **universal queue management platform** where service businesses (barbers, sal
 | **AI/LLM**                  | pydantic-ai 0.8.1 + Ollama               | Model: `gpt-oss:20b` (13.8GB, MXFP4 quantized)                      |
 | **Embeddings**              | sentence-transformers (all-MiniLM-L6-v2) | Semantic cache for query analysis                                   |
 | **Voice ASR**               | Whisper (via `asr_service/`)             | GPU-accelerated, separate K8s pod                                   |
-| **Voice TTS**               | Qwen TTS at `192.168.2.88:8880`          | `/v1/audio/speech` endpoint, voice: `serena`                        |
+| **Voice TTS**               | Kokoro TTS at `192.168.2.88:8880`        | `/v1/audio/speech` endpoint, voice: `af_heart`                      |
 | **Container Orchestration** | K3s (lightweight K8s)                    | Namespace: `zeroqwait`, Traefik ingress                             |
 | **Deployment**              | Self-hosted Linux server                 | `neekrishrichu@192.168.2.88`                                        |
 
@@ -219,7 +219,7 @@ The agent has a **direct search bypass** — if the `UnifiedQueryAnalyzer` detec
 ```
 
 - ASR: Whisper model in dedicated K8s pod (`asr-service`)
-- TTS: Qwen TTS running as host service on port 8880 (voice: `serena`)
+- TTS: Kokoro TTS running as host service on port 8880 (voice: `af_heart`)
 - Frontend queues TTS sentences and plays them sequentially
 
 ---

@@ -25,7 +25,7 @@ def detect_audio_format(audio_bytes: bytes) -> tuple[str, str]:
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = "serena"      # Voice profile (e.g., serena, eric, ryan)
+    voice: str = "af_heart"    # Kokoro TTS voice (af_heart, af_bella, af_nova, am_adam, etc.)
     speed: float = 1.0         # 1.0 = normal
 
 @router.post("/transcribe")
