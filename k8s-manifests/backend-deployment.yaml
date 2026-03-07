@@ -68,9 +68,9 @@ spec:
             path: /api/agent/health
             port: 8000
           initialDelaySeconds: 30
-          periodSeconds: 10
+          periodSeconds: 15
           timeoutSeconds: 5
-          failureThreshold: 60
+          failureThreshold: 80
         livenessProbe:
           httpGet:
             path: /api/agent/health
