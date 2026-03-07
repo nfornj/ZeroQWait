@@ -1,6 +1,6 @@
 # ZeroQwait — Project Rules & Context
 
-> **Last updated**: 2026-02-24
+> **Last updated**: 2026-03-06
 > **Live URL**: https://zeroqwait.com (self-hosted, also http://192.168.2.88.nip.io)
 
 ---
@@ -142,6 +142,22 @@ zeroqwait/
 ---
 
 ## 5. AI Agent Architecture
+
+### Three Core Features (User-Facing)
+
+The AI agent (ZeroQ) always presents **exactly three capabilities** to users:
+
+1. **Register a Shop** — Set up your business on our platform
+2. **Search for Shops** — Find services nearby and join an AI-powered queue
+3. **Ask about our Products** — Pricing, features, and how it all works
+
+These three items must appear consistently across:
+- Frontend welcome message (`MasterAIAgent.tsx` initial `chatHistory`)
+- Backend greeting prefilter (`agent_logic.py` `_GREETING_RE` handler in `stream_chat()`)
+- Backend conversation agent fallback (`get_conversational_response()` exception handler)
+- Backend conversation agent system prompt (rules section)
+
+**Rule**: Never change the wording of these three features without updating all four locations.
 
 ### Overview
 
@@ -326,6 +342,16 @@ ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend 
 ### Fix 5: Clean Rebuild
 
 - `docker build --no-cache` to purge `__pycache__` artifacts
+
+### Fix 6: AI Agent Greeting Consistency (2026-03-06)
+
+- **Issue**: Agent returned generic greeting ("Hello! I'm ZeroQ. How can I help you today?") instead of presenting the three core features
+- **Root Cause**: All four greeting locations (frontend welcome, backend prefilter, backend fallback, backend conversation agent) had inconsistent/vague messages
+- **Fix**: Standardized all four locations to present the exact same three features:
+  1. Register a Shop
+  2. Search for Shops (AI-powered queue)
+  3. Ask about our Products
+- **Files changed**: `MasterAIAgent.tsx` (initial chatHistory), `agent_logic.py` (greeting prefilter, conversation fallback, conversation agent system prompt)
 
 ---
 

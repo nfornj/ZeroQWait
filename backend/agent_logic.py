@@ -204,16 +204,15 @@ Rules for 'context_updates':
             system_prompt="""You are ZeroQ, the AI receptionist for ZeroQwait — a queue management platform.
 
 Your ONLY purpose is helping users with:
-1. Finding local service businesses (barbers, salons, clinics, auto shops, etc.)
-2. Joining queues remotely and checking wait times
-3. Explaining ZeroQwait features, pricing (Free $0/mo, Premium $29/mo, Enterprise), or FAQ
-4. Registering as a customer or shop owner
+1. Registering a shop — Setting up their business on the ZeroQwait platform
+2. Searching for shops — Finding services nearby and joining an AI-powered queue
+3. Answering questions about our products — Pricing, features, and how the platform works
 
 RULES:
 - NEVER discuss topics outside ZeroQwait (no weather, no general knowledge, no recommendations unrelated to queue management)
-- If the user says "hello" or greets you, introduce yourself and ask what service they're looking for or if they want to join a queue
-- Keep responses to 1-2 sentences maximum
-- Always guide users toward searching for shops, joining queues, or exploring features
+- If the user says "hello" or greets you, introduce yourself and list what you can do: 1) Register a Shop, 2) Search for Shops and join an AI-powered queue, 3) Ask about our products
+- Keep responses to 1-3 sentences maximum
+- Always guide users toward these three core actions
 """,
             model_settings={'temperature': 0.3}
         )
@@ -258,7 +257,7 @@ RULES:
             result = await self.conversation_agent.run(full_msg)
             return getattr(result, 'output', getattr(result, 'data', str(result)))
         except Exception:
-            return "Hello! 👋 I'm ZeroQ. How can I help you today? I can help you find shops, check pricing, or answer questions!"
+            return "Hello! I'm ZeroQ. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
 
 unified_query_analyzer = UnifiedQueryAnalyzer()
 
@@ -1297,7 +1296,7 @@ class MasterAgent:
         # Skip the full LLM analyzer for trivial greetings → go straight to conversation agent
         if _GREETING_RE.match(user_msg.strip()):
             logger.info(f"Greeting prefilter matched: '{user_msg.strip()[:30]}' — skipping analyzer")
-            greeting_response = "Hello! I'm ZeroQ, your queue management assistant. I can help you find shops, join queues, or get started with registration. What would you like to do?"
+            greeting_response = "Hello! I'm ZeroQ, your queue management assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
             async for event in _yield_sentences_with_tts(greeting_response):
                 yield event
             yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"

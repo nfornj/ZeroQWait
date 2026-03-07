@@ -95,7 +95,7 @@ const MasterAIAgent: React.FC = () => {
   >([
     {
       role: "ai",
-      text: "Welcome to ZeroQwait! I'm ZeroQ. How can I help you today?",
+      text: "Welcome to ZeroQwait! I'm ZeroQ. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?",
     },
   ]);
 
