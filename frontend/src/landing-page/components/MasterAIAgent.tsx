@@ -32,6 +32,10 @@ import Features from "./Features";
 import FAQ from "./FAQ";
 import Testimonials from "./Testimonials";
 import VoiceRegistrationFlow from "./VoiceRegistrationFlow";
+import InlineRegistrationForm, {
+  FormStepData,
+  FormDoneData,
+} from "./InlineRegistrationForm";
 import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
 
 const MasterAIAgent: React.FC = () => {
@@ -77,6 +81,9 @@ const MasterAIAgent: React.FC = () => {
       role: "ai" | "user";
       text: string;
       shops?: any[];
+      formStep?: FormStepData | null;
+      formDone?: FormDoneData | null;
+      formCompleted?: boolean;
       relatedViewer?:
         | "shops"
         | "pricing"
@@ -463,6 +470,54 @@ const MasterAIAgent: React.FC = () => {
     }
   }, [isOpen]);
 
+  // --- Registration Inline Form Result Handler ---
+  const handleFormResult = useCallback(
+    (result: FormStepData | FormDoneData, sourceIndex: number) => {
+      // Mark the current form step as completed
+      setChatHistory((prev) => {
+        const next = [...prev];
+        if (next[sourceIndex]) {
+          next[sourceIndex].formCompleted = true;
+        }
+        return next;
+      });
+
+      if (result.type === "form_step") {
+        // Next step — add a new AI message with the form
+        const nextStep = result as FormStepData;
+        const aiMessage = nextStep.message || nextStep.prompt || "Next step:";
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            role: "ai" as const,
+            text: aiMessage,
+            formStep: nextStep,
+          },
+        ]);
+        // Speak the prompt
+        if (nextStep.prompt) {
+          speak(nextStep.prompt);
+        }
+      } else if (result.type === "form_done") {
+        // Registration complete
+        const done = result as FormDoneData;
+        const successText = done.success
+          ? done.message
+          : `Registration failed: ${done.message}`;
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            role: "ai" as const,
+            text: successText,
+            formDone: done,
+          },
+        ]);
+        speak(successText);
+      }
+    },
+    [speak],
+  );
+
   const handleChat = async (userText: string) => {
     if (!userText.trim()) return;
 
@@ -609,14 +664,15 @@ const MasterAIAgent: React.FC = () => {
                       currentViewer = "shops";
                     }
                   } else if (action.tool === "start_registration") {
+                    // Registration is now handled via inline form_step events.
+                    // Don't open the side panel viewer anymore.
                     const accountType = action.result?.account_type;
                     setRegistrationAccountType(
                       accountType === "shop_owner" || accountType === "customer"
                         ? accountType
                         : null,
                     );
-                    currentViewer = "register";
-                    currentShops = [];
+                    // Note: form_step SSE event (received separately) will add the inline form
                   }
                 });
               } else {
@@ -632,6 +688,20 @@ const MasterAIAgent: React.FC = () => {
                 if (next[aiMessageIndex]) {
                   next[aiMessageIndex].shops = currentShops;
                   next[aiMessageIndex].relatedViewer = currentViewer;
+                }
+                return next;
+              });
+            } else if (data.type === "form_step") {
+              // --- Inline registration form step ---
+              // Attach the form schema to the current AI message
+              const formStepData = data as FormStepData;
+              console.log(
+                `[SSE] form_step received: step=${formStepData.step}`,
+              );
+              setChatHistory((prev) => {
+                const next = [...prev];
+                if (next[aiMessageIndex]) {
+                  next[aiMessageIndex].formStep = formStepData;
                 }
                 return next;
               });
@@ -1037,9 +1107,67 @@ const MasterAIAgent: React.FC = () => {
                           {chat.text}
                         </Typography>
                       ) : (
-                        <ReactMarkdown>{chat.text}</ReactMarkdown>
+                        <>
+                          {chat.text && (
+                            <ReactMarkdown>{chat.text}</ReactMarkdown>
+                          )}
+                          {chat.formDone && chat.formDone.success && (
+                            <Box
+                              sx={{
+                                mt: 1.5,
+                                p: 2,
+                                bgcolor: isDarkMode
+                                  ? "rgba(76,175,80,0.1)"
+                                  : "rgba(76,175,80,0.08)",
+                                borderRadius: "12px",
+                                border: "1px solid rgba(76,175,80,0.3)",
+                              }}
+                            >
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontWeight: 600,
+                                  color: "#4caf50",
+                                  mb: 0.5,
+                                }}
+                              >
+                                Registration Complete!
+                              </Typography>
+                              {chat.formDone.shop && (
+                                <Typography
+                                  variant="caption"
+                                  sx={{ color: theme.textSecondary }}
+                                >
+                                  Shop "{chat.formDone.shop.name}" is live at /
+                                  {chat.formDone.shop.slug}
+                                </Typography>
+                              )}
+                            </Box>
+                          )}
+                        </>
                       )}
                     </Box>
+                    {/* Inline registration form (rendered BELOW the message bubble, inside the same chat row) */}
+                    {chat.formStep && (
+                      <Box
+                        sx={{
+                          width: "100%",
+                          maxWidth: { xs: "88%", sm: "85%", md: "85%" },
+                          mt: 1,
+                        }}
+                      >
+                        <InlineRegistrationForm
+                          formStep={chat.formStep}
+                          sessionId={sessionId}
+                          theme={theme}
+                          isDarkMode={isDarkMode}
+                          disabled={!!chat.formCompleted}
+                          onFormResult={(result) =>
+                            handleFormResult(result, index)
+                          }
+                        />
+                      </Box>
+                    )}
                   </Box>
                 ))}
                 {/* Thinking indicator - shows in chat while processing */}

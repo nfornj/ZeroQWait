@@ -1,0 +1,92 @@
+---
+id: 52bdf0e7-083e-4580-af32-a1988bb6e712
+---
+graph TD
+    %% Define Color Palette & Styles using standard web colors
+    classDef client fill:lightgreen,stroke:green,stroke-width:2px,color:black;
+    classDef api fill:lightblue,stroke:blue,stroke-width:2px,color:black;
+    classDef db fill:lightyellow,stroke:orange,stroke-width:2px,color:black;
+    classDef llm fill:darkgray,stroke:black,stroke-width:2px,color:white;
+    classDef ai fill:plum,stroke:purple,stroke-width:3px,color:black;
+    classDef voice fill:pink,stroke:red,stroke-width:2px,color:black;
+
+    %% Client Layer
+    subgraph "🟢 Client Interface"
+        TextIn(["⌨️ Text Input"]):::client
+        VoiceIn(["🎤 Microphone Audio"]):::client
+        STT["Speech-to-Text (ASR)"]:::client
+        VoiceIn --> STT
+    end
+
+    %% API Layer
+    STT -- "Voice Data (is_voice: true)" --> API["FastAPI: /master/chat"]:::api
+    TextIn -- "Text Data (is_voice: false)" --> API
+
+    %% State Management & Caching
+    API --> RateLimit{"Redis Rate Limiter"}:::api
+    RateLimit --> RedisSession[("Redis: Session State")]:::db
+    RedisSession --> CacheCheck{"Semantic Cache Check"}:::db
+    
+    %% Cache Routing
+    CacheCheck -- "⚡ Cache Hit (> 0.95)" --> ExtractCache["Use Cached Extraction"]:::db
+    CacheCheck -- "Cache Miss" --> Master["MasterAgent.chat"]:::api
+
+    %% LLM Backend
+    subgraph "⚙️ Local LLM Infrastructure"
+        CB["Circuit Breaker"]:::llm
+        Ollama(("Ollama: gpt-oss:20b")):::llm
+        CB <-->|"Protects / Retries"| Ollama
+    end
+
+    %% New Single-Pass Brain Execution
+    subgraph "🟣 AI Extraction Pipeline"
+        Master --> NativeHistory["Format Pydantic Messages"]:::ai
+        NativeHistory --> QueryAnalyzer["UnifiedQueryAnalyzer"]:::ai
+        QueryAnalyzer -.->|"Request JSON Schema"| CB
+    end
+    
+    QueryAnalyzer --> ExtractedData{"QueryAnalysis JSON"}:::ai
+    ExtractedData --> ExtractCache
+    
+    %% Context Management
+    ExtractCache --> UpdateRedis[("Update Active Context")]:::db
+    UpdateRedis --> Router{"Intent Decision"}:::api
+
+    %% Routing Logic
+    Router -- "CONVERSATION" --> ConvAgent["Conversation Agent"]:::ai
+    ConvAgent -.->|"Chat Prompt"| CB
+    
+    Router -- "UNCLEAR" --> Ask["Ask for Clarification"]:::api
+    
+    Router -- "ACTION (Direct)" --> DirectDB["Async DB: Direct Search"]:::db
+    
+    Router -- "ACTION (Complex)" --> ToolAgent["Master Pydantic Agent"]:::ai
+    ToolAgent -.->|"Dynamic Tools"| CB
+
+    %% Async Tools & DB Layer
+    subgraph "🟡 Database & Tool Execution"
+        ToolAgent --> Tool1["Async: search_shops"]:::db
+        ToolAgent --> Tool2["Async: join_queue"]:::db
+        ToolAgent --> Tool3["Async: get_wait_time"]:::db
+    end
+
+    Tool1 --> DB[("PostgreSQL")]:::db
+    Tool2 --> DB
+    Tool3 --> DB
+    DirectDB --> DB
+
+    %% Output Generation
+    ConvAgent --> Out(["Final Text/JSON Response"]):::api
+    Ask --> Out
+    ToolAgent --> Out
+    DirectDB --> Out
+
+    %% Voice Output Handling
+    subgraph "🔴 Voice Synthesis Pipeline"
+        Out --> VoiceCheck{"is_voice == true?"}:::api
+        VoiceCheck -- Yes --> TextShortener["Condense Text < 150 chars"]:::voice
+        TextShortener --> QwenTTS(("Qwen TTS Engine")):::voice
+        QwenTTS --> VoiceOut(["🔊 Audio Stream Response"]):::voice
+    end
+    
+    VoiceCheck -- No --> UIOut(["🖥️ UI Text/Card Display"]):::client

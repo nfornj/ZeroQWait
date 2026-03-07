@@ -1,7 +1,10 @@
 import os
+import re
 import json
 import logging
 import asyncio
+import httpx
+import base64
 from typing import List, Optional, Dict, Any, Tuple, Set
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -18,6 +21,39 @@ from redis_client import redis_client
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 logger = logging.getLogger(__name__)
+
+# --- Precompiled Regex for Hot Paths ---
+_SENTENCE_BOUNDARY_RE = re.compile(r'(?<=[.?!])\s+')
+_MARKDOWN_BOLD_RE = re.compile(r'\*\*(.*?)\*\*')
+_MARKDOWN_ITALIC_RE = re.compile(r'\*(.*?)\*')
+_MARKDOWN_HEADING_RE = re.compile(r'#{1,6}\s')
+_MARKDOWN_CODE_RE = re.compile(r'`([^`]*)`')
+_MARKDOWN_LINK_RE = re.compile(r'\[([^\]]+)\]\([^)]+\)')
+_EMOJI_RE = re.compile(
+    r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF'
+    r'\U0001F1E0-\U0001F1FF\U00002600-\U000026FF\U00002700-\U000027BF'
+    r'\U0000FE00-\U0000FE0F\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F'
+    r'\U0001FA70-\U0001FAFF\U0000200D\U000020E3\U000E0020-\U000E007F]'
+)
+_WHITESPACE_MULTI_RE = re.compile(r'\s{2,}')
+
+# Fast greeting prefilter — skips analyzer LLM call for trivial messages
+_GREETING_RE = re.compile(
+    r'^(hi|hello|hey|hola|thanks|thank you|thx|ok|okay|sure|yes|no|yep|nope|bye|goodbye|cool|great|awesome|got it|sounds good)\b',
+    re.IGNORECASE
+)
+
+# Shared httpx client for TTS (connection pooling)
+_tts_client: Optional[httpx.AsyncClient] = None
+
+def _get_tts_client() -> httpx.AsyncClient:
+    global _tts_client
+    if _tts_client is None or _tts_client.is_closed:
+        _tts_client = httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(max_connections=5, max_keepalive_connections=3)
+        )
+    return _tts_client
 
 # --- Configuration ---
 ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
@@ -59,19 +95,20 @@ class SemanticCache:
             if not embedder_inst:
                 return None
             vec = embedder_inst.encode([query.strip().lower()])[0]
-            best_score = 0
-            best_match = None
+            norm = np.linalg.norm(vec)
+            if norm == 0:
+                return None
+            normed_vec = vec / norm
             
-            # Pure local fast evaluation
-            for (v, res) in self.local_cache:
-                score = np.dot(vec, v) / (np.linalg.norm(vec) * np.linalg.norm(v))
-                if score > best_score:
-                    best_score = score
-                    best_match = res
+            # Batch cosine similarity — pre-normalized vectors
+            cached_vecs = np.array([v for v, _ in self.local_cache])
+            scores = cached_vecs @ normed_vec
+            best_idx = int(np.argmax(scores))
+            best_score = scores[best_idx]
                     
             if best_score >= self.threshold:
                 logger.debug(f"Semantic Cache Hit! Score: {best_score:.3f}")
-                return best_match
+                return self.local_cache[best_idx][1]
             return None
         except Exception as e:
             logger.error(f"Semantic cache error: {e}")
@@ -83,8 +120,12 @@ class SemanticCache:
             if not embedder_inst:
                 return
             vec = embedder_inst.encode([query.strip().lower()])[0]
-            self.local_cache.append((vec, result_dict))
-            # Keep cache from growing infinitely in demo
+            norm = np.linalg.norm(vec)
+            if norm == 0:
+                return
+            normed_vec = vec / norm
+            self.local_cache.append((normed_vec, result_dict))
+            # Keep cache from growing infinitely
             if len(self.local_cache) > 1000:
                 self.local_cache = self.local_cache[-1000:]
         except Exception as e:
@@ -516,13 +557,19 @@ class MasterResponse(BaseModel):
 # --- Dynamic System Prompt ---
 
 def get_master_system_prompt() -> str:
-    """Generate system prompt dynamically from database knowledge."""
+    """Generate system prompt dynamically from database knowledge (cached in Redis)."""
     available_categories = category_manager.get_available_categories_text()
     
-    # Fetch knowledge from DB with fallbacks
+    # Fetch knowledge from DB with Redis cache (5-min TTL)
     def get_knowledge(key, default):
+        cache_key = f"agent_knowledge:{key}"
+        cached = redis_client.get(cache_key)
+        if cached is not None:
+            return cached if cached else default
         item = db_interface.get_agent_knowledge(key)
-        return item['content'] if item else default
+        content = item['content'] if item else ""
+        redis_client.set(cache_key, content, ttl=300)
+        return content if content else default
 
     critical_instructions = get_knowledge("critical_instructions", "")
     about_zeroqwait = get_knowledge("about_zeroqwait", "")
@@ -603,8 +650,15 @@ async def search_shops(
         user_wants_nearby = False
         extracted_city = city
         
-        if original_query:
-            # Use unified query analyzer to keep extraction consistent
+        # Reuse cached analysis from stream_chat/chat — avoids redundant LLM call
+        cached_analysis = ctx.deps.context.get("last_query_analysis")
+        if cached_analysis:
+            clean_terms = cached_analysis.get("terms") or None
+            user_wants_nearby = cached_analysis.get("near_me", False)
+            if not extracted_city and cached_analysis.get("city"):
+                extracted_city = cached_analysis["city"]
+        elif original_query:
+            # Fallback: run analyzer only if no cached result
             analysis = await unified_query_analyzer.analyze(original_query)
             clean_terms = analysis.terms if analysis.terms else None
             user_wants_nearby = analysis.near_me
@@ -885,7 +939,7 @@ async def start_registration(
     )
 ) -> str:
     """
-    Trigger the registration/signup wizard in the UI.
+    Start the interactive inline registration flow in the chat.
     Call this tool when:
     - User says they want to sign up, register, create an account
     - User asks how to get started as a shop owner
@@ -894,29 +948,29 @@ async def start_registration(
     
     Do NOT call this if the user is already logged in (context will indicate this).
     """
+    from registration_agent import registration_agent
+
+    # Start the registration session — returns the first form_step event
+    form_event = registration_agent.start(
+        session_id=ctx.deps.session_id,
+        account_type=account_type if account_type in ("shop_owner", "customer") else None
+    )
+
     ctx.deps.actions.append({
         "tool": "start_registration",
         "result": {"account_type": account_type or "unknown"},
+        "form_event": form_event,
         "timestamp": datetime.now().isoformat()
     })
 
-    logger.info(f"start_registration called | user={ctx.deps.user_id} | account_type={account_type}")
+    logger.info(f"start_registration called | user={ctx.deps.user_id} | account_type={account_type} | first_step={form_event.get('step')}")
 
     if account_type == "shop_owner":
-        return (
-            "Registration wizard is now open for a shop owner account. "
-            "Say: 'Great! Let's get your shop set up. First, what's your email address?'"
-        )
+        return "Let's get your business registered! I'll walk you through it step by step."
     elif account_type == "customer":
-        return (
-            "Registration wizard is now open for a customer account. "
-            "Say: 'Perfect! Let's create your account. What's your email address?'"
-        )
+        return "Let's create your account! I'll guide you through it."
     else:
-        return (
-            "Registration wizard is now open. "
-            "Ask: 'Are you signing up as a shop owner, or as a customer looking to join queues?'"
-        )
+        return "Let's get you registered! First, are you a shop owner or a customer?"
 
 
 # --- Master Agent ---
@@ -1108,60 +1162,49 @@ class MasterAgent:
     @staticmethod
     def _strip_for_tts(text: str) -> str:
         """Strip markdown, emojis, and special characters for clean TTS input."""
-        import re
         plain = text
-        plain = re.sub(r'\*\*(.*?)\*\*', r'\1', plain)
-        plain = re.sub(r'\*(.*?)\*', r'\1', plain)
-        plain = re.sub(r'#{1,6}\s', '', plain)
-        plain = re.sub(r'`([^`]*)`', r'\1', plain)
-        plain = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', plain)
-        # Remove emojis
-        plain = re.sub(
-            r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF'
-            r'\U0001F1E0-\U0001F1FF\U00002600-\U000026FF\U00002700-\U000027BF'
-            r'\U0000FE00-\U0000FE0F\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F'
-            r'\U0001FA70-\U0001FAFF\U0000200D\U000020E3\U000E0020-\U000E007F]',
-            '', plain
-        )
-        plain = re.sub(r'\n+', ' ', plain)
-        plain = re.sub(r'\s{2,}', ' ', plain)
+        plain = _MARKDOWN_BOLD_RE.sub(r'\1', plain)
+        plain = _MARKDOWN_ITALIC_RE.sub(r'\1', plain)
+        plain = _MARKDOWN_HEADING_RE.sub('', plain)
+        plain = _MARKDOWN_CODE_RE.sub(r'\1', plain)
+        plain = _MARKDOWN_LINK_RE.sub(r'\1', plain)
+        plain = _EMOJI_RE.sub('', plain)
+        plain = plain.replace('\n', ' ')
+        plain = _WHITESPACE_MULTI_RE.sub(' ', plain)
         return plain.strip()
 
     @staticmethod
     async def _generate_tts_audio(text: str) -> Tuple[Optional[str], Optional[str]]:
         """Generate TTS audio for a sentence, return (base64_audio, audio_format)."""
-        import httpx
-        import base64
-        
         tts_url = os.getenv("TTS_SERVICE_URL", "http://192.168.2.88:8880")
         clean_text = MasterAgent._strip_for_tts(text)
         if not clean_text or len(clean_text) < 2:
             return None, None
         
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{tts_url}/v1/audio/speech",
-                    json={
-                        "model": "tts-1",
-                        "input": clean_text,
-                        "voice": "serena",
-                        "speed": 1.25,
-                        "response_format": "mp3"
-                    },
-                    headers={"Content-Type": "application/json"}
-                )
-                if response.status_code == 200:
-                    audio_bytes = response.content
-                    audio_format = "unknown"
-                    if len(audio_bytes) >= 12 and audio_bytes[:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE":
-                        audio_format = "wav"
-                    elif (len(audio_bytes) >= 3 and audio_bytes[:3] == b"ID3") or (len(audio_bytes) >= 2 and audio_bytes[:2] == b"\xff\xfb"):
-                        audio_format = "mp3"
-                    return base64.b64encode(audio_bytes).decode('ascii'), audio_format
-                else:
-                    logger.warning(f"TTS failed ({response.status_code}): {response.text[:100]}")
-                    return None, None
+            client = _get_tts_client()
+            response = await client.post(
+                f"{tts_url}/v1/audio/speech",
+                json={
+                    "model": "tts-1",
+                    "input": clean_text,
+                    "voice": "serena",
+                    "speed": 1.25,
+                    "response_format": "mp3"
+                },
+                headers={"Content-Type": "application/json"}
+            )
+            if response.status_code == 200:
+                audio_bytes = response.content
+                audio_format = "unknown"
+                if len(audio_bytes) >= 12 and audio_bytes[:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE":
+                    audio_format = "wav"
+                elif (len(audio_bytes) >= 3 and audio_bytes[:3] == b"ID3") or (len(audio_bytes) >= 2 and audio_bytes[:2] == b"\xff\xfb"):
+                    audio_format = "mp3"
+                return base64.b64encode(audio_bytes).decode('ascii'), audio_format
+            else:
+                logger.warning(f"TTS failed ({response.status_code}): {response.text[:100]}")
+                return None, None
         except Exception as e:
             logger.warning(f"TTS generation error: {e}")
             return None, None
@@ -1199,8 +1242,6 @@ class MasterAgent:
         - Search intent → direct bypass (single sentence event)
         - ACTION/UNCLEAR → non-streaming run(), split result into sentence events
         """
-        import json
-        import re
         
         def _safe_json(obj):
             """JSON-serialize with fallback for Pydantic models and other non-serializable types."""
@@ -1251,6 +1292,17 @@ class MasterAgent:
         if history:
             recent_msgs = [f"{'User' if h.get('role') == 'user' else 'ZeroQ'}: {h.get('content', '')[:200]}" for h in history[-6:]]
             history_context_str = "[CONVERSATION HISTORY]\n" + "\n".join(recent_msgs)
+        
+        # --- FAST GREETING PREFILTER ---
+        # Skip the full LLM analyzer for trivial greetings → go straight to conversation agent
+        if _GREETING_RE.match(user_msg.strip()):
+            logger.info(f"Greeting prefilter matched: '{user_msg.strip()[:30]}' — skipping analyzer")
+            greeting_response = "Hello! I'm ZeroQ, your queue management assistant. I can help you find shops, join queues, or get started with registration. What would you like to do?"
+            async for event in _yield_sentences_with_tts(greeting_response):
+                yield event
+            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
         
         analysis = await unified_query_analyzer.analyze(
             user_msg, 
@@ -1326,7 +1378,6 @@ class MasterAgent:
                 sentence_buffer = ""
                 pending_tts_tasks: List[asyncio.Task] = []
                 pending_sentences: List[str] = []
-                sentence_boundary = re.compile(r'(?<=[.?!])\s+')
                 
                 async with unified_query_analyzer.conversation_agent.run_stream(
                     full_msg, message_history=message_history
@@ -1338,7 +1389,7 @@ class MasterAgent:
                         
                         # Check for sentence boundaries in buffer
                         while True:
-                            match = sentence_boundary.search(sentence_buffer)
+                            match = _SENTENCE_BOUNDARY_RE.search(sentence_buffer)
                             if not match:
                                 break
                             # Extract complete sentence
@@ -1403,6 +1454,12 @@ class MasterAgent:
             # Send as paired sentence events
             async for event in _yield_sentences_with_tts(response_text):
                 yield event
+            
+            # Check if any actions include a form_event (e.g. start_registration)
+            for action in deps.actions:
+                if "form_event" in action:
+                    yield f"data: {json.dumps({'type': 'form_step', **action['form_event']})}\n\n"
+            
             yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
             yield "data: [DONE]\n\n"
                 
