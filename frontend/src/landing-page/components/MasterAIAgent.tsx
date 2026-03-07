@@ -112,6 +112,36 @@ const MasterAIAgent: React.FC = () => {
   >(null);
   const [activeShops, setActiveShops] = useState<any[]>([]);
 
+  // --- Restore active registration on page load/refresh ---
+  useEffect(() => {
+    if (!sessionId) return;
+    const restoreRegistration = async () => {
+      try {
+        const res = await fetch(
+          `/api/agent/registration/state?session_id=${encodeURIComponent(sessionId)}`,
+        );
+        if (!res.ok) return;
+        const state = await res.json();
+        if (!state.active || !state.form_step) return;
+
+        // Inject a resumption message + form into chat history
+        const stepLabel = state.form_step.prompt || state.form_step.message || `Step: ${state.step}`;
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            role: "ai" as const,
+            text: `Continuing your registration (step: **${state.step}**). Please complete the form below, or say **cancel registration** to start over.`,
+            formStep: state.form_step as FormStepData,
+          },
+        ]);
+      } catch (e) {
+        // Silently fail — not critical
+        console.warn("Could not check registration state:", e);
+      }
+    };
+    restoreRegistration();
+  }, [sessionId]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const latestAIResponse = chatHistory[chatHistory.length - 1];
   const navigate = useNavigate();

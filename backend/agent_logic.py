@@ -1324,9 +1324,12 @@ class MasterAgent:
                 return
             
             logger.info(f"Active registration session found at step={current_step}, reminding user")
-            reminder_msg = f"You have a registration in progress (step: **{current_step}**). Please complete the form above, or say **cancel registration** to start over."
+            reminder_msg = f"Continuing your registration (step: **{current_step}**). Please complete the form below, or say **cancel registration** to start over."
             async for event in _yield_sentences_with_tts(reminder_msg):
                 yield event
+            # Re-emit form_step so frontend can render the form again (e.g. after page refresh)
+            form_event = reg_agent._build_form_event(active_reg)
+            yield f"data: {json.dumps(form_event)}\n\n"
             yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
             yield "data: [DONE]\n\n"
             return

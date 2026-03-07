@@ -71,7 +71,8 @@ async def process_step(request: RegistrationStepRequest):
 
 @router.get("/state")
 async def get_registration_state(session_id: str):
-    """Get the current registration state (which step, collected data summary)."""
+    """Get the current registration state (which step, collected data summary).
+    Also returns a form_step payload so frontend can restore the form on refresh."""
     state = registration_agent.get_session(session_id)
     if not state:
         return {"active": False}
@@ -79,12 +80,16 @@ async def get_registration_state(session_id: str):
     # Don't return password in state queries
     safe_data = {k: v for k, v in state.get("data", {}).items() if k != "password"}
     
+    # Build the full form_step event so the frontend can restore the form
+    form_step = registration_agent._build_form_event(state)
+    
     return {
         "active": True,
         "step": state["step"],
         "account_type": state.get("account_type"),
         "data": safe_data,
-        "started_at": state.get("started_at")
+        "started_at": state.get("started_at"),
+        "form_step": form_step
     }
 
 
