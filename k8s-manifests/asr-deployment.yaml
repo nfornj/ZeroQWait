@@ -28,3 +28,10 @@ spec:
               value: "int8"     # <-- Optimized for CPU
           ports:
             - containerPort: 8000
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
