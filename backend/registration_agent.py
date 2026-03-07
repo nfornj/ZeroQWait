@@ -308,7 +308,7 @@ class RegistrationAgent:
         try:
             db = SessionLocal()
             try:
-                from modules.users.models import User
+                from modules.auth.models import User
                 return db.query(User).filter(User.email == email.lower()).first() is not None
             finally:
                 db.close()
@@ -320,7 +320,7 @@ class RegistrationAgent:
         try:
             db = SessionLocal()
             try:
-                from modules.users.models import User
+                from modules.auth.models import User
                 return db.query(User).filter(User.username == username.lower()).first() is not None
             finally:
                 db.close()
@@ -406,7 +406,7 @@ class RegistrationAgent:
 
         db = SessionLocal()
         try:
-            from modules.users.models import User
+            from modules.auth.models import User, UserRole
             
             # 1. Create User
             hashed_pw = pwd_context.hash(data["password"])
@@ -414,8 +414,7 @@ class RegistrationAgent:
                 username=data["username"].lower(),
                 email=data["email"].lower(),
                 hashed_password=hashed_pw,
-                full_name=data.get("full_name", data["username"]),
-                role=account_type,
+                role=UserRole(account_type),
                 is_active=True,
                 created_at=datetime.utcnow()
             )
