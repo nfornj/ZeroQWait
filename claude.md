@@ -152,6 +152,7 @@ The AI agent (ZeroQ) always presents **exactly three capabilities** to users:
 3. **Ask about our Products** — Pricing, features, and how it all works
 
 These three items must appear consistently across:
+
 - Frontend welcome message (`MasterAIAgent.tsx` initial `chatHistory`)
 - Backend greeting prefilter (`agent_logic.py` `_GREETING_RE` handler in `stream_chat()`)
 - Backend conversation agent fallback (`get_conversational_response()` exception handler)
@@ -277,9 +278,11 @@ The agent has a **direct search bypass** — if the `UnifiedQueryAnalyzer` detec
 | `postgres-0`    | ClusterIP (headless) | 5432                      |
 | `redis-0`       | ClusterIP (headless) | 6379                      |
 | `asr-service-*` | ClusterIP            | 8000                      |
+| `ollama-*`      | ClusterIP + NodePort | 11434 (ClusterIP), 30002 (NodePort) |
 
 ### Ingress (Traefik)
 
+- Production: `zeroqwait.com` + `*.zeroqwait.com` (added 2026-03-06)
 - Base: `192.168.2.88.nip.io` → `/api` → backend, `/` → frontend
 - Wildcard: `*.192.168.2.88.nip.io` (shop subdomains)
 - TLS: Self-signed wildcard cert in `zeroqwait-wildcard-tls` secret
@@ -305,9 +308,14 @@ ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend 
 
 ### LLM Setup (Ollama)
 
-- Ollama exposed at `http://192.168.2.88:30002/v1` (OpenAI-compatible)
-- Models: `gpt-oss:20b` (13.8GB, primary), `llama3.2:latest` (2.0GB, fallback/commit messages)
+- Ollama runs in K8s namespace `llm` via Helm chart (ollama-1.38.0, image `ollama/ollama:latest`)
+- **GPU**: NVIDIA GeForce RTX 5070 Ti (16GB VRAM), CUDA 13.0, Driver 580.126.09
+- **Persistent storage**: 50Gi PVC (`ollama-data-pvc`, local-path) mounted at `/root/.ollama`
+- Internal URL: `http://ollama.llm.svc.cluster.local:11434/v1` (ClusterIP, used by backend)
+- External URL: `http://192.168.2.88:30002/v1` (NodePort, for debugging only)
+- Models: `gpt-oss:20b` (13.8GB, MXFP4 quantized, primary)
 - Config: `OLLAMA_URL` and `MODEL_NAME` in backend-configmap
+- **Model repull required** after PVC data loss: `sudo kubectl exec deployment/ollama -n llm -- ollama pull gpt-oss:20b`
 
 ---
 
@@ -350,7 +358,28 @@ ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend 
 - **Fix**: Standardized all four locations to present the exact same three features:
   1. Register a Shop
   2. Search for Shops (AI-powered queue)
+
+### Fix 7: Ollama Model Persistence & K8s Optimizations (2026-03-06)
+
+- **Issue**: `gpt-oss:20b` model returned 404 (not found on Ollama), AI agent fell back to generic responses
+- **Root Cause**: Ollama Helm deployment used `emptyDir` volume for `/root/.ollama`; pod restart ~8 days prior wiped the 13.8GB model
+- **Fixes**:
+  1. Created 50Gi PVC (`ollama-data-pvc`, local-path StorageClass) in `llm` namespace
+  2. Patched Ollama deployment to mount PVC instead of `emptyDir` at `/root/.ollama`
+  3. Re-pulled `gpt-oss:20b` model into persistent storage
+  4. Cleaned up 3 stale Ollama pods (UnexpectedAdmissionError, ContainerStatusUnknown)
+  5. Changed `OLLAMA_URL` from NodePort (`http://192.168.2.88:30002/v1`) to cluster-internal DNS (`http://ollama.llm.svc.cluster.local:11434/v1`) for lower latency
+  6. Added backend health probes (liveness + readiness on `/api/agent/health`)
+  7. Bumped backend resources to 2Gi/1CPU request, 4Gi/2CPU limit
+  8. Added ASR service resource limits (2Gi/1CPU request, 4Gi/2CPU limit)
+  9. Added `storageClassName: local-path` to Redis PVC, increased to 5Gi
+  10. Added `zeroqwait.com` + `*.zeroqwait.com` to Traefik ingress TLS
+- **Files changed**: `k8s-manifests/ollama-pvc.yaml` (new), `k8s-manifests/backend-deployment.yaml`, `k8s-manifests/backend-configmap.yaml`, `k8s-manifests/ingress-traefik.yaml`, `k8s-manifests/redis-pvc.yaml`, `k8s-manifests/asr-deployment.yaml`
+- **Key lesson**: Ollama Helm default uses `emptyDir` — always patch to PVC for model persistence
   3. Ask about our Products
+6. **Backend Docker image**: Replace hostPath + `pip install uv && uv sync` on every restart with a pre-built Docker image (current startup ~10min).
+7. **Image versioning**: Replace `latest` tags on frontend/ASR with semver tags for reproducibility.
+8. **Static uploads persistence**: Backend `/app/static/uploads` uses `emptyDir` — should use PVC to survive pod restarts.
 - **Files changed**: `MasterAIAgent.tsx` (initial chatHistory), `agent_logic.py` (greeting prefilter, conversation fallback, conversation agent system prompt)
 
 ---
