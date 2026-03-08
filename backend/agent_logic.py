@@ -56,6 +56,12 @@ _CANCEL_REGISTRATION_RE = re.compile(
     re.IGNORECASE
 )
 
+# Platform info intent — user is asking about ZeroQwait itself (products, pricing, features, FAQ)
+_PLATFORM_INFO_RE = re.compile(
+    r'(?:(?:your|the|about)\s+)?(?:product|pricing|price|plan|cost|feature|faq|how\s+(?:does|do)\s+(?:it|this|the\s+(?:app|platform|service))\s+work|what\s+(?:can|do)\s+you\s+(?:do|offer)|tell\s+me\s+about\s+(?:your|the)\s+(?:product|service|platform|app)|how\s+much|subscription|testimonial|review)',
+    re.IGNORECASE
+)
+
 # Shared httpx client for TTS (connection pooling)
 _tts_client: Optional[httpx.AsyncClient] = None
 
@@ -694,7 +700,7 @@ async def search_shops(
         if check_term.strip() in ['hi', 'hello', 'hey', 'greetings', 'sup', 'yo']:
             return "Hello! How can I help you today?"
             
-        if any(x in check_term for x in ['pricing', 'cost', 'plan', 'price']):
+        if any(x in check_term for x in ['pricing', 'cost', 'plan', 'price', 'product', 'subscription', 'how much']):
             ctx.deps.actions.append({
                 "tool": "navigate_to_page_section",
                 "result": {"target": "pricing"},
@@ -1097,6 +1103,29 @@ class MasterAgent:
             full_context = "\n".join(context_parts)
             full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
             
+            # --- PLATFORM INFO INTENT BYPASS (non-streaming) ---
+            platform_match = _PLATFORM_INFO_RE.search(user_msg.strip())
+            if platform_match:
+                matched = platform_match.group(0).lower()
+                logger.info(f"Platform info intent detected (non-stream): '{matched}'")
+                if any(w in matched for w in ('pricing', 'price', 'plan', 'cost', 'how much', 'subscription')):
+                    target = 'pricing'
+                    response_text = "Here's our pricing! We offer three plans: Free ($0/mo), Premium ($29/mo), and Enterprise (custom)."
+                elif any(w in matched for w in ('feature', 'what can', 'what do')):
+                    target = 'features'
+                    response_text = "Here are our features! Real-time queue management, AI wait times, SMS, analytics, and more."
+                elif any(w in matched for w in ('faq',)):
+                    target = 'faq'
+                    response_text = "Here are our frequently asked questions!"
+                elif any(w in matched for w in ('testimonial', 'review')):
+                    target = 'testimonials'
+                    response_text = "Here's what our users are saying!"
+                else:
+                    target = 'pricing'
+                    response_text = "ZeroQwait is a universal queue management platform. Check out our pricing and features!"
+                deps.actions.append({'tool': 'navigate_to_page_section', 'result': {'target': target}, 'timestamp': datetime.now().isoformat()})
+                return response_text
+            
             # --- DIRECT SEARCH BYPASS ---
             # Only bypass when analyzer explicitly identifies a NEW search intent (ACTION).
             # If intent is CONVERSATION or UNCLEAR (e.g. user answering a follow-up question),
@@ -1415,6 +1444,36 @@ class MasterAgent:
         
         full_context = "\n".join(context_parts)
         full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
+        
+        # --- PLATFORM INFO INTENT BYPASS ---
+        # Catch product/pricing/features/FAQ queries before they hit the search bypass
+        platform_match = _PLATFORM_INFO_RE.search(user_msg.strip())
+        if platform_match:
+            matched = platform_match.group(0).lower()
+            logger.info(f"Platform info intent detected: '{matched}' — direct bypass")
+            if any(w in matched for w in ('pricing', 'price', 'plan', 'cost', 'how much', 'subscription')):
+                target = 'pricing'
+                response_text = "Here's our pricing! We offer three plans: **Free** ($0/mo) for basic queue management, **Premium** ($29/mo) with analytics and SMS notifications, and **Enterprise** (custom pricing) for multi-location businesses. Take a look below!"
+            elif any(w in matched for w in ('feature', 'what can', 'what do')):
+                target = 'features'
+                response_text = "Here are our features! ZeroQwait offers real-time queue management, AI-powered wait time estimates, SMS notifications, analytics dashboards, and more. Check them out below!"
+            elif any(w in matched for w in ('faq',)):
+                target = 'faq'
+                response_text = "Here are our frequently asked questions! Take a look below for answers to common questions about ZeroQwait."
+            elif any(w in matched for w in ('testimonial', 'review')):
+                target = 'testimonials'
+                response_text = "Here's what our users are saying! Check out the testimonials below."
+            else:
+                # General product inquiry — show pricing + features
+                target = 'pricing'
+                response_text = "Great question! ZeroQwait is a universal queue management platform. We offer three plans: **Free** ($0/mo), **Premium** ($29/mo), and **Enterprise** (custom). Check out our pricing and features below!"
+            
+            async for event in _yield_sentences_with_tts(response_text):
+                yield event
+            action = {'tool': 'navigate_to_page_section', 'result': {'target': target}, 'timestamp': datetime.now().isoformat()}
+            yield f"data: {json.dumps({'type': 'actions', 'actions': [action]}, default=_safe_json)}\n\n"
+            yield "data: [DONE]\n\n"
+            return
         
         # --- DIRECT SEARCH BYPASS ---
         # Only bypass when analyzer explicitly identifies a NEW search intent (ACTION).
