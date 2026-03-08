@@ -1073,7 +1073,7 @@ class MasterAgent:
             if analysis.context_updates.last_city:
                 deps.context["last_search_city"] = analysis.context_updates.last_city
                 
-            logger.info(f"Analyzer: intent={intent}, search_terms='{analysis.search_terms}', city={analysis.city}, near_me={analysis.near_me}")
+            logger.info(f"Analyzer: intent={intent}, search_terms='{analysis.search_terms}', city={analysis.city}, near_me={analysis.near_me}, platform_target={analysis.platform_target}, specificity={analysis.specificity}")
             
             # Build Context Parts
             context_parts = []
@@ -1100,7 +1100,7 @@ class MasterAgent:
             
             # --- INTENT-BASED ROUTING (non-streaming) ---
             intent = analysis.intent
-            logger.info(f"Intent routing (non-stream): intent={intent}")
+            logger.info(f"Intent routing (non-stream): intent={intent}, platform_target={analysis.platform_target}, reg_type={analysis.registration_type}")
             
             if intent == 'GREETING':
                 final_text = "Hello! I'm ZeroQ, your queue management assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
@@ -1124,7 +1124,10 @@ class MasterAgent:
                     )
             
             elif intent == 'PLATFORM_INFO':
-                target = analysis.platform_target or 'pricing'
+                # Normalize LLM output variations to expected keys
+                _target_aliases = {'product': 'pricing', 'products': 'pricing', 'price': 'pricing', 'plan': 'pricing', 'plans': 'pricing', 'cost': 'pricing', 'subscription': 'pricing', 'feature': 'features', 'review': 'testimonials', 'reviews': 'testimonials', 'testimonial': 'testimonials', 'help': 'faq'}
+                raw_target = analysis.platform_target or 'pricing'
+                target = _target_aliases.get(raw_target, raw_target)
                 responses = {
                     'pricing': "Here's our pricing! We offer three plans: Free ($0/mo), Premium ($29/mo), and Enterprise (custom).",
                     'features': "Here are our features! Real-time queue management, AI wait times, SMS, analytics, and more.",
@@ -1457,8 +1460,11 @@ class MasterAgent:
         
         # PLATFORM_INFO
         if intent == 'PLATFORM_INFO':
-            target = analysis.platform_target or 'pricing'
-            logger.info(f"Platform info intent (stream): target={target}")
+            # Normalize LLM output variations to expected keys
+            _target_aliases = {'product': 'pricing', 'products': 'pricing', 'price': 'pricing', 'plan': 'pricing', 'plans': 'pricing', 'cost': 'pricing', 'subscription': 'pricing', 'feature': 'features', 'review': 'testimonials', 'reviews': 'testimonials', 'testimonial': 'testimonials', 'help': 'faq'}
+            raw_target = analysis.platform_target or 'pricing'
+            target = _target_aliases.get(raw_target, raw_target)
+            logger.info(f"Platform info intent (stream): raw={raw_target}, target={target}")
             responses = {
                 'pricing': "Here's our pricing! We offer three plans: **Free** ($0/mo) for basic queue management, **Premium** ($29/mo) with analytics and SMS notifications, and **Enterprise** (custom pricing) for multi-location businesses. Take a look below!",
                 'features': "Here are our features! ZeroQwait offers real-time queue management, AI-powered wait time estimates, SMS notifications, analytics dashboards, and more. Check them out below!",
