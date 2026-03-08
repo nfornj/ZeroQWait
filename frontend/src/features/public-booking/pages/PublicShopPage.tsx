@@ -135,48 +135,46 @@ const PublicShopPage: React.FC<PublicShopPageProps> = ({ shopSlug }) => {
 
     return (
         <Box sx={{ bgcolor: '#ffffff', minHeight: '100vh', pb: 8 }}>
-            {/* Minimal Header with branding */}
+            {/* Shop-branded Header */}
             <Paper elevation={0} sx={{ borderBottom: '1px solid #eee', py: 2, mb: 4 }}>
                 <Container maxWidth="lg">
                     <Box display="flex" justifyContent="space-between" alignItems="center">
-                        <Typography variant="h4" fontWeight="bold" color="primary" sx={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
-                            ZeroQWait
-                        </Typography>
-                        <Box display="flex" gap={2}>
-                            <Button variant="text" size="small">SEARCH</Button>
-                            <Button variant="text" size="small">PRICING</Button>
-                            <Button variant="text" size="small">LOG IN</Button>
-                            <Button variant="contained" color="error" size="small" sx={{ borderRadius: 2 }}>SIGN UP</Button>
+                        <Box display="flex" alignItems="center" gap={2}>
+                            {shop.logo_url && (
+                                <Avatar
+                                    src={shop.logo_url}
+                                    sx={{ width: 48, height: 48, borderRadius: 1, border: '1px solid #eee' }}
+                                />
+                            )}
+                            <Box>
+                                <Typography variant="h5" fontWeight="bold" sx={{ lineHeight: 1.2 }}>
+                                    {shop.name}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {shop.address}, {shop.city}, {shop.state}
+                                </Typography>
+                            </Box>
+                        </Box>
+                        <Box display="flex" alignItems="center" gap={2}>
+                            {shop.phone && (
+                                <Typography variant="body2" color="text.secondary">
+                                    {shop.phone}
+                                </Typography>
+                            )}
+                            <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ cursor: 'pointer', opacity: 0.6, '&:hover': { opacity: 1 } }}
+                                onClick={() => window.location.href = 'https://zeroqwait.com'}
+                            >
+                                Powered by ZeroQWait
+                            </Typography>
                         </Box>
                     </Box>
                 </Container>
             </Paper>
 
             <Container maxWidth="lg">
-                {/* Shop Info Card */}
-                <Card variant="outlined" sx={{ mb: 4, borderRadius: 2, p: 1 }}>
-                    <CardContent>
-                        <Box display="flex" alignItems="center" gap={3}>
-                            {shop.logo_url && (
-                                <Avatar
-                                    src={shop.logo_url}
-                                    sx={{ width: 80, height: 80, borderRadius: 1, border: '1px solid #eee' }}
-                                />
-                            )}
-                            <Box>
-                                <Typography variant="h3" fontWeight="bold" gutterBottom>
-                                    {shop.name}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    {shop.address}, {shop.city}, {shop.state}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    Phone: {shop.phone}
-                                </Typography>
-                            </Box>
-                        </Box>
-                    </CardContent>
-                </Card>
 
                 {/* AI Concierge Call-to-action */}
                 <Box
