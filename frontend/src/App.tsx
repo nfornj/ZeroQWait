@@ -38,6 +38,8 @@ import QueueCounterPage from "./pages/QueueCounterPage";
 import SignInSide from "./auth-sign-in/SignInSide";
 import ShopOwnerSignUp from "./auth-sign-up/ShopOwnerSignUp";
 import LandingPage from "./landing-page/LandingPage";
+import SubdomainHandler from "./components/SubdomainHandler";
+import AIShopPublicPage from "./features/public-booking/pages/AIShopPublicPage";
 
 function App() {
   return (
@@ -52,7 +54,11 @@ function App() {
           <Route path="/register/shop-owner" element={<ShopOwnerSignUp />} />
           <Route path="/register/customer" element={<ShopOwnerSignUp />} />
 
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<SubdomainHandler />} />
+          <Route path="/ai" element={<SubdomainHandler />} />
+
+          {/* AI Shop page (localhost dev mode) */}
+          <Route path="/shop-ai/:shopId" element={<AIShopPublicPage />} />
 
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>
