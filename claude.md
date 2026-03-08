@@ -159,7 +159,7 @@ The AI agent (ZeroQ) always presents **exactly three capabilities** to users:
 These three items must appear consistently across:
 
 - Frontend welcome message (`MasterAIAgent.tsx` initial `chatHistory`)
-- Backend greeting prefilter (`agent_logic.py` `_GREETING_RE` handler in `stream_chat()`)
+- Backend GREETING intent handler in `stream_chat()` and `chat()`
 - Backend conversation agent fallback (`get_conversational_response()` exception handler)
 - Backend conversation agent system prompt (rules section)
 
@@ -173,11 +173,12 @@ The AI agent (`agent_logic.py`) is powered by **pydantic-ai 0.8.1** and runs on 
 
 | Component              | Purpose                                                                                      |
 | ---------------------- | -------------------------------------------------------------------------------------------- |
-| `UnifiedQueryAnalyzer` | Single-pass LLM extractor: intent (CONVERSATION/ACTION/UNCLEAR), search terms, city, near_me |
+| `UnifiedQueryAnalyzer` | Single-pass LLM intent classifier: 6 intents (GREETING/REGISTRATION/SEARCH/PLATFORM_INFO/CONVERSATION/UNCLEAR) with structured `IntentAnalysis` output |
+| `IntentAnalysis`       | Pydantic model: intent, search_terms, city, near_me, specificity (VAGUE/SPECIFIC), platform_target, registration_type, context_updates |
 | `SemanticCache`        | Sentence-transformer embeddings cache (all-MiniLM-L6-v2, cosine threshold 0.92)              |
 | `CategoryManager`      | Dynamic category system — zero hardcoded categories, all database-driven with Redis cache    |
-| `MasterAgent`          | Main orchestrator — routes queries, invokes tools, manages context                           |
-| `MasterResponse`       | Pydantic output model with `reasoning` and `response` fields                                 |
+| `MasterAgent`          | Main orchestrator — routes queries by classified intent, invokes tools, manages context      |
+| `MasterResponse`       | Pydantic output model with `reasoning` and `response` fields (used by master LLM fallback)  |
 
 ### Agent Tools
 
@@ -193,24 +194,28 @@ The AI agent (`agent_logic.py`) is powered by **pydantic-ai 0.8.1** and runs on 
 | `see_testimonials`   | Navigate UI to testimonials                          |
 | `start_registration` | Trigger sign-up wizard (shop_owner or customer)      |
 
-### Direct Search Bypass
+### Intent-Based Routing (Refactored 2026-03-08)
 
-The agent has a **direct search bypass** — if the `UnifiedQueryAnalyzer` detects search terms, `near_me`, or a city, it calls `search_shops` directly without waiting for the LLM to decide. This overcomes local LLMs refusing to invoke tools when they feel they lack GPS data.
+All intent detection is handled by a **single LLM intent classifier** (`UnifiedQueryAnalyzer.analyze()`) that returns an `IntentAnalysis` Pydantic model. No regex-based routing — the LLM classifies every message into one of 6 intents.
 
-### Direct Registration Bypass
+**Only exception**: `_CANCEL_REGISTRATION_RE` regex is kept inside the active-registration Redis block for low-latency cancel handling (user is frustrated mid-registration).
 
-Similar to search bypass, the agent has a **registration intent direct bypass** (`_REGISTRATION_RE`). When the user's message matches registration keywords (register, sign up, create account, set up shop, etc.), the system:
-
-1. Skips the LLM entirely
-2. Calls `registration_agent.start()` to create a Redis-backed registration session
-3. Streams an intro message + emits a `form_step` SSE event
-4. Frontend renders the `InlineRegistrationForm` widget inline in the chat
+**Flow** (both `stream_chat()` and `chat()`):
+1. **Active registration check** (Redis state) → if active, remind or cancel. Return early.
+2. **LLM Intent Classification** → `UnifiedQueryAnalyzer.analyze()` returns `IntentAnalysis`
+3. **Route by intent**:
+   - `GREETING` → Canned greeting with 3 core features
+   - `REGISTRATION` → Start `registration_agent` session, emit form_step
+   - `SEARCH + VAGUE` → Ask "What type of service?" (no service type specified)
+   - `SEARCH + SPECIFIC` → Direct `search_shops()` call with extracted terms/city
+   - `PLATFORM_INFO` → Navigate to section (pricing/features/faq/testimonials) with `platform_target` normalization
+   - `CONVERSATION` → Stream via `conversation_agent` (token-by-token with TTS)
+   - `UNCLEAR` → Ask user for clarification, present 3 core features
+   - Fallback → Master LLM agent run with tools (300s timeout)
 
 **Active registration protection**: Before any processing, `stream_chat()` checks if a registration session exists in Redis. If so:
-- Normal messages → Reminder to complete the form
-- Cancel keywords → Clears the session
-
-This prevents context loss (e.g., "yes" being caught by the greeting prefilter mid-registration).
+- Normal messages → Reminder to complete the form + re-emit form_step
+- Cancel keywords (`_CANCEL_REGISTRATION_RE`) → Clears the session
 
 **Registration state machine** (`registration_agent.py`):
 - Steps (shop_owner): `account_type → email → username → password → shop_name → shop_type → shop_address → confirm → done`
@@ -224,13 +229,10 @@ This prevents context loss (e.g., "yes" being caught by the greeting prefilter m
 1. User message → Redis rate limit check (20/min per IP)
 2. Server-side history loaded from Redis (last 10 messages)
 3. **Active registration check** → if session exists, remind or cancel
-4. **Registration intent bypass** → if match, start form flow directly
-5. **Greeting prefilter** → trivial greetings return canned response
-6. `UnifiedQueryAnalyzer.analyze()` — single-pass intent/terms extraction
-7. If search intent → direct bypass to `search_shops` tool
-8. Otherwise → `pydantic-ai Agent.run()` with 300s timeout
-9. Response + actions returned; history persisted to Redis + PostgreSQL
-10. On validation/timeout errors → fallback to conversational response
+4. **LLM intent classification** → `UnifiedQueryAnalyzer.analyze()` returns `IntentAnalysis`
+5. **Intent-based routing** → GREETING/REGISTRATION/SEARCH/PLATFORM_INFO/CONVERSATION/UNCLEAR
+6. Response + actions returned; history persisted to Redis + PostgreSQL
+7. On validation/timeout errors → fallback to conversational response
 
 ### Streaming (SSE)
 
