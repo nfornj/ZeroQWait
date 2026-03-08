@@ -82,6 +82,8 @@ def _on_session_begin(session, transaction, connection):
 @event.listens_for(engine, "checkin")
 def _on_connection_return(dbapi_connection, connection_record):
     """Reset search_path when a connection returns to the pool."""
+    if dbapi_connection is None:
+        return
     cursor = dbapi_connection.cursor()
     cursor.execute("SET search_path TO public")
     cursor.close()
