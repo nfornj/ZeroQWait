@@ -31,7 +31,7 @@ import WidgetPage from "./pages/WidgetPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ShopLayout from "./layouts/ShopLayout";
-import PublicShopPage from "./pages/PublicShopPage";
+// PublicShopPage is used via SubdomainHandler (subdomain routing only)
 import PublicLayout from "./layouts/PublicLayout";
 import QueueCounterPage from "./pages/QueueCounterPage";
 
@@ -77,8 +77,7 @@ function App() {
           {/* Embeddable Widget (No Layout - For iframe embedding) */}
           <Route path="/widget/:shopId" element={<WidgetPage />} />
 
-          {/* Vanity URL Route (No Global Navbar) */}
-          <Route path="/s/:slug" element={<PublicShopPage />} />
+
 
           {/* Shop Registration (Standalone or Public?) - Let's keep it Public for now */}
           <Route path="/register-shop" element={<ShopOwnerSignUp />} />

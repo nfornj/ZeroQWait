@@ -1504,7 +1504,14 @@ const MasterAIAgent: React.FC = () => {
                         activeShops.map((shop: any) => (
                           <Card
                             key={shop.id}
-                            onClick={() => navigate(`/s/${shop.slug}`)}
+                            onClick={() => {
+                              const targetSlug = shop.slug || `shop-${shop.id}`;
+                              if (isLocalhost()) {
+                                navigate(`/shop-ai/${shop.id}`);
+                              } else {
+                                window.location.href = constructShopUrl(targetSlug);
+                              }
+                            }}
                             sx={{
                               bgcolor: theme.cardBg,
                               borderRadius: "24px",

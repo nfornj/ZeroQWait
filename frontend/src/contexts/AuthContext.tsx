@@ -104,8 +104,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         if (isShopSubdomain()) {
           // Redirect to public shop page to maintain context
           const shopSlug = getShopSlug();
-          console.log('[AuthContext] Token expired on shop subdomain, redirecting to public shop page:', `/s/${shopSlug}`);
-          window.location.href = `/s/${shopSlug}`;
+          console.log('[AuthContext] Token expired on shop subdomain, redirecting to public shop page');
+          window.location.href = '/';
         } else {
           // Redirect to marketing page on main domain
           console.log('[AuthContext] Token expired on main domain, redirecting to marketing page');
