@@ -37,34 +37,9 @@ _EMOJI_RE = re.compile(
 )
 _WHITESPACE_MULTI_RE = re.compile(r'\s{2,}')
 
-# Fast greeting prefilter — skips analyzer LLM call for trivial messages
-# NOTE: Do NOT include confirmations (yes/ok/sure) — they break multi-turn flows like registration
-_GREETING_RE = re.compile(
-    r'^(hi|hello|hey|hola|thanks|thank you|thx|bye|goodbye)\b',
-    re.IGNORECASE
-)
-
-# Registration intent detection — direct bypass like search
-_REGISTRATION_RE = re.compile(
-    r'(?:register|sign\s*up|create\s*(?:an?\s*)?account|list\s*my\s*(?:business|shop)|set\s*up\s*(?:my\s*)?(?:shop|business|store)|get\s*started|open\s*(?:a\s*)?shop)',
-    re.IGNORECASE
-)
-
-# Registration cancellation detection
+# Registration cancellation — used inside active-registration block (Redis state check)
 _CANCEL_REGISTRATION_RE = re.compile(
     r'(?:cancel|stop|quit|abort|nevermind|never\s*mind|start\s*over)',
-    re.IGNORECASE
-)
-
-# Platform info intent — user is asking about ZeroQwait itself (products, pricing, features, FAQ)
-_PLATFORM_INFO_RE = re.compile(
-    r'(?:(?:your|the|about)\s+)?(?:product|pricing|price|plan|cost|feature|faq|how\s+(?:does|do)\s+(?:it|this|the\s+(?:app|platform|service))\s+work|what\s+(?:can|do)\s+you\s+(?:do|offer)|tell\s+me\s+about\s+(?:your|the)\s+(?:product|service|platform|app)|how\s+much|subscription|testimonial|review)',
-    re.IGNORECASE
-)
-
-# Vague search intent — user selected "search" but hasn't specified what/where
-_VAGUE_SEARCH_RE = re.compile(
-    r'^(?:search|find|look\s*(?:for|up)?|browse|show\s*(?:me)?)?\s*(?:shops?|stores?|businesses?|services?)\s*$',
     re.IGNORECASE
 )
 
@@ -110,7 +85,7 @@ class SemanticCache:
     """Lightweight semantic cache using sentence-transformers."""
     def __init__(self, threshold=0.92):
         self.threshold = threshold
-        self.local_cache = []  # List of (embedding_vector, QueryAnalysis_dict)
+        self.local_cache = []  # List of (embedding_vector, IntentAnalysis_dict)
     
     def get(self, query: str) -> Optional[dict]:
         if not query.strip() or not self.local_cache:
@@ -173,11 +148,14 @@ class ContextUpdates(BaseModel):
     last_category: Optional[str] = Field(default=None, description="The most recent business category/service.")
     last_city: Optional[str] = Field(default=None, description="The most recent city/location.")
 
-class QueryAnalysis(BaseModel):
-    intent: str = Field(description="Must be 'CONVERSATION', 'ACTION', or 'UNCLEAR'.")
-    terms: str = Field(description="Extracted search terms, business type, or service keywords (e.g. 'alien pet groomer'). Empty string if not searching.")
-    city: Optional[str] = Field(default=None, description="Explicit city mentioned in query.")
-    near_me: bool = Field(default=False, description="True if user wants proximity search (near me, nearby).")
+class IntentAnalysis(BaseModel):
+    intent: str = Field(description="One of: GREETING, REGISTRATION, SEARCH, PLATFORM_INFO, CONVERSATION, UNCLEAR")
+    search_terms: str = Field(default="", description="Extracted search keywords (e.g. 'barber', 'salon'). Only for SEARCH intent.")
+    city: Optional[str] = Field(default=None, description="City/location for SEARCH intent.")
+    near_me: bool = Field(default=False, description="True if user wants nearby search.")
+    specificity: str = Field(default="SPECIFIC", description="VAGUE or SPECIFIC — for SEARCH intent only.")
+    platform_target: Optional[str] = Field(default=None, description="pricing, features, faq, or testimonials — for PLATFORM_INFO intent.")
+    registration_type: Optional[str] = Field(default=None, description="shop_owner, customer, or null — for REGISTRATION intent.")
     context_updates: ContextUpdates
 
 class UnifiedQueryAnalyzer:
@@ -186,42 +164,50 @@ class UnifiedQueryAnalyzer:
     def __init__(self):
         self.analyzer_agent = Agent(
             model,
-            output_type=QueryAnalysis,
-            system_prompt="""You are a single-pass query analyzer for a local business search assistant.
-Extract the user's intent, search terms, and update context in ONE pass reading the conversation history.
+            output_type=IntentAnalysis,
+            system_prompt="""You are a single-pass intent classifier for ZeroQwait, a queue management platform.
+Classify the user's message into exactly ONE intent and extract relevant fields.
 
-Rules for 'intent':
-- CONVERSATION: Greetings, thanks, acknowledgments, meta questions, testing.
-- CONVERSATION: The user is ANSWERING a question that ZeroQ asked (e.g. providing a name, address, email, shop details, confirmation). This is critical — look at the conversation history to see if ZeroQ asked for information.
-- ACTION: The user is making a NEW search request for businesses, services, or locations.
-- UNCLEAR: Ambiguous inputs.
+## Intents
 
-CRITICAL — Follow-up detection:
-If the conversation history shows ZeroQ just asked the user a question (e.g. "Could you share your shop name?", "What type of shop?", "What's your email?"), then the current message is a FOLLOW-UP ANSWER, NOT a new search.
-Example:
-  ZeroQ: "Could you share: 1. Shop name 2. Shop type 3. Address"
-  User: "tutubaba is the shopname, shoptype is spa, address is 2570 bromus path, oshawa"
-  → intent=CONVERSATION, terms="", city=null (the user is answering, NOT searching for a spa in oshawa)
+GREETING — Simple greetings, thanks, goodbyes.
+  Examples: "hi", "hello", "hey there", "thanks", "bye", "good morning"
 
-Rules for 'terms':
-- Extract the core business type or service ONLY when the user is making a NEW search request.
-- Do NOT extract terms from follow-up answers to ZeroQ's questions.
-- Do NOT hardcode categories. Dynamically extract the noun/service exactly as asked.
-- Strip generic plural suffixes (shops, stores).
-- If intent is CONVERSATION or UNCLEAR, terms MUST be empty "".
+REGISTRATION — User wants to sign up, register, create account, list their business.
+  Examples: "I want to register", "sign up", "create an account", "set up my shop", "get started", "list my business"
+  - registration_type: "shop_owner" if mentions shop/business/store/owner, "customer" if mentions customer/join, null if unclear.
 
-Rules for 'city':
-- Extract city ONLY from NEW search requests, NOT from follow-up answers.
-- If no new city is mentioned in a search context, leave it null.
+SEARCH — User wants to find shops, businesses, or services.
+  Examples: "find barbers near me", "any salons in Toronto?", "search shops", "look for a clinic"
+  - specificity=VAGUE if NO service type is mentioned (e.g. "search shops", "find stores", "show me businesses")
+  - specificity=SPECIFIC if a service type, category, or query is given (e.g. "find barbers", "salons near me")
+  - search_terms: extract core service type ONLY for SPECIFIC searches. Empty string otherwise.
+  - city: only if a city is explicitly named in a search request.
+  - near_me: true only if user says "near me", "nearby", "around here".
 
-Rules for 'near_me':
-- True ONLY if user explicitly says "near me", "nearby", "around here" in a NEW search request.
+PLATFORM_INFO — User asks about ZeroQwait itself: pricing, features, FAQ, testimonials, products.
+  Examples: "what are your prices?", "tell me about features", "how does it work?", "show me testimonials", "I want to know about the products"
+  - platform_target: "pricing" for price/cost/plan/subscription/product, "features" for features/capabilities, "faq" for FAQ/help, "testimonials" for reviews/testimonials.
+  - CRITICAL: "products", "pricing", "how much does it cost" → PLATFORM_INFO, NOT SEARCH.
 
-Rules for 'context_updates':
-- 'last_category': The LATEST business/service category from a search. Keep old if no new search.
-- 'last_city': The LATEST city from a search. Keep old if no new search.
+CONVERSATION — General conversation, answering a question ZeroQ asked, follow-up discussion.
+  CRITICAL: If conversation history shows ZeroQ just asked a question (e.g. "What type of service?", "What city?", "Could you share your shop name?"), the current message is an ANSWER → CONVERSATION, not a new intent.
+  Example:
+    ZeroQ: "Could you share: 1. Shop name 2. Shop type 3. Address"
+    User: "tutubaba is the shopname, shoptype is spa, address is 2570 bromus path, oshawa"
+    → intent=CONVERSATION (user is answering, NOT searching)
+
+UNCLEAR — Ambiguous message that doesn't clearly fit other intents. When in doubt, prefer UNCLEAR.
+  Examples: "ok", "maybe", "hmm", single characters, random text
+
+## Field Rules
+- search_terms, city, near_me, specificity: only meaningful for SEARCH intent. Use defaults for other intents.
+- platform_target: only meaningful for PLATFORM_INFO intent.
+- registration_type: only meaningful for REGISTRATION intent.
+- For non-applicable intents, use default values (empty string, null, false).
+- context_updates.last_category / last_city: track latest search category and city across conversation turns.
 """,
-            model_settings={'temperature': 0.1, 'max_tokens': 200}
+            model_settings={'temperature': 0.1, 'max_tokens': 250}
         )
         
         self.conversation_agent = Agent(
@@ -242,11 +228,11 @@ RULES:
             model_settings={'temperature': 0.3}
         )
 
-    async def analyze(self, user_msg: str, history_context: str = "") -> QueryAnalysis:
+    async def analyze(self, user_msg: str, history_context: str = "") -> IntentAnalysis:
         # Check Semantic Cache First
         cached_dict = semantic_cache.get(user_msg)
         if cached_dict:
-            return QueryAnalysis(**cached_dict)
+            return IntentAnalysis(**cached_dict)
             
         full_prompt = f"{history_context}\n\nCurrent message: {user_msg}" if history_context else user_msg
         
@@ -260,11 +246,14 @@ RULES:
         except Exception as e:
             logger.error(f"Unified analyzer failed: {e}")
             # Degrade gracefully so the main agent can still attempt to answer
-            return QueryAnalysis(
+            return IntentAnalysis(
                 intent='UNCLEAR',
-                terms="",
+                search_terms="",
                 city=None,
                 near_me="near" in user_msg.lower() or "nearby" in user_msg.lower(),
+                specificity="SPECIFIC",
+                platform_target=None,
+                registration_type=None,
                 context_updates=ContextUpdates(last_category=None, last_city=None)
             )
             
@@ -677,14 +666,14 @@ async def search_shops(
         # Reuse cached analysis from stream_chat/chat — avoids redundant LLM call
         cached_analysis = ctx.deps.context.get("last_query_analysis")
         if cached_analysis:
-            clean_terms = cached_analysis.get("terms") or None
+            clean_terms = cached_analysis.get("search_terms") or None
             user_wants_nearby = cached_analysis.get("near_me", False)
             if not extracted_city and cached_analysis.get("city"):
                 extracted_city = cached_analysis["city"]
         elif original_query:
             # Fallback: run analyzer only if no cached result
             analysis = await unified_query_analyzer.analyze(original_query)
-            clean_terms = analysis.terms if analysis.terms else None
+            clean_terms = analysis.search_terms if analysis.search_terms else None
             user_wants_nearby = analysis.near_me
             if not extracted_city and analysis.city:
                 extracted_city = analysis.city
@@ -1084,7 +1073,7 @@ class MasterAgent:
             if analysis.context_updates.last_city:
                 deps.context["last_search_city"] = analysis.context_updates.last_city
                 
-            logger.info(f"Analyzer: intent={intent}, terms='{analysis.terms}', city={analysis.city}, near_me={analysis.near_me}")
+            logger.info(f"Analyzer: intent={intent}, search_terms='{analysis.search_terms}', city={analysis.city}, near_me={analysis.near_me}")
             
             # Build Context Parts
             context_parts = []
@@ -1109,54 +1098,52 @@ class MasterAgent:
             full_context = "\n".join(context_parts)
             full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
             
-            # --- PLATFORM INFO INTENT BYPASS (non-streaming) ---
-            platform_match = _PLATFORM_INFO_RE.search(user_msg.strip())
-            if platform_match:
-                matched = platform_match.group(0).lower()
-                logger.info(f"Platform info intent detected (non-stream): '{matched}'")
-                if any(w in matched for w in ('pricing', 'price', 'plan', 'cost', 'how much', 'subscription')):
-                    target = 'pricing'
-                    response_text = "Here's our pricing! We offer three plans: Free ($0/mo), Premium ($29/mo), and Enterprise (custom)."
-                elif any(w in matched for w in ('feature', 'what can', 'what do')):
-                    target = 'features'
-                    response_text = "Here are our features! Real-time queue management, AI wait times, SMS, analytics, and more."
-                elif any(w in matched for w in ('faq',)):
-                    target = 'faq'
-                    response_text = "Here are our frequently asked questions!"
-                elif any(w in matched for w in ('testimonial', 'review')):
-                    target = 'testimonials'
-                    response_text = "Here's what our users are saying!"
-                else:
-                    target = 'pricing'
-                    response_text = "ZeroQwait is a universal queue management platform. Check out our pricing and features!"
-                deps.actions.append({'tool': 'navigate_to_page_section', 'result': {'target': target}, 'timestamp': datetime.now().isoformat()})
-                return response_text
+            # --- INTENT-BASED ROUTING (non-streaming) ---
+            intent = analysis.intent
+            logger.info(f"Intent routing (non-stream): intent={intent}")
             
-            # --- VAGUE SEARCH INTENT BYPASS (non-streaming) ---
-            if _VAGUE_SEARCH_RE.match(user_msg.strip()):
-                logger.info(f"Vague search intent (non-stream): '{user_msg.strip()[:40]}'")
-                return "Sure! What type of service are you looking for? For example: barber, salon, clinic, auto shop. And if you share your city or say 'near me', I'll find the closest options!"
+            if intent == 'GREETING':
+                final_text = "Hello! I'm ZeroQ, your queue management assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
             
-            # --- DIRECT SEARCH BYPASS ---
-            # Only bypass when analyzer explicitly identifies a NEW search intent (ACTION).
-            # If intent is CONVERSATION or UNCLEAR (e.g. user answering a follow-up question),
-            # defer to the LLM — this is scalable across all conversational flows.
-            is_search_intent = (
-                analysis.intent == 'ACTION' 
-                and (analysis.terms or analysis.near_me or analysis.city)
-            )
-            
-            logger.info(f"Search bypass decision: intent={analysis.intent}, terms='{analysis.terms}', is_search={is_search_intent}")
-            
-            if is_search_intent:
-                logger.info("Direct Search Bypass Triggered")
-                final_text = await search_shops(
+            elif intent == 'REGISTRATION':
+                final_text = await start_registration(
                     RunContext(deps=deps, model=model, usage=None, prompt=""),
-                    category=analysis.context_updates.last_category,
-                    city=analysis.city,
-                    query=user_msg
+                    account_type=analysis.registration_type
                 )
+            
+            elif intent == 'SEARCH':
+                if analysis.specificity == 'VAGUE':
+                    final_text = "Sure! What type of service are you looking for? For example: barber, salon, clinic, auto shop. And if you share your city or say 'near me', I'll find the closest options!"
+                else:
+                    logger.info("Direct Search (intent-based, non-stream)")
+                    final_text = await search_shops(
+                        RunContext(deps=deps, model=model, usage=None, prompt=""),
+                        category=analysis.context_updates.last_category,
+                        city=analysis.city,
+                        query=user_msg
+                    )
+            
+            elif intent == 'PLATFORM_INFO':
+                target = analysis.platform_target or 'pricing'
+                responses = {
+                    'pricing': "Here's our pricing! We offer three plans: Free ($0/mo), Premium ($29/mo), and Enterprise (custom).",
+                    'features': "Here are our features! Real-time queue management, AI wait times, SMS, analytics, and more.",
+                    'faq': "Here are our frequently asked questions!",
+                    'testimonials': "Here's what our users are saying!"
+                }
+                final_text = responses.get(target, "ZeroQwait is a universal queue management platform. Check out our pricing and features!")
+                if target not in responses:
+                    target = 'pricing'
+                deps.actions.append({'tool': 'navigate_to_page_section', 'result': {'target': target}, 'timestamp': datetime.now().isoformat()})
+            
+            elif intent == 'CONVERSATION':
+                final_text = await unified_query_analyzer.get_conversational_response(user_msg, deps.context, history_context_str)
+            
+            elif intent == 'UNCLEAR':
+                final_text = "I'm not quite sure what you're looking for. Could you tell me more? I can help you:\n\n1. **Register a Shop** — Set up your business\n2. **Search for Shops** — Find services nearby\n3. **Ask about our Products** — Pricing, features, and more"
+            
             else:
+                # Fallback to master agent LLM
                 self.metrics["llm_calls"] += 1
                 result = await asyncio.wait_for(
                     self.agent.run(full_msg, message_history=message_history, deps=deps),
@@ -1374,50 +1361,7 @@ class MasterAgent:
             yield "data: [DONE]\n\n"
             return
         
-        # --- REGISTRATION INTENT DIRECT BYPASS ---
-        # Like search bypass: if the user clearly wants to register, skip LLM and start form flow
-        if _REGISTRATION_RE.search(user_msg.strip()):
-            logger.info(f"Registration intent detected: '{user_msg.strip()[:50]}' — direct bypass")
-            # Determine account type from message
-            msg_lower = user_msg.lower()
-            if any(kw in msg_lower for kw in ("shop", "business", "store", "owner", "list my")):
-                account_type = "shop_owner"
-            elif any(kw in msg_lower for kw in ("customer", "join", "queue")):
-                account_type = "customer"
-            else:
-                account_type = None  # Will show account_type selection step
-            
-            form_event = reg_agent.start(session_id=session_id, account_type=account_type)
-            
-            if account_type == "shop_owner":
-                intro_text = "Let's get your business registered! I'll walk you through it step by step."
-            elif account_type == "customer":
-                intro_text = "Let's create your account! I'll guide you through it."
-            else:
-                intro_text = "Let's get you registered! First, are you a shop owner or a customer?"
-            
-            async for event in _yield_sentences_with_tts(intro_text):
-                yield event
-            
-            # Emit the form_step event so frontend renders the inline form
-            yield f"data: {json.dumps(form_event)}\n\n"
-            
-            # Emit actions so frontend knows registration started
-            yield f"data: {json.dumps({'type': 'actions', 'actions': [{'tool': 'start_registration', 'result': {'account_type': account_type or 'unknown'}}]})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-        
-        # --- FAST GREETING PREFILTER ---
-        # Skip the full LLM analyzer for trivial greetings → go straight to conversation agent
-        if _GREETING_RE.match(user_msg.strip()):
-            logger.info(f"Greeting prefilter matched: '{user_msg.strip()[:30]}' — skipping analyzer")
-            greeting_response = "Hello! I'm ZeroQ, your queue management assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
-            async for event in _yield_sentences_with_tts(greeting_response):
-                yield event
-            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-        
+        # --- LLM INTENT CLASSIFICATION ---
         analysis = await unified_query_analyzer.analyze(
             user_msg, 
             history_context_str
@@ -1456,29 +1400,74 @@ class MasterAgent:
         full_context = "\n".join(context_parts)
         full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
         
-        # --- PLATFORM INFO INTENT BYPASS ---
-        # Catch product/pricing/features/FAQ queries before they hit the search bypass
-        platform_match = _PLATFORM_INFO_RE.search(user_msg.strip())
-        if platform_match:
-            matched = platform_match.group(0).lower()
-            logger.info(f"Platform info intent detected: '{matched}' — direct bypass")
-            if any(w in matched for w in ('pricing', 'price', 'plan', 'cost', 'how much', 'subscription')):
-                target = 'pricing'
-                response_text = "Here's our pricing! We offer three plans: **Free** ($0/mo) for basic queue management, **Premium** ($29/mo) with analytics and SMS notifications, and **Enterprise** (custom pricing) for multi-location businesses. Take a look below!"
-            elif any(w in matched for w in ('feature', 'what can', 'what do')):
-                target = 'features'
-                response_text = "Here are our features! ZeroQwait offers real-time queue management, AI-powered wait time estimates, SMS notifications, analytics dashboards, and more. Check them out below!"
-            elif any(w in matched for w in ('faq',)):
-                target = 'faq'
-                response_text = "Here are our frequently asked questions! Take a look below for answers to common questions about ZeroQwait."
-            elif any(w in matched for w in ('testimonial', 'review')):
-                target = 'testimonials'
-                response_text = "Here's what our users are saying! Check out the testimonials below."
+        # --- INTENT-BASED ROUTING ---
+        intent = analysis.intent
+        logger.info(f"Intent routing (stream): intent={intent}, search_terms='{analysis.search_terms}', city={analysis.city}")
+        
+        # GREETING
+        if intent == 'GREETING':
+            greeting_response = "Hello! I'm ZeroQ, your queue management assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
+            async for event in _yield_sentences_with_tts(greeting_response):
+                yield event
+            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        
+        # REGISTRATION
+        if intent == 'REGISTRATION':
+            account_type = analysis.registration_type
+            logger.info(f"Registration intent (stream): account_type={account_type}")
+            form_event = reg_agent.start(session_id=session_id, account_type=account_type)
+            if account_type == "shop_owner":
+                intro_text = "Let's get your business registered! I'll walk you through it step by step."
+            elif account_type == "customer":
+                intro_text = "Let's create your account! I'll guide you through it."
             else:
-                # General product inquiry — show pricing + features
+                intro_text = "Let's get you registered! First, are you a shop owner or a customer?"
+            async for event in _yield_sentences_with_tts(intro_text):
+                yield event
+            yield f"data: {json.dumps(form_event)}\n\n"
+            yield f"data: {json.dumps({'type': 'actions', 'actions': [{'tool': 'start_registration', 'result': {'account_type': account_type or 'unknown'}}]})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        
+        # SEARCH
+        if intent == 'SEARCH':
+            if analysis.specificity == 'VAGUE':
+                logger.info("Vague search — asking for details")
+                prompt_text = "Sure! I can help you find services nearby. What type of service are you looking for? For example: *barber*, *salon*, *clinic*, *auto shop*, etc. And if you share your city or say **near me**, I'll find the closest options!"
+                async for event in _yield_sentences_with_tts(prompt_text):
+                    yield event
+                yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            else:
+                logger.info("Direct Search (intent-based, stream)")
+                final_text = await search_shops(
+                    RunContext(deps=deps, model=model, usage=None, prompt=""),
+                    category=analysis.context_updates.last_category,
+                    city=analysis.city,
+                    query=user_msg
+                )
+                async for event in _yield_sentences_with_tts(final_text):
+                    yield event
+                yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+        
+        # PLATFORM_INFO
+        if intent == 'PLATFORM_INFO':
+            target = analysis.platform_target or 'pricing'
+            logger.info(f"Platform info intent (stream): target={target}")
+            responses = {
+                'pricing': "Here's our pricing! We offer three plans: **Free** ($0/mo) for basic queue management, **Premium** ($29/mo) with analytics and SMS notifications, and **Enterprise** (custom pricing) for multi-location businesses. Take a look below!",
+                'features': "Here are our features! ZeroQwait offers real-time queue management, AI-powered wait time estimates, SMS notifications, analytics dashboards, and more. Check them out below!",
+                'faq': "Here are our frequently asked questions! Take a look below for answers to common questions about ZeroQwait.",
+                'testimonials': "Here's what our users are saying! Check out the testimonials below."
+            }
+            response_text = responses.get(target, "Great question! ZeroQwait is a universal queue management platform. Check out our pricing and features below!")
+            if target not in responses:
                 target = 'pricing'
-                response_text = "Great question! ZeroQwait is a universal queue management platform. We offer three plans: **Free** ($0/mo), **Premium** ($29/mo), and **Enterprise** (custom). Check out our pricing and features below!"
-            
             async for event in _yield_sentences_with_tts(response_text):
                 yield event
             action = {'tool': 'navigate_to_page_section', 'result': {'target': target}, 'timestamp': datetime.now().isoformat()}
@@ -1486,46 +1475,7 @@ class MasterAgent:
             yield "data: [DONE]\n\n"
             return
         
-        # --- VAGUE SEARCH INTENT BYPASS ---
-        # User said "search shops" / "find stores" without specifying what or where → ask for details
-        if _VAGUE_SEARCH_RE.match(user_msg.strip()):
-            logger.info(f"Vague search intent detected: '{user_msg.strip()[:40]}' — asking for details")
-            prompt_text = "Sure! I can help you find services nearby. What type of service are you looking for? For example: *barber*, *salon*, *clinic*, *auto shop*, etc. And if you share your city or say **near me**, I'll find the closest options!"
-            async for event in _yield_sentences_with_tts(prompt_text):
-                yield event
-            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-        
-        # --- DIRECT SEARCH BYPASS ---
-        # Only bypass when analyzer explicitly identifies a NEW search intent (ACTION).
-        # If intent is CONVERSATION or UNCLEAR (e.g. user answering a follow-up question),
-        # defer to the LLM — scalable across all conversational flows.
-        is_search_intent = (
-            analysis.intent == 'ACTION'
-            and (analysis.terms or analysis.near_me or analysis.city)
-        )
-        
-        logger.info(f"Search bypass decision (stream): intent={analysis.intent}, terms='{analysis.terms}', is_search={is_search_intent}")
-        
-        if is_search_intent:
-            logger.info("Direct Search Bypass Triggered (Streaming)")
-            final_text = await search_shops(
-                RunContext(deps=deps, model=model, usage=None, prompt=""),
-                category=analysis.context_updates.last_category,
-                city=analysis.city,
-                query=user_msg
-            )
-            # Send search result as paired sentence events
-            async for event in _yield_sentences_with_tts(final_text):
-                yield event
-            yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-        
-        intent = analysis.intent
-        
-        # --- CONVERSATION INTENT: Token streaming + sentence-buffered TTS ---
+        # CONVERSATION — Token streaming + sentence-buffered TTS
         if intent == 'CONVERSATION':
             logger.info("Paired streaming via conversation agent")
             try:
@@ -1547,13 +1497,11 @@ class MasterAgent:
                             match = _SENTENCE_BOUNDARY_RE.search(sentence_buffer)
                             if not match:
                                 break
-                            # Extract complete sentence
                             boundary_end = match.end()
                             complete_sentence = sentence_buffer[:boundary_end].strip()
                             sentence_buffer = sentence_buffer[boundary_end:]
                             
                             if complete_sentence and len(complete_sentence) > 2:
-                                # Fire TTS immediately (don't wait)
                                 tts_task = asyncio.create_task(
                                     self._generate_tts_audio(complete_sentence)
                                 )
@@ -1569,7 +1517,7 @@ class MasterAgent:
                     pending_tts_tasks.append(tts_task)
                     pending_sentences.append(final_sentence)
                 
-                # Now yield all sentence events in order (TTS tasks were fired concurrently)
+                # Yield all sentence events in order (TTS tasks were fired concurrently)
                 for i, (sentence, task) in enumerate(zip(pending_sentences, pending_tts_tasks)):
                     try:
                         audio_b64, audio_format = await asyncio.wait_for(task, timeout=30.0)
@@ -1596,8 +1544,17 @@ class MasterAgent:
                 yield "data: [DONE]\n\n"
                 return
         
-        # --- ACTION / UNCLEAR INTENT: Non-streaming run(), then sentence-split ---
-        logger.info(f"Non-streaming master agent run (intent={intent})")
+        # UNCLEAR — Ask the user for clarification
+        if intent == 'UNCLEAR':
+            unclear_response = "I'm not quite sure what you're looking for. Could you tell me more? I can help you:\n\n1. **Register a Shop** — Set up your business\n2. **Search for Shops** — Find services nearby\n3. **Ask about our Products** — Pricing, features, and more"
+            async for event in _yield_sentences_with_tts(unclear_response):
+                yield event
+            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        
+        # FALLBACK — Unrecognized intent, use master agent LLM
+        logger.info(f"Fallback: non-streaming master agent run (intent={intent})")
         try:
             self.metrics["llm_calls"] += 1
             result = await asyncio.wait_for(
