@@ -30,6 +30,7 @@ class Shop(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     is_active = Column(Boolean, default=True, index=True)
+    tenant_schema = Column(String, nullable=True, index=True)  # NULL = shared/free, 'tenant_<id>' = premium
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships

@@ -2,7 +2,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from contextlib import asynccontextmanager
-from routers import subscriptions, analytics, uploads, data_generation, services, agent, voice, registration
+from routers import subscriptions, analytics, uploads, data_generation, services, agent, voice, registration, tenants
 from modules.auth.router import router as auth_router
 from modules.users.router import router as users_router
 from modules.shops.router import router as shops_router
@@ -118,6 +118,7 @@ app.include_router(services.router, prefix="/api", tags=["Services"])
 app.include_router(agent.router, prefix="/api/agent", tags=["AI Agent"])
 app.include_router(registration.router, prefix="/api/agent/registration", tags=["Registration"])
 app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
+app.include_router(tenants.router, prefix="/api", tags=["Tenants"])
 
 @app.websocket("/ws/{shop_id}")
 async def websocket_endpoint(websocket: WebSocket, shop_id: str):
