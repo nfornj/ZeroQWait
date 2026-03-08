@@ -1,5 +1,8 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+import re as _re
 import uvicorn
 from contextlib import asynccontextmanager
 from routers import subscriptions, analytics, uploads, data_generation, services, agent, voice, registration, tenants
@@ -14,6 +17,7 @@ import logging
 import models # Force model registration
 from websocket_manager import manager
 import agent_logic  # Force eager loading of sentence-transformer model at startup  # noqa: F401
+from database import set_tenant_for_request, SessionLocal
 
 # Setup logging
 logging.basicConfig(
@@ -90,6 +94,51 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Tenant middleware ───────────────────────────────────────────────
+# Extracts shop_id from the request path, looks up the shop's tenant
+# schema, and sets a ContextVar so every SessionLocal() created during
+# the request automatically gets the correct search_path.
+
+class TenantMiddleware(BaseHTTPMiddleware):
+    _SHOP_ID_PATTERNS = [
+        _re.compile(r'/api/queues/shop/(\d+)'),
+        _re.compile(r'/api/shops/(\d+)'),
+        _re.compile(r'/api/employees/shops/(\d+)'),
+        _re.compile(r'/api/analytics/(?:daily/|peak-hours/|archive/stats/|services/|revenue/monthly-by-service/)?(\d+)'),
+        _re.compile(r'/api/services/shops/(\d+)'),
+    ]
+
+    async def dispatch(self, request: Request, call_next):
+        shop_id = self._extract_shop_id(request.url.path)
+        if shop_id:
+            db = SessionLocal()
+            try:
+                from sqlalchemy import text
+                row = db.execute(
+                    text("SELECT tenant_schema FROM shops WHERE id = :sid"),
+                    {"sid": shop_id}
+                ).fetchone()
+                if row and row[0]:
+                    set_tenant_for_request(row[0])
+            finally:
+                db.close()
+        try:
+            response = await call_next(request)
+        finally:
+            set_tenant_for_request(None)
+        return response
+
+    @staticmethod
+    def _extract_shop_id(path: str):
+        for pattern in TenantMiddleware._SHOP_ID_PATTERNS:
+            m = pattern.search(path)
+            if m:
+                return int(m.group(1))
+        return None
+
+app.add_middleware(TenantMiddleware)
 
 from fastapi.staticfiles import StaticFiles
 import os
