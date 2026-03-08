@@ -191,11 +191,19 @@ PLATFORM_INFO — User asks about ZeroQwait itself: pricing, features, FAQ, test
   - CRITICAL: "products", "pricing", "how much does it cost" → PLATFORM_INFO, NOT SEARCH.
 
 CONVERSATION — General conversation, answering a question ZeroQ asked, follow-up discussion.
-  CRITICAL: If conversation history shows ZeroQ just asked a question (e.g. "What type of service?", "What city?", "Could you share your shop name?"), the current message is an ANSWER → CONVERSATION, not a new intent.
+  If conversation history shows ZeroQ asked a question about registration details (e.g. "Could you share your shop name?", "What's your email?"), the current message is an ANSWER → CONVERSATION.
   Example:
     ZeroQ: "Could you share: 1. Shop name 2. Shop type 3. Address"
     User: "tutubaba is the shopname, shoptype is spa, address is 2570 bromus path, oshawa"
-    → intent=CONVERSATION (user is answering, NOT searching)
+    → intent=CONVERSATION (user is answering registration questions, NOT searching)
+
+  EXCEPTION — Search follow-ups are SEARCH, not CONVERSATION:
+  If ZeroQ asked "What type of service are you looking for?" or "What city?" and the user replies with a service type or location, this is a SEARCH with specificity=SPECIFIC.
+  Examples:
+    ZeroQ: "What type of service are you looking for?"
+    User: "auto shop" → intent=SEARCH, specificity=SPECIFIC, search_terms="auto shop"
+    User: "barber in Toronto" → intent=SEARCH, specificity=SPECIFIC, search_terms="barber", city="Toronto"
+    User: "salon" → intent=SEARCH, specificity=SPECIFIC, search_terms="salon"
 
 UNCLEAR — Ambiguous message that doesn't clearly fit other intents. When in doubt, prefer UNCLEAR.
   Examples: "ok", "maybe", "hmm", single characters, random text
