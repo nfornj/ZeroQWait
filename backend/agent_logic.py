@@ -62,6 +62,12 @@ _PLATFORM_INFO_RE = re.compile(
     re.IGNORECASE
 )
 
+# Vague search intent — user selected "search" but hasn't specified what/where
+_VAGUE_SEARCH_RE = re.compile(
+    r'^(?:search|find|look\s*(?:for|up)?|browse|show\s*(?:me)?)?\s*(?:shops?|stores?|businesses?|services?)\s*$',
+    re.IGNORECASE
+)
+
 # Shared httpx client for TTS (connection pooling)
 _tts_client: Optional[httpx.AsyncClient] = None
 
@@ -1126,6 +1132,11 @@ class MasterAgent:
                 deps.actions.append({'tool': 'navigate_to_page_section', 'result': {'target': target}, 'timestamp': datetime.now().isoformat()})
                 return response_text
             
+            # --- VAGUE SEARCH INTENT BYPASS (non-streaming) ---
+            if _VAGUE_SEARCH_RE.match(user_msg.strip()):
+                logger.info(f"Vague search intent (non-stream): '{user_msg.strip()[:40]}'")
+                return "Sure! What type of service are you looking for? For example: barber, salon, clinic, auto shop. And if you share your city or say 'near me', I'll find the closest options!"
+            
             # --- DIRECT SEARCH BYPASS ---
             # Only bypass when analyzer explicitly identifies a NEW search intent (ACTION).
             # If intent is CONVERSATION or UNCLEAR (e.g. user answering a follow-up question),
@@ -1472,6 +1483,17 @@ class MasterAgent:
                 yield event
             action = {'tool': 'navigate_to_page_section', 'result': {'target': target}, 'timestamp': datetime.now().isoformat()}
             yield f"data: {json.dumps({'type': 'actions', 'actions': [action]}, default=_safe_json)}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        
+        # --- VAGUE SEARCH INTENT BYPASS ---
+        # User said "search shops" / "find stores" without specifying what or where → ask for details
+        if _VAGUE_SEARCH_RE.match(user_msg.strip()):
+            logger.info(f"Vague search intent detected: '{user_msg.strip()[:40]}' — asking for details")
+            prompt_text = "Sure! I can help you find services nearby. What type of service are you looking for? For example: *barber*, *salon*, *clinic*, *auto shop*, etc. And if you share your city or say **near me**, I'll find the closest options!"
+            async for event in _yield_sentences_with_tts(prompt_text):
+                yield event
+            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
             yield "data: [DONE]\n\n"
             return
         
