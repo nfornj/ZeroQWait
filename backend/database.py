@@ -73,20 +73,12 @@ def set_tenant_for_request(schema: Optional[str]) -> None:
 
 @event.listens_for(SessionLocal, "after_begin")
 def _on_session_begin(session, transaction, connection):
-    """When a session begins a transaction, apply the tenant search_path."""
+    """Set search_path when a session begins a transaction."""
     schema = _tenant_schema.get()
     if schema and _TENANT_RE.match(schema):
         connection.execute(text(f"SET search_path TO {schema}, public"))
-
-
-@event.listens_for(engine, "checkin")
-def _on_connection_return(dbapi_connection, connection_record):
-    """Reset search_path when a connection returns to the pool."""
-    if dbapi_connection is None:
-        return
-    cursor = dbapi_connection.cursor()
-    cursor.execute("SET search_path TO public")
-    cursor.close()
+    else:
+        connection.execute(text("SET search_path TO public"))
 
 
 def get_db() -> Session:
