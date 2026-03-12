@@ -25,8 +25,8 @@ def detect_audio_format(audio_bytes: bytes) -> tuple[str, str]:
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = "Serena"     # Qwen3-TTS speaker (Serena, Vivian, Ryan, Aiden, etc.)
-    speed: float = 1.0         # 1.0 = normal
+    voice: str = "Vivian"
+    speed: float = 1.0
 
 @router.post("/transcribe")
 async def transcribe_voice(file: UploadFile = File(...)):
@@ -57,11 +57,13 @@ async def text_to_speech(req: TTSRequest):
     """
     try:
         payload = {
-            "model": "tts-1",
+            "model": "tts-1-en",
             "input": req.text,
             "voice": req.voice,
             "speed": req.speed,
-            "response_format": "mp3"
+            "language": "English",
+            "instruct": "Speak clearly and naturally with a warm, confident North American English accent. Enunciate each word precisely. Friendly and professional tone.",
+            "response_format": "wav"
         }
         
         async with httpx.AsyncClient(timeout=90.0) as client:

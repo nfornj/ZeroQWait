@@ -1,10 +1,16 @@
 import os
 import redis
 import json
-from typing import Optional, Any
+from typing import Optional, Any, List
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _tenant_key(shop_id: int, key: str) -> str:
+    """Build a namespaced Redis key for a premium tenant."""
+    return f"t:{shop_id}:{key}"
+
 
 class RedisClient:
     def __init__(self):
@@ -141,6 +147,108 @@ class RedisClient:
         except Exception as e:
             logger.error(f"Redis rate limit error: {e}")
             return True  # Fail open on error
+
+    # ── Tenant-scoped operations (premium shops) ────────────────────
+
+    def tenant_get(self, shop_id: int, key: str) -> Optional[Any]:
+        """Get a value from a tenant's isolated namespace."""
+        return self.get(_tenant_key(shop_id, key))
+
+    def tenant_set(self, shop_id: int, key: str, value: Any, ttl: int = 300) -> bool:
+        """Set a value in a tenant's isolated namespace."""
+        return self.set(_tenant_key(shop_id, key), value, ttl)
+
+    def tenant_delete(self, shop_id: int, key: str):
+        """Delete a key from a tenant's namespace."""
+        self.delete(_tenant_key(shop_id, key))
+
+    def tenant_keys(self, shop_id: int, pattern: str = "*") -> List[str]:
+        """List keys in a tenant's namespace. Returns keys with prefix stripped."""
+        if not self.enabled:
+            return []
+        try:
+            prefix = f"t:{shop_id}:"
+            full_pattern = f"{prefix}{pattern}"
+            raw_keys = self.client.keys(full_pattern)
+            return [k.removeprefix(prefix) for k in raw_keys]
+        except Exception as e:
+            logger.error(f"Redis tenant_keys error for shop {shop_id}: {e}")
+            return []
+
+    def tenant_flush(self, shop_id: int) -> int:
+        """Delete ALL keys for a tenant. Used during downgrade to free tier.
+        Returns the number of keys deleted."""
+        if not self.enabled:
+            return 0
+        try:
+            prefix = f"t:{shop_id}:"
+            keys = self.client.keys(f"{prefix}*")
+            if keys:
+                count = self.client.delete(*keys)
+                logger.info("Flushed %d Redis keys for tenant shop %d", count, shop_id)
+                return count
+            return 0
+        except Exception as e:
+            logger.error(f"Redis tenant_flush error for shop {shop_id}: {e}")
+            return 0
+
+    # ── Tenant queue cache ──────────────────────────────────────────
+
+    def set_queue_cache(self, shop_id: int, queue_data: dict, ttl: int = 30) -> bool:
+        """Cache active queue state for a premium shop (30s default TTL)."""
+        return self.tenant_set(shop_id, "queue:active", queue_data, ttl)
+
+    def get_queue_cache(self, shop_id: int) -> Optional[dict]:
+        """Get cached queue state for a premium shop."""
+        return self.tenant_get(shop_id, "queue:active")
+
+    def invalidate_queue_cache(self, shop_id: int):
+        """Invalidate queue cache when queue changes (join, call-next, etc.)."""
+        self.tenant_delete(shop_id, "queue:active")
+
+    # ── Tenant analytics cache ──────────────────────────────────────
+
+    def set_analytics_cache(self, shop_id: int, analytics: dict, ttl: int = 60) -> bool:
+        """Cache analytics data for a premium shop (60s default TTL)."""
+        return self.tenant_set(shop_id, "analytics:today", analytics, ttl)
+
+    def get_analytics_cache(self, shop_id: int) -> Optional[dict]:
+        """Get cached analytics for a premium shop."""
+        return self.tenant_get(shop_id, "analytics:today")
+
+    # ── Tenant services cache ───────────────────────────────────────
+
+    def set_services_cache(self, shop_id: int, services: list, ttl: int = 300) -> bool:
+        """Cache services list for a premium shop (5min default TTL)."""
+        return self.tenant_set(shop_id, "services", services, ttl)
+
+    def get_services_cache(self, shop_id: int) -> Optional[list]:
+        """Get cached services list for a premium shop."""
+        return self.tenant_get(shop_id, "services")
+
+    # ── Tenant config ───────────────────────────────────────────────
+
+    def set_shop_config(self, shop_id: int, config: dict) -> bool:
+        """Store shop-specific config in Redis (1hr TTL)."""
+        return self.tenant_set(shop_id, "config", config, ttl=3600)
+
+    def get_shop_config(self, shop_id: int) -> Optional[dict]:
+        """Get shop-specific config from Redis."""
+        return self.tenant_get(shop_id, "config")
+
+    # ── Tenant stats helper ─────────────────────────────────────────
+
+    def get_tenant_stats(self, shop_id: int) -> dict:
+        """Get a summary of a tenant's Redis footprint."""
+        if not self.enabled:
+            return {"shop_id": shop_id, "key_count": 0, "keys": []}
+        keys = self.tenant_keys(shop_id)
+        return {
+            "shop_id": shop_id,
+            "key_count": len(keys),
+            "keys": keys,
+        }
+
 
 # Global instance
 redis_client = RedisClient()

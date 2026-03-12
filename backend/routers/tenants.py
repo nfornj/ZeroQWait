@@ -13,6 +13,7 @@ from database import get_db
 from shared.auth_utils import get_current_user
 from modules.auth.models import User, UserRole, SubscriptionTier
 from modules.shops.models import Shop
+from redis_client import redis_client
 import tenant_manager
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,17 @@ def get_stats(
     _: User = Depends(_require_super_admin),
 ):
     try:
-        return tenant_manager.get_tenant_stats(db, shop_id)
+        db_stats = tenant_manager.get_tenant_stats(db, shop_id)
+        redis_stats = redis_client.get_tenant_stats(shop_id)
+        return {**db_stats, "redis": redis_stats}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/flush-cache/{shop_id}", summary="Flush all Redis cache for a tenant")
+def flush_tenant_cache(
+    shop_id: int,
+    _: User = Depends(_require_super_admin),
+):
+    count = redis_client.tenant_flush(shop_id)
+    return {"status": "flushed", "shop_id": shop_id, "keys_deleted": count}

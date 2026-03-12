@@ -23,7 +23,8 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Text
 logger = logging.getLogger(__name__)
 
 # --- Precompiled Regex for Hot Paths ---
-_SENTENCE_BOUNDARY_RE = re.compile(r'(?<=[.?!])\s+')
+# Split on sentence-ending punctuation, but NOT after digit-dot (e.g. "1." "2." "3.")
+_SENTENCE_BOUNDARY_RE = re.compile(r'(?<!\d[.])(?<=[.?!])\s+')
 _MARKDOWN_BOLD_RE = re.compile(r'\*\*(.*?)\*\*')
 _MARKDOWN_ITALIC_RE = re.compile(r'\*(.*?)\*')
 _MARKDOWN_HEADING_RE = re.compile(r'#{1,6}\s')
@@ -236,7 +237,80 @@ RULES:
             model_settings={'temperature': 0.3}
         )
 
+    # Compiled regex patterns for fast intent detection (skip LLM for obvious intents)
+    _GREETING_RE = re.compile(
+        r'^(hi|hello|hey|howdy|greetings|good\s*(morning|afternoon|evening|day)|'
+        r'thanks|thank\s*you|bye|goodbye|see\s*you|take\s*care|yo|sup|hiya|hola|'
+        r'what\'?s\s*up|whats\s*up)[!?.,\s]*$',
+        re.IGNORECASE
+    )
+    _PLATFORM_PRICING_RE = re.compile(
+        r'\b(pric(e|es|ing)|cost|how\s*much|subscription|plan[s]?|products?)\b',
+        re.IGNORECASE
+    )
+    _PLATFORM_FEATURES_RE = re.compile(
+        r'\b(features?|capabilities|what\s*(can|do)\s*(you|it)\s*(do|offer))\b',
+        re.IGNORECASE
+    )
+    _PLATFORM_FAQ_RE = re.compile(
+        r'\b(faq|frequently\s*asked|help\s*page|how\s*does\s*it\s*work)\b',
+        re.IGNORECASE
+    )
+    _PLATFORM_TESTIMONIALS_RE = re.compile(
+        r'\b(testimonials?|reviews?|what\s*(people|users|customers)\s*say)\b',
+        re.IGNORECASE
+    )
+    _REGISTRATION_RE = re.compile(
+        r'\b(register|sign\s*up|create\s*(an?\s*)?account|get\s*started|'
+        r'list\s*my\s*business|set\s*up\s*(my\s*)?(shop|business|store))\b',
+        re.IGNORECASE
+    )
+
+    def _fast_intent_check(self, user_msg: str) -> Optional[IntentAnalysis]:
+        """Regex-based fast path for obvious intents. Returns None if unsure (falls through to LLM)."""
+        msg = user_msg.strip()
+        defaults = dict(search_terms="", city=None, near_me=False, specificity="SPECIFIC",
+                        platform_target=None, registration_type=None,
+                        context_updates=ContextUpdates(last_category=None, last_city=None))
+
+        # Greeting — only match short messages (< 30 chars) to avoid false positives
+        if len(msg) < 30 and self._GREETING_RE.match(msg):
+            return IntentAnalysis(intent='GREETING', **defaults)
+
+        # Platform info
+        for regex, target in [
+            (self._PLATFORM_PRICING_RE, 'pricing'),
+            (self._PLATFORM_FEATURES_RE, 'features'),
+            (self._PLATFORM_FAQ_RE, 'faq'),
+            (self._PLATFORM_TESTIMONIALS_RE, 'testimonials'),
+        ]:
+            if regex.search(msg):
+                return IntentAnalysis(intent='PLATFORM_INFO', platform_target=target,
+                                     search_terms="", city=None, near_me=False, specificity="SPECIFIC",
+                                     registration_type=None,
+                                     context_updates=ContextUpdates(last_category=None, last_city=None))
+
+        # Registration
+        if self._REGISTRATION_RE.search(msg):
+            reg_type = None
+            if re.search(r'\b(shop|business|store|owner)\b', msg, re.IGNORECASE):
+                reg_type = 'shop_owner'
+            elif re.search(r'\b(customer|join)\b', msg, re.IGNORECASE):
+                reg_type = 'customer'
+            return IntentAnalysis(intent='REGISTRATION', registration_type=reg_type,
+                                 search_terms="", city=None, near_me=False, specificity="SPECIFIC",
+                                 platform_target=None,
+                                 context_updates=ContextUpdates(last_category=None, last_city=None))
+
+        return None  # Not obvious — fall through to LLM
+
     async def analyze(self, user_msg: str, history_context: str = "") -> IntentAnalysis:
+        # Fast regex prefilter — skip 10-13s LLM call for obvious intents
+        fast_result = self._fast_intent_check(user_msg)
+        if fast_result:
+            logger.info(f"Fast intent match: {fast_result.intent} (skipped LLM)")
+            return fast_result
+        
         # Check Semantic Cache First
         cached_dict = semantic_cache.get(user_msg)
         if cached_dict:
@@ -1236,11 +1310,13 @@ class MasterAgent:
             response = await client.post(
                 f"{tts_url}/v1/audio/speech",
                 json={
-                    "model": "tts-1",
+                    "model": "tts-1-en",
                     "input": clean_text,
-                    "voice": "Serena",
-                    "speed": 1.25,
-                    "response_format": "mp3"
+                    "voice": "Vivian",
+                    "speed": 1.0,
+                    "language": "English",
+                    "instruct": "Speak clearly and naturally with a warm, confident North American English accent. Enunciate each word precisely. Friendly and professional tone.",
+                    "response_format": "wav"
                 },
                 headers={"Content-Type": "application/json"}
             )
@@ -1261,11 +1337,64 @@ class MasterAgent:
 
     @staticmethod
     def _split_into_sentences(text: str) -> List[str]:
-        """Split text into sentences at . ? ! boundaries."""
+        """Split text into display-ready segments for paired text+TTS delivery.
+        
+        Preserves markdown formatting — TTS stripping happens in _generate_tts_audio.
+        Splits on paragraph boundaries first, then sentence boundaries within paragraphs.
+        """
         import re
-        # Split on sentence-ending punctuation followed by a space or end-of-string
-        parts = re.split(r'(?<=[.?!])\s+', text.strip())
-        return [p for p in parts if p.strip()]
+        stripped = text.strip()
+        if not stripped:
+            return []
+        
+        # 1. Split on paragraph breaks (double newline) — these are natural boundaries
+        paragraphs = re.split(r'\n{2,}', stripped)
+        paragraphs = [p.strip() for p in paragraphs if p.strip()]
+        
+        # 2. Within each paragraph, apply sentence splitting
+        #    But skip sentence-splitting for numbered/bulleted lists
+        segments = []
+        for para in paragraphs:
+            # If paragraph looks like a list (starts with number or bullet), keep it whole
+            if re.match(r'^[\d]+[.)]\s|^[-*•]\s', para):
+                segments.append(para)
+                continue
+            
+            # Split on sentence-ending punctuation, but NOT after digit-dot (e.g. "1." "2.")
+            parts = re.split(r'(?<!\d[.])(?<=[.?!])\s+', para)
+            parts = [p for p in parts if p.strip()]
+            
+            # Merge tiny fragments (< 30 chars) with neighbors
+            merged = []
+            for s in parts:
+                if merged and len(s) < 30:
+                    merged[-1] = merged[-1] + " " + s
+                else:
+                    merged.append(s)
+            if len(merged) > 1 and len(merged[0]) < 30:
+                merged[1] = merged[0] + " " + merged[1]
+                merged = merged[1:]
+            segments.extend(merged)
+        
+        # 3. Sub-split very long segments (> 200 chars) at clause boundaries
+        result = []
+        for s in segments:
+            # Use plain-text length for threshold (markdown adds chars)
+            plain_len = len(re.sub(r'\*\*(.+?)\*\*', r'\1', s))
+            if plain_len <= 200:
+                result.append(s)
+            else:
+                chunks = re.split(r'(?<=[,;:])\s+', s)
+                buf = ""
+                for chunk in chunks:
+                    if buf and len(buf) + len(chunk) + 1 > 150 and len(buf) >= 40:
+                        result.append(buf)
+                        buf = chunk
+                    else:
+                        buf = f"{buf} {chunk}" if buf else chunk
+                if buf:
+                    result.append(buf)
+        return result
 
     async def stream_chat(
         self,
@@ -1304,17 +1433,26 @@ class MasterAgent:
             raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
         
         async def _yield_sentences_with_tts(full_text: str):
-            """Split text into sentences, generate TTS for each concurrently, yield in order."""
+            """Split text into sentences, generate TTS one-at-a-time for progressive delivery.
+            In chat mode (is_voice=False), skip TTS entirely for instant response."""
             sentences = self._split_into_sentences(full_text)
             if not sentences:
                 yield f"data: {json.dumps({'type': 'sentence', 'text': full_text, 'audio': None, 'audio_format': None})}\n\n"
                 return
             
-            # Fire off all TTS tasks concurrently
-            tts_tasks = [asyncio.create_task(self._generate_tts_audio(s)) for s in sentences]
+            if not is_voice:
+                # Chat mode: yield text immediately, no TTS calls
+                for sentence in sentences:
+                    yield f"data: {json.dumps({'type': 'sentence', 'text': sentence, 'audio': None, 'audio_format': None})}\n\n"
+                return
             
-            # Yield in order as each completes (but maintain sequence)
-            for i, (sentence, task) in enumerate(zip(sentences, tts_tasks)):
+            # Voice mode: pipeline — start next TTS while yielding current sentence
+            next_task = asyncio.create_task(self._generate_tts_audio(sentences[0]))
+            for i, sentence in enumerate(sentences):
+                task = next_task
+                # Pre-fire next sentence's TTS while we await current
+                if i + 1 < len(sentences):
+                    next_task = asyncio.create_task(self._generate_tts_audio(sentences[i + 1]))
                 try:
                     audio_b64, audio_format = await asyncio.wait_for(task, timeout=30.0)
                 except Exception as e:
@@ -1495,8 +1633,9 @@ class MasterAgent:
             try:
                 self.metrics["llm_calls"] += 1
                 sentence_buffer = ""
-                pending_tts_tasks: List[asyncio.Task] = []
-                pending_sentences: List[str] = []
+                # Voice mode: pipeline TTS concurrently with LLM streaming
+                pending_voice: List[Tuple[str, asyncio.Task]] = []
+                voice_yield_index = 0
                 
                 async with unified_query_analyzer.conversation_agent.run_stream(
                     full_msg, message_history=message_history
@@ -1516,30 +1655,52 @@ class MasterAgent:
                             sentence_buffer = sentence_buffer[boundary_end:]
                             
                             if complete_sentence and len(complete_sentence) > 2:
-                                tts_task = asyncio.create_task(
-                                    self._generate_tts_audio(complete_sentence)
-                                )
-                                pending_tts_tasks.append(tts_task)
-                                pending_sentences.append(complete_sentence)
+                                if is_voice:
+                                    tts_task = asyncio.create_task(
+                                        self._generate_tts_audio(complete_sentence)
+                                    )
+                                    pending_voice.append((complete_sentence, tts_task))
+                                else:
+                                    # Chat mode: yield text immediately, no TTS
+                                    yield f"data: {json.dumps({'type': 'sentence', 'text': complete_sentence, 'audio': None, 'audio_format': None})}\n\n"
+                        
+                        # Voice mode: yield any sentences whose TTS has completed (in order)
+                        if is_voice:
+                            while voice_yield_index < len(pending_voice):
+                                sent, task = pending_voice[voice_yield_index]
+                                if task.done():
+                                    try:
+                                        audio_b64, audio_format = task.result()
+                                    except Exception as e:
+                                        logger.warning(f"TTS task {voice_yield_index} failed: {e}")
+                                        audio_b64, audio_format = None, None
+                                    yield f"data: {json.dumps({'type': 'sentence', 'text': sent, 'audio': audio_b64, 'audio_format': audio_format})}\n\n"
+                                    voice_yield_index += 1
+                                else:
+                                    break
                 
                 # Handle remaining buffer as final sentence
-                if sentence_buffer.strip() and len(sentence_buffer.strip()) > 2:
-                    final_sentence = sentence_buffer.strip()
-                    tts_task = asyncio.create_task(
-                        self._generate_tts_audio(final_sentence)
-                    )
-                    pending_tts_tasks.append(tts_task)
-                    pending_sentences.append(final_sentence)
+                remaining = sentence_buffer.strip()
+                if remaining and len(remaining) > 2:
+                    if is_voice:
+                        tts_task = asyncio.create_task(
+                            self._generate_tts_audio(remaining)
+                        )
+                        pending_voice.append((remaining, tts_task))
+                    else:
+                        yield f"data: {json.dumps({'type': 'sentence', 'text': remaining, 'audio': None, 'audio_format': None})}\n\n"
                 
-                # Yield all sentence events in order (TTS tasks were fired concurrently)
-                for i, (sentence, task) in enumerate(zip(pending_sentences, pending_tts_tasks)):
-                    try:
-                        audio_b64, audio_format = await asyncio.wait_for(task, timeout=30.0)
-                    except Exception as e:
-                        logger.warning(f"TTS task {i} failed: {e}")
-                        audio_b64 = None
-                        audio_format = None
-                    yield f"data: {json.dumps({'type': 'sentence', 'text': sentence, 'audio': audio_b64, 'audio_format': audio_format})}\n\n"
+                # Voice mode: yield any remaining sentences (await their TTS)
+                if is_voice:
+                    while voice_yield_index < len(pending_voice):
+                        sent, task = pending_voice[voice_yield_index]
+                        try:
+                            audio_b64, audio_format = await asyncio.wait_for(task, timeout=30.0)
+                        except Exception as e:
+                            logger.warning(f"TTS task {voice_yield_index} failed: {e}")
+                            audio_b64, audio_format = None, None
+                        yield f"data: {json.dumps({'type': 'sentence', 'text': sent, 'audio': audio_b64, 'audio_format': audio_format})}\n\n"
+                        voice_yield_index += 1
                 
                 yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
                 yield "data: [DONE]\n\n"

@@ -1,0 +1,13 @@
+# Qwen3-TTS PVC for HuggingFace model cache
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tts-model-cache
+  namespace: zeroqwait
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi

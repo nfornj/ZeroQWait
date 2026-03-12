@@ -14,3 +14,4 @@ data:
   MODEL_NAME: "gpt-oss:20b"
   REDIS_HOST: "redis.zeroqwait.svc.cluster.local"
   REDIS_PORT: "6379"
+  TTS_SERVICE_URL: "http://tts-service.zeroqwait.svc.cluster.local:8880"

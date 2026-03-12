@@ -28,7 +28,7 @@ A **universal queue management platform** where service businesses (barbers, sal
 | **AI/LLM**                  | pydantic-ai 0.8.1 + Ollama               | Model: `gpt-oss:20b` (13.8GB, MXFP4 quantized)                      |
 | **Embeddings**              | sentence-transformers (all-MiniLM-L6-v2) | Semantic cache for query analysis                                   |
 | **Voice ASR**               | Whisper (via `asr_service/`)             | GPU-accelerated, separate K8s pod                                   |
-| **Voice TTS**               | Qwen3-TTS 0.6B (via `tts_service/`)     | `/v1/audio/speech` OpenAI-compatible, voice: `Serena`, port 8880    |
+| **Voice TTS**               | Qwen3-TTS 1.7B (via `tts_service/`)     | `/v1/audio/speech` OpenAI-compatible, voice: `Vivian`, port 8880 — **DO NOT REPLACE** (see §6) |
 | **Container Orchestration** | K3s (lightweight K8s)                    | Namespace: `zeroqwait`, Traefik ingress                             |
 | **Deployment**              | Self-hosted Linux server                 | `neekrishrichu@192.168.2.88`                                        |
 
@@ -131,7 +131,10 @@ zeroqwait/
 │   ├── postgres-statefulset.yaml     # PostgreSQL with PVC
 │   ├── redis-statefulset.yaml        # Redis with PVC
 │   ├── ingress-traefik.yaml          # Traefik ingress (wildcard TLS)
-│   └── asr-deployment.yaml           # ASR service
+│   ├── asr-deployment.yaml           # ASR service
+│   ├── tts-deployment.yaml           # Qwen3-TTS GPU pod + ClusterIP service
+│   ├── tts-pvc.yaml                  # HuggingFace model cache (10Gi)
+│   └── gpu-time-slicing.yaml         # NVIDIA GPU time-slicing config
 │
 ├── deployment/
 │   ├── scripts/
@@ -247,13 +250,44 @@ All intent detection is handled by a **single LLM intent classifier** (`UnifiedQ
 ```
 [Browser Mic] → useAudioRecorder (blob) → POST /api/voice/transcribe → Whisper ASR pod
      → transcribed text → MasterAgent.chat() → response text
-     → POST /api/voice/tts → Qwen3-TTS (192.168.2.88:8880) → WAV/MP3 audio → AudioContext playback
+     → POST /api/voice/tts → Qwen3-TTS K8s pod (GPU) → WAV/MP3 audio → AudioContext playback
 ```
 
 - ASR: Whisper model in dedicated K8s pod (`asr-service`)
-- TTS: Qwen3-TTS 0.6B CustomVoice running as Docker service on port 8880 (voice: `Serena` — warm, gentle young female)
+- TTS: Qwen3-TTS 1.7B CustomVoice running as K8s pod with GPU acceleration (voice: `Vivian` — warm, clear North American English accent)
 - Frontend queues TTS sentences and plays them sequentially
 - **Paired Streaming**: Backend splits LLM response into sentences, generates TTS audio concurrently per sentence, sends `{type: 'sentence', text, audio}` SSE events. Frontend plays audio + typewriter text simultaneously for synchronized output.
+
+### TTS Configuration — DO NOT CHANGE
+
+> **CRITICAL RULE**: Qwen3-TTS is the **only approved TTS service** for ZeroQwait. **Never** replace it with Kokoro TTS, Coqui, Piper, or any other TTS engine.
+
+| Setting               | Value                                                          |
+| --------------------- | -------------------------------------------------------------- |
+| **Service**           | Qwen3-TTS (official backend)                                  |
+| **Model**             | `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`                       |
+| **Voice**             | `Vivian` (warm, clear North American English accent)           |
+| **Port**              | `8880` (ClusterIP service in `zeroqwait` namespace)            |
+| **K8s Deployment**    | `tts-service` in namespace `zeroqwait`                         |
+| **Docker Image**      | `localhost:5000/tts-service:latest` (local registry)           |
+| **Dockerfile**        | `/home/neekrishrichu/apps/qwen3-tts/Dockerfile.blackwell`      |
+| **Base Image**        | `nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04` (builder)         |
+| **PyTorch**           | `2.10.0+cu128` (supports sm_120 Blackwell)                     |
+| **GPU**               | RTX 5070 Ti via GPU time-slicing (shared with Ollama)          |
+| **GPU Memory**        | ~4.4 GiB VRAM                                                  |
+| **Model Cache PVC**   | `tts-model-cache` (10Gi, local-path)                           |
+| **Startup Probe**     | 10-min allowance (model download on fresh PVC)                 |
+
+**Voice name `Vivian` must appear in exactly these 3 files:**
+1. `backend/routers/voice.py` — default voice parameter
+2. `backend/agent_logic.py` — `_generate_tts_audio()` function (also uses `model: "tts-1-en"`, `language: "English"`, `instruct` for North American accent)
+3. `frontend/src/landing-page/components/MasterAIAgent.tsx` — TTS fetch body
+
+**Why this matters**: On 2026-02-14, Kokoro TTS was accidentally started on port 8880, displacing Qwen3-TTS. This required reverting voice names in 3 files and redeploying both backend and frontend. Prevent this by never running another TTS service on port 8880.
+
+**Note (2026-03-13)**: Voice changed from `Serena` to `Vivian` for clearer North American English accent. Also switched to `tts-1-en` model with explicit `language: "English"` and `instruct` parameter across all 3 files + the voice.py TTS proxy endpoint.
+
+**Note (2026-03-11)**: TTS migrated from Docker container to K8s pod with GPU acceleration. Built custom Blackwell image (`Dockerfile.blackwell`) with PyTorch 2.10.0+cu128 supporting sm_120. GPU shared with Ollama via NVIDIA time-slicing (2 virtual GPUs from 1 physical RTX 5070 Ti). K8s manifests: `tts-pvc.yaml`, `tts-deployment.yaml`, `gpu-time-slicing.yaml`.
 
 ### Voice Mode vs Chat Mode
 
@@ -328,6 +362,7 @@ Users toggle between **Voice Mode** and **Chat Mode** via a pill button in the t
 | `postgres-0`    | ClusterIP (headless) | 5432                      |
 | `redis-0`       | ClusterIP (headless) | 6379                      |
 | `asr-service-*` | ClusterIP            | 8000                      |
+| `tts-service-*` | ClusterIP            | 8880 (GPU-accelerated)    |
 | `ollama-*`      | ClusterIP + NodePort | 11434 (ClusterIP), 30002 (NodePort) |
 
 ### Ingress (Traefik)
@@ -504,7 +539,7 @@ ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend 
 | `REDIS_PORT`      | `6379`                                                           | Redis port          |
 | `FRONTEND_URL`    | —                                                                | CORS allowed origin |
 | `ASR_SERVICE_URL` | `http://asr-service.zeroqwait.svc.cluster.local:8000/transcribe` | Whisper ASR         |
-| `TTS_SERVICE_URL` | `http://192.168.2.88:8880`                                       | Qwen3-TTS           |
+| `TTS_SERVICE_URL` | `http://192.168.2.88:8880`                                       | Qwen3-TTS            |
 | `JWT_SECRET_KEY`  | —                                                                | JWT signing key     |
 | `COOKIE_DOMAIN`   | —                                                                | Auth cookie domain  |
 

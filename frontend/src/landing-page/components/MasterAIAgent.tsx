@@ -242,7 +242,17 @@ const MasterAIAgent: React.FC = () => {
     return audioCtxRef.current;
   };
 
-  /** Play base64-encoded MP3 audio. Resolves when playback ends. */
+  /** Decode base64 audio to ArrayBuffer for pre-buffering. */
+  const decodeBase64Audio = (base64Audio: string): ArrayBuffer => {
+    const binaryStr = atob(base64Audio);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    return bytes.buffer.slice(0) as ArrayBuffer;
+  };
+
+  /** Play audio from an ArrayBuffer (already base64-decoded). Resolves when playback ends. */
   const playAudio = (base64Audio: string): Promise<void> => {
     return new Promise<void>((resolve) => {
       const safetyTimeout = setTimeout(() => {
@@ -253,17 +263,12 @@ const MasterAIAgent: React.FC = () => {
       }, 60000);
 
       try {
-        const binaryStr = atob(base64Audio);
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let i = 0; i < binaryStr.length; i++) {
-          bytes[i] = binaryStr.charCodeAt(i);
-        }
-
+        const arrayBuf = decodeBase64Audio(base64Audio);
         const audioCtx = getAudioContext();
         if (audioCtx.state === "suspended") audioCtx.resume();
 
         audioCtx.decodeAudioData(
-          bytes.buffer.slice(0) as ArrayBuffer,
+          arrayBuf,
           (audioBuffer) => {
             if (cancelQueueRef.current) {
               clearTimeout(safetyTimeout);
@@ -299,7 +304,7 @@ const MasterAIAgent: React.FC = () => {
     });
   };
 
-  /** Typewriter effect: reveal text character-by-character synced to speaking rate (~30ms/char). */
+  /** Typewriter effect: reveal text char-by-char. Resolves when done but does NOT block audio. */
   const typeText = (
     text: string,
     updateFn: (textSoFar: string) => void,
@@ -307,15 +312,18 @@ const MasterAIAgent: React.FC = () => {
   ): Promise<void> => {
     return new Promise<void>((resolve) => {
       let charIndex = 0;
-      const speed = 15; // ms per character — faster typewriter synced to 1.25x TTS speed
+      // 8ms/char = fast enough to keep up with natural speech (~150 WPM)
+      const speed = 8;
       const timer = setInterval(() => {
         if (cancelQueueRef.current) {
           clearInterval(timer);
-          updateFn(previousText + text); // Show full text immediately on cancel
+          updateFn(previousText + text);
           resolve();
           return;
         }
-        charIndex++;
+        // Reveal 2 chars per tick for long sentences to keep up with audio
+        const step = text.length > 80 ? 3 : 2;
+        charIndex = Math.min(charIndex + step, text.length);
         updateFn(previousText + text.slice(0, charIndex));
         if (charIndex >= text.length) {
           clearInterval(timer);
@@ -325,7 +333,8 @@ const MasterAIAgent: React.FC = () => {
     });
   };
 
-  /** Process the paired media queue: play audio + typewrite text simultaneously per sentence. */
+  /** Process the paired media queue: play audio + typewrite text simultaneously per sentence.
+   *  Audio drives the pace — typewriter catches up but never blocks next audio. */
   const processMediaQueue = async (aiMsgIndexFn: () => number) => {
     if (isPlayingQueueRef.current) return;
     isPlayingQueueRef.current = true;
@@ -336,9 +345,6 @@ const MasterAIAgent: React.FC = () => {
       if (cancelQueueRef.current) break;
 
       const item = mediaQueueRef.current.shift()!;
-      console.log(
-        `[PairedStream] Sentence: "${item.text.slice(0, 50)}..." audio=${item.audio ? "yes" : "no"}`,
-      );
 
       const updateUI = (textSoFar: string) => {
         setChatHistory((prev) => {
@@ -354,18 +360,21 @@ const MasterAIAgent: React.FC = () => {
       const prevText = displayedText;
 
       if (item.audio && interactionModeRef.current === "voice") {
-        // Paired execution: audio + typewriter run SIMULTANEOUSLY
-        await Promise.all([
-          playAudio(item.audio),
-          typeText(item.text, updateUI, prevText),
-        ]);
+        // Audio-driven: start both, but only wait for audio.
+        // Typewriter runs in background and finishes the remaining text
+        // when audio ends (so next sentence audio starts without gap).
+        const typePromise = typeText(item.text, updateUI, prevText);
+        await playAudio(item.audio);
+        // Flush remaining typewriter text instantly so display is complete
+        updateUI(prevText + item.text);
+        // Don't await typePromise — it will resolve on its own
       } else {
         // No audio or chat mode — just typewrite the text
         await typeText(item.text, updateUI, prevText);
       }
 
-      // Add a space between sentences for display
-      displayedText = prevText + item.text + " ";
+      // Add paragraph break between segments for display
+      displayedText = prevText + item.text + "\n\n";
     }
 
     isPlayingQueueRef.current = false;
@@ -376,6 +385,11 @@ const MasterAIAgent: React.FC = () => {
     cancelQueueRef.current = true;
     mediaQueueRef.current = [];
     isPlayingQueueRef.current = false;
+    // Abort any in-flight speak() TTS fetch
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     try {
       if (currentSourceRef.current) {
         currentSourceRef.current.stop();
@@ -418,7 +432,7 @@ const MasterAIAgent: React.FC = () => {
       const response = await fetch("/api/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: plainText, voice: "Serena", speed: 1.0 }),
+        body: JSON.stringify({ text: plainText, voice: "Vivian", speed: 1.0 }),
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`TTS ${response.status}`);
@@ -506,12 +520,9 @@ const MasterAIAgent: React.FC = () => {
     };
   }, []);
 
-  // Handle initial speech when opening
-  useEffect(() => {
-    if (isOpen && chatHistory.length === 1) {
-      speak(chatHistory[0].text);
-    }
-  }, [isOpen]);
+  // Note: Initial greeting is NOT spoken here — it will be spoken via
+  // paired streaming when user sends first message (avoids duplicate voice).
+  // The welcome text is pre-set in chatHistory as a text-only bubble.
 
   // --- Registration Inline Form Result Handler ---
   const handleFormResult = useCallback(

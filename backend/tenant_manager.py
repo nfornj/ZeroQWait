@@ -9,6 +9,11 @@ Architecture:
 Isolated tables per tenant schema:
   queues, queue_items, shop_services, shop_employees, employee_shifts,
   daily_analytics, shop_close_days, shop_customers
+
+Redis tenancy:
+  - Premium shops get namespaced Redis keys under `t:{shop_id}:*`
+  - Queue cache, analytics cache, services cache, shop config
+  - Keys are flushed on downgrade to free tier
 """
 
 import logging
@@ -20,6 +25,7 @@ from sqlalchemy import text, inspect
 from sqlalchemy.orm import Session
 
 from database import engine, SessionLocal
+from redis_client import redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +188,9 @@ def migrate_to_free(db: Session, shop_id: int) -> None:
 
     # Drop the entire schema
     drop_tenant_schema(db, shop_id)
+
+    # Flush all tenant-scoped Redis keys
+    redis_client.tenant_flush(shop_id)
 
     shop.tenant_schema = None
     db.commit()
