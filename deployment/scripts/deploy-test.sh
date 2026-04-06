@@ -12,8 +12,9 @@ cd "${PROJECT_ROOT}"
 
 LOCAL_UID="$(id -u)"
 LOCAL_GID="$(id -g)"
-BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-18000}"
-FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT:-13000}"
+BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-0}"
+FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT:-0}"
+FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
 # Use ephemeral host port for TTS during test deploy to avoid collisions.
 TTS_HOST_PORT="${TTS_HOST_PORT:-0}"
 
@@ -41,13 +42,23 @@ if [[ -d "${PROJECT_ROOT}/backend/.venv" ]]; then
 fi
 
 # Build and run test stack locally with non-conflicting host ports.
-sudo --preserve-env=LOCAL_UID,LOCAL_GID,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,TTS_HOST_PORT env \
+sudo --preserve-env=LOCAL_UID,LOCAL_GID,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,FRONTEND_URL,TTS_HOST_PORT env \
 	LOCAL_UID="${LOCAL_UID}" \
 	LOCAL_GID="${LOCAL_GID}" \
 	BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" \
 	FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" \
+	FRONTEND_URL="${FRONTEND_URL}" \
 	TTS_HOST_PORT="${TTS_HOST_PORT}" \
 	docker compose -f "${COMPOSE_FILE}" up -d --build
+
+FRONTEND_PUBLISHED_PORT="$(sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" port frontend 80 2>/dev/null | awk -F: 'NF {print $NF}' | tail -n1)"
+BACKEND_PUBLISHED_PORT="$(sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" port backend 8000 2>/dev/null | awk -F: 'NF {print $NF}' | tail -n1)"
+
+if [[ -z "${FRONTEND_PUBLISHED_PORT}" || -z "${BACKEND_PUBLISHED_PORT}" ]]; then
+	echo "!! Failed to resolve published ports from docker compose"
+	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" ps || true
+	exit 1
+fi
 
 echo "==> Waiting for services to become ready"
 
@@ -68,7 +79,7 @@ wait_for_http() {
 }
 
 echo "==> Smoke checks"
-if ! wait_for_http "frontend" "http://localhost:${FRONTEND_HOST_PORT}" 120; then
+if ! wait_for_http "frontend" "http://localhost:${FRONTEND_PUBLISHED_PORT}" 120; then
 	echo "==> docker compose ps"
 	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" ps || true
 	echo "==> frontend logs (tail)"
@@ -76,7 +87,7 @@ if ! wait_for_http "frontend" "http://localhost:${FRONTEND_HOST_PORT}" 120; then
 	exit 1
 fi
 
-if ! wait_for_http "backend" "http://localhost:${BACKEND_HOST_PORT}" 180; then
+if ! wait_for_http "backend" "http://localhost:${BACKEND_PUBLISHED_PORT}" 180; then
 	echo "==> docker compose ps"
 	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" ps || true
 	echo "==> backend logs (tail)"
@@ -85,8 +96,8 @@ if ! wait_for_http "backend" "http://localhost:${BACKEND_HOST_PORT}" 180; then
 fi
 
 echo "==> Test deployment successful"
-echo "    Frontend: http://localhost:${FRONTEND_HOST_PORT}"
-echo "    Backend : http://localhost:${BACKEND_HOST_PORT}"
+echo "    Frontend: http://localhost:${FRONTEND_PUBLISHED_PORT}"
+echo "    Backend : http://localhost:${BACKEND_PUBLISHED_PORT}"
 
 # Some container steps can leave root-owned files in the checkout workspace
 # (for example backend/.venv). Restore ownership so actions/checkout can clean
