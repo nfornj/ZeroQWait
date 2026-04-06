@@ -14,7 +14,8 @@ LOCAL_UID="$(id -u)"
 LOCAL_GID="$(id -g)"
 BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-18000}"
 FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT:-13000}"
-TTS_HOST_PORT="${TTS_HOST_PORT:-18880}"
+# Use ephemeral host port for TTS during test deploy to avoid collisions.
+TTS_HOST_PORT="${TTS_HOST_PORT:-0}"
 
 # Actions checkout on self-hosted runners may not include backend/.env
 # because it is typically gitignored. Create a local CI-safe file when absent.
