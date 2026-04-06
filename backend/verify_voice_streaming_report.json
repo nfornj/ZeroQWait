@@ -1,0 +1,93 @@
+{
+  "base_url": "https://192.168.2.88.nip.io",
+  "health": {
+    "ok": false,
+    "checks": [
+      {
+        "name": "agent_health",
+        "url": "https://192.168.2.88.nip.io/api/agent/health",
+        "ok": false,
+        "status": null,
+        "body": "error: All connection attempts failed"
+      },
+      {
+        "name": "tts_health",
+        "url": "https://192.168.2.88.nip.io/api/voice/tts/health",
+        "ok": false,
+        "status": null,
+        "body": "error: All connection attempts failed"
+      }
+    ]
+  },
+  "tts_repeat": {
+    "ok": false,
+    "repeats": 3,
+    "statuses": [],
+    "latencies_ms": [],
+    "latency_avg_ms": null,
+    "latency_p95_ms": null,
+    "audio_lengths": [],
+    "unique_hash_count": 0,
+    "hashes": [],
+    "errors": [
+      "All connection attempts failed",
+      "All connection attempts failed",
+      "All connection attempts failed"
+    ]
+  },
+  "stream_suite": {
+    "ok": false,
+    "runs": [
+      {
+        "prompt": "Hi",
+        "ok": false,
+        "status_code": 0,
+        "first_sentence_ms": null,
+        "total_ms": 3071.9953139923746,
+        "sentence_count": 0,
+        "audio_sentence_count": 0,
+        "missing_audio_count": 0,
+        "audio_formats": [],
+        "errors": [
+          "All connection attempts failed"
+        ]
+      },
+      {
+        "prompt": "Find me a barber near me",
+        "ok": false,
+        "status_code": 0,
+        "first_sentence_ms": null,
+        "total_ms": 3327.9287169862073,
+        "sentence_count": 0,
+        "audio_sentence_count": 0,
+        "missing_audio_count": 0,
+        "audio_formats": [],
+        "errors": [
+          "All connection attempts failed"
+        ]
+      },
+      {
+        "prompt": "What are your pricing plans?",
+        "ok": false,
+        "status_code": 0,
+        "first_sentence_ms": null,
+        "total_ms": 3071.9616930000484,
+        "sentence_count": 0,
+        "audio_sentence_count": 0,
+        "missing_audio_count": 0,
+        "audio_formats": [],
+        "errors": [
+          "All connection attempts failed"
+        ]
+      }
+    ],
+    "summary": {
+      "first_sentence_avg_ms": null,
+      "first_sentence_p95_ms": null,
+      "total_avg_ms": 3157.29524132621,
+      "total_p95_ms": 3327.9287169862073,
+      "missing_audio_total": 0
+    }
+  },
+  "generated_at_epoch": 1775449688
+}

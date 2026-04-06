@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: voice-mcp
-          image: localhost:5000/voice-mcp:latest
+          image: localhost:5000/voice-mcp:v20260406120811-18332e3
           imagePullPolicy: Always
           ports:
             - containerPort: 8881

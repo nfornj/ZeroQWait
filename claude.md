@@ -1,6 +1,6 @@
 # ZeroQwait — Project Rules & Context
 
-> **Last updated**: 2026-04-05
+> **Last updated**: 2026-04-06
 > **Live URL**: https://zeroqwait.com (self-hosted, also http://192.168.2.88.nip.io)
 
 ---
@@ -509,6 +509,19 @@ ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend 
 8. **Static uploads persistence**: Backend `/app/static/uploads` uses `emptyDir` — should use PVC to survive pod restarts.
 - **Files changed**: `MasterAIAgent.tsx` (initial chatHistory), `agent_logic.py` (greeting prefilter, conversation fallback, conversation agent system prompt)
 
+### Fix 8: Voice Consistency + Streaming Latency (2026-04-06)
+
+- **Issue**: Users heard inconsistent voices across responses and noticed slow voice response progression.
+- **Root Causes**:
+  1. Multiple voice synthesis paths existed in frontend (`speechSynthesis` in `useVoiceInterface` vs backend Qwen TTS in master agent flow), creating inconsistent voice output across app surfaces.
+  2. Conversation streaming synthesized every sentence independently, increasing per-turn TTS round trips and making timbre/prosody vary between short segments.
+- **Fixes**:
+  1. Unified frontend TTS path by routing `useVoiceInterface` speech output through backend `/api/voice/tts` (Qwen3-TTS, voice `Vivian`) instead of browser `speechSynthesis`.
+  2. Added lightweight backend TTS response cache (in-memory, SHA-256 keyed) in `agent_logic.py` to reuse repeated sentence audio.
+  3. Updated conversation paired-streaming to emit the first sentence quickly, then coalesce subsequent sentences into larger voice chunks before TTS to reduce request count and stabilize perceived voice consistency.
+  4. Added fast regex search intent prefilter (obvious `find/search/near me` queries) to reduce unnecessary analyzer LLM calls and improve response start time.
+- **Files changed**: `backend/agent_logic.py`, `frontend/src/hooks/useVoiceInterface.tsx`
+
 ---
 
 ## 11. Known Issues & Next Steps
@@ -613,3 +626,65 @@ curl -sk -X POST https://192.168.2.88.nip.io/api/agent/master/chat \
 - **API calls**: axios with interceptors (frontend), httpx (backend-to-service)
 - **Naming**: snake_case (Python), camelCase (TypeScript), kebab-case (file names in frontend components)
 - **Dependency management**: `uv` (Python, via pyproject.toml + uv.lock), `npm` (frontend)
+
+---
+
+## 16. DevOps Pipeline (Local-Only Registry + Argo CD)
+
+### Goal
+
+Use a **local Docker registry only** (no cloud image registry), persist image blobs on SSD, and keep a complete, visual GitOps deployment history.
+
+### Standard Stack
+
+- **Registry**: local Docker Registry v2 on `localhost:5000`
+- **Registry storage path**: `/media/neekrishrichu/One Touch/projects/zeroqwait` (SSD)
+- **Registry UI**: `http://localhost:5080` (joxit/docker-registry-ui, visual tag browser + delete)
+- **GitOps**: Argo CD v3.3.6 in `argocd` namespace
+- **Argo CD UI**: `https://localhost:8443` (port-forward: `sudo kubectl port-forward svc/argocd-server -n argocd 8443:443`)
+- **Argo CD login**: user `admin`, initial password in `argocd-initial-admin-secret` K8s secret
+- **Manifest source**: `k8s-manifests` (Kustomize root)
+- **Version policy**: keep only **last 10 tags** per service in registry
+
+### Pipeline Scripts (authoritative)
+
+- `deployment/scripts/setup-local-registry.sh`
+  - Starts/recreates registry container with delete API enabled
+  - Uses `deployment/registry/config.yml`
+  - Mounts SSD path for image storage
+- `deployment/scripts/setup-argocd-gitops.sh`
+  - Installs Argo CD and creates `zeroqwait` Application
+- `deployment/scripts/run-local-pipeline.sh`
+  - Runs backend + frontend tests for each run
+  - Builds/pushes versioned images (`vYYYYMMDDHHMMSS-<sha>`)
+  - Updates image tags in K8s deployment manifests
+  - Optionally commits manifest updates
+  - Optionally triggers Argo sync
+- `deployment/scripts/prune-registry-tags.sh`
+  - Enforces retention: keeps only latest 10 tags per repo
+
+### Services under versioned image pipeline
+
+- `backend`
+- `frontend`
+- `asr-service`
+- `tts-service`
+- `voice-mcp`
+
+### Visual operations
+
+- **Argo CD UI** is the source of truth for visual deployment tracking:
+  - Sync status, health, drift detection, revision history, rollback points
+- Local CI runner can be used with `.github/workflows/local-devops-pipeline.yml`
+
+### Safety constraints
+
+- Do not replace protected AI/TTS models while introducing pipeline changes.
+- Keep TTS voice `Vivian`, service port `8880`, and Qwen3-TTS engine unchanged.
+- Do not switch registry to cloud unless explicitly approved.
+
+### Branch-Based Deployment Policy
+
+- `prod` branch push → **Production deploy** to `https://zeroqwait.com` via `.github/workflows/deploy-prod.yml`
+- Any other branch push → **Test deploy** to `http://localhost:3000` via `.github/workflows/deploy-test.yml`
+- Legacy auto-deploy workflows are manual-only (`workflow_dispatch`) to avoid conflicts.

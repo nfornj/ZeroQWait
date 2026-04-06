@@ -1,6 +1,7 @@
 import os
 import redis
 import json
+import time
 from typing import Optional, Any, List
 import logging
 
@@ -43,9 +44,17 @@ class RedisClient:
             self.enabled = True
             safe_url = self.redis_url.split("@")[-1] if "@" in self.redis_url else self.redis_url
             logger.info(f"Connected to Redis at {safe_url}. Caching ENABLED.")
+            # Binary client for audio bytes (TTS cache)
+            self._bin_client = redis.from_url(
+                self.redis_url,
+                decode_responses=False,
+                socket_timeout=5,
+                socket_connect_timeout=5,
+            )
         except Exception as e:
             logger.warning(f"Failed to connect to Redis: {e}. Caching DISABLED.")
             self.client = None
+            self._bin_client = None
             self.enabled = False
 
     def get(self, key: str) -> Optional[Any]:
@@ -248,6 +257,115 @@ class RedisClient:
             "key_count": len(keys),
             "keys": keys,
         }
+
+    # ── TTS audio cache ─────────────────────────────────────────────
+    # Keys: tts:audio:<sha256>
+    # Value: raw WAV bytes (binary-safe via _bin_client)
+    # TTL: configurable, default 24 h (86400 s)
+    # Metrics keys: tts:metrics:hits / tts:metrics:misses / tts:metrics:errors
+    #               tts:metrics:latency_total_ms / tts:metrics:latency_count
+    # All metric keys persist indefinitely; counters grow monotonically for
+    # scraping via the /api/voice/tts/metrics endpoint.
+
+    _TTS_CACHE_PREFIX = "tts:audio:"
+    _TTS_DEFAULT_TTL_SECONDS = 86_400  # 24 hours
+
+    def get_tts_cache(self, cache_key: str) -> Optional[bytes]:
+        """Return cached WAV bytes for *cache_key*, or None on miss / error."""
+        if not self.enabled or self._bin_client is None:
+            return None
+        try:
+            data = self._bin_client.get(f"{self._TTS_CACHE_PREFIX}{cache_key}")
+            return data  # bytes or None
+        except Exception as exc:
+            logger.debug("TTS cache GET error: %s", exc)
+            return None
+
+    def set_tts_cache(
+        self, cache_key: str, audio_bytes: bytes, ttl: int = _TTS_DEFAULT_TTL_SECONDS
+    ) -> bool:
+        """Store *audio_bytes* under *cache_key* with *ttl* seconds expiry."""
+        if not self.enabled or self._bin_client is None:
+            return False
+        try:
+            self._bin_client.setex(
+                f"{self._TTS_CACHE_PREFIX}{cache_key}", ttl, audio_bytes
+            )
+            return True
+        except Exception as exc:
+            logger.debug("TTS cache SET error: %s", exc)
+            return False
+
+    def record_tts_hit(self, latency_ms: float) -> None:
+        """Increment TTS cache-hit counter and accumulate latency."""
+        if not self.enabled:
+            return
+        try:
+            p = self.client.pipeline()
+            p.incr("tts:metrics:hits")
+            p.incrbyfloat("tts:metrics:latency_saved_ms", latency_ms)
+            p.execute()
+        except Exception:
+            pass
+
+    def record_tts_miss(self, latency_ms: float) -> None:
+        """Increment TTS cache-miss counter and accumulate synthesis latency."""
+        if not self.enabled:
+            return
+        try:
+            p = self.client.pipeline()
+            p.incr("tts:metrics:misses")
+            p.incrbyfloat("tts:metrics:latency_total_ms", latency_ms)
+            p.incr("tts:metrics:latency_count")
+            p.execute()
+        except Exception:
+            pass
+
+    def record_tts_error(self) -> None:
+        """Increment TTS error counter."""
+        if not self.enabled:
+            return
+        try:
+            self.client.incr("tts:metrics:errors")
+        except Exception:
+            pass
+
+    def get_tts_metrics(self) -> dict:
+        """Return a snapshot of TTS cache performance counters."""
+        if not self.enabled:
+            return {"enabled": False}
+        try:
+            keys = [
+                "tts:metrics:hits",
+                "tts:metrics:misses",
+                "tts:metrics:errors",
+                "tts:metrics:latency_total_ms",
+                "tts:metrics:latency_count",
+                "tts:metrics:latency_saved_ms",
+            ]
+            vals = self.client.mget(keys)
+            hits = int(vals[0] or 0)
+            misses = int(vals[1] or 0)
+            errors = int(vals[2] or 0)
+            lat_total = float(vals[3] or 0)
+            lat_count = int(vals[4] or 0)
+            lat_saved = float(vals[5] or 0)
+            total = hits + misses
+            hit_rate = round(hits / total, 4) if total else 0.0
+            avg_synth_ms = round(lat_total / lat_count, 1) if lat_count else None
+            return {
+                "enabled": True,
+                "hits": hits,
+                "misses": misses,
+                "errors": errors,
+                "total": total,
+                "hit_rate": hit_rate,
+                "avg_synthesis_ms": avg_synth_ms,
+                "total_latency_saved_ms": round(lat_saved, 1),
+            }
+        except Exception as exc:
+            logger.debug("TTS metrics read error: %s", exc)
+            return {"enabled": True, "error": str(exc)}
 
 
 # Global instance

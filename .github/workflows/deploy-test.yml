@@ -1,0 +1,19 @@
+name: Deploy Test Environment
+
+on:
+  push:
+    branches-ignore:
+      - prod
+  workflow_dispatch:
+
+jobs:
+  deploy-test:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to test (localhost:3000)
+        run: |
+          chmod +x deployment/scripts/deploy-test.sh
+          deployment/scripts/deploy-test.sh

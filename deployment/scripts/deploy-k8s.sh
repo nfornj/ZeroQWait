@@ -10,6 +10,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 K8S_MANIFESTS="$PROJECT_ROOT/k8s-manifests"
 APPS_DIR="/home/neekrishrichu/apps"
 REGISTRY="localhost:5000"
+REGISTRY_DATA_PATH="${REGISTRY_DATA_PATH:-/mnt/ssd/zeroqwait-registry}"
+REGISTRY_CONFIG_PATH="${PROJECT_ROOT}/deployment/registry/config.yml"
 
 # K3s kubeconfig — readable by current user after bootstrap (--write-kubeconfig-mode=644)
 export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
@@ -46,10 +48,12 @@ fi
 
 if ! docker ps --format '{{.Names}}' | grep -q "^local-registry$"; then
     echo -e "${YELLOW}⚠  Local registry not running — starting it...${NC}"
+    mkdir -p "$REGISTRY_DATA_PATH"
     docker start local-registry 2>/dev/null || \
     docker run -d --name local-registry --restart=always \
         -p 5000:5000 \
-        -v "$APPS_DIR/docker-registry:/var/lib/registry" \
+        -v "$REGISTRY_DATA_PATH:/var/lib/registry" \
+        -v "$REGISTRY_CONFIG_PATH:/etc/docker/registry/config.yml:ro" \
         registry:2
 fi
 

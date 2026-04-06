@@ -24,8 +24,10 @@ PORT               Listen port        (default: 8881)
 
 import asyncio
 import base64
+import hashlib
 import logging
 import os
+import time
 
 import httpx
 import uvicorn
@@ -48,6 +50,37 @@ ASR_UPSTREAM = os.getenv(
     "http://asr-service.zeroqwait.svc.cluster.local:8000",
 )
 DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "Vivian")
+TTS_CACHE_TTL = int(os.getenv("TTS_CACHE_TTL_SECONDS", "86400"))
+
+# ---------------------------------------------------------------------------
+# Optional Redis TTS cache (shared with ZeroQwait backend pods)
+# ---------------------------------------------------------------------------
+_redis: "redis.Redis | None" = None  # type: ignore[name-defined]
+_REDIS_TTS_PREFIX = "tts:audio:"
+
+def _get_redis() -> "redis.Redis | None":  # type: ignore[name-defined]
+    global _redis
+    if _redis is not None:
+        return _redis
+    try:
+        import redis
+        redis_url = os.getenv("REDIS_URL") or (
+            f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}/0"
+        )
+        _redis = redis.from_url(redis_url, decode_responses=False, socket_timeout=2)  # type: ignore[assignment]
+        _redis.ping()  # type: ignore[union-attr]
+        logger.info("voice-mcp: Redis TTS cache enabled (%s)", redis_url.split("@")[-1])
+    except Exception as exc:
+        logger.warning("voice-mcp: Redis unavailable, TTS cache disabled (%s)", exc)
+        _redis = None
+    return _redis
+
+
+def _tts_cache_key(text: str, voice: str, speed: float, language: str) -> str:
+    return hashlib.sha256(
+        f"{text.strip()}|{voice}|{speed}|{language}".encode("utf-8")
+    ).hexdigest()
+
 
 # Shared async HTTP client — persistent connection pool across all requests
 _http: httpx.AsyncClient | None = None
@@ -73,10 +106,33 @@ async def _do_tts(
     speed: float = 1.0,
     language: str = "English",
 ) -> bytes:
-    """Forward TTS request to Qwen3-TTS upstream, return raw WAV bytes."""
+    """Forward TTS request to Qwen3-TTS upstream, return raw WAV bytes.
+
+    Checks Redis TTS cache before synthesizing. On a cache miss the result is
+    stored for TTS_CACHE_TTL seconds so subsequent identical requests are served
+    from cache without touching the GPU.
+    """
+    text = text.strip()
+    cache_key = _tts_cache_key(text, voice, speed, language)
+
+    # Redis L2 cache lookup
+    r = _get_redis()
+    if r is not None:
+        try:
+            cached = r.get(f"{_REDIS_TTS_PREFIX}{cache_key}")
+            if cached:
+                logger.debug("voice-mcp: TTS Redis cache HIT (%d bytes)", len(cached))
+                try:
+                    r.incr("tts:metrics:hits")
+                except Exception:
+                    pass
+                return cached
+        except Exception as exc:
+            logger.debug("voice-mcp: Redis TTS get error: %s", exc)
+
     payload = {
         "model": "tts-1-en",
-        "input": text.strip(),
+        "input": text,
         "voice": voice,
         "speed": speed,
         "language": language,
@@ -86,13 +142,28 @@ async def _do_tts(
         ),
         "response_format": "wav",
     }
+    t0 = time.perf_counter()
     resp = await _client().post(
         f"{TTS_UPSTREAM}/v1/audio/speech",
         json=payload,
         headers={"Content-Type": "application/json"},
     )
     resp.raise_for_status()
-    return resp.content
+    audio_bytes = resp.content
+    synth_ms = (time.perf_counter() - t0) * 1000.0
+
+    # Write to Redis
+    if r is not None:
+        try:
+            r.setex(f"{_REDIS_TTS_PREFIX}{cache_key}", TTS_CACHE_TTL, audio_bytes)
+            r.incr("tts:metrics:misses")
+            r.incrbyfloat("tts:metrics:latency_total_ms", synth_ms)
+            r.incr("tts:metrics:latency_count")
+        except Exception as exc:
+            logger.debug("voice-mcp: Redis TTS set error: %s", exc)
+
+    logger.debug("voice-mcp: TTS synthesized in %.0f ms", synth_ms)
+    return audio_bytes
 
 
 async def _do_asr(
@@ -210,9 +281,9 @@ async def health():
 try:
     from mcp.server.fastmcp import FastMCP
 
-    mcp = FastMCP(
+    mcp = FastMCP(  # type: ignore[call-arg]
         name="zeroqwait-voice",
-        description=(
+        description=(  # type: ignore[call-arg]
             "ZeroQwait Voice tools — TTS (Qwen3-TTS/Vivian) and ASR (Whisper). "
             "Accessible by any MCP-compatible client."
         ),

@@ -13,6 +13,8 @@ import threading
 import json
 import re
 import urllib.request
+import hashlib
+from typing import Dict
 
 import torch
 import soundfile as sf
@@ -34,6 +36,8 @@ _model = None
 _gen_lock = asyncio.Lock()
 _model_load_error = None
 _model_loading = False
+_tts_response_cache: Dict[str, bytes] = {}
+_TTS_CACHE_MAX_ITEMS = 512
 
 
 def _ensure_missing_preprocessor_config(error_text: str) -> bool:
@@ -258,6 +262,20 @@ async def create_speech(req: SpeechRequest):
     # Map request language to what the model accepts
     lang = req.language if req.language else "English"
 
+    cache_key = hashlib.sha256(
+        f"{text}|{speaker}|{lang}|{req.model}|{req.speed}".encode("utf-8")
+    ).hexdigest()
+    cached_audio = _tts_response_cache.get(cache_key)
+    if cached_audio is not None:
+        return Response(
+            content=cached_audio,
+            media_type="audio/wav",
+            headers={
+                "Content-Disposition": "attachment; filename=speech.wav",
+                "X-TTS-Cache": "HIT",
+            },
+        )
+
     def _run_inference() -> bytes:
         """Run generate + encode entirely off the event loop to avoid CPU-spike blocking."""
         wavs, sr = _model.generate_custom_voice(
@@ -272,6 +290,10 @@ async def create_speech(req: SpeechRequest):
     async with _gen_lock:
         try:
             audio_bytes = await asyncio.to_thread(_run_inference)
+            _tts_response_cache[cache_key] = audio_bytes
+            if len(_tts_response_cache) > _TTS_CACHE_MAX_ITEMS:
+                oldest_key = next(iter(_tts_response_cache))
+                _tts_response_cache.pop(oldest_key, None)
         except Exception as e:
             logger.error(f"TTS generation failed: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
@@ -279,5 +301,8 @@ async def create_speech(req: SpeechRequest):
     return Response(
         content=audio_bytes,
         media_type="audio/wav",
-        headers={"Content-Disposition": "attachment; filename=speech.wav"},
+        headers={
+            "Content-Disposition": "attachment; filename=speech.wav",
+            "X-TTS-Cache": "MISS",
+        },
     )

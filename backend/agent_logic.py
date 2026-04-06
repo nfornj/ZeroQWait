@@ -48,6 +48,8 @@ _TTS_TIMEOUT_SECONDS = 60.0
 
 # Shared httpx client for TTS (connection pooling)
 _tts_client: Optional[httpx.AsyncClient] = None
+_tts_cache: Dict[str, Tuple[str, str]] = {}
+_TTS_CACHE_MAX_ITEMS = 256
 
 def _get_tts_client() -> httpx.AsyncClient:
     global _tts_client
@@ -267,10 +269,21 @@ RULES:
         r'list\s*my\s*business|set\s*up\s*(my\s*)?(shop|business|store))\b',
         re.IGNORECASE
     )
+    _SEARCH_TRIGGER_RE = re.compile(
+        r'\b(find|search|look(?:ing)?\s*for|show\s*me|near\s*me|nearby)\b',
+        re.IGNORECASE
+    )
+    _SERVICE_KEYWORD_RE = re.compile(
+        r'\b(barber|barbers|barbershop|salon|spa|clinic|hospital|dentist|dental|'
+        r'auto\s*shop|mechanic|car\s*wash|gym|fitness|restaurant|cafe|pharmacy)\b',
+        re.IGNORECASE
+    )
+    _CITY_IN_RE = re.compile(r'\bin\s+([A-Za-z][A-Za-z\s\-]{1,40})\b')
 
     def _fast_intent_check(self, user_msg: str) -> Optional[IntentAnalysis]:
         """Regex-based fast path for obvious intents. Returns None if unsure (falls through to LLM)."""
         msg = user_msg.strip()
+        lower_msg = msg.lower()
         defaults = dict(search_terms="", city=None, near_me=False, specificity="SPECIFIC",
                         platform_target=None, registration_type=None,
                         context_updates=ContextUpdates(last_category=None, last_city=None))
@@ -303,6 +316,43 @@ RULES:
                                  search_terms="", city=None, near_me=False, specificity="SPECIFIC",
                                  platform_target=None,
                                  context_updates=ContextUpdates(last_category=None, last_city=None))
+
+        # Search fast path — skip LLM for obvious "find/search/near me" requests.
+        if self._SEARCH_TRIGGER_RE.search(msg):
+            near_me = "near me" in lower_msg or "nearby" in lower_msg
+            service_match = self._SERVICE_KEYWORD_RE.search(msg)
+            city_match = self._CITY_IN_RE.search(msg)
+            city = city_match.group(1).strip() if city_match else None
+            if service_match:
+                search_terms = service_match.group(1).strip().lower()
+                # Normalize common plurals/variants for cleaner search.
+                if search_terms == "barbers":
+                    search_terms = "barber"
+                elif search_terms == "barbershop":
+                    search_terms = "barber"
+                elif search_terms == "dental":
+                    search_terms = "dentist"
+                return IntentAnalysis(
+                    intent='SEARCH',
+                    search_terms=search_terms,
+                    city=city,
+                    near_me=near_me,
+                    specificity="SPECIFIC",
+                    platform_target=None,
+                    registration_type=None,
+                    context_updates=ContextUpdates(last_category=search_terms, last_city=city)
+                )
+
+            return IntentAnalysis(
+                intent='SEARCH',
+                search_terms="",
+                city=city,
+                near_me=near_me,
+                specificity="VAGUE",
+                platform_target=None,
+                registration_type=None,
+                context_updates=ContextUpdates(last_category=None, last_city=city)
+            )
 
         return None  # Not obvious — fall through to LLM
 
@@ -1306,6 +1356,12 @@ class MasterAgent:
         clean_text = MasterAgent._strip_for_tts(text)
         if not clean_text or len(clean_text) < 2:
             return None, None
+
+        # Fast in-memory cache to avoid regenerating common repeated prompts.
+        cache_key = hashlib.sha256(clean_text.encode('utf-8')).hexdigest()
+        cached = _tts_cache.get(cache_key)
+        if cached:
+            return cached
         
         try:
             client = _get_tts_client()
@@ -1329,7 +1385,13 @@ class MasterAgent:
                     audio_format = "wav"
                 elif (len(audio_bytes) >= 3 and audio_bytes[:3] == b"ID3") or (len(audio_bytes) >= 2 and audio_bytes[:2] == b"\xff\xfb"):
                     audio_format = "mp3"
-                return base64.b64encode(audio_bytes).decode('ascii'), audio_format
+                audio_b64 = base64.b64encode(audio_bytes).decode('ascii')
+                _tts_cache[cache_key] = (audio_b64, audio_format)
+                if len(_tts_cache) > _TTS_CACHE_MAX_ITEMS:
+                    # Drop oldest inserted key (dict is insertion-ordered in Python 3.9+).
+                    oldest_key = next(iter(_tts_cache))
+                    _tts_cache.pop(oldest_key, None)
+                return audio_b64, audio_format
             else:
                 logger.warning(f"TTS failed ({response.status_code}): {response.text[:100]}")
                 return None, None
@@ -1635,6 +1697,8 @@ class MasterAgent:
             try:
                 self.metrics["llm_calls"] += 1
                 sentence_buffer = ""
+                voice_chunk_buffer = ""
+                voice_chunks_emitted = 0
                 # Voice mode: pipeline TTS concurrently with LLM streaming
                 pending_voice: List[Tuple[str, asyncio.Task]] = []
                 voice_yield_index = 0
@@ -1658,10 +1722,34 @@ class MasterAgent:
                             
                             if complete_sentence and len(complete_sentence) > 2:
                                 if is_voice:
-                                    tts_task = asyncio.create_task(
-                                        self._generate_tts_audio(complete_sentence)
-                                    )
-                                    pending_voice.append((complete_sentence, tts_task))
+                                    # First chunk streams quickly, then aggregate to reduce
+                                    # per-sentence voice drift and TTS round trips.
+                                    if voice_chunks_emitted == 0:
+                                        chunk = complete_sentence
+                                        tts_task = asyncio.create_task(
+                                            self._generate_tts_audio(chunk)
+                                        )
+                                        pending_voice.append((chunk, tts_task))
+                                        voice_chunks_emitted += 1
+                                    else:
+                                        voice_chunk_buffer = (
+                                            f"{voice_chunk_buffer} {complete_sentence}".strip()
+                                            if voice_chunk_buffer else complete_sentence
+                                        )
+                                        should_flush = (
+                                            len(voice_chunk_buffer) >= 140
+                                            or voice_chunk_buffer.count('.') >= 2
+                                            or voice_chunk_buffer.count('?') >= 1
+                                            or voice_chunk_buffer.count('!') >= 1
+                                        )
+                                        if should_flush:
+                                            chunk = voice_chunk_buffer
+                                            voice_chunk_buffer = ""
+                                            tts_task = asyncio.create_task(
+                                                self._generate_tts_audio(chunk)
+                                            )
+                                            pending_voice.append((chunk, tts_task))
+                                            voice_chunks_emitted += 1
                                 else:
                                     # Chat mode: yield text immediately, no TTS
                                     yield f"data: {json.dumps({'type': 'sentence', 'text': complete_sentence, 'audio': None, 'audio_format': None})}\n\n"
@@ -1685,12 +1773,19 @@ class MasterAgent:
                 remaining = sentence_buffer.strip()
                 if remaining and len(remaining) > 2:
                     if is_voice:
-                        tts_task = asyncio.create_task(
-                            self._generate_tts_audio(remaining)
+                        voice_chunk_buffer = (
+                            f"{voice_chunk_buffer} {remaining}".strip()
+                            if voice_chunk_buffer else remaining
                         )
-                        pending_voice.append((remaining, tts_task))
                     else:
                         yield f"data: {json.dumps({'type': 'sentence', 'text': remaining, 'audio': None, 'audio_format': None})}\n\n"
+
+                # Flush any buffered voice chunk after stream ends.
+                if is_voice and voice_chunk_buffer:
+                    tts_task = asyncio.create_task(
+                        self._generate_tts_audio(voice_chunk_buffer)
+                    )
+                    pending_voice.append((voice_chunk_buffer, tts_task))
                 
                 # Voice mode: yield any remaining sentences (await their TTS)
                 if is_voice:
