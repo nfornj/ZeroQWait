@@ -50,11 +50,39 @@ sudo --preserve-env=LOCAL_UID,LOCAL_GID,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,TTS
 	docker compose -f "${COMPOSE_FILE}" up -d --build
 
 echo "==> Waiting for services to become ready"
-sleep 8
+
+wait_for_http() {
+	local name="$1"
+	local url="$2"
+	local timeout_seconds="${3:-120}"
+	local elapsed=0
+
+	until curl -fsS "$url" >/dev/null; do
+		sleep 2
+		elapsed=$((elapsed + 2))
+		if (( elapsed >= timeout_seconds )); then
+			echo "!! ${name} did not become ready within ${timeout_seconds}s: ${url}"
+			return 1
+		fi
+	done
+}
 
 echo "==> Smoke checks"
-curl -fsS "http://localhost:${FRONTEND_HOST_PORT}" >/dev/null
-curl -fsS "http://localhost:${BACKEND_HOST_PORT}" >/dev/null
+if ! wait_for_http "frontend" "http://localhost:${FRONTEND_HOST_PORT}" 120; then
+	echo "==> docker compose ps"
+	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" ps || true
+	echo "==> frontend logs (tail)"
+	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" logs --tail=120 frontend || true
+	exit 1
+fi
+
+if ! wait_for_http "backend" "http://localhost:${BACKEND_HOST_PORT}" 180; then
+	echo "==> docker compose ps"
+	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" ps || true
+	echo "==> backend logs (tail)"
+	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" logs --tail=200 backend || true
+	exit 1
+fi
 
 echo "==> Test deployment successful"
 echo "    Frontend: http://localhost:${FRONTEND_HOST_PORT}"
