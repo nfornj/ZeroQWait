@@ -39,6 +39,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - UV_CACHE_DIR=/tmp/uv-cache
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
