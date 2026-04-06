@@ -10,6 +10,9 @@ echo "==> Project root: ${PROJECT_ROOT}"
 
 cd "${PROJECT_ROOT}"
 
+LOCAL_UID="$(id -u)"
+LOCAL_GID="$(id -g)"
+
 # Actions checkout on self-hosted runners may not include backend/.env
 # because it is typically gitignored. Create a local CI-safe file when absent.
 if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
@@ -27,8 +30,17 @@ FRONTEND_URL=http://localhost:3000
 EOF
 fi
 
+# Remove stale runner workspace virtualenv if previous runs left root-owned files.
+if [[ -d "${PROJECT_ROOT}/backend/.venv" ]]; then
+	echo "==> Removing stale backend/.venv before compose run"
+	sudo rm -rf "${PROJECT_ROOT}/backend/.venv" || true
+fi
+
 # Build and run test stack locally. Frontend is exposed at localhost:3000.
-sudo docker compose -f "${COMPOSE_FILE}" up -d --build
+sudo --preserve-env=LOCAL_UID,LOCAL_GID env \
+	LOCAL_UID="${LOCAL_UID}" \
+	LOCAL_GID="${LOCAL_GID}" \
+	docker compose -f "${COMPOSE_FILE}" up -d --build
 
 echo "==> Waiting for services to become ready"
 sleep 8
