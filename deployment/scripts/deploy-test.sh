@@ -40,3 +40,9 @@ curl -fsS "http://localhost:8000" >/dev/null
 echo "==> Test deployment successful"
 echo "    Frontend: http://localhost:3000"
 echo "    Backend : http://localhost:8000"
+
+# Some container steps can leave root-owned files in the checkout workspace
+# (for example backend/.venv). Restore ownership so actions/checkout can clean
+# the repo on the next run.
+echo "==> Restoring workspace ownership for runner user"
+sudo chown -R "$(id -u):$(id -g)" "${PROJECT_ROOT}"
