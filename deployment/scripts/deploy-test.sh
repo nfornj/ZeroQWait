@@ -51,8 +51,28 @@ sudo --preserve-env=LOCAL_UID,LOCAL_GID,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,FRO
 	TTS_HOST_PORT="${TTS_HOST_PORT}" \
 	docker compose -f "${COMPOSE_FILE}" up -d --build
 
-FRONTEND_PUBLISHED_PORT="$(sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" port frontend 80 2>/dev/null | awk -F: 'NF {print $NF}' | tail -n1)"
-BACKEND_PUBLISHED_PORT="$(sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" port backend 8000 2>/dev/null | awk -F: 'NF {print $NF}' | tail -n1)"
+resolve_published_port() {
+	local service="$1"
+	local target_port="$2"
+	local timeout_seconds="${3:-60}"
+	local elapsed=0
+	local resolved=""
+
+	while (( elapsed < timeout_seconds )); do
+		resolved="$(sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose -f "${COMPOSE_FILE}" port "${service}" "${target_port}" 2>/dev/null | awk -F: 'NF {print $NF}' | tail -n1 || true)"
+		if [[ -n "${resolved}" ]]; then
+			echo "${resolved}"
+			return 0
+		fi
+		sleep 2
+		elapsed=$((elapsed + 2))
+	done
+
+	return 1
+}
+
+FRONTEND_PUBLISHED_PORT="$(resolve_published_port frontend 80 60 || true)"
+BACKEND_PUBLISHED_PORT="$(resolve_published_port backend 8000 60 || true)"
 
 if [[ -z "${FRONTEND_PUBLISHED_PORT}" || -z "${BACKEND_PUBLISHED_PORT}" ]]; then
 	echo "!! Failed to resolve published ports from docker compose"
