@@ -12,18 +12,22 @@ jobs:
     env:
       REGISTRY_DATA_PATH: /media/neekrishrichu/One Touch/projects/zeroqwait
       SKIP_TESTS: "true"
+      CHECKOUT_PATH: run-${{ github.run_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           clean: false
+          path: ${{ env.CHECKOUT_PATH }}
 
       - name: Ensure local registry
         run: |
+          cd "${CHECKOUT_PATH}"
           chmod +x deployment/scripts/setup-local-registry.sh
           deployment/scripts/setup-local-registry.sh
 
       - name: Deploy to production (zeroqwait.com)
         run: |
+          cd "${CHECKOUT_PATH}"
           chmod +x deployment/scripts/deploy-prod.sh deployment/scripts/run-local-pipeline.sh deployment/scripts/prune-registry-tags.sh
           deployment/scripts/deploy-prod.sh

@@ -9,13 +9,17 @@ on:
 jobs:
   deploy-test:
     runs-on: self-hosted
+    env:
+      CHECKOUT_PATH: run-${{ github.run_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           clean: false
+          path: ${{ env.CHECKOUT_PATH }}
 
       - name: Deploy to test (localhost:3000)
         run: |
+          cd "${CHECKOUT_PATH}"
           chmod +x deployment/scripts/deploy-test.sh
           deployment/scripts/deploy-test.sh
