@@ -38,8 +38,10 @@ spec:
               value: "*"
             - name: TTS_BACKEND
               value: "official"
+            - name: TTS_DEVICE
+              value: "gpu"
             - name: TTS_WARMUP_ON_START
-              value: "false"
+              value: "true"
             - name: CUDA_VISIBLE_DEVICES
               value: "0"
             - name: NVIDIA_VISIBLE_DEVICES

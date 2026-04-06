@@ -1,13 +1,16 @@
-# GPU Time-Slicing Configuration
+# GPU Time-Slicing Configuration for standalone nvidia-device-plugin
 # Allows multiple pods to share a single GPU (RTX 5070 Ti)
 # Replicas=2: one for Ollama (LLM), one for Qwen3-TTS
+#
+# Usage: kubectl apply -f gpu-time-slicing.yaml
+# Then restart device plugin: kubectl rollout restart daemonset/nvidia-device-plugin-daemonset -n kube-system
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: time-slicing-config
-  namespace: gpu-operator
+  name: nvidia-device-plugin-config
+  namespace: kube-system
 data:
-  any: |-
+  config.yaml: |
     version: v1
     sharing:
       timeSlicing:

@@ -1,4 +1,30 @@
 services:
+  # PostgreSQL
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: zeroqwait_dev
+      POSTGRES_DB: zeroqwait
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # FastAPI Backend
   backend:
     build: ./backend
@@ -11,7 +37,24 @@ services:
       - ./backend/.env
     environment:
       - PYTHONUNBUFFERED=1
-      - FRONTEND_URL=http://192.168.2.88.nip.io
+      - FRONTEND_URL=http://localhost:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Qwen3-TTS Service (GPU)
+  tts:
+    build: ./tts_service
+    ports:
+      - "8880:8880"
+    environment:
+      - TTS_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+      - TTS_DEVICE=cpu
     restart: unless-stopped
 
   # React Frontend
@@ -25,3 +68,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  postgres_data:

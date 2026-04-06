@@ -44,6 +44,8 @@ _CANCEL_REGISTRATION_RE = re.compile(
     re.IGNORECASE
 )
 
+_TTS_TIMEOUT_SECONDS = 60.0
+
 # Shared httpx client for TTS (connection pooling)
 _tts_client: Optional[httpx.AsyncClient] = None
 
@@ -51,7 +53,7 @@ def _get_tts_client() -> httpx.AsyncClient:
     global _tts_client
     if _tts_client is None or _tts_client.is_closed:
         _tts_client = httpx.AsyncClient(
-            timeout=30.0,
+            timeout=httpx.Timeout(_TTS_TIMEOUT_SECONDS, connect=10.0),
             limits=httpx.Limits(max_connections=5, max_keepalive_connections=3)
         )
     return _tts_client
@@ -1454,7 +1456,7 @@ class MasterAgent:
                 if i + 1 < len(sentences):
                     next_task = asyncio.create_task(self._generate_tts_audio(sentences[i + 1]))
                 try:
-                    audio_b64, audio_format = await asyncio.wait_for(task, timeout=30.0)
+                    audio_b64, audio_format = await asyncio.wait_for(task, timeout=_TTS_TIMEOUT_SECONDS)
                 except Exception as e:
                     logger.warning(f"TTS task {i} failed: {e}")
                     audio_b64 = None
@@ -1695,7 +1697,7 @@ class MasterAgent:
                     while voice_yield_index < len(pending_voice):
                         sent, task = pending_voice[voice_yield_index]
                         try:
-                            audio_b64, audio_format = await asyncio.wait_for(task, timeout=30.0)
+                            audio_b64, audio_format = await asyncio.wait_for(task, timeout=_TTS_TIMEOUT_SECONDS)
                         except Exception as e:
                             logger.warning(f"TTS task {voice_yield_index} failed: {e}")
                             audio_b64, audio_format = None, None

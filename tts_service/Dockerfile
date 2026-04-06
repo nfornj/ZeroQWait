@@ -12,12 +12,12 @@ RUN apt-get update && \
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install PyTorch with CUDA 12.8 support
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu128
-
-# Install TTS dependencies
+# Install TTS dependencies (includes qwen-tts and all its deps like librosa)
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Force-reinstall CUDA-compatible torch + torchaudio AFTER qwen-tts (overrides CPU wheels)
+RUN pip install --no-cache-dir --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 COPY main.py /app/main.py
 WORKDIR /app

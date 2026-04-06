@@ -88,10 +88,14 @@ spec:
       volumes:
       - name: app-code
         hostPath:
-          path: /home/neekrishrichu/apps/zeroqwait/backend
+          # Code lives in the git repo on this machine — no sync needed
+          path: /home/neekrishrichu/projects/FastCuts/backend
           type: Directory
       - name: static-uploads
-        emptyDir: {}
+        hostPath:
+          # Persist uploads across pod restarts
+          path: /home/neekrishrichu/apps/zeroqwait/uploads
+          type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service

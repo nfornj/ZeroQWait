@@ -1,7 +1,49 @@
 # ZeroQwait — Project Rules & Context
 
-> **Last updated**: 2026-03-06
+> **Last updated**: 2026-04-05
 > **Live URL**: https://zeroqwait.com (self-hosted, also http://192.168.2.88.nip.io)
+
+---
+
+## 0. AI Assistant Safety Rules (MANDATORY — Read First)
+
+> **These rules apply to any AI assistant (GitHub Copilot, Claude, etc.) working on this codebase.**
+
+### 0.1 No Unauthorized Model or Service Changes
+
+**NEVER change the following without explicit user permission:**
+
+| Protected Artefact | Current Value | Why It Matters |
+| ---- | ---- | ---- |
+| LLM model | `gpt-oss:20b` via Ollama | Swapping models breaks agent behaviour and costs GPU re-pull time |
+| TTS engine | Qwen3-TTS (`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`) | Kokoro / Coqui incident on 2026-02-14 required emergency rollback |
+| TTS voice | `Vivian` | Voice is a brand experience choice |
+| TTS port | `8880` | Ingress and backend config hard-wired to this port |
+| ASR engine | faster-whisper (`medium`) | GPU compute budget depends on this model size |
+| Embedding model | `all-MiniLM-L6-v2` | Semantic cache keys are tied to these embeddings |
+| Database engine | PostgreSQL 15 | Alembic migrations target this version |
+| Orchestration | K3s namespace `zeroqwait` | All K8s manifests target this namespace |
+
+**Before swapping any model/engine/service**: stop, surface the proposal to the user, explain the tradeoffs, and wait for explicit approval.
+
+### 0.2 No Silent Architectural Changes
+
+The following changes require user approval before implementation:
+
+- Replacing a service (e.g. switching from Qwen3-TTS → any other TTS)
+- Changing default models in K8s ConfigMaps or Dockerfiles
+- Adding new external service dependencies (new APIs, new LLM providers)
+- Modifying authentication or authorization logic
+- Changing database schema in ways that skip Alembic migrations
+- Modifying `backend/agent_logic.py` intent routing or tool definitions substantially
+
+### 0.3 Allowed Without Approval
+
+- Bug fixes that do not change model outputs (e.g. fixing a wrong env var default)
+- Performance optimizations that keep the same service/model
+- Creating new microservices that are additive (e.g. MCP wrapper)
+- Updating timeouts, retry counts, connection pool sizes
+- Adding logging, metrics, or health-check endpoints
 
 ---
 
