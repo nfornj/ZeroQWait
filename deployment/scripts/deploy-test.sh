@@ -12,6 +12,8 @@ cd "${PROJECT_ROOT}"
 
 LOCAL_UID="$(id -u)"
 LOCAL_GID="$(id -g)"
+BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-18000}"
+FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT:-13000}"
 TTS_HOST_PORT="${TTS_HOST_PORT:-18880}"
 
 # Actions checkout on self-hosted runners may not include backend/.env
@@ -37,10 +39,12 @@ if [[ -d "${PROJECT_ROOT}/backend/.venv" ]]; then
 	sudo rm -rf "${PROJECT_ROOT}/backend/.venv" || true
 fi
 
-# Build and run test stack locally. Frontend is exposed at localhost:3000.
-sudo --preserve-env=LOCAL_UID,LOCAL_GID,TTS_HOST_PORT env \
+# Build and run test stack locally with non-conflicting host ports.
+sudo --preserve-env=LOCAL_UID,LOCAL_GID,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,TTS_HOST_PORT env \
 	LOCAL_UID="${LOCAL_UID}" \
 	LOCAL_GID="${LOCAL_GID}" \
+	BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" \
+	FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" \
 	TTS_HOST_PORT="${TTS_HOST_PORT}" \
 	docker compose -f "${COMPOSE_FILE}" up -d --build
 
@@ -48,12 +52,12 @@ echo "==> Waiting for services to become ready"
 sleep 8
 
 echo "==> Smoke checks"
-curl -fsS "http://localhost:3000" >/dev/null
-curl -fsS "http://localhost:8000" >/dev/null
+curl -fsS "http://localhost:${FRONTEND_HOST_PORT}" >/dev/null
+curl -fsS "http://localhost:${BACKEND_HOST_PORT}" >/dev/null
 
 echo "==> Test deployment successful"
-echo "    Frontend: http://localhost:3000"
-echo "    Backend : http://localhost:8000"
+echo "    Frontend: http://localhost:${FRONTEND_HOST_PORT}"
+echo "    Backend : http://localhost:${BACKEND_HOST_PORT}"
 
 # Some container steps can leave root-owned files in the checkout workspace
 # (for example backend/.venv). Restore ownership so actions/checkout can clean
