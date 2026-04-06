@@ -52,7 +52,7 @@ services:
   tts:
     build: ./tts_service
     ports:
-      - "8880:8880"
+      - "${TTS_HOST_PORT:-8880}:8880"
     environment:
       - TTS_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
       - TTS_DEVICE=cpu

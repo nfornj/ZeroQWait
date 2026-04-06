@@ -12,6 +12,7 @@ cd "${PROJECT_ROOT}"
 
 LOCAL_UID="$(id -u)"
 LOCAL_GID="$(id -g)"
+TTS_HOST_PORT="${TTS_HOST_PORT:-18880}"
 
 # Actions checkout on self-hosted runners may not include backend/.env
 # because it is typically gitignored. Create a local CI-safe file when absent.
@@ -37,9 +38,10 @@ if [[ -d "${PROJECT_ROOT}/backend/.venv" ]]; then
 fi
 
 # Build and run test stack locally. Frontend is exposed at localhost:3000.
-sudo --preserve-env=LOCAL_UID,LOCAL_GID env \
+sudo --preserve-env=LOCAL_UID,LOCAL_GID,TTS_HOST_PORT env \
 	LOCAL_UID="${LOCAL_UID}" \
 	LOCAL_GID="${LOCAL_GID}" \
+	TTS_HOST_PORT="${TTS_HOST_PORT}" \
 	docker compose -f "${COMPOSE_FILE}" up -d --build
 
 echo "==> Waiting for services to become ready"
