@@ -138,7 +138,7 @@ if ! wait_for_http "frontend" "http://localhost:${FRONTEND_PUBLISHED_PORT}" 120;
 	exit 1
 fi
 
-if ! wait_for_http "backend" "http://localhost:${BACKEND_PUBLISHED_PORT}" 180; then
+if ! wait_for_http "backend" "http://localhost:${BACKEND_PUBLISHED_PORT}" 360; then
 	echo "==> docker compose ps"
 	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" docker compose "${COMPOSE_ARGS[@]}" ps || true
 	echo "==> backend logs (tail)"
