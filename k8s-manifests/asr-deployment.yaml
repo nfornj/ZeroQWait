@@ -13,7 +13,38 @@ spec:
       labels:
         app: asr-service
     spec:
+      priorityClassName: voice-critical
       runtimeClassName: nvidia
+      tolerations:
+        - key: "workload-pool"
+          operator: "Equal"
+          value: "voice-gpu"
+          effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: zeroqwait.io/node-pool
+                    operator: In
+                    values: ["voice-gpu"]
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: nvidia.com/gpu.present
+                    operator: In
+                    values: ["true"]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 90
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: ["tts-service"]
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: asr-service
           image: localhost:5000/asr-service:v20260406120811-18332e3

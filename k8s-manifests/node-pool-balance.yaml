@@ -1,0 +1,31 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: voice-critical
+value: 100000
+globalDefault: false
+description: "Prioritize voice pipeline workloads (TTS/ASR)."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: llm-critical
+value: 90000
+globalDefault: false
+description: "Prioritize LLM inference workloads."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: app-critical
+value: 60000
+globalDefault: false
+description: "Prioritize API and data-plane workloads."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: app-standard
+value: 20000
+globalDefault: false
+description: "Default class for non-critical application workloads."

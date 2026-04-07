@@ -8,6 +8,10 @@ This directory contains Kubernetes manifests for deploying the FastCuts applicat
 - **Backend**: FastAPI application exposed on NodePort 30000
 - **Frontend**: React application exposed on NodePort 30001
 
+## Scheduling and Node Pool Strategy
+
+See `NODE_POOL_BALANCING.md` for the production node pool balance plan, labels/taints, and rollout sequence.
+
 ## Directory Structure
 
 ```

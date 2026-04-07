@@ -13,6 +13,21 @@ spec:
       labels:
         app: frontend
     spec:
+      priorityClassName: app-standard
+      tolerations:
+      - key: "workload-pool"
+        operator: "Equal"
+        value: "edge-cpu"
+        effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: zeroqwait.io/node-pool
+                operator: In
+                values: ["edge-cpu"]
       containers:
       - name: frontend
         image: localhost:5000/frontend:v20260406120811-18332e3

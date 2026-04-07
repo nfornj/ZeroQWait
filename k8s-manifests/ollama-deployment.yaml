@@ -33,7 +33,38 @@ spec:
       labels:
         app: ollama
     spec:
+      priorityClassName: llm-critical
       runtimeClassName: nvidia
+      tolerations:
+        - key: "workload-pool"
+          operator: "Equal"
+          value: "llm-gpu"
+          effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: zeroqwait.io/node-pool
+                    operator: In
+                    values: ["llm-gpu"]
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: nvidia.com/gpu.present
+                    operator: In
+                    values: ["true"]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: ["tts-service", "asr-service"]
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: ollama
           image: ollama/ollama:latest
