@@ -12,7 +12,8 @@ jobs:
     env:
       REGISTRY_DATA_PATH: /media/neekrishrichu/One Touch/projects/zeroqwait
       SKIP_TESTS: "true"
-      CHECKOUT_PATH: run-${{ github.run_id }}
+      # Fixed path prevents run-<id> directory buildup across prod deploys.
+      CHECKOUT_PATH: zeroqwait-prod-deploy
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,13 +22,23 @@ jobs:
           path: ${{ env.CHECKOUT_PATH }}
 
       - name: Ensure local registry
+        env:
+          REGISTRY_DATA_PATH: /media/neekrishrichu/One Touch/projects/zeroqwait
         run: |
           cd "${CHECKOUT_PATH}"
           chmod +x deployment/scripts/setup-local-registry.sh
-          deployment/scripts/setup-local-registry.sh
+          # sudo -E preserves REGISTRY_DATA_PATH when escalating.
+          sudo -E deployment/scripts/setup-local-registry.sh
 
       - name: Deploy to production (zeroqwait.com)
         run: |
           cd "${CHECKOUT_PATH}"
           chmod +x deployment/scripts/deploy-prod.sh deployment/scripts/run-local-pipeline.sh deployment/scripts/prune-registry-tags.sh
           deployment/scripts/deploy-prod.sh
+
+      - name: Clean stale checkout directories
+        if: always()
+        run: |
+          find "${GITHUB_WORKSPACE}" -maxdepth 1 -type d -name 'run-[0-9]*' \
+            -exec sudo rm -rf {} + 2>/dev/null || true
+          echo "Cleanup complete"

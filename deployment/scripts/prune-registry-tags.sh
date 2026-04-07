@@ -51,4 +51,10 @@ for repo in ${REPOSITORIES}; do
   trim_repo "${repo}"
 done
 
-echo "Prune complete. Run registry garbage-collect during maintenance for full disk reclaim."
+echo "==> Running registry garbage-collect to reclaim SSD storage"
+if docker exec local-registry test -d /var/lib/registry/docker/registry/v2/repositories; then
+  docker exec local-registry registry garbage-collect --delete-untagged /etc/docker/registry/config.yml || true
+else
+  echo "No repositories present yet; skipping garbage-collect"
+fi
+echo "Prune and garbage-collect complete."

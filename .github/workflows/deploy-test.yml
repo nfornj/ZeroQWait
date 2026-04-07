@@ -10,7 +10,10 @@ jobs:
   deploy-test:
     runs-on: self-hosted
     env:
-      CHECKOUT_PATH: run-${{ github.run_id }}
+      # Fixed checkout path so Docker Compose always uses the project name
+      # "zeroqwait-test" (derived in deploy-test.sh) rather than a unique
+      # run-specific path. Previous containers are torn down before each run.
+      CHECKOUT_PATH: zeroqwait-test-deploy
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,3 +26,11 @@ jobs:
           cd "${CHECKOUT_PATH}"
           chmod +x deployment/scripts/deploy-test.sh
           deployment/scripts/deploy-test.sh
+
+      - name: Teardown test stack
+        if: always()
+        run: |
+          cd "${CHECKOUT_PATH}"
+          sudo COMPOSE_PROJECT_NAME=zeroqwait-test \
+            docker compose -p zeroqwait-test -f docker-compose.yml down \
+            --remove-orphans --timeout 30 || true

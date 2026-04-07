@@ -23,6 +23,10 @@ FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT:-0}"
 FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
 # Use ephemeral host port for TTS during test deploy to avoid collisions.
 TTS_HOST_PORT="${TTS_HOST_PORT:-0}"
+# Fixed project name so every run replaces the previous test stack
+# instead of spawning a new isolated set of containers per run.
+COMPOSE_PROJECT_NAME="zeroqwait-test"
+export COMPOSE_PROJECT_NAME
 
 # Actions checkout on self-hosted runners may not include backend/.env
 # because it is typically gitignored. Create a local CI-safe file when absent.
@@ -49,29 +53,33 @@ fi
 
 # CI override: run backend from image-built environment, not bind-mounted source.
 # This avoids runtime dependency installation during readiness checks.
-cat > "${CI_OVERRIDE_FILE}" << 'EOF'
+cat > "${CI_OVERRIDE_FILE}" <<'EOF'
 services:
   backend:
     volumes: []
-    command:
-      - /app/.venv/bin/uvicorn
-      - main:app
-      - --host
-      - 0.0.0.0
-      - --port
-      - '8000'
+    command: /opt/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 EOF
 
-COMPOSE_ARGS=(-f "${COMPOSE_FILE}" -f "${CI_OVERRIDE_FILE}")
+COMPOSE_ARGS=(-p "${COMPOSE_PROJECT_NAME}" -f "${COMPOSE_FILE}" -f "${CI_OVERRIDE_FILE}")
+
+# Tear down any previous test stack (same project name) before starting fresh.
+# This is what prevents stale containers from accumulating across runs.
+echo "==> Tearing down previous test stack (if any)"
+sudo --preserve-env=LOCAL_UID,LOCAL_GID,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,FRONTEND_URL,TTS_HOST_PORT,COMPOSE_PROJECT_NAME env \
+	LOCAL_UID="${LOCAL_UID}" \
+	LOCAL_GID="${LOCAL_GID}" \
+	COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" \
+	docker compose "${COMPOSE_ARGS[@]}" down --remove-orphans --timeout 30 || true
 
 # Build and run test stack locally with non-conflicting host ports.
-sudo --preserve-env=LOCAL_UID,LOCAL_GID,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,FRONTEND_URL,TTS_HOST_PORT env \
+sudo --preserve-env=LOCAL_UID,LOCAL_GID,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,FRONTEND_URL,TTS_HOST_PORT,COMPOSE_PROJECT_NAME env \
 	LOCAL_UID="${LOCAL_UID}" \
 	LOCAL_GID="${LOCAL_GID}" \
 	BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" \
 	FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" \
 	FRONTEND_URL="${FRONTEND_URL}" \
 	TTS_HOST_PORT="${TTS_HOST_PORT}" \
+	COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" \
 	docker compose "${COMPOSE_ARGS[@]}" up -d --build
 
 resolve_published_port() {
@@ -82,7 +90,7 @@ resolve_published_port() {
 	local resolved=""
 
 	while (( elapsed < timeout_seconds )); do
-		resolved="$(sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose "${COMPOSE_ARGS[@]}" port "${service}" "${target_port}" 2>/dev/null | awk -F: 'NF {print $NF}' | tail -n1 || true)"
+		resolved="$(sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" docker compose "${COMPOSE_ARGS[@]}" port "${service}" "${target_port}" 2>/dev/null | awk -F: 'NF {print $NF}' | tail -n1 || true)"
 		if [[ -n "${resolved}" ]]; then
 			echo "${resolved}"
 			return 0
@@ -124,17 +132,17 @@ wait_for_http() {
 echo "==> Smoke checks"
 if ! wait_for_http "frontend" "http://localhost:${FRONTEND_PUBLISHED_PORT}" 120; then
 	echo "==> docker compose ps"
-	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose "${COMPOSE_ARGS[@]}" ps || true
+	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" docker compose "${COMPOSE_ARGS[@]}" ps || true
 	echo "==> frontend logs (tail)"
-	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose "${COMPOSE_ARGS[@]}" logs --tail=120 frontend || true
+	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" docker compose "${COMPOSE_ARGS[@]}" logs --tail=120 frontend || true
 	exit 1
 fi
 
 if ! wait_for_http "backend" "http://localhost:${BACKEND_PUBLISHED_PORT}" 180; then
 	echo "==> docker compose ps"
-	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose "${COMPOSE_ARGS[@]}" ps || true
+	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" docker compose "${COMPOSE_ARGS[@]}" ps || true
 	echo "==> backend logs (tail)"
-	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" docker compose "${COMPOSE_ARGS[@]}" logs --tail=200 backend || true
+	sudo env BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" TTS_HOST_PORT="${TTS_HOST_PORT}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" docker compose "${COMPOSE_ARGS[@]}" logs --tail=200 backend || true
 	exit 1
 fi
 
