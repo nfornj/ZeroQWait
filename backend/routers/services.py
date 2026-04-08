@@ -4,6 +4,7 @@ from db_interface import db_interface
 from schemas import ShopService, ShopServiceCreate, ShopServiceUpdate
 from shared.auth_utils import get_current_user, get_current_user_optional
 from permissions import check_shop_access
+from redis_client import redis_client
 
 router = APIRouter()
 
@@ -26,6 +27,7 @@ def create_service(
         
         new_service = db_interface.create_shop_service(service_data)
         if new_service:
+            redis_client.tenant_delete(shop_id, "services")
             return new_service
         raise HTTPException(status_code=500, detail="Failed to create service")
         
@@ -59,6 +61,9 @@ def list_services(
             check_shop_access(shop_id, current_user, require_owner=False)
 
         services = db_interface.get_shop_services(shop_id, include_inactive=include_inactive)
+        # Cache active services for premium shops
+        if not include_inactive:
+            redis_client.set_services_cache(shop_id, [s.dict() if hasattr(s, 'dict') else s for s in services])
         return services
     except HTTPException:
         raise
@@ -83,6 +88,7 @@ def update_service(
     try:
         updated = db_interface.update_shop_service(shop_id, service_id, service_update.dict(exclude_unset=True))
         if updated:
+            redis_client.tenant_delete(shop_id, "services")
             return updated
         raise HTTPException(status_code=404, detail="Service not found")
         
@@ -108,6 +114,7 @@ def delete_service(
     try:
         updated = db_interface.update_shop_service(shop_id, service_id, {"is_active": False})
         if updated:
+            redis_client.tenant_delete(shop_id, "services")
             return {"message": "Service deleted successfully"}
         raise HTTPException(status_code=404, detail="Service not found")
         

@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - node-pool-balance.yaml
+  - backend-configmap.yaml
+  - backend-secret.yaml
+  - postgres-secret.yaml
+  - redis-secret.yaml
+  - postgres-pvc.yaml
+  - redis-pvc.yaml
+  - tts-pvc.yaml
+  - postgres-statefulset.yaml
+  - redis-statefulset.yaml
+  - redis-service.yaml
+  - backend-deployment.yaml
+  - frontend-deployment.yaml
+  - asr-deployment.yaml
+  - asr-service.yaml
+  - tts-deployment.yaml
+  - voice-mcp-deployment.yaml
+  - ingress-traefik.yaml

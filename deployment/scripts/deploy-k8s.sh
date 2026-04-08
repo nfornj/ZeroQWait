@@ -1,20 +1,20 @@
 #!/bin/bash
-
-# ZeroQwait Kubernetes Deployment
-# Deploys to Kubernetes cluster with Traefik Ingress and monitoring
+# ZeroQwait — Local Kubernetes Deployment
+# Run directly on this machine (no SSH needed).
+# Prerequisite: run bootstrap-server.sh once first.
 
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 K8S_MANIFESTS="$PROJECT_ROOT/k8s-manifests"
+APPS_DIR="/home/neekrishrichu/apps"
+REGISTRY="localhost:5000"
+REGISTRY_DATA_PATH="${REGISTRY_DATA_PATH:-/mnt/ssd/zeroqwait-registry}"
+REGISTRY_CONFIG_PATH="${PROJECT_ROOT}/deployment/registry/config.yml"
 
-# Set KUBECONFIG for k3s
+# K3s kubeconfig — readable by current user after bootstrap (--write-kubeconfig-mode=644)
 export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-
-echo "🚀 Starting ZeroQwait Kubernetes Deployment"
-echo "=========================================================="
-echo ""
 
 # Colors
 GREEN='\033[0;32m'
@@ -23,94 +23,145 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Configuration
-CLUSTER_IP="192.168.2.88"
 NAMESPACE="zeroqwait"
-DOMAIN="192.168.2.88.nip.io"
+DOMAIN="$(hostname -I | awk '{print $1}').nip.io"
 
-echo -e "${BLUE}⚙️  Configuration:${NC}"
-echo "  Cluster IP: $CLUSTER_IP"
-echo "  Domain: $DOMAIN"
-echo "  Namespace: $NAMESPACE"
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   ZeroQwait — K8s Deployment${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo -e "${YELLOW}  Project : $PROJECT_ROOT${NC}"
+echo -e "${YELLOW}  Apps dir: $APPS_DIR${NC}"
+echo -e "${YELLOW}  Domain  : $DOMAIN${NC}"
+echo -e "${YELLOW}  Registry: $REGISTRY${NC}"
 echo ""
 
-# Check kubectl
-if ! command -v kubectl &> /dev/null; then
-    echo -e "${RED}❌ kubectl not found!${NC}"
+# ── Sanity checks ─────────────────────────────────────────────────────────
+if ! command -v k3s &>/dev/null; then
+    echo -e "${RED}✗ K3s not installed. Run: sudo bash deployment/scripts/bootstrap-server.sh${NC}"
     exit 1
 fi
-echo -e "${BLUE}✓ kubectl: $(kubectl version --short 2>/dev/null | head -1 || echo 'installed')${NC}"
+
+if ! sudo kubectl get nodes &>/dev/null; then
+    echo -e "${RED}✗ K3s cluster not responding. Check: sudo systemctl status k3s${NC}"
+    exit 1
+fi
+
+if ! docker ps --format '{{.Names}}' | grep -q "^local-registry$"; then
+    echo -e "${YELLOW}⚠  Local registry not running — starting it...${NC}"
+    mkdir -p "$REGISTRY_DATA_PATH"
+    docker start local-registry 2>/dev/null || \
+    docker run -d --name local-registry --restart=always \
+        -p 5000:5000 \
+        -v "$REGISTRY_DATA_PATH:/var/lib/registry" \
+        -v "$REGISTRY_CONFIG_PATH:/etc/docker/registry/config.yml:ro" \
+        registry:2
+fi
+
+# Ensure runtime directories exist
+mkdir -p "$APPS_DIR/zeroqwait/uploads" "$APPS_DIR/mcps/voice"
+echo -e "${GREEN}✓ Pre-flight checks passed${NC}"
 echo ""
 
-# Create namespace
-echo -e "${BLUE}📋 Creating namespace...${NC}"
-kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
-echo "✓ Namespace ready"
+# ── Helper: build image locally and push to local registry ───────────────
+build_and_push() {
+    local name="$1"   # e.g. "voice-mcp"
+    local ctx="$2"    # build context dir, relative to PROJECT_ROOT
+    local img="$REGISTRY/${name}:latest"
+    echo -e "${BLUE}  Building ${name}...${NC}"
+    docker build -t "$img" "$PROJECT_ROOT/$ctx"
+    docker push "$img"
+    echo -e "${GREEN}  ✓ ${img}${NC}"
+}
+
+# ── Namespace ─────────────────────────────────────────────────────────────
+echo -e "${BLUE}[1/8] Namespace...${NC}"
+sudo kubectl create namespace $NAMESPACE --dry-run=client -o yaml | sudo kubectl apply -f -
 echo ""
 
-# Create secrets & config
-echo -e "${BLUE}📋 Setting up secrets and configuration...${NC}"
-kubectl apply -f "$K8S_MANIFESTS/postgres-secret.yaml"
-kubectl apply -f "$K8S_MANIFESTS/backend-secret.yaml"
-kubectl apply -f "$K8S_MANIFESTS/backend-configmap.yaml"
-echo "✓ Secrets and ConfigMaps created"
+# ── Secrets & config ──────────────────────────────────────────────────────
+echo -e "${BLUE}[2/8] Secrets & ConfigMap...${NC}"
+sudo kubectl apply -f "$K8S_MANIFESTS/postgres-secret.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/backend-secret.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/backend-configmap.yaml"
+# Redis secret (may not exist yet — ignore error)
+sudo kubectl apply -f "$K8S_MANIFESTS/redis-secret.yaml" 2>/dev/null || true
 echo ""
 
-# Database
-echo -e "${BLUE}📋 Setting up database...${NC}"
-kubectl apply -f "$K8S_MANIFESTS/postgres-statefulset.yaml"
-kubectl apply -f "$K8S_MANIFESTS/postgres-pvc.yaml"
-echo "⏳ Waiting for PostgreSQL..."
-kubectl wait --for=condition=ready pod -l app=postgres -n $NAMESPACE --timeout=300s 2>/dev/null || echo "⚠️  PostgreSQL initializing..."
+# ── Storage (PVCs) ────────────────────────────────────────────────────────
+echo -e "${BLUE}[3/9] Storage (PVCs)...${NC}"
+sudo kubectl apply -f "$K8S_MANIFESTS/postgres-pvc.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/redis-pvc.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/tts-pvc.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/ollama-deployment.yaml"  # creates llm ns + PVC
 echo ""
 
-# Deploy backend & frontend
-echo -e "${BLUE}📋 Deploying backend...${NC}"
-kubectl apply -f "$K8S_MANIFESTS/backend-deployment.yaml"
-
-echo -e "${BLUE}📋 Deploying frontend...${NC}"
-kubectl apply -f "$K8S_MANIFESTS/frontend-deployment.yaml"
-
-echo "⏳ Waiting for deployments..."
-kubectl wait --for=condition=available --timeout=300s deployment/backend -n $NAMESPACE 2>/dev/null || echo "⚠️  Backend deploying..."
+# ── Database ──────────────────────────────────────────────────────────────
+echo -e "${BLUE}[4/9] GPU device plugin + time-slicing...${NC}"
+sudo kubectl apply -f "$K8S_MANIFESTS/nvidia-device-plugin.yaml" || echo -e "${YELLOW}  ⚠  GPU device plugin apply failed (non-fatal)${NC}"
 echo ""
 
-# Ingress
-echo -e "${BLUE}📋 Setting up Traefik Ingress...${NC}"
-kubectl apply -f "$K8S_MANIFESTS/ingress-traefik.yaml"
-echo "✓ Ingress configured"
+# ── Database ──────────────────────────────────────────────────────────────
+echo -e "${BLUE}[5/9] PostgreSQL + Redis...${NC}"
+sudo kubectl apply -f "$K8S_MANIFESTS/postgres-statefulset.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/redis-statefulset.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/redis-service.yaml"
+echo -e "  Waiting for PostgreSQL..."
+sudo kubectl wait --for=condition=ready pod -l app=postgres -n $NAMESPACE --timeout=300s 2>/dev/null \
+    || echo -e "${YELLOW}  ⚠  PostgreSQL still initializing (continuing)${NC}"
 echo ""
 
-# Status
-echo ""
-echo -e "${GREEN}✅ Deployment Complete!${NC}"
-echo "=========================================================="
-echo ""
-echo -e "${YELLOW}🌐 Access Your Application:${NC}"
-echo ""
-echo "  Base URL:"
-echo "    http://$DOMAIN/"
-echo ""
-echo "  Backend API:"
-echo "    http://$DOMAIN/api"
-echo "    http://$DOMAIN/api/docs (Swagger UI)"
-echo ""
-echo "  After login:"
-echo "    http://shopname.$DOMAIN/dashboard"
+# ── Build & push custom images ────────────────────────────────────────────
+echo -e "${BLUE}[6/9] Building service images...${NC}"
+build_and_push "frontend"    "frontend"      # uses frontend/Dockerfile
+build_and_push "asr-service" "asr_service"
+build_and_push "tts-service" "tts_service"
+build_and_push "voice-mcp"   "mcps/voice"    # voice MCP gateway
 echo ""
 
-echo -e "${YELLOW}🐛 Debugging:${NC}"
-echo "  Check pod status:"
-echo "    kubectl get pods -n $NAMESPACE"
-echo ""
-echo "  View logs:"
-echo "    kubectl logs -n $NAMESPACE -l app=backend -f"
-echo ""
-echo "  Check ingress:"
-echo "    kubectl get ingress -n $NAMESPACE"
+# ── Core services ─────────────────────────────────────────────────────────
+echo -e "${BLUE}[7/9] Deploying backend, frontend, ASR, TTS...${NC}"
+sudo kubectl apply -f "$K8S_MANIFESTS/backend-deployment.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/frontend-deployment.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/asr-deployment.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/asr-service.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/tts-deployment.yaml"
 echo ""
 
-echo -e "${YELLOW}📊 Monitoring:${NC}"
-echo "  Setup Prometheus & Grafana:"
-echo "    bash ../scripts/setup-monitoring.sh"
+# ── Voice MCP gateway ─────────────────────────────────────────────────────
+echo -e "${BLUE}[8/9] Deploying Voice MCP gateway...${NC}"
+sudo kubectl apply -f "$K8S_MANIFESTS/voice-mcp-deployment.yaml"
+sudo kubectl rollout restart deployment/voice-mcp -n $NAMESPACE 2>/dev/null || true
 echo ""
+
+# ── Ingress ───────────────────────────────────────────────────────────────
+echo -e "${BLUE}[9/9] Traefik Ingress...${NC}"
+sudo kubectl apply -f "$K8S_MANIFESTS/ingress-traefik.yaml"
+echo ""
+
+# ── Wait for critical deployments ────────────────────────────────────────
+echo -e "${BLUE}Waiting for deployments to become available...${NC}"
+sudo kubectl wait --for=condition=available --timeout=300s deployment/backend  -n $NAMESPACE 2>/dev/null \
+    || echo -e "${YELLOW}  ⚠  backend still starting (startup probe takes ~2min)${NC}"
+sudo kubectl wait --for=condition=available --timeout=120s  deployment/frontend -n $NAMESPACE 2>/dev/null \
+    || echo -e "${YELLOW}  ⚠  frontend still starting${NC}"
+
+# ── Final summary ─────────────────────────────────────────────────────────
+echo ""
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}  Deployment Complete!${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo -e "${YELLOW}  App URL : http://$DOMAIN/${NC}"
+echo -e "${YELLOW}  API     : http://$DOMAIN/api/docs${NC}"
+echo -e "${YELLOW}  Voice MCP health: http://$DOMAIN/api/voice/tts/health${NC}"
+echo ""
+echo -e "${BLUE}Useful commands:${NC}"
+echo "  sudo kubectl get pods -n $NAMESPACE"
+echo "  sudo kubectl get pods -n llm  (Ollama)"
+echo "  sudo kubectl logs -n $NAMESPACE -l app=backend -f"
+echo "  sudo kubectl logs -n $NAMESPACE -l app=voice-mcp -f"
+echo "  sudo kubectl rollout restart deployment/backend -n $NAMESPACE"
+echo ""
+echo -e "${YELLOW}NOTE: gpt-oss:20b model must be pulled after first deploy:${NC}"
+echo "  sudo kubectl exec -n llm deployment/ollama -- ollama pull gpt-oss:20b"
+

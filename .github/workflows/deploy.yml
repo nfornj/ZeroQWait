@@ -1,8 +1,6 @@
 name: Deploy to Raspberry Pi
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:  # Allows manual trigger from GitHub UI
 
 jobs:

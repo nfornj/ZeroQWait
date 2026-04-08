@@ -2,7 +2,11 @@
 SQLAlchemy database connection for direct SQL operations
 """
 import os
-from sqlalchemy import create_engine
+import re as _re
+from contextvars import ContextVar
+from typing import Optional
+
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from dotenv import load_dotenv
@@ -52,6 +56,30 @@ engine = create_engine(
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# ── Tenant-aware session routing ────────────────────────────────────
+# A ContextVar tracks the active tenant schema per-request.
+# SQLAlchemy event listeners automatically SET search_path on every
+# new session and RESET it when connections return to the pool.
+
+_tenant_schema: ContextVar[Optional[str]] = ContextVar('_tenant_schema', default=None)
+_TENANT_RE = _re.compile(r'^tenant_\d+$')
+
+
+def set_tenant_for_request(schema: Optional[str]) -> None:
+    """Set (or clear) the tenant schema for the current request context."""
+    _tenant_schema.set(schema)
+
+
+@event.listens_for(SessionLocal, "after_begin")
+def _on_session_begin(session, transaction, connection):
+    """Set search_path when a session begins a transaction."""
+    schema = _tenant_schema.get()
+    if schema and _TENANT_RE.match(schema):
+        connection.execute(text(f"SET search_path TO {schema}, public"))
+    else:
+        connection.execute(text("SET search_path TO public"))
+
 
 def get_db() -> Session:
     """

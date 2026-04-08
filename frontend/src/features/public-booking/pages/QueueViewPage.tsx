@@ -33,6 +33,7 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import { useAuth } from '../../../contexts/AuthContext';
+import { constructShopUrl } from '../../../utils/domainUtils';
 
 
 const StyledHeader = styled(Box)(({ theme }) => ({
@@ -270,7 +271,7 @@ const QueueViewPage: React.FC = () => {
                 {isAuthenticated && (user?.role === 'shop_owner' || user?.role === 'employee' || user?.role === 'manager') && (
                     <Button
                         startIcon={<ArrowBackIcon />}
-                        onClick={() => navigate(`/s/${shop.slug || shop.id}`)}
+                        onClick={() => window.location.href = constructShopUrl(shop.slug || `shop-${shop.id}`)}
                         variant="text"
                         size="small"
                         sx={{ color: 'text.secondary', fontWeight: 600 }}
@@ -425,7 +426,7 @@ const QueueViewPage: React.FC = () => {
                             </Typography>
                             <Button
                                 variant="contained"
-                                onClick={() => navigate(`/s/${shop.slug || shop.id}`)}
+                                onClick={() => window.location.href = constructShopUrl(shop.slug || `shop-${shop.id}`)}
                                 startIcon={<ArrowBackIcon />}
                                 sx={{ borderRadius: 3, px: 4, py: 1.5, fontWeight: 'bold' }}
                             >

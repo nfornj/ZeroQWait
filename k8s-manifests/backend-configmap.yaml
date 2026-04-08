@@ -7,10 +7,14 @@ data:
   DB_HOST: "postgres.zeroqwait.svc.cluster.local"
   DB_PORT: "5432"
   DB_NAME: "fastcuts_db"
-  FRONTEND_URL: "http://192.168.2.88.nip.io"
+  FRONTEND_URL: "http://192.168.2.134.nip.io"
   PYTHONUNBUFFERED: "1"
   USE_SUPABASE: "false"
-  OLLAMA_URL: "http://192.168.2.88:30002/v1"
+  OLLAMA_URL: "http://ollama.llm.svc.cluster.local:11434/v1"
   MODEL_NAME: "gpt-oss:20b"
   REDIS_HOST: "redis.zeroqwait.svc.cluster.local"
   REDIS_PORT: "6379"
+  # All voice operations route through voice-mcp (the MCP voice gateway).
+  # voice-mcp proxies to tts-service:8880 and asr-service:8000 internally.
+  TTS_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881"
+  ASR_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881/transcribe"

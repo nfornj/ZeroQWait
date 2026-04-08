@@ -1,0 +1,26 @@
+name: Local DevOps Pipeline
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-build-push:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup local registry on SSD
+        env:
+          REGISTRY_DATA_PATH: /media/neekrishrichu/One Touch/projects/zeroqwait
+        run: |
+          chmod +x deployment/scripts/setup-local-registry.sh
+          ./deployment/scripts/setup-local-registry.sh
+
+      - name: Run local CI/CD pipeline
+        env:
+          AUTO_COMMIT: "false"
+          ARGOCD_SYNC: "false"
+        run: |
+          chmod +x deployment/scripts/run-local-pipeline.sh deployment/scripts/prune-registry-tags.sh
+          ./deployment/scripts/run-local-pipeline.sh

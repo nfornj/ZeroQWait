@@ -13,18 +13,56 @@ spec:
       labels:
         app: asr-service
     spec:
+      priorityClassName: voice-critical
+      runtimeClassName: nvidia
+      tolerations:
+        - key: "workload-pool"
+          operator: "Equal"
+          value: "voice-gpu"
+          effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: zeroqwait.io/node-pool
+                    operator: In
+                    values: ["voice-gpu"]
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: nvidia.com/gpu.present
+                    operator: In
+                    values: ["true"]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 90
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: ["tts-service"]
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: asr-service
-          image: localhost:5000/asr-service:latest
-          # resources:  <-- Removed GPU Request due to driver mismatch
-          #   limits:
-          #     nvidia.com/gpu: 1
+          image: localhost:5000/asr-service:v20260406120811-18332e3
           env:
             - name: MODEL_SIZE
               value: "medium"
             - name: DEVICE
-              value: "cpu"      # <-- Changed to CPU
+              value: "cuda"
             - name: COMPUTE_TYPE
-              value: "int8"     # <-- Optimized for CPU
+              value: "float16"
           ports:
             - containerPort: 8000
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+              nvidia.com/gpu: "1"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+              nvidia.com/gpu: "1"

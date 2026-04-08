@@ -5,6 +5,7 @@ from db_interface import db_interface
 from shared.auth_utils import get_current_user
 from analytics_processor import get_analytics_summary, get_peak_hours_analysis, AnalyticsProcessor
 from scheduler import trigger_maintenance_now
+from redis_client import redis_client
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, date
 import logging
@@ -121,6 +122,12 @@ def get_shop_analytics(
         }
 
     # Calculate stats
+    # Check tenant cache for premium shops
+    cache_key = f"summary:{days}:{start_date}:{end_date}"
+    cached = redis_client.tenant_get(shop_id, cache_key)
+    if cached:
+        return cached
+
     current_stats = calculate_period_stats(current_start, current_end)
     previous_stats = calculate_period_stats(previous_start, previous_end)
 
@@ -148,7 +155,7 @@ def get_shop_analytics(
     wait_trend = calc_trend(current_stats["avg_wait_minutes"], previous_stats["avg_wait_minutes"])
     service_trend = calc_trend(current_stats["avg_service_minutes"], previous_stats["avg_service_minutes"])
 
-    return {
+    result = {
         "period_days": days if not (start_date and end_date) else (current_end - current_start).days,
         "total_customers": current_stats["total_customers"],
         "total_revenue": current_stats["total_revenue"],
@@ -162,6 +169,11 @@ def get_shop_analytics(
             "service": service_trend
         }
     }
+
+    # Cache analytics for premium shops (5 min TTL)
+    redis_client.tenant_set(shop_id, cache_key, result, ttl=300)
+
+    return result
 
 
 @router.get("/daily/{shop_id}")
@@ -203,7 +215,15 @@ def get_daily_analytics(
     
     # Get summary from analytics processor
     try:
+        # Check tenant cache
+        cache_key = f"daily:{start}:{end}"
+        cached = redis_client.tenant_get(shop_id, cache_key)
+        if cached:
+            return cached
+
         summary = get_analytics_summary(db, shop_id, start, end)
+        # Cache for 5 minutes
+        redis_client.tenant_set(shop_id, cache_key, summary, ttl=300)
         return summary
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching analytics: {str(e)}")

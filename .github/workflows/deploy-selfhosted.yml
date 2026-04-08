@@ -1,8 +1,6 @@
 name: Deploy to Raspberry Pi (Self-Hosted)
 
 on:
-  push:
-    branches: [ main, pi_hosted_from_local ]
   workflow_dispatch:
 
 jobs:

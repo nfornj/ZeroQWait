@@ -13,6 +13,21 @@ spec:
       labels:
         app: backend
     spec:
+      priorityClassName: app-critical
+      tolerations:
+      - key: "workload-pool"
+        operator: "Equal"
+        value: "core-cpu"
+        effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: zeroqwait.io/node-pool
+                operator: In
+                values: ["core-cpu"]
       initContainers:
       - name: wait-for-postgres
         image: busybox:1.28
@@ -58,18 +73,44 @@ spec:
           mountPath: /app/static/uploads
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
-          limits:
             memory: "2Gi"
             cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        startupProbe:
+          httpGet:
+            path: /api/agent/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 80
+        livenessProbe:
+          httpGet:
+            path: /api/agent/health
+            port: 8000
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/agent/health
+            port: 8000
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
       volumes:
       - name: app-code
         hostPath:
-          path: /home/neekrishrichu/apps/zeroqwait/backend
+          # Code lives in the git repo on this machine — no sync needed
+          path: /home/neekrishrichu/projects/FastCuts/backend
           type: Directory
       - name: static-uploads
-        emptyDir: {}
+        hostPath:
+          # Persist uploads across pod restarts
+          path: /home/neekrishrichu/apps/zeroqwait/uploads
+          type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service

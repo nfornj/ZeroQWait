@@ -1,0 +1,106 @@
+{
+  "base_url": "http://127.0.0.1:30000",
+  "health": {
+    "ok": true,
+    "checks": [
+      {
+        "name": "agent_health",
+        "url": "http://127.0.0.1:30000/api/agent/health",
+        "ok": true,
+        "status": 200,
+        "body": "{\"status\":\"ok\",\"message\":\"Agent router is active\"}"
+      },
+      {
+        "name": "tts_health",
+        "url": "http://127.0.0.1:30000/api/voice/tts/health",
+        "ok": true,
+        "status": 200,
+        "body": "{\"status\":\"ok\",\"tts_status\":200}"
+      }
+    ]
+  },
+  "tts_repeat": {
+    "ok": true,
+    "byte_identical": true,
+    "repeats": 3,
+    "statuses": [
+      200,
+      200,
+      200
+    ],
+    "latencies_ms": [
+      6.003581976983696,
+      1.1182370071765035,
+      2.0981740090064704
+    ],
+    "latency_avg_ms": 3.0733309977222234,
+    "latency_p95_ms": 6.003581976983696,
+    "audio_lengths": [
+      284204,
+      284204,
+      284204
+    ],
+    "audio_length_span": 0,
+    "audio_length_variation_ratio": 0.0,
+    "unique_hash_count": 1,
+    "hashes": [
+      "740b8e98829d18d058649c7f6a7a8ab463bc7f4e7542d8ce67bb1340d31e528d"
+    ],
+    "errors": []
+  },
+  "stream_suite": {
+    "ok": true,
+    "runs": [
+      {
+        "prompt": "Hi",
+        "ok": true,
+        "status_code": 200,
+        "first_sentence_ms": 3.6713790032081306,
+        "total_ms": 6.032461998984218,
+        "sentence_count": 3,
+        "audio_sentence_count": 3,
+        "missing_audio_count": 0,
+        "audio_formats": [
+          "wav"
+        ],
+        "errors": []
+      },
+      {
+        "prompt": "Find me a barber near me",
+        "ok": true,
+        "status_code": 200,
+        "first_sentence_ms": 2024.8593620199244,
+        "total_ms": 2028.9944490068592,
+        "sentence_count": 1,
+        "audio_sentence_count": 1,
+        "missing_audio_count": 0,
+        "audio_formats": [
+          "wav"
+        ],
+        "errors": []
+      },
+      {
+        "prompt": "What are your pricing plans?",
+        "ok": true,
+        "status_code": 200,
+        "first_sentence_ms": 7712.373633024981,
+        "total_ms": 11425.319597008638,
+        "sentence_count": 2,
+        "audio_sentence_count": 2,
+        "missing_audio_count": 0,
+        "audio_formats": [
+          "wav"
+        ],
+        "errors": []
+      }
+    ],
+    "summary": {
+      "first_sentence_avg_ms": 3246.9681246827045,
+      "first_sentence_p95_ms": 7712.373633024981,
+      "total_avg_ms": 4486.78216933816,
+      "total_p95_ms": 11425.319597008638,
+      "missing_audio_total": 0
+    }
+  },
+  "generated_at_epoch": 1775485382
+}

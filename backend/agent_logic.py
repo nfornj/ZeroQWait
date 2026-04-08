@@ -1,7 +1,10 @@
 import os
+import re
 import json
 import logging
 import asyncio
+import httpx
+import base64
 from typing import List, Optional, Dict, Any, Tuple, Set
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -18,6 +21,44 @@ from redis_client import redis_client
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 logger = logging.getLogger(__name__)
+
+# --- Precompiled Regex for Hot Paths ---
+# Split on sentence-ending punctuation, but NOT after digit-dot (e.g. "1." "2." "3.")
+_SENTENCE_BOUNDARY_RE = re.compile(r'(?<!\d[.])(?<=[.?!])\s+')
+_MARKDOWN_BOLD_RE = re.compile(r'\*\*(.*?)\*\*')
+_MARKDOWN_ITALIC_RE = re.compile(r'\*(.*?)\*')
+_MARKDOWN_HEADING_RE = re.compile(r'#{1,6}\s')
+_MARKDOWN_CODE_RE = re.compile(r'`([^`]*)`')
+_MARKDOWN_LINK_RE = re.compile(r'\[([^\]]+)\]\([^)]+\)')
+_EMOJI_RE = re.compile(
+    r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF'
+    r'\U0001F1E0-\U0001F1FF\U00002600-\U000026FF\U00002700-\U000027BF'
+    r'\U0000FE00-\U0000FE0F\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F'
+    r'\U0001FA70-\U0001FAFF\U0000200D\U000020E3\U000E0020-\U000E007F]'
+)
+_WHITESPACE_MULTI_RE = re.compile(r'\s{2,}')
+
+# Registration cancellation — used inside active-registration block (Redis state check)
+_CANCEL_REGISTRATION_RE = re.compile(
+    r'(?:cancel|stop|quit|abort|nevermind|never\s*mind|start\s*over)',
+    re.IGNORECASE
+)
+
+_TTS_TIMEOUT_SECONDS = 60.0
+
+# Shared httpx client for TTS (connection pooling)
+_tts_client: Optional[httpx.AsyncClient] = None
+_tts_cache: Dict[str, Tuple[str, str]] = {}
+_TTS_CACHE_MAX_ITEMS = 256
+
+def _get_tts_client() -> httpx.AsyncClient:
+    global _tts_client
+    if _tts_client is None or _tts_client.is_closed:
+        _tts_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(_TTS_TIMEOUT_SECONDS, connect=10.0),
+            limits=httpx.Limits(max_connections=5, max_keepalive_connections=3)
+        )
+    return _tts_client
 
 # --- Configuration ---
 ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
@@ -49,7 +90,7 @@ class SemanticCache:
     """Lightweight semantic cache using sentence-transformers."""
     def __init__(self, threshold=0.92):
         self.threshold = threshold
-        self.local_cache = []  # List of (embedding_vector, QueryAnalysis_dict)
+        self.local_cache = []  # List of (embedding_vector, IntentAnalysis_dict)
     
     def get(self, query: str) -> Optional[dict]:
         if not query.strip() or not self.local_cache:
@@ -59,19 +100,20 @@ class SemanticCache:
             if not embedder_inst:
                 return None
             vec = embedder_inst.encode([query.strip().lower()])[0]
-            best_score = 0
-            best_match = None
+            norm = np.linalg.norm(vec)
+            if norm == 0:
+                return None
+            normed_vec = vec / norm
             
-            # Pure local fast evaluation
-            for (v, res) in self.local_cache:
-                score = np.dot(vec, v) / (np.linalg.norm(vec) * np.linalg.norm(v))
-                if score > best_score:
-                    best_score = score
-                    best_match = res
+            # Batch cosine similarity — pre-normalized vectors
+            cached_vecs = np.array([v for v, _ in self.local_cache])
+            scores = cached_vecs @ normed_vec
+            best_idx = int(np.argmax(scores))
+            best_score = scores[best_idx]
                     
             if best_score >= self.threshold:
                 logger.debug(f"Semantic Cache Hit! Score: {best_score:.3f}")
-                return best_match
+                return self.local_cache[best_idx][1]
             return None
         except Exception as e:
             logger.error(f"Semantic cache error: {e}")
@@ -83,8 +125,12 @@ class SemanticCache:
             if not embedder_inst:
                 return
             vec = embedder_inst.encode([query.strip().lower()])[0]
-            self.local_cache.append((vec, result_dict))
-            # Keep cache from growing infinitely in demo
+            norm = np.linalg.norm(vec)
+            if norm == 0:
+                return
+            normed_vec = vec / norm
+            self.local_cache.append((normed_vec, result_dict))
+            # Keep cache from growing infinitely
             if len(self.local_cache) > 1000:
                 self.local_cache = self.local_cache[-1000:]
         except Exception as e:
@@ -107,11 +153,14 @@ class ContextUpdates(BaseModel):
     last_category: Optional[str] = Field(default=None, description="The most recent business category/service.")
     last_city: Optional[str] = Field(default=None, description="The most recent city/location.")
 
-class QueryAnalysis(BaseModel):
-    intent: str = Field(description="Must be 'CONVERSATION', 'ACTION', or 'UNCLEAR'.")
-    terms: str = Field(description="Extracted search terms, business type, or service keywords (e.g. 'alien pet groomer'). Empty string if not searching.")
-    city: Optional[str] = Field(default=None, description="Explicit city mentioned in query.")
-    near_me: bool = Field(default=False, description="True if user wants proximity search (near me, nearby).")
+class IntentAnalysis(BaseModel):
+    intent: str = Field(description="One of: GREETING, REGISTRATION, SEARCH, PLATFORM_INFO, CONVERSATION, UNCLEAR")
+    search_terms: str = Field(default="", description="Extracted search keywords (e.g. 'barber', 'salon'). Only for SEARCH intent.")
+    city: Optional[str] = Field(default=None, description="City/location for SEARCH intent.")
+    near_me: bool = Field(default=False, description="True if user wants nearby search.")
+    specificity: str = Field(default="SPECIFIC", description="VAGUE or SPECIFIC — for SEARCH intent only.")
+    platform_target: Optional[str] = Field(default=None, description="pricing, features, faq, or testimonials — for PLATFORM_INFO intent.")
+    registration_type: Optional[str] = Field(default=None, description="shop_owner, customer, or null — for REGISTRATION intent.")
     context_updates: ContextUpdates
 
 class UnifiedQueryAnalyzer:
@@ -120,42 +169,58 @@ class UnifiedQueryAnalyzer:
     def __init__(self):
         self.analyzer_agent = Agent(
             model,
-            output_type=QueryAnalysis,
-            system_prompt="""You are a single-pass query analyzer for a local business search assistant.
-Extract the user's intent, search terms, and update context in ONE pass reading the conversation history.
+            output_type=IntentAnalysis,
+            system_prompt="""You are a single-pass intent classifier for ZeroQwait, a queue management platform.
+Classify the user's message into exactly ONE intent and extract relevant fields.
 
-Rules for 'intent':
-- CONVERSATION: Greetings, thanks, acknowledgments, meta questions, testing.
-- CONVERSATION: The user is ANSWERING a question that ZeroQ asked (e.g. providing a name, address, email, shop details, confirmation). This is critical — look at the conversation history to see if ZeroQ asked for information.
-- ACTION: The user is making a NEW search request for businesses, services, or locations.
-- UNCLEAR: Ambiguous inputs.
+## Intents
 
-CRITICAL — Follow-up detection:
-If the conversation history shows ZeroQ just asked the user a question (e.g. "Could you share your shop name?", "What type of shop?", "What's your email?"), then the current message is a FOLLOW-UP ANSWER, NOT a new search.
-Example:
-  ZeroQ: "Could you share: 1. Shop name 2. Shop type 3. Address"
-  User: "tutubaba is the shopname, shoptype is spa, address is 2570 bromus path, oshawa"
-  → intent=CONVERSATION, terms="", city=null (the user is answering, NOT searching for a spa in oshawa)
+GREETING — Simple greetings, thanks, goodbyes.
+  Examples: "hi", "hello", "hey there", "thanks", "bye", "good morning"
 
-Rules for 'terms':
-- Extract the core business type or service ONLY when the user is making a NEW search request.
-- Do NOT extract terms from follow-up answers to ZeroQ's questions.
-- Do NOT hardcode categories. Dynamically extract the noun/service exactly as asked.
-- Strip generic plural suffixes (shops, stores).
-- If intent is CONVERSATION or UNCLEAR, terms MUST be empty "".
+REGISTRATION — User wants to sign up, register, create account, list their business.
+  Examples: "I want to register", "sign up", "create an account", "set up my shop", "get started", "list my business"
+  - registration_type: "shop_owner" if mentions shop/business/store/owner, "customer" if mentions customer/join, null if unclear.
 
-Rules for 'city':
-- Extract city ONLY from NEW search requests, NOT from follow-up answers.
-- If no new city is mentioned in a search context, leave it null.
+SEARCH — User wants to find shops, businesses, or services.
+  Examples: "find barbers near me", "any salons in Toronto?", "search shops", "look for a clinic"
+  - specificity=VAGUE if NO service type is mentioned (e.g. "search shops", "find stores", "show me businesses")
+  - specificity=SPECIFIC if a service type, category, or query is given (e.g. "find barbers", "salons near me")
+  - search_terms: extract core service type ONLY for SPECIFIC searches. Empty string otherwise.
+  - city: only if a city is explicitly named in a search request.
+  - near_me: true only if user says "near me", "nearby", "around here".
 
-Rules for 'near_me':
-- True ONLY if user explicitly says "near me", "nearby", "around here" in a NEW search request.
+PLATFORM_INFO — User asks about ZeroQwait itself: pricing, features, FAQ, testimonials, products.
+  Examples: "what are your prices?", "tell me about features", "how does it work?", "show me testimonials", "I want to know about the products"
+  - platform_target: "pricing" for price/cost/plan/subscription/product, "features" for features/capabilities, "faq" for FAQ/help, "testimonials" for reviews/testimonials.
+  - CRITICAL: "products", "pricing", "how much does it cost" → PLATFORM_INFO, NOT SEARCH.
 
-Rules for 'context_updates':
-- 'last_category': The LATEST business/service category from a search. Keep old if no new search.
-- 'last_city': The LATEST city from a search. Keep old if no new search.
+CONVERSATION — General conversation, answering a question ZeroQ asked, follow-up discussion.
+  If conversation history shows ZeroQ asked a question about registration details (e.g. "Could you share your shop name?", "What's your email?"), the current message is an ANSWER → CONVERSATION.
+  Example:
+    ZeroQ: "Could you share: 1. Shop name 2. Shop type 3. Address"
+    User: "tutubaba is the shopname, shoptype is spa, address is 2570 bromus path, oshawa"
+    → intent=CONVERSATION (user is answering registration questions, NOT searching)
+
+  EXCEPTION — Search follow-ups are SEARCH, not CONVERSATION:
+  If ZeroQ asked "What type of service are you looking for?" or "What city?" and the user replies with a service type or location, this is a SEARCH with specificity=SPECIFIC.
+  Examples:
+    ZeroQ: "What type of service are you looking for?"
+    User: "auto shop" → intent=SEARCH, specificity=SPECIFIC, search_terms="auto shop"
+    User: "barber in Toronto" → intent=SEARCH, specificity=SPECIFIC, search_terms="barber", city="Toronto"
+    User: "salon" → intent=SEARCH, specificity=SPECIFIC, search_terms="salon"
+
+UNCLEAR — Ambiguous message that doesn't clearly fit other intents. When in doubt, prefer UNCLEAR.
+  Examples: "ok", "maybe", "hmm", single characters, random text
+
+## Field Rules
+- search_terms, city, near_me, specificity: only meaningful for SEARCH intent. Use defaults for other intents.
+- platform_target: only meaningful for PLATFORM_INFO intent.
+- registration_type: only meaningful for REGISTRATION intent.
+- For non-applicable intents, use default values (empty string, null, false).
+- context_updates.last_category / last_city: track latest search category and city across conversation turns.
 """,
-            model_settings={'temperature': 0.1, 'max_tokens': 200}
+            model_settings={'temperature': 0.1, 'max_tokens': 250}
         )
         
         self.conversation_agent = Agent(
@@ -163,25 +228,145 @@ Rules for 'context_updates':
             system_prompt="""You are ZeroQ, the AI receptionist for ZeroQwait — a queue management platform.
 
 Your ONLY purpose is helping users with:
-1. Finding local service businesses (barbers, salons, clinics, auto shops, etc.)
-2. Joining queues remotely and checking wait times
-3. Explaining ZeroQwait features, pricing (Free $0/mo, Premium $29/mo, Enterprise), or FAQ
-4. Registering as a customer or shop owner
+1. Registering a shop — Setting up their business on the ZeroQwait platform
+2. Searching for shops — Finding services nearby and joining an AI-powered queue
+3. Answering questions about our products — Pricing, features, and how the platform works
 
 RULES:
 - NEVER discuss topics outside ZeroQwait (no weather, no general knowledge, no recommendations unrelated to queue management)
-- If the user says "hello" or greets you, introduce yourself and ask what service they're looking for or if they want to join a queue
-- Keep responses to 1-2 sentences maximum
-- Always guide users toward searching for shops, joining queues, or exploring features
+- If the user says "hello" or greets you, introduce yourself and list what you can do: 1) Register a Shop, 2) Search for Shops and join an AI-powered queue, 3) Ask about our products
+- Keep responses to 1-3 sentences maximum
+- Always guide users toward these three core actions
 """,
             model_settings={'temperature': 0.3}
         )
 
-    async def analyze(self, user_msg: str, history_context: str = "") -> QueryAnalysis:
+    # Compiled regex patterns for fast intent detection (skip LLM for obvious intents)
+    _GREETING_RE = re.compile(
+        r'^(hi|hello|hey|howdy|greetings|good\s*(morning|afternoon|evening|day)|'
+        r'thanks|thank\s*you|bye|goodbye|see\s*you|take\s*care|yo|sup|hiya|hola|'
+        r'what\'?s\s*up|whats\s*up)[!?.,\s]*$',
+        re.IGNORECASE
+    )
+    _PLATFORM_PRICING_RE = re.compile(
+        r'\b(pric(e|es|ing)|cost|how\s*much|subscription|plan[s]?|products?)\b',
+        re.IGNORECASE
+    )
+    _PLATFORM_FEATURES_RE = re.compile(
+        r'\b(features?|capabilities|what\s*(can|do)\s*(you|it)\s*(do|offer))\b',
+        re.IGNORECASE
+    )
+    _PLATFORM_FAQ_RE = re.compile(
+        r'\b(faq|frequently\s*asked|help\s*page|how\s*does\s*it\s*work)\b',
+        re.IGNORECASE
+    )
+    _PLATFORM_TESTIMONIALS_RE = re.compile(
+        r'\b(testimonials?|reviews?|what\s*(people|users|customers)\s*say)\b',
+        re.IGNORECASE
+    )
+    _REGISTRATION_RE = re.compile(
+        r'\b(register|sign\s*up|create\s*(an?\s*)?account|get\s*started|'
+        r'list\s*my\s*business|set\s*up\s*(my\s*)?(shop|business|store))\b',
+        re.IGNORECASE
+    )
+    _SEARCH_TRIGGER_RE = re.compile(
+        r'\b(find|search|look(?:ing)?\s*for|show\s*me|near\s*me|nearby)\b',
+        re.IGNORECASE
+    )
+    _SERVICE_KEYWORD_RE = re.compile(
+        r'\b(barber|barbers|barbershop|salon|spa|clinic|hospital|dentist|dental|'
+        r'auto\s*shop|mechanic|car\s*wash|gym|fitness|restaurant|cafe|pharmacy)\b',
+        re.IGNORECASE
+    )
+    _CITY_IN_RE = re.compile(r'\bin\s+([A-Za-z][A-Za-z\s\-]{1,40})\b')
+
+    def _fast_intent_check(self, user_msg: str) -> Optional[IntentAnalysis]:
+        """Regex-based fast path for obvious intents. Returns None if unsure (falls through to LLM)."""
+        msg = user_msg.strip()
+        lower_msg = msg.lower()
+        defaults = dict(search_terms="", city=None, near_me=False, specificity="SPECIFIC",
+                        platform_target=None, registration_type=None,
+                        context_updates=ContextUpdates(last_category=None, last_city=None))
+
+        # Greeting — only match short messages (< 30 chars) to avoid false positives
+        if len(msg) < 30 and self._GREETING_RE.match(msg):
+            return IntentAnalysis(intent='GREETING', **defaults)
+
+        # Platform info
+        for regex, target in [
+            (self._PLATFORM_PRICING_RE, 'pricing'),
+            (self._PLATFORM_FEATURES_RE, 'features'),
+            (self._PLATFORM_FAQ_RE, 'faq'),
+            (self._PLATFORM_TESTIMONIALS_RE, 'testimonials'),
+        ]:
+            if regex.search(msg):
+                return IntentAnalysis(intent='PLATFORM_INFO', platform_target=target,
+                                     search_terms="", city=None, near_me=False, specificity="SPECIFIC",
+                                     registration_type=None,
+                                     context_updates=ContextUpdates(last_category=None, last_city=None))
+
+        # Registration
+        if self._REGISTRATION_RE.search(msg):
+            reg_type = None
+            if re.search(r'\b(shop|business|store|owner)\b', msg, re.IGNORECASE):
+                reg_type = 'shop_owner'
+            elif re.search(r'\b(customer|join)\b', msg, re.IGNORECASE):
+                reg_type = 'customer'
+            return IntentAnalysis(intent='REGISTRATION', registration_type=reg_type,
+                                 search_terms="", city=None, near_me=False, specificity="SPECIFIC",
+                                 platform_target=None,
+                                 context_updates=ContextUpdates(last_category=None, last_city=None))
+
+        # Search fast path — skip LLM for obvious "find/search/near me" requests.
+        if self._SEARCH_TRIGGER_RE.search(msg):
+            near_me = "near me" in lower_msg or "nearby" in lower_msg
+            service_match = self._SERVICE_KEYWORD_RE.search(msg)
+            city_match = self._CITY_IN_RE.search(msg)
+            city = city_match.group(1).strip() if city_match else None
+            if service_match:
+                search_terms = service_match.group(1).strip().lower()
+                # Normalize common plurals/variants for cleaner search.
+                if search_terms == "barbers":
+                    search_terms = "barber"
+                elif search_terms == "barbershop":
+                    search_terms = "barber"
+                elif search_terms == "dental":
+                    search_terms = "dentist"
+                return IntentAnalysis(
+                    intent='SEARCH',
+                    search_terms=search_terms,
+                    city=city,
+                    near_me=near_me,
+                    specificity="SPECIFIC",
+                    platform_target=None,
+                    registration_type=None,
+                    context_updates=ContextUpdates(last_category=search_terms, last_city=city)
+                )
+
+            return IntentAnalysis(
+                intent='SEARCH',
+                search_terms="",
+                city=city,
+                near_me=near_me,
+                specificity="VAGUE",
+                platform_target=None,
+                registration_type=None,
+                context_updates=ContextUpdates(last_category=None, last_city=city)
+            )
+
+        return None  # Not obvious — fall through to LLM
+
+    async def analyze(self, user_msg: str, history_context: str = "") -> IntentAnalysis:
+        # Fast regex prefilter — skip 10-13s LLM call for obvious intents
+        fast_result = self._fast_intent_check(user_msg)
+        if fast_result:
+            logger.info(f"Fast intent match: {fast_result.intent} (skipped LLM)")
+            return fast_result
+        
         # Check Semantic Cache First
         cached_dict = semantic_cache.get(user_msg)
         if cached_dict:
-            return QueryAnalysis(**cached_dict)
+            return IntentAnalysis(**cached_dict)
             
         full_prompt = f"{history_context}\n\nCurrent message: {user_msg}" if history_context else user_msg
         
@@ -195,11 +380,14 @@ RULES:
         except Exception as e:
             logger.error(f"Unified analyzer failed: {e}")
             # Degrade gracefully so the main agent can still attempt to answer
-            return QueryAnalysis(
+            return IntentAnalysis(
                 intent='UNCLEAR',
-                terms="",
+                search_terms="",
                 city=None,
                 near_me="near" in user_msg.lower() or "nearby" in user_msg.lower(),
+                specificity="SPECIFIC",
+                platform_target=None,
+                registration_type=None,
                 context_updates=ContextUpdates(last_category=None, last_city=None)
             )
             
@@ -217,7 +405,7 @@ RULES:
             result = await self.conversation_agent.run(full_msg)
             return getattr(result, 'output', getattr(result, 'data', str(result)))
         except Exception:
-            return "Hello! 👋 I'm ZeroQ. How can I help you today? I can help you find shops, check pricing, or answer questions!"
+            return "Hello! I'm ZeroQ. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
 
 unified_query_analyzer = UnifiedQueryAnalyzer()
 
@@ -516,13 +704,19 @@ class MasterResponse(BaseModel):
 # --- Dynamic System Prompt ---
 
 def get_master_system_prompt() -> str:
-    """Generate system prompt dynamically from database knowledge."""
+    """Generate system prompt dynamically from database knowledge (cached in Redis)."""
     available_categories = category_manager.get_available_categories_text()
     
-    # Fetch knowledge from DB with fallbacks
+    # Fetch knowledge from DB with Redis cache (5-min TTL)
     def get_knowledge(key, default):
+        cache_key = f"agent_knowledge:{key}"
+        cached = redis_client.get(cache_key)
+        if cached is not None:
+            return cached if cached else default
         item = db_interface.get_agent_knowledge(key)
-        return item['content'] if item else default
+        content = item['content'] if item else ""
+        redis_client.set(cache_key, content, ttl=300)
+        return content if content else default
 
     critical_instructions = get_knowledge("critical_instructions", "")
     about_zeroqwait = get_knowledge("about_zeroqwait", "")
@@ -603,10 +797,17 @@ async def search_shops(
         user_wants_nearby = False
         extracted_city = city
         
-        if original_query:
-            # Use unified query analyzer to keep extraction consistent
+        # Reuse cached analysis from stream_chat/chat — avoids redundant LLM call
+        cached_analysis = ctx.deps.context.get("last_query_analysis")
+        if cached_analysis:
+            clean_terms = cached_analysis.get("search_terms") or None
+            user_wants_nearby = cached_analysis.get("near_me", False)
+            if not extracted_city and cached_analysis.get("city"):
+                extracted_city = cached_analysis["city"]
+        elif original_query:
+            # Fallback: run analyzer only if no cached result
             analysis = await unified_query_analyzer.analyze(original_query)
-            clean_terms = analysis.terms if analysis.terms else None
+            clean_terms = analysis.search_terms if analysis.search_terms else None
             user_wants_nearby = analysis.near_me
             if not extracted_city and analysis.city:
                 extracted_city = analysis.city
@@ -628,7 +829,7 @@ async def search_shops(
         if check_term.strip() in ['hi', 'hello', 'hey', 'greetings', 'sup', 'yo']:
             return "Hello! How can I help you today?"
             
-        if any(x in check_term for x in ['pricing', 'cost', 'plan', 'price']):
+        if any(x in check_term for x in ['pricing', 'cost', 'plan', 'price', 'product', 'subscription', 'how much']):
             ctx.deps.actions.append({
                 "tool": "navigate_to_page_section",
                 "result": {"target": "pricing"},
@@ -885,7 +1086,7 @@ async def start_registration(
     )
 ) -> str:
     """
-    Trigger the registration/signup wizard in the UI.
+    Start the interactive inline registration flow in the chat.
     Call this tool when:
     - User says they want to sign up, register, create an account
     - User asks how to get started as a shop owner
@@ -894,29 +1095,29 @@ async def start_registration(
     
     Do NOT call this if the user is already logged in (context will indicate this).
     """
+    from registration_agent import registration_agent
+
+    # Start the registration session — returns the first form_step event
+    form_event = registration_agent.start(
+        session_id=ctx.deps.session_id,
+        account_type=account_type if account_type in ("shop_owner", "customer") else None
+    )
+
     ctx.deps.actions.append({
         "tool": "start_registration",
         "result": {"account_type": account_type or "unknown"},
+        "form_event": form_event,
         "timestamp": datetime.now().isoformat()
     })
 
-    logger.info(f"start_registration called | user={ctx.deps.user_id} | account_type={account_type}")
+    logger.info(f"start_registration called | user={ctx.deps.user_id} | account_type={account_type} | first_step={form_event.get('step')}")
 
     if account_type == "shop_owner":
-        return (
-            "Registration wizard is now open for a shop owner account. "
-            "Say: 'Great! Let's get your shop set up. First, what's your email address?'"
-        )
+        return "Let's get your business registered! I'll walk you through it step by step."
     elif account_type == "customer":
-        return (
-            "Registration wizard is now open for a customer account. "
-            "Say: 'Perfect! Let's create your account. What's your email address?'"
-        )
+        return "Let's create your account! I'll guide you through it."
     else:
-        return (
-            "Registration wizard is now open. "
-            "Ask: 'Are you signing up as a shop owner, or as a customer looking to join queues?'"
-        )
+        return "Let's get you registered! First, are you a shop owner or a customer?"
 
 
 # --- Master Agent ---
@@ -1006,7 +1207,7 @@ class MasterAgent:
             if analysis.context_updates.last_city:
                 deps.context["last_search_city"] = analysis.context_updates.last_city
                 
-            logger.info(f"Analyzer: intent={intent}, terms='{analysis.terms}', city={analysis.city}, near_me={analysis.near_me}")
+            logger.info(f"Analyzer: intent={intent}, search_terms='{analysis.search_terms}', city={analysis.city}, near_me={analysis.near_me}, platform_target={analysis.platform_target}, specificity={analysis.specificity}")
             
             # Build Context Parts
             context_parts = []
@@ -1031,26 +1232,55 @@ class MasterAgent:
             full_context = "\n".join(context_parts)
             full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
             
-            # --- DIRECT SEARCH BYPASS ---
-            # Only bypass when analyzer explicitly identifies a NEW search intent (ACTION).
-            # If intent is CONVERSATION or UNCLEAR (e.g. user answering a follow-up question),
-            # defer to the LLM — this is scalable across all conversational flows.
-            is_search_intent = (
-                analysis.intent == 'ACTION' 
-                and (analysis.terms or analysis.near_me or analysis.city)
-            )
+            # --- INTENT-BASED ROUTING (non-streaming) ---
+            intent = analysis.intent
+            logger.info(f"Intent routing (non-stream): intent={intent}, platform_target={analysis.platform_target}, reg_type={analysis.registration_type}")
             
-            logger.info(f"Search bypass decision: intent={analysis.intent}, terms='{analysis.terms}', is_search={is_search_intent}")
+            if intent == 'GREETING':
+                final_text = "Hello! I'm ZeroQ, your queue management assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
             
-            if is_search_intent:
-                logger.info("Direct Search Bypass Triggered")
-                final_text = await search_shops(
+            elif intent == 'REGISTRATION':
+                final_text = await start_registration(
                     RunContext(deps=deps, model=model, usage=None, prompt=""),
-                    category=analysis.context_updates.last_category,
-                    city=analysis.city,
-                    query=user_msg
+                    account_type=analysis.registration_type
                 )
+            
+            elif intent == 'SEARCH':
+                if analysis.specificity == 'VAGUE':
+                    final_text = "Sure! What type of service are you looking for? For example: barber, salon, clinic, auto shop. And if you share your city or say 'near me', I'll find the closest options!"
+                else:
+                    logger.info("Direct Search (intent-based, non-stream)")
+                    final_text = await search_shops(
+                        RunContext(deps=deps, model=model, usage=None, prompt=""),
+                        category=analysis.context_updates.last_category,
+                        city=analysis.city,
+                        query=user_msg
+                    )
+            
+            elif intent == 'PLATFORM_INFO':
+                # Normalize LLM output variations to expected keys
+                _target_aliases = {'product': 'pricing', 'products': 'pricing', 'price': 'pricing', 'plan': 'pricing', 'plans': 'pricing', 'cost': 'pricing', 'subscription': 'pricing', 'feature': 'features', 'review': 'testimonials', 'reviews': 'testimonials', 'testimonial': 'testimonials', 'help': 'faq'}
+                raw_target = analysis.platform_target or 'pricing'
+                target = _target_aliases.get(raw_target, raw_target)
+                responses = {
+                    'pricing': "Here's our pricing! We offer three plans: Free ($0/mo), Premium ($29/mo), and Enterprise (custom).",
+                    'features': "Here are our features! Real-time queue management, AI wait times, SMS, analytics, and more.",
+                    'faq': "Here are our frequently asked questions!",
+                    'testimonials': "Here's what our users are saying!"
+                }
+                final_text = responses.get(target, "ZeroQwait is a universal queue management platform. Check out our pricing and features!")
+                if target not in responses:
+                    target = 'pricing'
+                deps.actions.append({'tool': 'navigate_to_page_section', 'result': {'target': target}, 'timestamp': datetime.now().isoformat()})
+            
+            elif intent == 'CONVERSATION':
+                final_text = await unified_query_analyzer.get_conversational_response(user_msg, deps.context, history_context_str)
+            
+            elif intent == 'UNCLEAR':
+                final_text = "I'm not quite sure what you're looking for. Could you tell me more? I can help you:\n\n1. **Register a Shop** — Set up your business\n2. **Search for Shops** — Find services nearby\n3. **Ask about our Products** — Pricing, features, and more"
+            
             else:
+                # Fallback to master agent LLM
                 self.metrics["llm_calls"] += 1
                 result = await asyncio.wait_for(
                     self.agent.run(full_msg, message_history=message_history, deps=deps),
@@ -1108,71 +1338,127 @@ class MasterAgent:
     @staticmethod
     def _strip_for_tts(text: str) -> str:
         """Strip markdown, emojis, and special characters for clean TTS input."""
-        import re
         plain = text
-        plain = re.sub(r'\*\*(.*?)\*\*', r'\1', plain)
-        plain = re.sub(r'\*(.*?)\*', r'\1', plain)
-        plain = re.sub(r'#{1,6}\s', '', plain)
-        plain = re.sub(r'`([^`]*)`', r'\1', plain)
-        plain = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', plain)
-        # Remove emojis
-        plain = re.sub(
-            r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF'
-            r'\U0001F1E0-\U0001F1FF\U00002600-\U000026FF\U00002700-\U000027BF'
-            r'\U0000FE00-\U0000FE0F\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F'
-            r'\U0001FA70-\U0001FAFF\U0000200D\U000020E3\U000E0020-\U000E007F]',
-            '', plain
-        )
-        plain = re.sub(r'\n+', ' ', plain)
-        plain = re.sub(r'\s{2,}', ' ', plain)
+        plain = _MARKDOWN_BOLD_RE.sub(r'\1', plain)
+        plain = _MARKDOWN_ITALIC_RE.sub(r'\1', plain)
+        plain = _MARKDOWN_HEADING_RE.sub('', plain)
+        plain = _MARKDOWN_CODE_RE.sub(r'\1', plain)
+        plain = _MARKDOWN_LINK_RE.sub(r'\1', plain)
+        plain = _EMOJI_RE.sub('', plain)
+        plain = plain.replace('\n', ' ')
+        plain = _WHITESPACE_MULTI_RE.sub(' ', plain)
         return plain.strip()
 
     @staticmethod
     async def _generate_tts_audio(text: str) -> Tuple[Optional[str], Optional[str]]:
         """Generate TTS audio for a sentence, return (base64_audio, audio_format)."""
-        import httpx
-        import base64
-        
         tts_url = os.getenv("TTS_SERVICE_URL", "http://192.168.2.88:8880")
         clean_text = MasterAgent._strip_for_tts(text)
         if not clean_text or len(clean_text) < 2:
             return None, None
+
+        # Fast in-memory cache to avoid regenerating common repeated prompts.
+        cache_key = hashlib.sha256(clean_text.encode('utf-8')).hexdigest()
+        cached = _tts_cache.get(cache_key)
+        if cached:
+            return cached
         
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{tts_url}/v1/audio/speech",
-                    json={
-                        "model": "tts-1",
-                        "input": clean_text,
-                        "voice": "serena",
-                        "speed": 1.25,
-                        "response_format": "mp3"
-                    },
-                    headers={"Content-Type": "application/json"}
-                )
-                if response.status_code == 200:
-                    audio_bytes = response.content
-                    audio_format = "unknown"
-                    if len(audio_bytes) >= 12 and audio_bytes[:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE":
-                        audio_format = "wav"
-                    elif (len(audio_bytes) >= 3 and audio_bytes[:3] == b"ID3") or (len(audio_bytes) >= 2 and audio_bytes[:2] == b"\xff\xfb"):
-                        audio_format = "mp3"
-                    return base64.b64encode(audio_bytes).decode('ascii'), audio_format
-                else:
-                    logger.warning(f"TTS failed ({response.status_code}): {response.text[:100]}")
-                    return None, None
+            client = _get_tts_client()
+            response = await client.post(
+                f"{tts_url}/v1/audio/speech",
+                json={
+                    "model": "tts-1-en",
+                    "input": clean_text,
+                    "voice": "Vivian",
+                    "speed": 1.0,
+                    "language": "English",
+                    "instruct": "Speak clearly and naturally with a warm, confident North American English accent. Enunciate each word precisely. Friendly and professional tone.",
+                    "response_format": "wav"
+                },
+                headers={"Content-Type": "application/json"}
+            )
+            if response.status_code == 200:
+                audio_bytes = response.content
+                audio_format = "unknown"
+                if len(audio_bytes) >= 12 and audio_bytes[:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE":
+                    audio_format = "wav"
+                elif (len(audio_bytes) >= 3 and audio_bytes[:3] == b"ID3") or (len(audio_bytes) >= 2 and audio_bytes[:2] == b"\xff\xfb"):
+                    audio_format = "mp3"
+                audio_b64 = base64.b64encode(audio_bytes).decode('ascii')
+                _tts_cache[cache_key] = (audio_b64, audio_format)
+                if len(_tts_cache) > _TTS_CACHE_MAX_ITEMS:
+                    # Drop oldest inserted key (dict is insertion-ordered in Python 3.9+).
+                    oldest_key = next(iter(_tts_cache))
+                    _tts_cache.pop(oldest_key, None)
+                return audio_b64, audio_format
+            else:
+                logger.warning(f"TTS failed ({response.status_code}): {response.text[:100]}")
+                return None, None
         except Exception as e:
             logger.warning(f"TTS generation error: {e}")
             return None, None
 
     @staticmethod
     def _split_into_sentences(text: str) -> List[str]:
-        """Split text into sentences at . ? ! boundaries."""
+        """Split text into display-ready segments for paired text+TTS delivery.
+        
+        Preserves markdown formatting — TTS stripping happens in _generate_tts_audio.
+        Splits on paragraph boundaries first, then sentence boundaries within paragraphs.
+        """
         import re
-        # Split on sentence-ending punctuation followed by a space or end-of-string
-        parts = re.split(r'(?<=[.?!])\s+', text.strip())
-        return [p for p in parts if p.strip()]
+        stripped = text.strip()
+        if not stripped:
+            return []
+        
+        # 1. Split on paragraph breaks (double newline) — these are natural boundaries
+        paragraphs = re.split(r'\n{2,}', stripped)
+        paragraphs = [p.strip() for p in paragraphs if p.strip()]
+        
+        # 2. Within each paragraph, apply sentence splitting
+        #    But skip sentence-splitting for numbered/bulleted lists
+        segments = []
+        for para in paragraphs:
+            # If paragraph looks like a list (starts with number or bullet), keep it whole
+            if re.match(r'^[\d]+[.)]\s|^[-*•]\s', para):
+                segments.append(para)
+                continue
+            
+            # Split on sentence-ending punctuation, but NOT after digit-dot (e.g. "1." "2.")
+            parts = re.split(r'(?<!\d[.])(?<=[.?!])\s+', para)
+            parts = [p for p in parts if p.strip()]
+            
+            # Merge tiny fragments (< 30 chars) with neighbors
+            merged = []
+            for s in parts:
+                if merged and len(s) < 30:
+                    merged[-1] = merged[-1] + " " + s
+                else:
+                    merged.append(s)
+            if len(merged) > 1 and len(merged[0]) < 30:
+                merged[1] = merged[0] + " " + merged[1]
+                merged = merged[1:]
+            segments.extend(merged)
+        
+        # 3. Sub-split very long segments (> 200 chars) at clause boundaries
+        result = []
+        for s in segments:
+            # Use plain-text length for threshold (markdown adds chars)
+            plain_len = len(re.sub(r'\*\*(.+?)\*\*', r'\1', s))
+            if plain_len <= 200:
+                result.append(s)
+            else:
+                chunks = re.split(r'(?<=[,;:])\s+', s)
+                buf = ""
+                for chunk in chunks:
+                    if buf and len(buf) + len(chunk) + 1 > 150 and len(buf) >= 40:
+                        result.append(buf)
+                        buf = chunk
+                    else:
+                        buf = f"{buf} {chunk}" if buf else chunk
+                if buf:
+                    result.append(buf)
+        return result
 
     async def stream_chat(
         self,
@@ -1199,8 +1485,6 @@ class MasterAgent:
         - Search intent → direct bypass (single sentence event)
         - ACTION/UNCLEAR → non-streaming run(), split result into sentence events
         """
-        import json
-        import re
         
         def _safe_json(obj):
             """JSON-serialize with fallback for Pydantic models and other non-serializable types."""
@@ -1213,19 +1497,28 @@ class MasterAgent:
             raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
         
         async def _yield_sentences_with_tts(full_text: str):
-            """Split text into sentences, generate TTS for each concurrently, yield in order."""
+            """Split text into sentences, generate TTS one-at-a-time for progressive delivery.
+            In chat mode (is_voice=False), skip TTS entirely for instant response."""
             sentences = self._split_into_sentences(full_text)
             if not sentences:
                 yield f"data: {json.dumps({'type': 'sentence', 'text': full_text, 'audio': None, 'audio_format': None})}\n\n"
                 return
             
-            # Fire off all TTS tasks concurrently
-            tts_tasks = [asyncio.create_task(self._generate_tts_audio(s)) for s in sentences]
+            if not is_voice:
+                # Chat mode: yield text immediately, no TTS calls
+                for sentence in sentences:
+                    yield f"data: {json.dumps({'type': 'sentence', 'text': sentence, 'audio': None, 'audio_format': None})}\n\n"
+                return
             
-            # Yield in order as each completes (but maintain sequence)
-            for i, (sentence, task) in enumerate(zip(sentences, tts_tasks)):
+            # Voice mode: pipeline — start next TTS while yielding current sentence
+            next_task = asyncio.create_task(self._generate_tts_audio(sentences[0]))
+            for i, sentence in enumerate(sentences):
+                task = next_task
+                # Pre-fire next sentence's TTS while we await current
+                if i + 1 < len(sentences):
+                    next_task = asyncio.create_task(self._generate_tts_audio(sentences[i + 1]))
                 try:
-                    audio_b64, audio_format = await asyncio.wait_for(task, timeout=30.0)
+                    audio_b64, audio_format = await asyncio.wait_for(task, timeout=_TTS_TIMEOUT_SECONDS)
                 except Exception as e:
                     logger.warning(f"TTS task {i} failed: {e}")
                     audio_b64 = None
@@ -1252,6 +1545,36 @@ class MasterAgent:
             recent_msgs = [f"{'User' if h.get('role') == 'user' else 'ZeroQ'}: {h.get('content', '')[:200]}" for h in history[-6:]]
             history_context_str = "[CONVERSATION HISTORY]\n" + "\n".join(recent_msgs)
         
+        # --- ACTIVE REGISTRATION CHECK ---
+        # If a registration session is active, remind user to complete the form
+        # (prevents greeting prefilter from resetting mid-registration)
+        from registration_agent import registration_agent as reg_agent
+        active_reg = reg_agent.get_session(session_id)
+        if active_reg and not active_reg.get("completed"):
+            current_step = active_reg.get("step", "unknown")
+            # Check if user wants to cancel
+            if _CANCEL_REGISTRATION_RE.search(user_msg.strip()):
+                reg_agent._clear_session(session_id)
+                logger.info(f"Registration cancelled by user at step={current_step}")
+                cancel_msg = "Registration cancelled. How else can I help you?\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works"
+                async for event in _yield_sentences_with_tts(cancel_msg):
+                    yield event
+                yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            
+            logger.info(f"Active registration session found at step={current_step}, reminding user")
+            reminder_msg = f"Continuing your registration (step: **{current_step}**). Please complete the form below, or say **cancel registration** to start over."
+            async for event in _yield_sentences_with_tts(reminder_msg):
+                yield event
+            # Re-emit form_step so frontend can render the form again (e.g. after page refresh)
+            form_event = reg_agent._build_form_event(active_reg)
+            yield f"data: {json.dumps(form_event)}\n\n"
+            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        
+        # --- LLM INTENT CLASSIFICATION ---
         analysis = await unified_query_analyzer.analyze(
             user_msg, 
             history_context_str
@@ -1290,43 +1613,95 @@ class MasterAgent:
         full_context = "\n".join(context_parts)
         full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
         
-        # --- DIRECT SEARCH BYPASS ---
-        # Only bypass when analyzer explicitly identifies a NEW search intent (ACTION).
-        # If intent is CONVERSATION or UNCLEAR (e.g. user answering a follow-up question),
-        # defer to the LLM — scalable across all conversational flows.
-        is_search_intent = (
-            analysis.intent == 'ACTION'
-            and (analysis.terms or analysis.near_me or analysis.city)
-        )
+        # --- INTENT-BASED ROUTING ---
+        intent = analysis.intent
+        logger.info(f"Intent routing (stream): intent={intent}, search_terms='{analysis.search_terms}', city={analysis.city}")
         
-        logger.info(f"Search bypass decision (stream): intent={analysis.intent}, terms='{analysis.terms}', is_search={is_search_intent}")
-        
-        if is_search_intent:
-            logger.info("Direct Search Bypass Triggered (Streaming)")
-            final_text = await search_shops(
-                RunContext(deps=deps, model=model, usage=None, prompt=""),
-                category=analysis.context_updates.last_category,
-                city=analysis.city,
-                query=user_msg
-            )
-            # Send search result as paired sentence events
-            async for event in _yield_sentences_with_tts(final_text):
+        # GREETING
+        if intent == 'GREETING':
+            greeting_response = "Hello! I'm ZeroQ, your queue management assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
+            async for event in _yield_sentences_with_tts(greeting_response):
                 yield event
-            yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
+            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
             yield "data: [DONE]\n\n"
             return
         
-        intent = analysis.intent
+        # REGISTRATION
+        if intent == 'REGISTRATION':
+            account_type = analysis.registration_type
+            logger.info(f"Registration intent (stream): account_type={account_type}")
+            form_event = reg_agent.start(session_id=session_id, account_type=account_type)
+            if account_type == "shop_owner":
+                intro_text = "Let's get your business registered! I'll walk you through it step by step."
+            elif account_type == "customer":
+                intro_text = "Let's create your account! I'll guide you through it."
+            else:
+                intro_text = "Let's get you registered! First, are you a shop owner or a customer?"
+            async for event in _yield_sentences_with_tts(intro_text):
+                yield event
+            yield f"data: {json.dumps(form_event)}\n\n"
+            yield f"data: {json.dumps({'type': 'actions', 'actions': [{'tool': 'start_registration', 'result': {'account_type': account_type or 'unknown'}}]})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
         
-        # --- CONVERSATION INTENT: Token streaming + sentence-buffered TTS ---
+        # SEARCH
+        if intent == 'SEARCH':
+            if analysis.specificity == 'VAGUE':
+                logger.info("Vague search — asking for details")
+                prompt_text = "Sure! I can help you find services nearby. What type of service are you looking for? For example: *barber*, *salon*, *clinic*, *auto shop*, etc. And if you share your city or say **near me**, I'll find the closest options!"
+                async for event in _yield_sentences_with_tts(prompt_text):
+                    yield event
+                yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            else:
+                logger.info("Direct Search (intent-based, stream)")
+                final_text = await search_shops(
+                    RunContext(deps=deps, model=model, usage=None, prompt=""),
+                    category=analysis.context_updates.last_category,
+                    city=analysis.city,
+                    query=user_msg
+                )
+                async for event in _yield_sentences_with_tts(final_text):
+                    yield event
+                yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+        
+        # PLATFORM_INFO
+        if intent == 'PLATFORM_INFO':
+            # Normalize LLM output variations to expected keys
+            _target_aliases = {'product': 'pricing', 'products': 'pricing', 'price': 'pricing', 'plan': 'pricing', 'plans': 'pricing', 'cost': 'pricing', 'subscription': 'pricing', 'feature': 'features', 'review': 'testimonials', 'reviews': 'testimonials', 'testimonial': 'testimonials', 'help': 'faq'}
+            raw_target = analysis.platform_target or 'pricing'
+            target = _target_aliases.get(raw_target, raw_target)
+            logger.info(f"Platform info intent (stream): raw={raw_target}, target={target}")
+            responses = {
+                'pricing': "Here's our pricing! We offer three plans: **Free** ($0/mo) for basic queue management, **Premium** ($29/mo) with analytics and SMS notifications, and **Enterprise** (custom pricing) for multi-location businesses. Take a look below!",
+                'features': "Here are our features! ZeroQwait offers real-time queue management, AI-powered wait time estimates, SMS notifications, analytics dashboards, and more. Check them out below!",
+                'faq': "Here are our frequently asked questions! Take a look below for answers to common questions about ZeroQwait.",
+                'testimonials': "Here's what our users are saying! Check out the testimonials below."
+            }
+            response_text = responses.get(target, "Great question! ZeroQwait is a universal queue management platform. Check out our pricing and features below!")
+            if target not in responses:
+                target = 'pricing'
+            async for event in _yield_sentences_with_tts(response_text):
+                yield event
+            action = {'tool': 'navigate_to_page_section', 'result': {'target': target}, 'timestamp': datetime.now().isoformat()}
+            yield f"data: {json.dumps({'type': 'actions', 'actions': [action]}, default=_safe_json)}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        
+        # CONVERSATION — Token streaming + sentence-buffered TTS
         if intent == 'CONVERSATION':
             logger.info("Paired streaming via conversation agent")
             try:
                 self.metrics["llm_calls"] += 1
                 sentence_buffer = ""
-                pending_tts_tasks: List[asyncio.Task] = []
-                pending_sentences: List[str] = []
-                sentence_boundary = re.compile(r'(?<=[.?!])\s+')
+                voice_chunk_buffer = ""
+                voice_chunks_emitted = 0
+                # Voice mode: pipeline TTS concurrently with LLM streaming
+                pending_voice: List[Tuple[str, asyncio.Task]] = []
+                voice_yield_index = 0
                 
                 async with unified_query_analyzer.conversation_agent.run_stream(
                     full_msg, message_history=message_history
@@ -1338,40 +1713,91 @@ class MasterAgent:
                         
                         # Check for sentence boundaries in buffer
                         while True:
-                            match = sentence_boundary.search(sentence_buffer)
+                            match = _SENTENCE_BOUNDARY_RE.search(sentence_buffer)
                             if not match:
                                 break
-                            # Extract complete sentence
                             boundary_end = match.end()
                             complete_sentence = sentence_buffer[:boundary_end].strip()
                             sentence_buffer = sentence_buffer[boundary_end:]
                             
                             if complete_sentence and len(complete_sentence) > 2:
-                                # Fire TTS immediately (don't wait)
-                                tts_task = asyncio.create_task(
-                                    self._generate_tts_audio(complete_sentence)
-                                )
-                                pending_tts_tasks.append(tts_task)
-                                pending_sentences.append(complete_sentence)
+                                if is_voice:
+                                    # First chunk streams quickly, then aggregate to reduce
+                                    # per-sentence voice drift and TTS round trips.
+                                    if voice_chunks_emitted == 0:
+                                        chunk = complete_sentence
+                                        tts_task = asyncio.create_task(
+                                            self._generate_tts_audio(chunk)
+                                        )
+                                        pending_voice.append((chunk, tts_task))
+                                        voice_chunks_emitted += 1
+                                    else:
+                                        voice_chunk_buffer = (
+                                            f"{voice_chunk_buffer} {complete_sentence}".strip()
+                                            if voice_chunk_buffer else complete_sentence
+                                        )
+                                        should_flush = (
+                                            len(voice_chunk_buffer) >= 140
+                                            or voice_chunk_buffer.count('.') >= 2
+                                            or voice_chunk_buffer.count('?') >= 1
+                                            or voice_chunk_buffer.count('!') >= 1
+                                        )
+                                        if should_flush:
+                                            chunk = voice_chunk_buffer
+                                            voice_chunk_buffer = ""
+                                            tts_task = asyncio.create_task(
+                                                self._generate_tts_audio(chunk)
+                                            )
+                                            pending_voice.append((chunk, tts_task))
+                                            voice_chunks_emitted += 1
+                                else:
+                                    # Chat mode: yield text immediately, no TTS
+                                    yield f"data: {json.dumps({'type': 'sentence', 'text': complete_sentence, 'audio': None, 'audio_format': None})}\n\n"
+                        
+                        # Voice mode: yield any sentences whose TTS has completed (in order)
+                        if is_voice:
+                            while voice_yield_index < len(pending_voice):
+                                sent, task = pending_voice[voice_yield_index]
+                                if task.done():
+                                    try:
+                                        audio_b64, audio_format = task.result()
+                                    except Exception as e:
+                                        logger.warning(f"TTS task {voice_yield_index} failed: {e}")
+                                        audio_b64, audio_format = None, None
+                                    yield f"data: {json.dumps({'type': 'sentence', 'text': sent, 'audio': audio_b64, 'audio_format': audio_format})}\n\n"
+                                    voice_yield_index += 1
+                                else:
+                                    break
                 
                 # Handle remaining buffer as final sentence
-                if sentence_buffer.strip() and len(sentence_buffer.strip()) > 2:
-                    final_sentence = sentence_buffer.strip()
+                remaining = sentence_buffer.strip()
+                if remaining and len(remaining) > 2:
+                    if is_voice:
+                        voice_chunk_buffer = (
+                            f"{voice_chunk_buffer} {remaining}".strip()
+                            if voice_chunk_buffer else remaining
+                        )
+                    else:
+                        yield f"data: {json.dumps({'type': 'sentence', 'text': remaining, 'audio': None, 'audio_format': None})}\n\n"
+
+                # Flush any buffered voice chunk after stream ends.
+                if is_voice and voice_chunk_buffer:
                     tts_task = asyncio.create_task(
-                        self._generate_tts_audio(final_sentence)
+                        self._generate_tts_audio(voice_chunk_buffer)
                     )
-                    pending_tts_tasks.append(tts_task)
-                    pending_sentences.append(final_sentence)
+                    pending_voice.append((voice_chunk_buffer, tts_task))
                 
-                # Now yield all sentence events in order (TTS tasks were fired concurrently)
-                for i, (sentence, task) in enumerate(zip(pending_sentences, pending_tts_tasks)):
-                    try:
-                        audio_b64, audio_format = await asyncio.wait_for(task, timeout=30.0)
-                    except Exception as e:
-                        logger.warning(f"TTS task {i} failed: {e}")
-                        audio_b64 = None
-                        audio_format = None
-                    yield f"data: {json.dumps({'type': 'sentence', 'text': sentence, 'audio': audio_b64, 'audio_format': audio_format})}\n\n"
+                # Voice mode: yield any remaining sentences (await their TTS)
+                if is_voice:
+                    while voice_yield_index < len(pending_voice):
+                        sent, task = pending_voice[voice_yield_index]
+                        try:
+                            audio_b64, audio_format = await asyncio.wait_for(task, timeout=_TTS_TIMEOUT_SECONDS)
+                        except Exception as e:
+                            logger.warning(f"TTS task {voice_yield_index} failed: {e}")
+                            audio_b64, audio_format = None, None
+                        yield f"data: {json.dumps({'type': 'sentence', 'text': sent, 'audio': audio_b64, 'audio_format': audio_format})}\n\n"
+                        voice_yield_index += 1
                 
                 yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
                 yield "data: [DONE]\n\n"
@@ -1390,8 +1816,17 @@ class MasterAgent:
                 yield "data: [DONE]\n\n"
                 return
         
-        # --- ACTION / UNCLEAR INTENT: Non-streaming run(), then sentence-split ---
-        logger.info(f"Non-streaming master agent run (intent={intent})")
+        # UNCLEAR — Ask the user for clarification
+        if intent == 'UNCLEAR':
+            unclear_response = "I'm not quite sure what you're looking for. Could you tell me more? I can help you:\n\n1. **Register a Shop** — Set up your business\n2. **Search for Shops** — Find services nearby\n3. **Ask about our Products** — Pricing, features, and more"
+            async for event in _yield_sentences_with_tts(unclear_response):
+                yield event
+            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        
+        # FALLBACK — Unrecognized intent, use master agent LLM
+        logger.info(f"Fallback: non-streaming master agent run (intent={intent})")
         try:
             self.metrics["llm_calls"] += 1
             result = await asyncio.wait_for(
@@ -1403,6 +1838,12 @@ class MasterAgent:
             # Send as paired sentence events
             async for event in _yield_sentences_with_tts(response_text):
                 yield event
+            
+            # Check if any actions include a form_event (e.g. start_registration)
+            for action in deps.actions:
+                if "form_event" in action:
+                    yield f"data: {json.dumps({'type': 'form_step', **action['form_event']})}\n\n"
+            
             yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
             yield "data: [DONE]\n\n"
                 

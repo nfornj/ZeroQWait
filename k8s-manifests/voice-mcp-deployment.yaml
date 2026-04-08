@@ -1,0 +1,94 @@
+# ZeroQwait Voice MCP Gateway
+# Single voice gateway: REST (for backend) + MCP SSE (for external MCP clients)
+# Pods to this deployment proxies all TTS and ASR calls, sitting between
+# the backend and the raw tts-service / asr-service pods.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-mcp
+  namespace: zeroqwait
+  labels:
+    app: voice-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voice-mcp
+  template:
+    metadata:
+      labels:
+        app: voice-mcp
+    spec:
+      priorityClassName: app-critical
+      tolerations:
+        - key: "workload-pool"
+          operator: "Equal"
+          value: "core-cpu"
+          effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: zeroqwait.io/node-pool
+                    operator: In
+                    values: ["core-cpu"]
+      containers:
+        - name: voice-mcp
+          image: localhost:5000/voice-mcp:v20260406120811-18332e3
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8881
+              protocol: TCP
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8881"
+            - name: TTS_DEFAULT_VOICE
+              value: "Vivian"
+            - name: TTS_UPSTREAM_URL
+              value: "http://tts-service.zeroqwait.svc.cluster.local:8880"
+            - name: ASR_UPSTREAM_URL
+              value: "http://asr-service.zeroqwait.svc.cluster.local:8000"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8881
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8881
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-mcp
+  namespace: zeroqwait
+  labels:
+    app: voice-mcp
+spec:
+  type: ClusterIP
+  selector:
+    app: voice-mcp
+  ports:
+    - name: http
+      port: 8881
+      targetPort: 8881
+      protocol: TCP

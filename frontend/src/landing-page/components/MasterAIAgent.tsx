@@ -18,6 +18,8 @@ import MicIcon from "@mui/icons-material/Mic";
 import MicOffIcon from "@mui/icons-material/MicOff";
 import SearchIcon from "@mui/icons-material/Search";
 import LocationOnIcon from "@mui/icons-material/LocationOn";
+import VolumeUpIcon from "@mui/icons-material/VolumeUp";
+import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import axios from "axios";
 import { useAudioRecorder } from "../../hooks/useAudioRecorder";
 import { useAudioVisualizer } from "../../hooks/useAudioVisualizer";
@@ -32,6 +34,10 @@ import Features from "./Features";
 import FAQ from "./FAQ";
 import Testimonials from "./Testimonials";
 import VoiceRegistrationFlow from "./VoiceRegistrationFlow";
+import InlineRegistrationForm, {
+  FormStepData,
+  FormDoneData,
+} from "./InlineRegistrationForm";
 import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
 
 const MasterAIAgent: React.FC = () => {
@@ -40,6 +46,9 @@ const MasterAIAgent: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
+  // "voice" = TTS enabled + orb prominent, "chat" = text-only, no TTS audio
+  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">("voice");
+  const interactionModeRef = useRef<"voice" | "chat">("voice");
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
     null,
   );
@@ -77,6 +86,9 @@ const MasterAIAgent: React.FC = () => {
       role: "ai" | "user";
       text: string;
       shops?: any[];
+      formStep?: FormStepData | null;
+      formDone?: FormDoneData | null;
+      formCompleted?: boolean;
       relatedViewer?:
         | "shops"
         | "pricing"
@@ -88,7 +100,7 @@ const MasterAIAgent: React.FC = () => {
   >([
     {
       role: "ai",
-      text: "Welcome to ZeroQwait! I'm ZeroQ. How can I help you today?",
+      text: "Welcome to ZeroQwait! I'm ZeroQ. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?",
     },
   ]);
 
@@ -99,6 +111,36 @@ const MasterAIAgent: React.FC = () => {
     "customer" | "shop_owner" | null
   >(null);
   const [activeShops, setActiveShops] = useState<any[]>([]);
+
+  // --- Restore active registration on page load/refresh ---
+  useEffect(() => {
+    if (!sessionId) return;
+    const restoreRegistration = async () => {
+      try {
+        const res = await fetch(
+          `/api/agent/registration/state?session_id=${encodeURIComponent(sessionId)}`,
+        );
+        if (!res.ok) return;
+        const state = await res.json();
+        if (!state.active || !state.form_step) return;
+
+        // Inject a resumption message + form into chat history
+        const stepLabel = state.form_step.prompt || state.form_step.message || `Step: ${state.step}`;
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            role: "ai" as const,
+            text: `Continuing your registration (step: **${state.step}**). Please complete the form below, or say **cancel registration** to start over.`,
+            formStep: state.form_step as FormStepData,
+          },
+        ]);
+      } catch (e) {
+        // Silently fail — not critical
+        console.warn("Could not check registration state:", e);
+      }
+    };
+    restoreRegistration();
+  }, [sessionId]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const latestAIResponse = chatHistory[chatHistory.length - 1];
@@ -174,6 +216,11 @@ const MasterAIAgent: React.FC = () => {
   // Audio Visualizer
   const { volume } = useAudioVisualizer(isRecording);
 
+  // Keep interaction mode ref in sync with state
+  useEffect(() => {
+    interactionModeRef.current = interactionMode;
+  }, [interactionMode]);
+
   // --- Paired-Streaming TTS: synchronized text + audio playback ---
   const audioCtxRef = useRef<AudioContext | null>(null);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -195,7 +242,17 @@ const MasterAIAgent: React.FC = () => {
     return audioCtxRef.current;
   };
 
-  /** Play base64-encoded MP3 audio. Resolves when playback ends. */
+  /** Decode base64 audio to ArrayBuffer for pre-buffering. */
+  const decodeBase64Audio = (base64Audio: string): ArrayBuffer => {
+    const binaryStr = atob(base64Audio);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    return bytes.buffer.slice(0) as ArrayBuffer;
+  };
+
+  /** Play audio from an ArrayBuffer (already base64-decoded). Resolves when playback ends. */
   const playAudio = (base64Audio: string): Promise<void> => {
     return new Promise<void>((resolve) => {
       const safetyTimeout = setTimeout(() => {
@@ -206,17 +263,12 @@ const MasterAIAgent: React.FC = () => {
       }, 60000);
 
       try {
-        const binaryStr = atob(base64Audio);
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let i = 0; i < binaryStr.length; i++) {
-          bytes[i] = binaryStr.charCodeAt(i);
-        }
-
+        const arrayBuf = decodeBase64Audio(base64Audio);
         const audioCtx = getAudioContext();
         if (audioCtx.state === "suspended") audioCtx.resume();
 
         audioCtx.decodeAudioData(
-          bytes.buffer.slice(0) as ArrayBuffer,
+          arrayBuf,
           (audioBuffer) => {
             if (cancelQueueRef.current) {
               clearTimeout(safetyTimeout);
@@ -252,7 +304,7 @@ const MasterAIAgent: React.FC = () => {
     });
   };
 
-  /** Typewriter effect: reveal text character-by-character synced to speaking rate (~30ms/char). */
+  /** Typewriter effect: reveal text char-by-char. Resolves when done but does NOT block audio. */
   const typeText = (
     text: string,
     updateFn: (textSoFar: string) => void,
@@ -260,15 +312,18 @@ const MasterAIAgent: React.FC = () => {
   ): Promise<void> => {
     return new Promise<void>((resolve) => {
       let charIndex = 0;
-      const speed = 15; // ms per character — faster typewriter synced to 1.25x TTS speed
+      // 8ms/char = fast enough to keep up with natural speech (~150 WPM)
+      const speed = 8;
       const timer = setInterval(() => {
         if (cancelQueueRef.current) {
           clearInterval(timer);
-          updateFn(previousText + text); // Show full text immediately on cancel
+          updateFn(previousText + text);
           resolve();
           return;
         }
-        charIndex++;
+        // Reveal 2 chars per tick for long sentences to keep up with audio
+        const step = text.length > 80 ? 3 : 2;
+        charIndex = Math.min(charIndex + step, text.length);
         updateFn(previousText + text.slice(0, charIndex));
         if (charIndex >= text.length) {
           clearInterval(timer);
@@ -278,7 +333,8 @@ const MasterAIAgent: React.FC = () => {
     });
   };
 
-  /** Process the paired media queue: play audio + typewrite text simultaneously per sentence. */
+  /** Process the paired media queue: play audio + typewrite text simultaneously per sentence.
+   *  Audio drives the pace — typewriter catches up but never blocks next audio. */
   const processMediaQueue = async (aiMsgIndexFn: () => number) => {
     if (isPlayingQueueRef.current) return;
     isPlayingQueueRef.current = true;
@@ -289,9 +345,6 @@ const MasterAIAgent: React.FC = () => {
       if (cancelQueueRef.current) break;
 
       const item = mediaQueueRef.current.shift()!;
-      console.log(
-        `[PairedStream] Sentence: "${item.text.slice(0, 50)}..." audio=${item.audio ? "yes" : "no"}`,
-      );
 
       const updateUI = (textSoFar: string) => {
         setChatHistory((prev) => {
@@ -306,19 +359,22 @@ const MasterAIAgent: React.FC = () => {
 
       const prevText = displayedText;
 
-      if (item.audio) {
-        // Paired execution: audio + typewriter run SIMULTANEOUSLY
-        await Promise.all([
-          playAudio(item.audio),
-          typeText(item.text, updateUI, prevText),
-        ]);
+      if (item.audio && interactionModeRef.current === "voice") {
+        // Audio-driven: start both, but only wait for audio.
+        // Typewriter runs in background and finishes the remaining text
+        // when audio ends (so next sentence audio starts without gap).
+        const typePromise = typeText(item.text, updateUI, prevText);
+        await playAudio(item.audio);
+        // Flush remaining typewriter text instantly so display is complete
+        updateUI(prevText + item.text);
+        // Don't await typePromise — it will resolve on its own
       } else {
-        // No audio available — just typewrite the text
+        // No audio or chat mode — just typewrite the text
         await typeText(item.text, updateUI, prevText);
       }
 
-      // Add a space between sentences for display
-      displayedText = prevText + item.text + " ";
+      // Add paragraph break between segments for display
+      displayedText = prevText + item.text + "\n\n";
     }
 
     isPlayingQueueRef.current = false;
@@ -329,6 +385,11 @@ const MasterAIAgent: React.FC = () => {
     cancelQueueRef.current = true;
     mediaQueueRef.current = [];
     isPlayingQueueRef.current = false;
+    // Abort any in-flight speak() TTS fetch
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     try {
       if (currentSourceRef.current) {
         currentSourceRef.current.stop();
@@ -340,6 +401,9 @@ const MasterAIAgent: React.FC = () => {
 
   /** Speak text via backend TTS API (used for welcome message only). */
   const speak = async (text: string) => {
+    // Skip TTS in chat mode
+    if (interactionModeRef.current === "chat") return;
+
     stopCurrentAudio();
     cancelQueueRef.current = false;
 
@@ -368,7 +432,7 @@ const MasterAIAgent: React.FC = () => {
       const response = await fetch("/api/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: plainText, voice: "serena", speed: 1.0 }),
+        body: JSON.stringify({ text: plainText, voice: "Vivian", speed: 1.0 }),
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`TTS ${response.status}`);
@@ -456,12 +520,57 @@ const MasterAIAgent: React.FC = () => {
     };
   }, []);
 
-  // Handle initial speech when opening
-  useEffect(() => {
-    if (isOpen && chatHistory.length === 1) {
-      speak(chatHistory[0].text);
-    }
-  }, [isOpen]);
+  // Note: Initial greeting is NOT spoken here — it will be spoken via
+  // paired streaming when user sends first message (avoids duplicate voice).
+  // The welcome text is pre-set in chatHistory as a text-only bubble.
+
+  // --- Registration Inline Form Result Handler ---
+  const handleFormResult = useCallback(
+    (result: FormStepData | FormDoneData, sourceIndex: number) => {
+      // Mark the current form step as completed
+      setChatHistory((prev) => {
+        const next = [...prev];
+        if (next[sourceIndex]) {
+          next[sourceIndex].formCompleted = true;
+        }
+        return next;
+      });
+
+      if (result.type === "form_step") {
+        // Next step — add a new AI message with the form
+        const nextStep = result as FormStepData;
+        const aiMessage = nextStep.message || nextStep.prompt || "Next step:";
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            role: "ai" as const,
+            text: aiMessage,
+            formStep: nextStep,
+          },
+        ]);
+        // Speak the prompt
+        if (nextStep.prompt) {
+          speak(nextStep.prompt);
+        }
+      } else if (result.type === "form_done") {
+        // Registration complete
+        const done = result as FormDoneData;
+        const successText = done.success
+          ? done.message
+          : `Registration failed: ${done.message}`;
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            role: "ai" as const,
+            text: successText,
+            formDone: done,
+          },
+        ]);
+        speak(successText);
+      }
+    },
+    [speak],
+  );
 
   const handleChat = async (userText: string) => {
     if (!userText.trim()) return;
@@ -504,6 +613,7 @@ const MasterAIAgent: React.FC = () => {
             active_view: activeViewer,
             visible_shops: activeShops.map((s) => s.name),
           },
+          is_voice: interactionMode === "voice",
         }),
       });
 
@@ -609,14 +719,15 @@ const MasterAIAgent: React.FC = () => {
                       currentViewer = "shops";
                     }
                   } else if (action.tool === "start_registration") {
+                    // Registration is now handled via inline form_step events.
+                    // Don't open the side panel viewer anymore.
                     const accountType = action.result?.account_type;
                     setRegistrationAccountType(
                       accountType === "shop_owner" || accountType === "customer"
                         ? accountType
                         : null,
                     );
-                    currentViewer = "register";
-                    currentShops = [];
+                    // Note: form_step SSE event (received separately) will add the inline form
                   }
                 });
               } else {
@@ -632,6 +743,20 @@ const MasterAIAgent: React.FC = () => {
                 if (next[aiMessageIndex]) {
                   next[aiMessageIndex].shops = currentShops;
                   next[aiMessageIndex].relatedViewer = currentViewer;
+                }
+                return next;
+              });
+            } else if (data.type === "form_step") {
+              // --- Inline registration form step ---
+              // Attach the form schema to the current AI message
+              const formStepData = data as FormStepData;
+              console.log(
+                `[SSE] form_step received: step=${formStepData.step}`,
+              );
+              setChatHistory((prev) => {
+                const next = [...prev];
+                if (next[aiMessageIndex]) {
+                  next[aiMessageIndex].formStep = formStepData;
                 }
                 return next;
               });
@@ -718,6 +843,55 @@ const MasterAIAgent: React.FC = () => {
               <DarkModeIcon sx={{ fontSize: 24 }} />
             )}
           </IconButton>
+          {/* Voice / Chat Mode Toggle */}
+          <Box
+            onClick={() => {
+              const newMode = interactionMode === "voice" ? "chat" : "voice";
+              if (newMode === "chat") {
+                stopCurrentAudio();
+                // Stop recording if switching to chat during active recording
+                if (isRecording) stopRecording();
+              }
+              setInteractionMode(newMode);
+            }}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+              px: 1.5,
+              py: 0.75,
+              borderRadius: "20px",
+              cursor: "pointer",
+              bgcolor: isDarkMode
+                ? "rgba(255,255,255,0.05)"
+                : "rgba(15,23,42,0.05)",
+              border: `1px solid ${interactionMode === "voice" ? theme.accent + "44" : theme.cardBorder}`,
+              transition: "all 0.2s ease",
+              "&:hover": {
+                bgcolor: isDarkMode
+                  ? "rgba(255,255,255,0.1)"
+                  : "rgba(15,23,42,0.1)",
+              },
+            }}
+          >
+            {interactionMode === "voice" ? (
+              <VolumeUpIcon sx={{ fontSize: 18, color: theme.accent }} />
+            ) : (
+              <VolumeOffIcon sx={{ fontSize: 18, color: theme.textSecondary }} />
+            )}
+            <Typography
+              variant="caption"
+              sx={{
+                fontWeight: 600,
+                fontSize: "0.65rem",
+                letterSpacing: "0.05em",
+                color: interactionMode === "voice" ? theme.accent : theme.textSecondary,
+                userSelect: "none",
+              }}
+            >
+              {interactionMode === "voice" ? "VOICE" : "CHAT"}
+            </Typography>
+          </Box>
           <IconButton
             onClick={() => setIsOpen(false)}
             sx={{
@@ -807,20 +981,26 @@ const MasterAIAgent: React.FC = () => {
             >
               {/* Clickable Orb for Voice Activation */}
               <Box
-                onClick={handleVoiceToggle}
+                onClick={interactionMode === "voice" ? handleVoiceToggle : undefined}
                 sx={{
                   position: "relative",
-                  width: activeViewer
-                    ? { xs: 80, sm: 100, md: 120 }
-                    : { xs: 150, sm: 180, md: 220 },
-                  height: activeViewer
-                    ? { xs: 80, sm: 100, md: 120 }
-                    : { xs: 150, sm: 180, md: 220 },
+                  width: interactionMode === "chat"
+                    ? { xs: 60, sm: 70, md: 80 }
+                    : activeViewer
+                      ? { xs: 80, sm: 100, md: 120 }
+                      : { xs: 150, sm: 180, md: 220 },
+                  height: interactionMode === "chat"
+                    ? { xs: 60, sm: 70, md: 80 }
+                    : activeViewer
+                      ? { xs: 80, sm: 100, md: 120 }
+                      : { xs: 150, sm: 180, md: 220 },
                   transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                   flexShrink: 0,
-                  mb: activeViewer ? 1 : 2,
-                  cursor: isTranscribing || isToggling ? "wait" : "pointer",
-                  opacity: isToggling ? 0.7 : 1,
+                  mb: interactionMode === "chat" ? 1 : activeViewer ? 1 : 2,
+                  cursor: interactionMode === "chat"
+                    ? "default"
+                    : isTranscribing || isToggling ? "wait" : "pointer",
+                  opacity: interactionMode === "chat" ? 0.6 : isToggling ? 0.7 : 1,
                   animation: isProcessing
                     ? "orbPulse 1.5s ease-in-out infinite"
                     : isRecording
@@ -863,7 +1043,8 @@ const MasterAIAgent: React.FC = () => {
                   />
                 </Box>
 
-                {/* Mic Icon Overlay - shows on hover or when idle */}
+                {/* Mic Icon Overlay - shows on hover or when idle (voice mode only) */}
+                {interactionMode === "voice" && (
                 <Box
                   sx={{
                     position: "absolute",
@@ -904,6 +1085,7 @@ const MasterAIAgent: React.FC = () => {
                     <MicOffIcon />
                   )}
                 </Box>
+                )}
               </Box>
 
               {/* Voice Status Indicator - below orb */}
@@ -911,7 +1093,8 @@ const MasterAIAgent: React.FC = () => {
                 variant="caption"
                 sx={{
                   opacity:
-                    isRecording || isTranscribing || isToggling ? 1 : 0.5,
+                    interactionMode === "chat" ? 0.4
+                    : isRecording || isTranscribing || isToggling ? 1 : 0.5,
                   letterSpacing: "0.1em",
                   fontWeight: 600,
                   minHeight: "20px",
@@ -919,25 +1102,28 @@ const MasterAIAgent: React.FC = () => {
                   alignItems: "center",
                   justifyContent: "center",
                   color:
-                    isRecording || isTranscribing || isToggling
+                    interactionMode === "chat" ? theme.textSecondary
+                    : isRecording || isTranscribing || isToggling
                       ? theme.accent
                       : theme.textSecondary,
                   transition: "all 0.2s ease",
                   textAlign: "center",
                   fontSize: { xs: "0.65rem", sm: "0.7rem", md: "0.75rem" },
                   mb: 1,
-                  cursor: "pointer",
+                  cursor: interactionMode === "voice" ? "pointer" : "default",
                   "&:hover": {
                     opacity: 1,
                   },
                 }}
-                onClick={handleVoiceToggle}
+                onClick={interactionMode === "voice" ? handleVoiceToggle : undefined}
               >
-                {isTranscribing
-                  ? "TRANSCRIBING..."
-                  : isRecording
-                    ? transcript || "LISTENING..."
-                    : "TAP ORB TO SPEAK"}
+                {interactionMode === "chat"
+                  ? "CHAT MODE"
+                  : isTranscribing
+                    ? "TRANSCRIBING..."
+                    : isRecording
+                      ? transcript || "LISTENING..."
+                      : "TAP ORB TO SPEAK"}
               </Typography>
 
               <Box
@@ -1037,9 +1223,67 @@ const MasterAIAgent: React.FC = () => {
                           {chat.text}
                         </Typography>
                       ) : (
-                        <ReactMarkdown>{chat.text}</ReactMarkdown>
+                        <>
+                          {chat.text && (
+                            <ReactMarkdown>{chat.text}</ReactMarkdown>
+                          )}
+                          {chat.formDone && chat.formDone.success && (
+                            <Box
+                              sx={{
+                                mt: 1.5,
+                                p: 2,
+                                bgcolor: isDarkMode
+                                  ? "rgba(76,175,80,0.1)"
+                                  : "rgba(76,175,80,0.08)",
+                                borderRadius: "12px",
+                                border: "1px solid rgba(76,175,80,0.3)",
+                              }}
+                            >
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontWeight: 600,
+                                  color: "#4caf50",
+                                  mb: 0.5,
+                                }}
+                              >
+                                Registration Complete!
+                              </Typography>
+                              {chat.formDone.shop && (
+                                <Typography
+                                  variant="caption"
+                                  sx={{ color: theme.textSecondary }}
+                                >
+                                  Shop "{chat.formDone.shop.name}" is live at /
+                                  {chat.formDone.shop.slug}
+                                </Typography>
+                              )}
+                            </Box>
+                          )}
+                        </>
                       )}
                     </Box>
+                    {/* Inline registration form (rendered BELOW the message bubble, inside the same chat row) */}
+                    {chat.formStep && (
+                      <Box
+                        sx={{
+                          width: "100%",
+                          maxWidth: { xs: "88%", sm: "85%", md: "85%" },
+                          mt: 1,
+                        }}
+                      >
+                        <InlineRegistrationForm
+                          formStep={chat.formStep}
+                          sessionId={sessionId}
+                          theme={theme}
+                          isDarkMode={isDarkMode}
+                          disabled={!!chat.formCompleted}
+                          onFormResult={(result) =>
+                            handleFormResult(result, index)
+                          }
+                        />
+                      </Box>
+                    )}
                   </Box>
                 ))}
                 {/* Thinking indicator - shows in chat while processing */}
@@ -1115,8 +1359,8 @@ const MasterAIAgent: React.FC = () => {
                   </Box>
                 )}
 
-                {/* Live Transcript Bubble - Shows during recording/transcribing */}
-                {(isRecording || isTranscribing) && (
+                {/* Live Transcript Bubble - Shows during recording/transcribing in voice mode */}
+                {interactionMode === "voice" && (isRecording || isTranscribing) && (
                   <Box
                     sx={{
                       width: "100%",
@@ -1170,7 +1414,7 @@ const MasterAIAgent: React.FC = () => {
                 )}
               </Box>
 
-              {/* Text Input Section - Hidden during voice mode */}
+              {/* Text Input Section */}
               <Box
                 sx={{
                   display: "flex",
@@ -1181,11 +1425,11 @@ const MasterAIAgent: React.FC = () => {
                   maxWidth: "500px",
                 }}
               >
-                {/* INTEGRATED INPUT FIELD */}
-                {!isRecording && !isTranscribing && (
+                {/* INTEGRATED INPUT FIELD — always visible in chat mode, hidden during recording in voice mode */}
+                {(interactionMode === "chat" || (!isRecording && !isTranscribing)) && (
                   <TextField
                     fullWidth
-                    placeholder="Type to ZeroQ..."
+                    placeholder={interactionMode === "chat" ? "Type your message..." : "Type to ZeroQ..."}
                     variant="outlined"
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
@@ -1197,7 +1441,7 @@ const MasterAIAgent: React.FC = () => {
                         }
                       }
                     }}
-                    sx={{ mt: 2 }}
+                    sx={{ mt: interactionMode === "chat" ? 1 : 2 }}
                     slotProps={{
                       input: {
                         sx: {
@@ -1271,7 +1515,14 @@ const MasterAIAgent: React.FC = () => {
                         activeShops.map((shop: any) => (
                           <Card
                             key={shop.id}
-                            onClick={() => navigate(`/s/${shop.slug}`)}
+                            onClick={() => {
+                              const targetSlug = shop.slug || `shop-${shop.id}`;
+                              if (isLocalhost()) {
+                                navigate(`/shop-ai/${shop.id}`);
+                              } else {
+                                window.location.href = constructShopUrl(targetSlug);
+                              }
+                            }}
                             sx={{
                               bgcolor: theme.cardBg,
                               borderRadius: "24px",

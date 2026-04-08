@@ -1,0 +1,138 @@
+# Qwen3-TTS Deployment - GPU-accelerated (Blackwell/sm_120)
+# Uses NVIDIA GPU time-slicing to share RTX 5070 Ti with Ollama
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tts-service
+  namespace: zeroqwait
+  labels:
+    app: tts-service
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tts-service
+  template:
+    metadata:
+      labels:
+        app: tts-service
+    spec:
+      priorityClassName: voice-critical
+      runtimeClassName: nvidia
+      tolerations:
+        - key: "workload-pool"
+          operator: "Equal"
+          value: "voice-gpu"
+          effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: zeroqwait.io/node-pool
+                    operator: In
+                    values: ["voice-gpu"]
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: nvidia.com/gpu.present
+                    operator: In
+                    values: ["true"]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: ["ollama", "asr-service"]
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: tts-service
+          image: localhost:5000/tts-service:v20260406120811-18332e3
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8880
+              protocol: TCP
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8880"
+            - name: WORKERS
+              value: "1"
+            - name: CORS_ORIGINS
+              value: "*"
+            - name: TTS_BACKEND
+              value: "official"
+            - name: TTS_DEVICE
+              value: "gpu"
+            - name: TTS_WARMUP_ON_START
+              value: "true"
+            - name: CUDA_VISIBLE_DEVICES
+              value: "0"
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,utility"
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "1"
+            limits:
+              memory: "8Gi"
+              cpu: "2"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /home/appuser/.cache/huggingface
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            initialDelaySeconds: 300
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            initialDelaySeconds: 600
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 5
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: tts-model-cache
+      terminationGracePeriodSeconds: 30
+---
+# Qwen3-TTS Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: tts-service
+  namespace: zeroqwait
+  labels:
+    app: tts-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8880
+      targetPort: 8880
+      protocol: TCP
+  selector:
+    app: tts-service

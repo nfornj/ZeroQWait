@@ -14,6 +14,21 @@ spec:
       labels:
         app: postgres
     spec:
+      priorityClassName: app-critical
+      tolerations:
+      - key: "workload-pool"
+        operator: "Equal"
+        value: "data-cpu"
+        effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: zeroqwait.io/node-pool
+                operator: In
+                values: ["data-cpu"]
       containers:
       - name: postgres
         image: postgres:16-alpine

@@ -4,8 +4,9 @@ metadata:
   name: redis-pvc
   namespace: zeroqwait
 spec:
+  storageClassName: local-path
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
+      storage: 5Gi

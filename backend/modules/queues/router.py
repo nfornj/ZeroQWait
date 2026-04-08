@@ -6,6 +6,7 @@ from modules.shops.service import shop_service
 from modules.auth.service import auth_service
 from shared.auth_utils import get_current_user, get_current_user_optional
 from permissions import check_shop_access
+from redis_client import redis_client
 from datetime import datetime
 import random
 
@@ -130,6 +131,8 @@ def join_queue(
         
         new_item = queue_service.create_queue_item(queue_item, queue.id)
         if new_item:
+            # Invalidate queue cache for this shop
+            redis_client.invalidate_queue_cache(shop_id)
             # Dynamic position
             all_items = queue_service.get_queue_items(queue.id)
             active_items = [i for i in all_items if i.status in [QUEUE_STATUS_WAITING, QUEUE_STATUS_BEING_SERVED]]
@@ -163,6 +166,8 @@ def update_queue_item_status(
             update_data["completed_at"] = datetime.utcnow().isoformat()
             
         updated = queue_service.update_queue_item(item_id, update_data)
+        # Invalidate queue cache for this shop
+        redis_client.invalidate_queue_cache(queue.shop_id)
         return updated
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -210,6 +215,8 @@ def call_next_customer(
         }
         
         result = queue_service.update_queue_item(next_item.id, update_data)
+        # Invalidate queue cache for this shop
+        redis_client.invalidate_queue_cache(queue.shop_id)
         
         if result and result.assigned_employee_id:
              user = auth_service.get_user_by_id(result.assigned_employee_id)

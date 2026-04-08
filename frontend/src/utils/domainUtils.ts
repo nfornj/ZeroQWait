@@ -77,7 +77,7 @@ export const constructShopUrl = (slug: string, path: string = '/'): string => {
         // If the caller wants to handle localhost differently, they might check isLocalhost().
         // But let's try to simulate the desired behavior.
 
-        return `${path === '/ai' ? '/shop-ai/' : '/s/'}${slug}`;
+        return `/shop-ai/${slug}`;
     }
 
     // Production/Staging Logic

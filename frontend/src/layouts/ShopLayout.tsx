@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Box, CssBaseline, alpha } from '@mui/material';
-import AppNavbar from '../components/dashboard/AppNavbar';
-import SideMenu from '../components/dashboard/SideMenu';
+import AppNavbar from '../features/shop-dashboard/components/AppNavbar';
+import SideMenu from '../features/shop-dashboard/components/SideMenu';
 import { useThemeContext } from '../contexts/ThemeContext';
 
 const ShopLayout: React.FC = () => {
