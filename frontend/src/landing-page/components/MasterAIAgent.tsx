@@ -96,11 +96,17 @@ const MasterAIAgent: React.FC = () => {
         | "faq"
         | "register"
         | null;
+      quickActions?: Array<{ label: string; payload: string }>;
     }>
   >([
     {
       role: "ai",
       text: "Welcome to ZeroQwait! I'm ZeroQ. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?",
+      quickActions: [
+        { label: "Register a Shop", payload: "I want to register a shop" },
+        { label: "Search for Shops", payload: "I want to search for shops" },
+        { label: "Ask about our Products", payload: "Tell me about your products and pricing" },
+      ],
     },
   ]);
 
@@ -1226,6 +1232,40 @@ const MasterAIAgent: React.FC = () => {
                         <>
                           {chat.text && (
                             <ReactMarkdown>{chat.text}</ReactMarkdown>
+                          )}
+                          {chat.quickActions && chat.quickActions.length > 0 && (
+                            <Box
+                              sx={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: 1,
+                                mt: 1.5,
+                              }}
+                            >
+                              {chat.quickActions.map((action) => (
+                                <Chip
+                                  key={action.label}
+                                  label={action.label}
+                                  onClick={() => handleChat(action.payload)}
+                                  disabled={isProcessing}
+                                  size="small"
+                                  sx={{
+                                    cursor: "pointer",
+                                    fontWeight: 600,
+                                    fontSize: "0.8rem",
+                                    borderRadius: "20px",
+                                    border: `1px solid ${theme.accent}`,
+                                    color: theme.accent,
+                                    bgcolor: "transparent",
+                                    transition: "all 0.2s ease",
+                                    "&:hover": {
+                                      bgcolor: theme.accent,
+                                      color: isDarkMode ? "#000" : "#fff",
+                                    },
+                                  }}
+                                />
+                              ))}
+                            </Box>
                           )}
                           {chat.formDone && chat.formDone.success && (
                             <Box
