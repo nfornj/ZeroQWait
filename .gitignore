@@ -44,4 +44,7 @@ env/
 .env/
 
 # Docker volumes
+
+# GitHub Actions self-hosted runner files (runtime, binaries, diagnostics)
+actions-runner/
 postgres_data/ 
