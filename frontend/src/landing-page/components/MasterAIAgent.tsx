@@ -49,6 +49,20 @@ const DEFAULT_QUICK_ACTIONS: Array<{ label: string; payload: string }> = [
   },
 ];
 
+const ACTIONABLE_PHRASES: Array<{ phrase: string; payload: string }> = [
+  { phrase: "cancel registration", payload: "cancel registration" },
+  { phrase: "register a shop", payload: "I want to register a shop" },
+  { phrase: "search for shops", payload: "I want to search for shops" },
+  {
+    phrase: "ask about our products",
+    payload: "Tell me about your products and pricing",
+  },
+  { phrase: "pricing", payload: "Show me pricing" },
+  { phrase: "features", payload: "Show me features" },
+  { phrase: "faq", payload: "Show me FAQ" },
+  { phrase: "testimonials", payload: "Show me testimonials" },
+];
+
 const extractNodeText = (node: React.ReactNode): string => {
   if (typeof node === "string" || typeof node === "number") {
     return String(node);
@@ -71,6 +85,14 @@ const getQuickActionFromListItem = (
       text.includes(action.label.toLowerCase()),
     ) || null
   );
+};
+
+const getActionablePayloadFromText = (text: string): string | null => {
+  const normalized = text.trim().toLowerCase();
+  const match = ACTIONABLE_PHRASES.find((item) =>
+    normalized.includes(item.phrase),
+  );
+  return match ? match.payload : null;
 };
 
 const MasterAIAgent: React.FC = () => {
@@ -1294,6 +1316,44 @@ const MasterAIAgent: React.FC = () => {
                                         {children}
                                       </Box>
                                     </li>
+                                  );
+                                },
+                                strong: ({ children }) => {
+                                  const plain = extractNodeText(children);
+                                  const payload = getActionablePayloadFromText(plain);
+
+                                  if (!payload) {
+                                    return <strong>{children}</strong>;
+                                  }
+
+                                  return (
+                                    <Box
+                                      component="button"
+                                      type="button"
+                                      onClick={() => {
+                                        if (!isProcessing) {
+                                          void handleChat(payload);
+                                        }
+                                      }}
+                                      sx={{
+                                        border: "none",
+                                        bgcolor: "transparent",
+                                        p: 0,
+                                        m: 0,
+                                        font: "inherit",
+                                        fontWeight: 600,
+                                        color: theme.accent,
+                                        cursor: isProcessing ? "not-allowed" : "pointer",
+                                        textDecoration: "underline",
+                                        textDecorationThickness: "1px",
+                                        textUnderlineOffset: "2px",
+                                        "&:hover": {
+                                          opacity: 0.85,
+                                        },
+                                      }}
+                                    >
+                                      {children}
+                                    </Box>
                                   );
                                 },
                               }}
