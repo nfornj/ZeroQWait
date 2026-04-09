@@ -40,6 +40,15 @@ import InlineRegistrationForm, {
 } from "./InlineRegistrationForm";
 import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
 
+const DEFAULT_QUICK_ACTIONS: Array<{ label: string; payload: string }> = [
+  { label: "Register a Shop", payload: "I want to register a shop" },
+  { label: "Search for Shops", payload: "I want to search for shops" },
+  {
+    label: "Ask about our Products",
+    payload: "Tell me about your products and pricing",
+  },
+];
+
 const MasterAIAgent: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -102,11 +111,7 @@ const MasterAIAgent: React.FC = () => {
     {
       role: "ai",
       text: "Welcome to ZeroQwait! I'm ZeroQ. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?",
-      quickActions: [
-        { label: "Register a Shop", payload: "I want to register a shop" },
-        { label: "Search for Shops", payload: "I want to search for shops" },
-        { label: "Ask about our Products", payload: "Tell me about your products and pricing" },
-      ],
+      quickActions: DEFAULT_QUICK_ACTIONS,
     },
   ]);
 
@@ -1233,7 +1238,11 @@ const MasterAIAgent: React.FC = () => {
                           {chat.text && (
                             <ReactMarkdown>{chat.text}</ReactMarkdown>
                           )}
-                          {chat.quickActions && chat.quickActions.length > 0 && (
+                          {((chat.quickActions && chat.quickActions.length > 0) ||
+                            (chat.role === "ai" &&
+                              chat.text.includes("Register a Shop") &&
+                              chat.text.includes("Search for Shops") &&
+                              chat.text.includes("Ask about our Products"))) && (
                             <Box
                               sx={{
                                 display: "flex",
@@ -1242,7 +1251,10 @@ const MasterAIAgent: React.FC = () => {
                                 mt: 1.5,
                               }}
                             >
-                              {chat.quickActions.map((action) => (
+                              {(chat.quickActions && chat.quickActions.length > 0
+                                ? chat.quickActions
+                                : DEFAULT_QUICK_ACTIONS
+                              ).map((action) => (
                                 <Chip
                                   key={action.label}
                                   label={action.label}
