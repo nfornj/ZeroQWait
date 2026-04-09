@@ -119,6 +119,7 @@ kctl create namespace zeroqwait --dry-run=client -o yaml | kctl apply -f -
 
 sudo env \
   SKIP_TESTS="${SKIP_TESTS:-true}" \
+  SKIP_REGISTRY_PRUNE="true" \
   SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp}" \
   AUTO_COMMIT="false" \
   ARGOCD_SYNC="false" \

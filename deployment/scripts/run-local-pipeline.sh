@@ -18,6 +18,8 @@ ARGOCD_SYNC="${ARGOCD_SYNC:-false}"
 SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp}"
 # Set SKIP_TESTS=true to skip backend pytest + frontend npm test steps
 SKIP_TESTS="${SKIP_TESTS:-false}"
+# Set SKIP_REGISTRY_PRUNE=true to avoid deleting newly-pushed images in the same run.
+SKIP_REGISTRY_PRUNE="${SKIP_REGISTRY_PRUNE:-false}"
 
 run_tests() {
   if [[ "${SKIP_TESTS}" == "true" ]]; then
@@ -113,7 +115,11 @@ main() {
     fi
   fi
 
-  KEEP_VERSIONS=10 "${PROJECT_ROOT}/deployment/scripts/prune-registry-tags.sh"
+  if [[ "${SKIP_REGISTRY_PRUNE}" == "true" ]]; then
+    echo "==> SKIP_REGISTRY_PRUNE=true — skipping prune/garbage-collect for this run"
+  else
+    KEEP_VERSIONS=10 "${PROJECT_ROOT}/deployment/scripts/prune-registry-tags.sh"
+  fi
 
   if [[ "${ARGOCD_SYNC}" == "true" ]]; then
     if command -v argocd >/dev/null 2>&1; then
