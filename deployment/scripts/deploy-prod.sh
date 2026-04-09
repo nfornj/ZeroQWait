@@ -42,6 +42,12 @@ resolve_kubeconfig_path() {
     return 0
   fi
 
+  # Prefer local k3s admin kubeconfig when present.
+  if [[ -f "/etc/rancher/k3s/k3s.yaml" ]]; then
+    KUBECONFIG_PATH="/etc/rancher/k3s/k3s.yaml"
+    return 0
+  fi
+
   # Default to runner user's kubeconfig.
   if [[ -f "${HOME}/.kube/config" ]]; then
     KUBECONFIG_PATH="${HOME}/.kube/config"
