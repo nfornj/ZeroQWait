@@ -1550,6 +1550,7 @@ class MasterAgent:
         # (prevents greeting prefilter from resetting mid-registration)
         from registration_agent import registration_agent as reg_agent
         active_reg = reg_agent.get_session(session_id)
+        precomputed_analysis = None
         if active_reg and not active_reg.get("completed"):
             current_step = active_reg.get("step", "unknown")
             # Check if user wants to cancel
@@ -1562,21 +1563,32 @@ class MasterAgent:
                 yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
-            
-            logger.info(f"Active registration session found at step={current_step}, reminding user")
-            reminder_msg = f"Continuing your registration (step: **{current_step}**). Please complete the form below, or say **cancel registration** to start over."
-            async for event in _yield_sentences_with_tts(reminder_msg):
-                yield event
-            # Re-emit form_step so frontend can render the form again (e.g. after page refresh)
-            form_event = reg_agent._build_form_event(active_reg)
-            yield f"data: {json.dumps(form_event)}\n\n"
-            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
+
+            # If user clearly asks for a non-registration task, switch context instead of forcing form continuation.
+            active_analysis = await unified_query_analyzer.analyze(user_msg, history_context_str)
+            if active_analysis.intent in {'SEARCH', 'PLATFORM_INFO', 'CONVERSATION'}:
+                reg_agent._clear_session(session_id)
+                logger.info(
+                    f"Active registration interrupted at step={current_step}; switching to intent={active_analysis.intent}"
+                )
+                deps.context["registration_interrupted"] = True
+                deps.context["registration_interrupted_step"] = current_step
+                precomputed_analysis = active_analysis
+            else:
+                logger.info(f"Active registration session found at step={current_step}, reminding user")
+                reminder_msg = f"Continuing your registration (step: **{current_step}**). Please complete the form below, or say **cancel registration** to start over."
+                async for event in _yield_sentences_with_tts(reminder_msg):
+                    yield event
+                # Re-emit form_step so frontend can render the form again (e.g. after page refresh)
+                form_event = reg_agent._build_form_event(active_reg)
+                yield f"data: {json.dumps(form_event)}\n\n"
+                yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
         
         # --- LLM INTENT CLASSIFICATION ---
-        analysis = await unified_query_analyzer.analyze(
-            user_msg, 
+        analysis = precomputed_analysis or await unified_query_analyzer.analyze(
+            user_msg,
             history_context_str
         )
         deps.context["last_query_analysis"] = analysis.model_dump()
