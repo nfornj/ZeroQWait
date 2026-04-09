@@ -13,7 +13,12 @@ router = APIRouter()
 
 # Ensure upload directory exists
 UPLOAD_DIR = Path("static/uploads/shop-logos")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+except PermissionError:
+    # Startup should not fail if uploads directory is not writable in this environment.
+    # Upload handlers can return a proper runtime error if/when used.
+    pass
 
 @router.post("/", response_model=schemas.Shop)
 def create_shop(

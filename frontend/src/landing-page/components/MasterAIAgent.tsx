@@ -49,6 +49,30 @@ const DEFAULT_QUICK_ACTIONS: Array<{ label: string; payload: string }> = [
   },
 ];
 
+const extractNodeText = (node: React.ReactNode): string => {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(extractNodeText).join("");
+  }
+  if (React.isValidElement(node) && "children" in node.props) {
+    return extractNodeText(node.props.children);
+  }
+  return "";
+};
+
+const getQuickActionFromListItem = (
+  children: React.ReactNode,
+): { label: string; payload: string } | null => {
+  const text = extractNodeText(children).toLowerCase();
+  return (
+    DEFAULT_QUICK_ACTIONS.find((action) =>
+      text.includes(action.label.toLowerCase()),
+    ) || null
+  );
+};
+
 const MasterAIAgent: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -1236,7 +1260,46 @@ const MasterAIAgent: React.FC = () => {
                       ) : (
                         <>
                           {chat.text && (
-                            <ReactMarkdown>{chat.text}</ReactMarkdown>
+                            <ReactMarkdown
+                              components={{
+                                li: ({ children }) => {
+                                  const action = getQuickActionFromListItem(children);
+                                  if (!action) {
+                                    return <li>{children}</li>;
+                                  }
+                                  return (
+                                    <li>
+                                      <Box
+                                        component="button"
+                                        type="button"
+                                        onClick={() => {
+                                          if (!isProcessing) {
+                                            void handleChat(action.payload);
+                                          }
+                                        }}
+                                        sx={{
+                                          border: "none",
+                                          bgcolor: "transparent",
+                                          p: 0,
+                                          m: 0,
+                                          textAlign: "left",
+                                          width: "100%",
+                                          cursor: isProcessing ? "not-allowed" : "pointer",
+                                          color: "inherit",
+                                          "&:hover": {
+                                            opacity: 0.9,
+                                          },
+                                        }}
+                                      >
+                                        {children}
+                                      </Box>
+                                    </li>
+                                  );
+                                },
+                              }}
+                            >
+                              {chat.text}
+                            </ReactMarkdown>
                           )}
                           {((chat.quickActions && chat.quickActions.length > 0) ||
                             (chat.role === "ai" &&
