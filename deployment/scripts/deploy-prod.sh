@@ -114,6 +114,9 @@ if ! ensure_k8s_api_reachable; then
   exit 1
 fi
 
+echo "==> Ensuring required namespaces exist"
+kctl create namespace zeroqwait --dry-run=client -o yaml | kctl apply -f -
+
 sudo env \
   SKIP_TESTS="${SKIP_TESTS:-true}" \
   SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp}" \
