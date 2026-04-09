@@ -5,6 +5,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 K8S_MANIFESTS="${PROJECT_ROOT}/k8s-manifests"
 
 KUBECTL_CMD=()
+KUBECONFIG_PATH=""
 
 sudo_find_cmd() {
   local cmd_name="$1"
@@ -34,6 +35,22 @@ resolve_kubectl_cmd() {
   return 1
 }
 
+resolve_kubeconfig_path() {
+  # Honor explicit KUBECONFIG when provided.
+  if [[ -n "${KUBECONFIG:-}" && -f "${KUBECONFIG}" ]]; then
+    KUBECONFIG_PATH="${KUBECONFIG}"
+    return 0
+  fi
+
+  # Default to runner user's kubeconfig.
+  if [[ -f "${HOME}/.kube/config" ]]; then
+    KUBECONFIG_PATH="${HOME}/.kube/config"
+    return 0
+  fi
+
+  return 1
+}
+
 kctl() {
   if [[ ${#KUBECTL_CMD[@]} -eq 0 ]]; then
     echo "!! Kubernetes CLI is not configured. Neither 'kubectl' nor 'k3s' was found for this runner." >&2
@@ -41,7 +58,11 @@ kctl() {
     exit 1
   fi
 
-  sudo "${KUBECTL_CMD[@]}" "$@"
+  if [[ -n "${KUBECONFIG_PATH}" ]]; then
+    sudo env KUBECONFIG="${KUBECONFIG_PATH}" "${KUBECTL_CMD[@]}" "$@"
+  else
+    sudo "${KUBECTL_CMD[@]}" "$@"
+  fi
 }
 
 echo "==> Production deploy (prod branch)"
@@ -54,7 +75,19 @@ if ! resolve_kubectl_cmd; then
   exit 1
 fi
 
+if ! resolve_kubeconfig_path; then
+  echo "!! Production deploy aborted: unable to locate kubeconfig for cluster access." >&2
+  echo "!! Provide KUBECONFIG or ensure ~/.kube/config exists for the runner user." >&2
+  exit 1
+fi
+
 echo "==> Using Kubernetes CLI: ${KUBECTL_CMD[*]}"
+echo "==> Using kubeconfig: ${KUBECONFIG_PATH}"
+
+if ! kctl version --request-timeout=15s >/dev/null 2>&1; then
+  echo "!! Production deploy aborted: Kubernetes API is unreachable with current kubeconfig." >&2
+  exit 1
+fi
 
 sudo env \
   SKIP_TESTS="${SKIP_TESTS:-true}" \
