@@ -43,6 +43,7 @@ _CANCEL_REGISTRATION_RE = re.compile(
     r'(?:cancel|stop|quit|abort|nevermind|never\s*mind|start\s*over)',
     re.IGNORECASE
 )
+_REGISTRATION_INTERRUPT_INTENTS = {'SEARCH', 'PLATFORM_INFO', 'CONVERSATION'}
 
 _TTS_TIMEOUT_SECONDS = 60.0
 
@@ -1187,6 +1188,65 @@ class MasterAgent:
             # Load from fast Redis store
             conversation_history = redis_client.get_session_history(session_id, limit=10)
             history_context_str = self._format_history_for_llm(conversation_history)
+
+            # Active registration state gate (same policy as streaming path).
+            from registration_agent import registration_agent as reg_agent
+            precomputed_analysis = None
+            active_reg = reg_agent.get_session(session_id)
+            if active_reg and not active_reg.get("completed"):
+                current_step = active_reg.get("step", "unknown")
+                if _CANCEL_REGISTRATION_RE.search(user_msg.strip()):
+                    reg_agent._clear_session(session_id)
+                    cancel_msg = "Registration cancelled. How else can I help you?\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works"
+                    processing_time = (datetime.now().timestamp() - start_time) * 1000
+                    return {
+                        "response": cancel_msg,
+                        "actions": [],
+                        "agent_name": "ZeroQ",
+                        "processing_time_ms": processing_time,
+                        "metrics": {
+                            "tools_called": 0,
+                            "is_voice": is_voice,
+                            "context_items": 0
+                        }
+                    }
+
+                active_analysis = await unified_query_analyzer.analyze(user_msg, history_context_str)
+                if active_analysis.intent in _REGISTRATION_INTERRUPT_INTENTS:
+                    reg_agent._clear_session(session_id)
+                    deps.context["registration_interrupted"] = True
+                    deps.context["registration_interrupted_step"] = current_step
+                    precomputed_analysis = active_analysis
+                    logger.info(
+                        f"Active registration interrupted at step={current_step}; switching to intent={active_analysis.intent}"
+                    )
+                else:
+                    reminder_msg = (
+                        f"Continuing your registration (step: **{current_step}**). "
+                        "Please complete the form below, or say **cancel registration** to start over."
+                    )
+                    form_event = reg_agent._build_form_event(active_reg)
+                    processing_time = (datetime.now().timestamp() - start_time) * 1000
+                    return {
+                        "response": reminder_msg,
+                        "actions": [
+                            {
+                                "tool": "start_registration",
+                                "result": {
+                                    "account_type": active_reg.get("account_type", "unknown")
+                                },
+                                "form_event": form_event,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                        ],
+                        "agent_name": "ZeroQ",
+                        "processing_time_ms": processing_time,
+                        "metrics": {
+                            "tools_called": 1,
+                            "is_voice": is_voice,
+                            "context_items": 0
+                        }
+                    }
             
             # --- Pydantic AI History Mapping ---
             from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart, TextPart
@@ -1198,7 +1258,7 @@ class MasterAgent:
                     message_history.append(ModelResponse(parts=[TextPart(content=msg.get('content', ''))]))
             
             # --- Single Pass Unified Extraction ---
-            analysis = await unified_query_analyzer.analyze(user_msg, history_context_str)
+            analysis = precomputed_analysis or await unified_query_analyzer.analyze(user_msg, history_context_str)
             intent = analysis.intent
             
             # Keep Session Context Live
@@ -1566,7 +1626,7 @@ class MasterAgent:
 
             # If user clearly asks for a non-registration task, switch context instead of forcing form continuation.
             active_analysis = await unified_query_analyzer.analyze(user_msg, history_context_str)
-            if active_analysis.intent in {'SEARCH', 'PLATFORM_INFO', 'CONVERSATION'}:
+            if active_analysis.intent in _REGISTRATION_INTERRUPT_INTENTS:
                 reg_agent._clear_session(session_id)
                 logger.info(
                     f"Active registration interrupted at step={current_step}; switching to intent={active_analysis.intent}"
