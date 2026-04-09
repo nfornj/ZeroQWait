@@ -30,6 +30,20 @@ jobs:
           # sudo -E preserves REGISTRY_DATA_PATH when escalating.
           sudo -E deployment/scripts/setup-local-registry.sh
 
+      - name: Ensure Kubernetes CLI
+        run: |
+          # Use existing kubectl or k3s when present; install kubectl only if missing.
+          if sudo sh -c 'command -v kubectl >/dev/null 2>&1 || command -v k3s >/dev/null 2>&1'; then
+            echo "Kubernetes CLI already available"
+          else
+            echo "Installing kubectl on self-hosted runner"
+            KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+            curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+            chmod +x /tmp/kubectl
+            sudo mv /tmp/kubectl /usr/local/bin/kubectl
+          fi
+          sudo sh -c 'command -v kubectl || command -v k3s'
+
       - name: Deploy to production (zeroqwait.com)
         run: |
           cd "${CHECKOUT_PATH}"
