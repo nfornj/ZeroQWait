@@ -128,6 +128,22 @@ sudo env \
   bash "${PROJECT_ROOT}/deployment/scripts/run-local-pipeline.sh"
 
 echo "==> Applying K8s manifests"
+echo "==> Applying core data manifests (Postgres/Redis)"
+kctl apply -f "${K8S_MANIFESTS}/postgres-secret.yaml"
+kctl apply -f "${K8S_MANIFESTS}/postgres-pvc.yaml"
+kctl apply -f "${K8S_MANIFESTS}/postgres-statefulset.yaml"
+kctl apply -f "${K8S_MANIFESTS}/redis-secret.yaml"
+kctl apply -f "${K8S_MANIFESTS}/redis-pvc.yaml"
+kctl apply -f "${K8S_MANIFESTS}/redis-service.yaml"
+kctl apply -f "${K8S_MANIFESTS}/redis-statefulset.yaml"
+
+echo "==> Waiting for core data workloads"
+kctl rollout status statefulset/postgres -n zeroqwait --timeout=300s
+kctl rollout status statefulset/redis -n zeroqwait --timeout=300s
+
+echo "==> Applying app manifests"
+kctl apply -f "${K8S_MANIFESTS}/backend-configmap.yaml"
+kctl apply -f "${K8S_MANIFESTS}/backend-secret.yaml"
 kctl apply -f "${K8S_MANIFESTS}/backend-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/frontend-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/asr-deployment.yaml"
@@ -147,7 +163,9 @@ sudo env \
 
 echo "==> Waiting for frontend and backend rollouts"
 kctl rollout status deployment/frontend -n zeroqwait --timeout=300s
-kctl rollout status deployment/backend -n zeroqwait --timeout=300s
+# Backend startup can exceed 5 minutes because it installs dependencies and
+# warms models at runtime in the current hostPath-based deployment mode.
+kctl rollout status deployment/backend -n zeroqwait --timeout=1800s
 
 echo "==> Production deployment successful"
 echo "    Site: https://zeroqwait.com"
