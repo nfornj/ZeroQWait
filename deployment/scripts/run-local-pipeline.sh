@@ -13,6 +13,7 @@ REGISTRY="${REGISTRY:-localhost:5000}"
 VERSION_TAG="${VERSION_TAG:-v$(date +%Y%m%d%H%M%S)-$(git -C "${PROJECT_ROOT}" rev-parse --short HEAD)}"
 AUTO_COMMIT="${AUTO_COMMIT:-true}"
 ARGOCD_SYNC="${ARGOCD_SYNC:-false}"
+IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-}"
 # Comma-separated list of services to build. Empty = build all.
 # Valid values: backend,frontend,asr-service,tts-service,voice-mcp
 SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp}"
@@ -20,6 +21,17 @@ SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp}"
 SKIP_TESTS="${SKIP_TESTS:-false}"
 # Set SKIP_REGISTRY_PRUNE=true to avoid deleting newly-pushed images in the same run.
 SKIP_REGISTRY_PRUNE="${SKIP_REGISTRY_PRUNE:-false}"
+# Number of image tags to retain when pruning.
+RETAIN_VERSIONS="${RETAIN_VERSIONS:-10}"
+
+repo_for() {
+  local image_name="$1"
+  if [[ -n "${IMAGE_NAMESPACE}" ]]; then
+    echo "${IMAGE_NAMESPACE}/${image_name}"
+  else
+    echo "${image_name}"
+  fi
+}
 
 run_tests() {
   if [[ "${SKIP_TESTS}" == "true" ]]; then
@@ -66,7 +78,11 @@ print('Smoke tests passed:', ', '.join(modules))
 build_push() {
   local name="$1"
   local context="$2"
-  local image="${REGISTRY}/${name}:${VERSION_TAG}"
+  local repo
+  local image
+
+  repo="$(repo_for "${name}")"
+  image="${REGISTRY}/${repo}:${VERSION_TAG}"
 
   echo "==> Building ${image}"
   docker build -t "${image}" "${PROJECT_ROOT}/${context}"
@@ -76,7 +92,8 @@ build_push() {
 update_manifest_tag() {
   local file="$1"
   local image_name="$2"
-  sed -i -E "s#image: ${REGISTRY}/${image_name}:[^[:space:]]+#image: ${REGISTRY}/${image_name}:${VERSION_TAG}#g" "${file}"
+  local target_repo="$3"
+  sed -i -E "s#image: ${REGISTRY}/([[:alnum:]_.-]+/)*${image_name}:[^[:space:]]+#image: ${REGISTRY}/${target_repo}:${VERSION_TAG}#g" "${file}"
 }
 
 should_build() {
@@ -86,6 +103,9 @@ should_build() {
 
 main() {
   echo "==> Pipeline starting — VERSION_TAG=${VERSION_TAG}"
+  if [[ -n "${IMAGE_NAMESPACE}" ]]; then
+    echo "==> Image namespace: ${IMAGE_NAMESPACE}"
+  fi
   echo "==> Services to build: ${SERVICES}"
   run_tests
 
@@ -95,11 +115,11 @@ main() {
   should_build "tts-service" && build_push "tts-service" "tts_service"
   should_build "voice-mcp"  && build_push "voice-mcp"  "mcps/voice"
 
-  should_build "backend"     && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/backend-deployment.yaml"     "backend"
-  should_build "frontend"    && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/frontend-deployment.yaml"    "frontend"
-  should_build "asr-service" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/asr-deployment.yaml"         "asr-service"
-  should_build "tts-service" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/tts-deployment.yaml"         "tts-service"
-  should_build "voice-mcp"   && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/voice-mcp-deployment.yaml"   "voice-mcp"
+  should_build "backend"     && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/backend-deployment.yaml"     "backend" "$(repo_for backend)"
+  should_build "frontend"    && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/frontend-deployment.yaml"    "frontend" "$(repo_for frontend)"
+  should_build "asr-service" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/asr-deployment.yaml"         "asr-service" "$(repo_for asr-service)"
+  should_build "tts-service" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/tts-deployment.yaml"         "tts-service" "$(repo_for tts-service)"
+  should_build "voice-mcp"   && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/voice-mcp-deployment.yaml"   "voice-mcp" "$(repo_for voice-mcp)"
 
   if [[ "${AUTO_COMMIT}" == "true" ]]; then
     # Only stage manifests for services that were built
@@ -118,7 +138,14 @@ main() {
   if [[ "${SKIP_REGISTRY_PRUNE}" == "true" ]]; then
     echo "==> SKIP_REGISTRY_PRUNE=true — skipping prune/garbage-collect for this run"
   else
-    KEEP_VERSIONS=10 "${PROJECT_ROOT}/deployment/scripts/prune-registry-tags.sh"
+    local prune_repos=()
+    should_build "backend" && prune_repos+=("$(repo_for backend)")
+    should_build "frontend" && prune_repos+=("$(repo_for frontend)")
+    should_build "asr-service" && prune_repos+=("$(repo_for asr-service)")
+    should_build "tts-service" && prune_repos+=("$(repo_for tts-service)")
+    should_build "voice-mcp" && prune_repos+=("$(repo_for voice-mcp)")
+
+    KEEP_VERSIONS="${RETAIN_VERSIONS}" REPOSITORIES="${prune_repos[*]}" "${PROJECT_ROOT}/deployment/scripts/prune-registry-tags.sh"
   fi
 
   if [[ "${ARGOCD_SYNC}" == "true" ]]; then

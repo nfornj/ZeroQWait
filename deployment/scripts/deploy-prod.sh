@@ -119,6 +119,8 @@ kctl create namespace zeroqwait --dry-run=client -o yaml | kctl apply -f -
 
 sudo env \
   SKIP_TESTS="${SKIP_TESTS:-true}" \
+  IMAGE_NAMESPACE="prod" \
+  RETAIN_VERSIONS="10" \
   SKIP_REGISTRY_PRUNE="true" \
   SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp}" \
   AUTO_COMMIT="false" \
@@ -136,6 +138,12 @@ kctl apply -f "${K8S_MANIFESTS}/ingress-traefik.yaml"
 
 # Backend currently runs from hostPath code; restart to pick latest branch code.
 kctl rollout restart deployment/backend -n zeroqwait
+
+echo "==> Pruning production image tags (retain last 10 per service)"
+sudo env \
+  KEEP_VERSIONS="10" \
+  REPOSITORIES="prod/backend prod/frontend prod/asr-service prod/tts-service prod/voice-mcp" \
+  bash "${PROJECT_ROOT}/deployment/scripts/prune-registry-tags.sh"
 
 echo "==> Waiting for frontend and backend rollouts"
 kctl rollout status deployment/frontend -n zeroqwait --timeout=300s
