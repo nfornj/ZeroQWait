@@ -6,10 +6,16 @@ K8S_MANIFESTS="${PROJECT_ROOT}/k8s-manifests"
 
 KUBECTL_CMD=()
 
+sudo_find_cmd() {
+  local cmd_name="$1"
+  sudo sh -c "command -v ${cmd_name}" 2>/dev/null | head -n1
+}
+
 resolve_kubectl_cmd() {
   # Prefer explicit kubectl binary if available to root.
-  if sudo command -v kubectl >/dev/null 2>&1; then
-    KUBECTL_CMD=("$(sudo command -v kubectl)")
+  local sudo_kubectl="$(sudo_find_cmd kubectl || true)"
+  if [[ -n "${sudo_kubectl}" ]]; then
+    KUBECTL_CMD=("${sudo_kubectl}")
     return 0
   fi
 
@@ -19,8 +25,9 @@ resolve_kubectl_cmd() {
   fi
 
   # K3s bundles kubectl as a subcommand; use it when standalone kubectl is absent.
-  if sudo command -v k3s >/dev/null 2>&1; then
-    KUBECTL_CMD=("$(sudo command -v k3s)" kubectl)
+  local sudo_k3s="$(sudo_find_cmd k3s || true)"
+  if [[ -n "${sudo_k3s}" ]]; then
+    KUBECTL_CMD=("${sudo_k3s}" kubectl)
     return 0
   fi
 
