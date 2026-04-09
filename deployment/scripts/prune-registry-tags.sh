@@ -34,15 +34,28 @@ trim_repo() {
   echo "${repo}: pruning $((tags_count - KEEP_VERSIONS)) old tags"
 
   for tag in "${tags[@]:KEEP_VERSIONS}"; do
-    digest=$(curl -fsSI \
+    digest_headers=$(curl -sSI \
       -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
-      "${REGISTRY_URL}/v2/${repo}/manifests/${tag}" \
+      "${REGISTRY_URL}/v2/${repo}/manifests/${tag}" || true)
+
+    digest=$(echo "${digest_headers}" \
       | awk -F': ' '/Docker-Content-Digest/ {print $2}' \
       | tr -d '\r')
 
-    if [[ -n "${digest}" ]]; then
-      curl -fsS -X DELETE "${REGISTRY_URL}/v2/${repo}/manifests/${digest}" >/dev/null
+    if [[ -z "${digest}" ]]; then
+      echo "  skipped ${repo}:${tag} (manifest not found or no digest)"
+      continue
+    fi
+
+    delete_code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE \
+      "${REGISTRY_URL}/v2/${repo}/manifests/${digest}" || true)
+
+    if [[ "${delete_code}" == "202" || "${delete_code}" == "200" ]]; then
       echo "  deleted ${repo}:${tag}"
+    elif [[ "${delete_code}" == "404" ]]; then
+      echo "  already absent ${repo}:${tag}"
+    else
+      echo "  failed deleting ${repo}:${tag} (HTTP ${delete_code})"
     fi
   done
 }
