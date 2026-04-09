@@ -40,27 +40,72 @@ import InlineRegistrationForm, {
 } from "./InlineRegistrationForm";
 import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
 
-const DEFAULT_QUICK_ACTIONS: Array<{ label: string; payload: string }> = [
+type ActionCommand = {
+  label: string;
+  payload: string;
+  relatedViewer?: "pricing" | "features" | "faq" | "shops" | null;
+};
+
+const DEFAULT_QUICK_ACTIONS: ActionCommand[] = [
   { label: "Register a Shop", payload: "I want to register a shop" },
-  { label: "Search for Shops", payload: "I want to search for shops" },
+  {
+    label: "Search for Shops",
+    payload: "I want to search for shops",
+    relatedViewer: "shops",
+  },
   {
     label: "Ask about our Products",
     payload: "Tell me about your products and pricing",
+    relatedViewer: "pricing",
   },
 ];
 
-const ACTIONABLE_PHRASES: Array<{ phrase: string; payload: string }> = [
-  { phrase: "cancel registration", payload: "cancel registration" },
-  { phrase: "register a shop", payload: "I want to register a shop" },
-  { phrase: "search for shops", payload: "I want to search for shops" },
+const ACTIONABLE_PHRASES: Array<ActionCommand & { phrase: string }> = [
+  {
+    phrase: "cancel registration",
+    label: "Cancel Registration",
+    payload: "cancel registration",
+  },
+  {
+    phrase: "register a shop",
+    label: "Register a Shop",
+    payload: "I want to register a shop",
+  },
+  {
+    phrase: "search for shops",
+    label: "Search for Shops",
+    payload: "I want to search for shops",
+    relatedViewer: "shops",
+  },
   {
     phrase: "ask about our products",
+    label: "Ask about our Products",
     payload: "Tell me about your products and pricing",
+    relatedViewer: "pricing",
   },
-  { phrase: "pricing", payload: "Show me pricing" },
-  { phrase: "features", payload: "Show me features" },
-  { phrase: "faq", payload: "Show me FAQ" },
-  { phrase: "testimonials", payload: "Show me testimonials" },
+  {
+    phrase: "pricing",
+    label: "Pricing",
+    payload: "Show me pricing",
+    relatedViewer: "pricing",
+  },
+  {
+    phrase: "features",
+    label: "Features",
+    payload: "Show me features",
+    relatedViewer: "features",
+  },
+  {
+    phrase: "faq",
+    label: "FAQ",
+    payload: "Show me FAQ",
+    relatedViewer: "faq",
+  },
+  {
+    phrase: "testimonials",
+    label: "Testimonials",
+    payload: "Show me testimonials",
+  },
 ];
 
 const extractNodeText = (node: React.ReactNode): string => {
@@ -78,7 +123,7 @@ const extractNodeText = (node: React.ReactNode): string => {
 
 const getQuickActionFromListItem = (
   children: React.ReactNode,
-): { label: string; payload: string } | null => {
+): ActionCommand | null => {
   const text = extractNodeText(children).toLowerCase();
   return (
     DEFAULT_QUICK_ACTIONS.find((action) =>
@@ -87,12 +132,18 @@ const getQuickActionFromListItem = (
   );
 };
 
-const getActionablePayloadFromText = (text: string): string | null => {
+const getActionableCommandFromText = (text: string): ActionCommand | null => {
   const normalized = text.trim().toLowerCase();
   const match = ACTIONABLE_PHRASES.find((item) =>
     normalized.includes(item.phrase),
   );
-  return match ? match.payload : null;
+  return match
+    ? {
+        label: match.label,
+        payload: match.payload,
+        relatedViewer: match.relatedViewer ?? null,
+      }
+    : null;
 };
 
 const MasterAIAgent: React.FC = () => {
@@ -151,7 +202,7 @@ const MasterAIAgent: React.FC = () => {
         | "faq"
         | "register"
         | null;
-      quickActions?: Array<{ label: string; payload: string }>;
+      quickActions?: ActionCommand[];
     }>
   >([
     {
@@ -629,8 +680,14 @@ const MasterAIAgent: React.FC = () => {
     [speak],
   );
 
-  const handleChat = async (userText: string) => {
+  const handleChat = async (
+    userText: string,
+    requestedViewer?: "shops" | "pricing" | "features" | "faq" | null,
+  ) => {
     if (!userText.trim()) return;
+
+    const nextViewer = requestedViewer ?? activeViewer;
+    const nextShops = nextViewer === "shops" ? activeShops : [];
 
     // Cancel any in-progress playback
     stopCurrentAudio();
@@ -646,8 +703,8 @@ const MasterAIAgent: React.FC = () => {
       {
         role: "ai",
         text: "",
-        shops: activeShops,
-        relatedViewer: activeViewer,
+        shops: nextShops,
+        relatedViewer: nextViewer,
       },
     ]);
 
@@ -667,8 +724,8 @@ const MasterAIAgent: React.FC = () => {
             content: h.text,
           })),
           context: {
-            active_view: activeViewer,
-            visible_shops: activeShops.map((s) => s.name),
+            active_view: nextViewer,
+            visible_shops: nextShops.map((s) => s.name),
           },
           is_voice: interactionMode === "voice",
         }),
@@ -840,6 +897,17 @@ const MasterAIAgent: React.FC = () => {
         return next;
       });
     }
+  };
+
+  const handleActionCommand = (action: ActionCommand) => {
+    if (action.relatedViewer) {
+      setActiveViewer(action.relatedViewer);
+      if (action.relatedViewer !== "shops") {
+        setActiveShops([]);
+      }
+    }
+
+    void handleChat(action.payload, action.relatedViewer ?? undefined);
   };
 
   // Auto-scroll to bottom of chat
@@ -1020,8 +1088,7 @@ const MasterAIAgent: React.FC = () => {
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                // CHANGED: Center content vertically within the column
-                justifyContent: "center",
+                justifyContent: "flex-start",
                 gap: { xs: 2, sm: 2.5, md: 3 },
                 transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
                 width: "100%",
@@ -1029,8 +1096,9 @@ const MasterAIAgent: React.FC = () => {
                 maxWidth: activeViewer
                   ? { xs: "100%", md: "400px" }
                   : { xs: "100%", sm: "500px", md: "600px" },
-                // CHANGED: Fixed height for desktop to match shop list
-                height: activeViewer ? { xs: "auto", md: "70vh" } : "auto",
+                height: activeViewer
+                  ? { xs: "calc(100dvh - 170px)", md: "70vh" }
+                  : { xs: "calc(100dvh - 170px)", md: "78vh" },
                 position: "relative",
                 py: { xs: 1, md: 2 },
                 order: { xs: 0, md: activeViewer ? 1 : 0 },
@@ -1187,8 +1255,8 @@ const MasterAIAgent: React.FC = () => {
                 ref={scrollRef}
                 sx={{
                   width: "100%",
-                  // CHANGED: Make chat history fill available space, enabling scroll
                   flex: 1,
+                  minHeight: 0,
                   overflowY: "auto",
                   display: "flex",
                   flexDirection: "column",
@@ -1296,7 +1364,7 @@ const MasterAIAgent: React.FC = () => {
                                         type="button"
                                         onClick={() => {
                                           if (!isProcessing) {
-                                            void handleChat(action.payload);
+                                            handleActionCommand(action);
                                           }
                                         }}
                                         sx={{
@@ -1320,9 +1388,9 @@ const MasterAIAgent: React.FC = () => {
                                 },
                                 strong: ({ children }) => {
                                   const plain = extractNodeText(children);
-                                  const payload = getActionablePayloadFromText(plain);
+                                  const action = getActionableCommandFromText(plain);
 
-                                  if (!payload) {
+                                  if (!action) {
                                     return <strong>{children}</strong>;
                                   }
 
@@ -1332,7 +1400,7 @@ const MasterAIAgent: React.FC = () => {
                                       type="button"
                                       onClick={() => {
                                         if (!isProcessing) {
-                                          void handleChat(payload);
+                                          handleActionCommand(action);
                                         }
                                       }}
                                       sx={{
@@ -1381,7 +1449,7 @@ const MasterAIAgent: React.FC = () => {
                                 <Chip
                                   key={action.label}
                                   label={action.label}
-                                  onClick={() => handleChat(action.payload)}
+                                  onClick={() => handleActionCommand(action)}
                                   disabled={isProcessing}
                                   size="small"
                                   sx={{
@@ -1598,6 +1666,16 @@ const MasterAIAgent: React.FC = () => {
                   gap: 2,
                   width: "100%",
                   maxWidth: "500px",
+                  mt: "auto",
+                  pt: 1.5,
+                  borderTop: `1px solid ${theme.cardBorder}`,
+                  bgcolor: isDarkMode
+                    ? "rgba(15,15,25,0.68)"
+                    : "rgba(255,255,255,0.78)",
+                  backdropFilter: "blur(18px)",
+                  position: "sticky",
+                  bottom: 0,
+                  zIndex: 2,
                 }}
               >
                 {/* INTEGRATED INPUT FIELD — always visible in chat mode, hidden during recording in voice mode */}
