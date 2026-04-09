@@ -37,7 +37,7 @@ kctl() {
   sudo "${KUBECTL_CMD[@]}" "$@"
 }
 
-echo "==> Production deploy (main branch)"
+echo "==> Production deploy (prod branch)"
 echo "==> Building and pushing versioned images"
 
 cd "${PROJECT_ROOT}"

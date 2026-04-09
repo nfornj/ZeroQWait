@@ -1,7 +1,7 @@
 # ZeroQwait — Project Rules & Context
 
-> **Last updated**: 2026-04-06
-> **Live URL**: https://zeroqwait.com (self-hosted, also http://192.168.2.88.nip.io)
+> **Last updated**: 2026-04-07
+> **Live URL**: https://zeroqwait.com (test ingress: http://192.168.2.134.nip.io)
 
 ---
 
@@ -72,7 +72,7 @@ A **universal queue management platform** where service businesses (barbers, sal
 | **Voice ASR**               | Whisper (via `asr_service/`)             | GPU-accelerated, separate K8s pod                                   |
 | **Voice TTS**               | Qwen3-TTS 1.7B (via `tts_service/`)     | `/v1/audio/speech` OpenAI-compatible, voice: `Vivian`, port 8880 — **DO NOT REPLACE** (see §6) |
 | **Container Orchestration** | K3s (lightweight K8s)                    | Namespace: `zeroqwait`, Traefik ingress                             |
-| **Deployment**              | Self-hosted Linux server                 | `neekrishrichu@192.168.2.88`                                        |
+| **Deployment**              | GitHub Actions + self-hosted runner      | Branch push triggers automatic deploy workflow                       |
 
 ---
 
@@ -181,7 +181,7 @@ zeroqwait/
 ├── deployment/
 │   ├── scripts/
 │   │   ├── deploy-k8s.sh            # Main K8s deployment script
-│   │   └── deploy-and-sync.sh       # Git push + SSH sync + deploy (uses llama3 for commit msgs)
+│   │   └── deploy-and-sync.sh       # Legacy manual helper (not the default deploy path)
 │   └── docker/                       # Docker build configs
 │
 ├── docker-compose.yml                # Local dev (backend:8000, frontend:3000)
@@ -386,14 +386,14 @@ Users toggle between **Voice Mode** and **Chat Mode** via a pill button in the t
 
 ## 9. Infrastructure & Deployment
 
-### Remote Server
+### Deployment Host (Runner Node)
 
-- **Host**: `neekrishrichu@192.168.2.88` (Linux x86_64, Ubuntu 24.04)
+- **Runner host IP**: `192.168.2.134` (Linux x86_64, Ubuntu 24.04)
 - **K8s**: K3s v1.34.3 (lightweight Kubernetes)
 - **Docker**: v29.2.0
 - **KUBECONFIG**: `/etc/rancher/k3s/k3s.yaml`
 - **App path**: `/home/neekrishrichu/apps/zeroqwait`
-- **Code deployment**: hostPath mount (backend code mounted directly from server filesystem)
+- **Deployment mode**: GitHub Actions self-hosted runner executes deploy scripts on push
 
 ### K8s Layout (namespace: `zeroqwait`)
 
@@ -410,28 +410,27 @@ Users toggle between **Voice Mode** and **Chat Mode** via a pill button in the t
 ### Ingress (Traefik)
 
 - Production: `zeroqwait.com` + `*.zeroqwait.com` (added 2026-03-06)
-- Base: `192.168.2.88.nip.io` → `/api` → backend, `/` → frontend
-- Wildcard: `*.192.168.2.88.nip.io` (shop subdomains)
+- Base: `192.168.2.134.nip.io` → `/api` → backend, `/` → frontend
+- Wildcard: `*.192.168.2.134.nip.io` (shop subdomains)
 - TLS: Self-signed wildcard cert in `zeroqwait-wildcard-tls` secret
 
-### Deployment Commands
+### Deployment Flow (Authoritative)
 
 ```bash
-# Full deploy from local machine (git push + sync + K8s deploy)
-./deployment/scripts/deploy-and-sync.sh
+# Test environment auto-deploy (any branch except prod)
+git push origin <branch>
 
-# Rebuild backend image on remote
-ssh neekrishrichu@192.168.2.88 "cd /home/neekrishrichu/apps/zeroqwait && docker build --no-cache -t zeroqwait-backend ./backend"
+# Production auto-deploy
+git push origin prod
 
-# Check pod status
-ssh neekrishrichu@192.168.2.88 "sudo kubectl get pods -n zeroqwait"
-
-# View backend logs
-ssh neekrishrichu@192.168.2.88 "sudo kubectl logs -f deployment/backend -n zeroqwait"
-
-# Restart backend
-ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend -n zeroqwait"
+# Optional: monitor workflow state
+gh run list --workflow deploy-test.yml
+gh run list --workflow deploy-prod.yml
 ```
+
+Implementation details:
+- `deploy-test.yml` (branches-ignore: `prod`) deploys test using Docker Compose via `deployment/scripts/deploy-test.sh`.
+- `deploy-prod.yml` (branch: `prod`) runs local image pipeline + applies K8s manifests + rollout checks in `zeroqwait`.
 
 ### LLM Setup (Ollama)
 
@@ -439,7 +438,7 @@ ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend 
 - **GPU**: NVIDIA GeForce RTX 5070 Ti (16GB VRAM), CUDA 13.0, Driver 580.126.09
 - **Persistent storage**: 50Gi PVC (`ollama-data-pvc`, local-path) mounted at `/root/.ollama`
 - Internal URL: `http://ollama.llm.svc.cluster.local:11434/v1` (ClusterIP, used by backend)
-- External URL: `http://192.168.2.88:30002/v1` (NodePort, for debugging only)
+- External URL: `http://192.168.2.134:30002/v1` (NodePort, for debugging only)
 - Models: `gpt-oss:20b` (13.8GB, MXFP4 quantized, primary)
 - Config: `OLLAMA_URL` and `MODEL_NAME` in backend-configmap
 - **Model repull required** after PVC data loss: `sudo kubectl exec deployment/ollama -n llm -- ollama pull gpt-oss:20b`
@@ -495,7 +494,7 @@ ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend 
   2. Patched Ollama deployment to mount PVC instead of `emptyDir` at `/root/.ollama`
   3. Re-pulled `gpt-oss:20b` model into persistent storage
   4. Cleaned up 3 stale Ollama pods (UnexpectedAdmissionError, ContainerStatusUnknown)
-  5. Changed `OLLAMA_URL` from NodePort (`http://192.168.2.88:30002/v1`) to cluster-internal DNS (`http://ollama.llm.svc.cluster.local:11434/v1`) for lower latency
+  5. Changed `OLLAMA_URL` from NodePort (`http://<runner-host-ip>:30002/v1`) to cluster-internal DNS (`http://ollama.llm.svc.cluster.local:11434/v1`) for lower latency
   6. Added backend health probes (liveness + readiness on `/api/agent/health`)
   7. Bumped backend resources to 2Gi/1CPU request, 4Gi/2CPU limit
   8. Added ASR service resource limits (2Gi/1CPU request, 4Gi/2CPU limit)
@@ -537,7 +536,7 @@ ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend 
 2. **Frontend streaming polish**: Monitor SSE responsiveness now that backend is stable.
 3. **Extended tool testing**: Verify `join_queue` and `search_shops` correctly update UI state in real-time via SSE stream.
 4. **Reset password endpoint**: Currently returns 501 (not implemented).
-5. **Shop subdomain routing**: Verify `*.192.168.2.88.nip.io` subdomains correctly resolve to individual shop pages.
+5. **Shop subdomain routing**: Verify `*.192.168.2.134.nip.io` subdomains correctly resolve to individual shop pages.
 
 ---
 
@@ -593,8 +592,8 @@ ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend 
 | `REDIS_HOST`      | `localhost`                                                      | Redis host          |
 | `REDIS_PORT`      | `6379`                                                           | Redis port          |
 | `FRONTEND_URL`    | —                                                                | CORS allowed origin |
-| `ASR_SERVICE_URL` | `http://asr-service.zeroqwait.svc.cluster.local:8000/transcribe` | Whisper ASR         |
-| `TTS_SERVICE_URL` | `http://192.168.2.88:8880`                                       | Qwen3-TTS            |
+| `ASR_SERVICE_URL` | `http://voice-mcp.zeroqwait.svc.cluster.local:8881/transcribe`   | Whisper ASR via voice-mcp |
+| `TTS_SERVICE_URL` | `http://voice-mcp.zeroqwait.svc.cluster.local:8881`              | Qwen3-TTS via voice-mcp   |
 | `JWT_SECRET_KEY`  | —                                                                | JWT signing key     |
 | `COOKIE_DOMAIN`   | —                                                                | Auth cookie domain  |
 
@@ -606,12 +605,16 @@ ssh neekrishrichu@192.168.2.88 "sudo kubectl rollout restart deployment/backend 
 # Remote end-to-end agent test
 cd backend && python test_live.py
 
-# Quick health checks from remote
-curl -sk https://192.168.2.88.nip.io/api/agent/health
-curl -sk https://192.168.2.88.nip.io/api/voice/tts/health
+# Quick health checks
+curl -sk https://zeroqwait.com/api/agent/health
+curl -sk https://zeroqwait.com/api/voice/tts/health
+
+# Test ingress checks
+curl -sk http://192.168.2.134.nip.io/api/agent/health
+curl -sk http://192.168.2.134.nip.io/api/voice/tts/health
 
 # Manual agent chat test
-curl -sk -X POST https://192.168.2.88.nip.io/api/agent/master/chat \
+curl -sk -X POST https://zeroqwait.com/api/agent/master/chat \
   -H 'Content-Type: application/json' \
   -d '{"message": "Hello", "session_id": "test_1"}'
 ```
@@ -686,5 +689,5 @@ Use a **local Docker registry only** (no cloud image registry), persist image bl
 ### Branch-Based Deployment Policy
 
 - `prod` branch push → **Production deploy** to `https://zeroqwait.com` via `.github/workflows/deploy-prod.yml`
-- Any other branch push → **Test deploy** to `http://localhost:3000` via `.github/workflows/deploy-test.yml`
+- Any non-`prod` branch push → **Test deploy** to `http://localhost:3000` via `.github/workflows/deploy-test.yml`
 - Legacy auto-deploy workflows are manual-only (`workflow_dispatch`) to avoid conflicts.

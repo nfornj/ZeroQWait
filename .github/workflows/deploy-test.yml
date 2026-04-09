@@ -3,7 +3,6 @@ name: Deploy Test Environment
 on:
   push:
     branches-ignore:
-      - main
       - prod
   workflow_dispatch:
 
