@@ -51,6 +51,25 @@ resolve_kubeconfig_path() {
   return 1
 }
 
+ensure_k8s_api_reachable() {
+  if kctl version --request-timeout=15s >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # If kubeconfig points to local k3s API, try to start/recover k3s and retry once.
+  if grep -qE 'server:[[:space:]]+https://(127\.0\.0\.1|localhost):6443' "${KUBECONFIG_PATH}" 2>/dev/null; then
+    echo "!! Kubernetes API unreachable on localhost:6443; attempting to start k3s service"
+    sudo systemctl start k3s >/dev/null 2>&1 || true
+    sleep 5
+    if kctl version --request-timeout=20s >/dev/null 2>&1; then
+      echo "==> Kubernetes API recovered after starting k3s"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 kctl() {
   if [[ ${#KUBECTL_CMD[@]} -eq 0 ]]; then
     echo "!! Kubernetes CLI is not configured. Neither 'kubectl' nor 'k3s' was found for this runner." >&2
@@ -84,7 +103,7 @@ fi
 echo "==> Using Kubernetes CLI: ${KUBECTL_CMD[*]}"
 echo "==> Using kubeconfig: ${KUBECONFIG_PATH}"
 
-if ! kctl version --request-timeout=15s >/dev/null 2>&1; then
+if ! ensure_k8s_api_reachable; then
   echo "!! Production deploy aborted: Kubernetes API is unreachable with current kubeconfig." >&2
   exit 1
 fi
