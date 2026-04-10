@@ -3,7 +3,18 @@ from datetime import datetime
 from shared.schemas import DictModel
 from modules.queues.models import QueueStatus
 from modules.shops.schemas import Shop, ShopService
-from modules.auth.schemas import User as AssignedEmployeeUser
+from modules.auth.models import UserRole
+
+
+class AssignedEmployeeUser(DictModel):
+    id: int
+    username: str
+    email: Optional[str] = None
+    is_active: bool
+    role: UserRole
+
+    class Config:
+        from_attributes = True
 
 # Queue Item schemas
 class QueueItemBase(DictModel):
