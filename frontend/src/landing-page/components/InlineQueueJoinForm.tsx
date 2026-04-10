@@ -181,6 +181,11 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
           fullWidth
           size="small"
           variant="outlined"
+          autoComplete="name"
+          inputProps={{
+            enterKeyHint: "next",
+            autoCapitalize: "words",
+          }}
           InputProps={{
             startAdornment: <PersonIcon sx={{ mr: 1, color: theme.accent, fontSize: "1.2rem" }} />,
           }}
@@ -206,6 +211,13 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
           size="small"
           variant="outlined"
           type="tel"
+          autoComplete="tel"
+          inputProps={{
+            inputMode: "tel",
+            enterKeyHint: "done",
+            pattern: "[0-9+()\\-\\s]*",
+            maxLength: 24,
+          }}
           InputProps={{
             startAdornment: <PhoneIcon sx={{ mr: 1, color: theme.accent, fontSize: "1.2rem" }} />,
           }}
@@ -230,6 +242,10 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
           fullWidth
           size="small"
           variant="outlined"
+          autoComplete="off"
+          inputProps={{
+            enterKeyHint: "done",
+          }}
           sx={{
             "& .MuiOutlinedInput-root": {
               borderRadius: "12px",

@@ -1186,6 +1186,61 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
           )}
         </Stack>
 
+        {shopContext && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: { xs: 20, sm: 24, md: 28 },
+              left: { xs: 16, sm: 20, md: 28 },
+              zIndex: 20000,
+              px: { xs: 1.5, sm: 2 },
+              py: 1,
+              borderRadius: "14px",
+              border: `1px solid ${theme.cardBorder}`,
+              bgcolor: isDarkMode
+                ? "rgba(255,255,255,0.05)"
+                : "rgba(255,255,255,0.85)",
+              backdropFilter: "blur(8px)",
+              maxWidth: { xs: "68vw", sm: "60vw", md: "40vw" },
+            }}
+          >
+            <Typography
+              variant="caption"
+              sx={{
+                display: "block",
+                letterSpacing: "0.08em",
+                fontWeight: 700,
+                color: theme.textSecondary,
+                mb: 0.25,
+              }}
+            >
+              NOW CHATTING WITH
+            </Typography>
+            <Typography
+              variant="subtitle2"
+              sx={{
+                fontWeight: 700,
+                color: theme.accent,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {shopContext.name}
+            </Typography>
+            {(shopContext.city || shopContext.shopType) && (
+              <Typography
+                variant="caption"
+                sx={{ color: theme.textSecondary }}
+              >
+                {[shopContext.city, shopContext.shopType]
+                  .filter(Boolean)
+                  .join(" • ")}
+              </Typography>
+            )}
+          </Box>
+        )}
+
         <Box
           sx={{
             flex: 1,
@@ -1674,7 +1729,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                       <Box
                         sx={{
                           width: "100%",
-                          maxWidth: { xs: "88%", sm: "85%", md: "85%" },
+                          maxWidth: { xs: "96%", sm: "90%", md: "85%" },
                           mt: 1,
                         }}
                       >
@@ -1695,7 +1750,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                       <Box
                         sx={{
                           width: "100%",
-                          maxWidth: { xs: "88%", sm: "85%", md: "85%" },
+                          maxWidth: { xs: "96%", sm: "90%", md: "85%" },
                           mt: 1,
                         }}
                       >
