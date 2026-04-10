@@ -1881,17 +1881,14 @@ class MasterAgent:
         full_context = "\n".join(context_parts)
         full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
         
-        # --- INTENT-BASED ROUTING ---
-        intent = analysis.intent
-        logger.info(f"Intent routing (stream): intent={intent}, search_terms='{analysis.search_terms}', city={analysis.city}")
-
+        # --- PRE-ANALYZER SHOP QUEUE OVERRIDE ---
+        # Check for shop context + queue join signals BEFORE calling expensive analyzer
         shop_id = (context or {}).get("shop_id")
         shop_name = (context or {}).get("shop_name", "this shop")
         has_join_signal = _is_shop_queue_join_request(user_msg)
         has_wait_signal = _is_shop_wait_request(user_msg)
         extracted_name, extracted_phone = _extract_customer_details_for_join(user_msg)
 
-        # Shop landing override: known shop should not trigger generic city/category search.
         if shop_id and (has_join_signal or has_wait_signal or extracted_name):
             if has_wait_signal:
                 final_text = await get_wait_time(
@@ -1911,12 +1908,12 @@ class MasterAgent:
                 
                 # Build and emit queue_join_form event
                 city = (context or {}).get("city")
-                shop_type = (context or {}).get("shop_type")
+                shop_type_val = (context or {}).get("shop_type")
                 form_event = _build_queue_join_form_event(
                     shop_id=int(shop_id),
                     shop_name=shop_name,
                     city=city,
-                    shop_type=shop_type
+                    shop_type=shop_type_val
                 )
                 yield f"data: {json.dumps(form_event)}\n\n"
                 yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
@@ -1934,6 +1931,10 @@ class MasterAgent:
                 yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
                 yield "data: [DONE]\n\n"
                 return
+        
+        # --- INTENT-BASED ROUTING ---
+        intent = analysis.intent
+        logger.info(f"Intent routing (stream): intent={intent}, search_terms='{analysis.search_terms}', city={analysis.city}")
         
         # GREETING
         if intent == 'GREETING':
@@ -2299,12 +2300,6 @@ def get_categories_admin():
                 key=lambda x: x[1]["count"],
                 reverse=True
             )
-        ],
-        "total": len(categories)
-    }
-
-
-def get_learned_synonyms_admin():
     """Admin: View learned patterns."""
     return {
         "synonyms": category_manager._synonym_map,
