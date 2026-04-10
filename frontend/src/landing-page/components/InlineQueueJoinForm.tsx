@@ -85,7 +85,7 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
     try {
       // Call backend to join queue with collected details
       const response = await axios.post(
-        "/api/agent/master/chat",
+        "/agent/master/chat",
         {
           message: `My name is ${name.trim()} and phone is ${phone.trim()}${
             service ? ` and service is ${service.trim()}` : ""
