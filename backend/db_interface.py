@@ -819,7 +819,7 @@ class DatabaseInterface:
             item = QueueItem(
                 queue_id=queue.id,
                 customer_name=customer_name,
-                phone=phone,
+                customer_phone=phone,
                 position=new_pos,
                 status='waiting'
             )

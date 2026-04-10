@@ -20,6 +20,10 @@ NC='\033[0m'
 
 cd "$PROJECT_ROOT"
 
+# Limit compose parallelism on heavy hosts to reduce peak memory usage.
+export COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}"
+echo -e "${BLUE}🧠 Compose parallel limit: ${COMPOSE_PARALLEL_LIMIT}${NC}"
+
 echo -e "${BLUE}🧹 Cleaning up old containers...${NC}"
 docker-compose -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
 sleep 2

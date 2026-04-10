@@ -36,7 +36,7 @@ spec:
                     values: ["core-cpu"]
       containers:
         - name: voice-mcp
-          image: localhost:5000/voice-mcp:v20260406120811-18332e3
+          image: localhost:5000/test/voice-mcp:v20260410110230-6a0b479
           imagePullPolicy: Always
           ports:
             - containerPort: 8881

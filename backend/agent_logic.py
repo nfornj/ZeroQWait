@@ -45,7 +45,61 @@ _CANCEL_REGISTRATION_RE = re.compile(
 )
 _REGISTRATION_INTERRUPT_INTENTS = {'SEARCH', 'PLATFORM_INFO', 'CONVERSATION'}
 
+_QUEUE_JOIN_REQUEST_RE = re.compile(
+    r'\b(join\s+(the\s+)?queue|check\s*in|enqueue|book\s+me|add\s+me)\b',
+    re.IGNORECASE,
+)
+_WAIT_TIME_REQUEST_RE = re.compile(
+    r'\b(wait\s*time|how\s+long|eta|queue\s+status|position)\b',
+    re.IGNORECASE,
+)
+_NAME_CAPTURE_RE = re.compile(
+    r"(?:my\s+name\s+is|name\s+is|i\s+am|i'm)\s+([A-Za-z][A-Za-z\s'\-]{1,60}?)(?=\s+(?:and\s+)?phone\b|[.,;]|$)",
+    re.IGNORECASE,
+)
+_PHONE_CAPTURE_RE = re.compile(
+    r'(?:phone(?:\s+number)?\s*(?:is|:)?\s*)?([+]?\d[\d\s\-()]{6,20}\d)',
+    re.IGNORECASE,
+)
+
 _TTS_TIMEOUT_SECONDS = 60.0
+
+
+def _extract_customer_details_for_join(user_msg: str) -> Tuple[Optional[str], Optional[str]]:
+    """Best-effort extraction for queue join details from free text."""
+    name: Optional[str] = None
+    phone: Optional[str] = None
+
+    name_match = _NAME_CAPTURE_RE.search(user_msg)
+    if name_match:
+        name = _WHITESPACE_MULTI_RE.sub(' ', name_match.group(1)).strip(" .,")
+
+    phone_match = _PHONE_CAPTURE_RE.search(user_msg)
+    if phone_match:
+        raw_phone = phone_match.group(1)
+        phone = _WHITESPACE_MULTI_RE.sub(' ', raw_phone).strip()
+
+    return name, phone
+
+
+def _is_shop_queue_join_request(user_msg: str) -> bool:
+    return bool(_QUEUE_JOIN_REQUEST_RE.search(user_msg))
+
+
+def _is_shop_wait_request(user_msg: str) -> bool:
+    return bool(_WAIT_TIME_REQUEST_RE.search(user_msg))
+
+
+def _build_queue_join_form_event(shop_id: int, shop_name: str, city: Optional[str] = None, shop_type: Optional[str] = None) -> Dict[str, Any]:
+    """Generate a queue_join_form SSE event for inline form rendering in frontend."""
+    return {
+        "type": "queue_join_form",
+        "shop_id": shop_id,
+        "shop_name": shop_name,
+        "city": city,
+        "shop_type": shop_type,
+        "status": "collecting",
+    }
 
 # Shared httpx client for TTS (connection pooling)
 _tts_client: Optional[httpx.AsyncClient] = None
@@ -1359,8 +1413,47 @@ class MasterAgent:
             # --- INTENT-BASED ROUTING (non-streaming) ---
             intent = analysis.intent
             logger.info(f"Intent routing (non-stream): intent={intent}, platform_target={analysis.platform_target}, reg_type={analysis.registration_type}")
+
+            shop_id = (context or {}).get("shop_id")
+            shop_name = (context or {}).get("shop_name", "this shop")
+            has_join_signal = _is_shop_queue_join_request(user_msg)
+            has_wait_signal = _is_shop_wait_request(user_msg)
+            extracted_name, extracted_phone = _extract_customer_details_for_join(user_msg)
+
+            # Shop landing override: avoid generic location/category search when shop is already known.
+            if shop_id and (has_join_signal or has_wait_signal or extracted_name):
+                if has_wait_signal:
+                    final_text = await get_wait_time(
+                        RunContext(deps=deps, model=model, usage=None, prompt=""),
+                        shop_id=int(shop_id),
+                    )
+                elif not extracted_name:
+                    # Emit inline queue join form instead of text prompt
+                    final_text = f"You're joining the queue for **{shop_name}**. Please provide your details below:"
+                    
+                    # Build and append queue_join_form event to actions
+                    city = (context or {}).get("city")
+                    shop_type_val = (context or {}).get("shop_type")
+                    form_event = _build_queue_join_form_event(
+                        shop_id=int(shop_id),
+                        shop_name=shop_name,
+                        city=city,
+                        shop_type=shop_type_val
+                    )
+                    deps.actions.append({
+                        "tool": "queue_join_form",
+                        "form_event": form_event,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                else:
+                    final_text = await join_queue(
+                        RunContext(deps=deps, model=model, usage=None, prompt=""),
+                        shop_id=int(shop_id),
+                        customer_name=extracted_name,
+                        phone=extracted_phone,
+                    )
             
-            if intent == 'GREETING':
+            elif intent == 'GREETING':
                 final_text = "Hello! I'm ZeroQ, your queue management assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
             
             elif intent == 'REGISTRATION':
@@ -1370,7 +1463,46 @@ class MasterAgent:
                 )
             
             elif intent == 'SEARCH':
-                if analysis.specificity == 'VAGUE':
+                if shop_id:
+                    if _is_shop_wait_request(user_msg):
+                        final_text = await get_wait_time(
+                            RunContext(deps=deps, model=model, usage=None, prompt=""),
+                            shop_id=int(shop_id),
+                        )
+                    elif _is_shop_queue_join_request(user_msg):
+                        customer_name, customer_phone = _extract_customer_details_for_join(user_msg)
+                        if not customer_name:
+                            # Emit inline queue join form instead of text prompt
+                            final_text = f"You're joining the queue for **{shop_name}**. Please provide your details below:"
+                            
+                            # Build and append queue_join_form event to actions
+                            city = (context or {}).get("city")
+                            shop_type_val = (context or {}).get("shop_type")
+                            form_event = _build_queue_join_form_event(
+                                shop_id=int(shop_id),
+                                shop_name=shop_name,
+                                city=city,
+                                shop_type=shop_type_val
+                            )
+                            deps.actions.append({
+                                "tool": "queue_join_form",
+                                "form_event": form_event,
+                                "timestamp": datetime.now().isoformat()
+                            })
+                        else:
+                            final_text = await join_queue(
+                                RunContext(deps=deps, model=model, usage=None, prompt=""),
+                                shop_id=int(shop_id),
+                                customer_name=customer_name,
+                                phone=customer_phone,
+                            )
+                    else:
+                        final_text = (
+                            f"I can help you with **{shop_name}** right away. "
+                            "If you want to join the queue, share your **name** and **phone number**. "
+                            "Or ask for **wait time**."
+                        )
+                elif analysis.specificity == 'VAGUE':
                     final_text = "Sure! What type of service are you looking for? For example: barber, salon, clinic, auto shop. And if you share your city or say 'near me', I'll find the closest options!"
                 else:
                     logger.info("Direct Search (intent-based, non-stream)")
@@ -1752,6 +1884,56 @@ class MasterAgent:
         # --- INTENT-BASED ROUTING ---
         intent = analysis.intent
         logger.info(f"Intent routing (stream): intent={intent}, search_terms='{analysis.search_terms}', city={analysis.city}")
+
+        shop_id = (context or {}).get("shop_id")
+        shop_name = (context or {}).get("shop_name", "this shop")
+        has_join_signal = _is_shop_queue_join_request(user_msg)
+        has_wait_signal = _is_shop_wait_request(user_msg)
+        extracted_name, extracted_phone = _extract_customer_details_for_join(user_msg)
+
+        # Shop landing override: known shop should not trigger generic city/category search.
+        if shop_id and (has_join_signal or has_wait_signal or extracted_name):
+            if has_wait_signal:
+                final_text = await get_wait_time(
+                    RunContext(deps=deps, model=model, usage=None, prompt=""),
+                    shop_id=int(shop_id),
+                )
+                async for event in _yield_sentences_with_tts(final_text):
+                    yield event
+                yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            elif not extracted_name:
+                # Emit inline queue join form instead of text prompt
+                intro_text = f"You're joining the queue for **{shop_name}**. Please provide your details below:"
+                async for event in _yield_sentences_with_tts(intro_text):
+                    yield event
+                
+                # Build and emit queue_join_form event
+                city = (context or {}).get("city")
+                shop_type = (context or {}).get("shop_type")
+                form_event = _build_queue_join_form_event(
+                    shop_id=int(shop_id),
+                    shop_name=shop_name,
+                    city=city,
+                    shop_type=shop_type
+                )
+                yield f"data: {json.dumps(form_event)}\n\n"
+                yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            else:
+                final_text = await join_queue(
+                    RunContext(deps=deps, model=model, usage=None, prompt=""),
+                    shop_id=int(shop_id),
+                    customer_name=extracted_name,
+                    phone=extracted_phone,
+                )
+                async for event in _yield_sentences_with_tts(final_text):
+                    yield event
+                yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
         
         # GREETING
         if intent == 'GREETING':
@@ -1782,6 +1964,39 @@ class MasterAgent:
         
         # SEARCH
         if intent == 'SEARCH':
+            if shop_id:
+                if _is_shop_wait_request(user_msg):
+                    final_text = await get_wait_time(
+                        RunContext(deps=deps, model=model, usage=None, prompt=""),
+                        shop_id=int(shop_id),
+                    )
+                elif _is_shop_queue_join_request(user_msg):
+                    customer_name, customer_phone = _extract_customer_details_for_join(user_msg)
+                    if not customer_name:
+                        final_text = (
+                            f"You're joining the queue for **{shop_name}**. "
+                            "Please share your **name** and **phone number** (and service if you want)."
+                        )
+                    else:
+                        final_text = await join_queue(
+                            RunContext(deps=deps, model=model, usage=None, prompt=""),
+                            shop_id=int(shop_id),
+                            customer_name=customer_name,
+                            phone=customer_phone,
+                        )
+                else:
+                    final_text = (
+                        f"I can help you with **{shop_name}** right away. "
+                        "If you want to join the queue, share your **name** and **phone number**. "
+                        "Or ask for **wait time**."
+                    )
+
+                async for event in _yield_sentences_with_tts(final_text):
+                    yield event
+                yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
             if analysis.specificity == 'VAGUE':
                 logger.info("Vague search — asking for details")
                 prompt_text = "Sure! I can help you find services nearby. What type of service are you looking for? For example: *barber*, *salon*, *clinic*, *auto shop*, etc. And if you share your city or say **near me**, I'll find the closest options!"

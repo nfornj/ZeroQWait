@@ -80,8 +80,8 @@ sudo kubectl describe pod -n fastcuts <pod-name>
 The PostgreSQL database is accessible within the cluster at:
 - **Host**: `postgres.fastcuts.svc.cluster.local`
 - **Port**: `5432`
-- **Database**: `fastcuts_db`
-- **User**: `fastcuts_user`
+- **Database**: `zeroqwait`
+- **User**: `zeroqwait`
 - **Password**: Set in `postgres-secret.yaml`
 
 ## Updating the Application
@@ -131,13 +131,13 @@ sudo kubectl logs -n fastcuts <pod-name>
 ### Database connection issues
 ```bash
 # Check PostgreSQL pod
-sudo kubectl exec -it -n fastcuts postgres-0 -- psql -U fastcuts_user -d fastcuts_db
+sudo kubectl exec -it -n zeroqwait postgres-0 -- psql -U zeroqwait -d zeroqwait
 
 # Test connectivity from backend
 sudo kubectl exec -it -n fastcuts <backend-pod-name> -- bash
 # Inside pod:
 apt-get update && apt-get install -y postgresql-client
-psql -h postgres.fastcuts.svc.cluster.local -U fastcuts_user -d fastcuts_db
+psql -h postgres.zeroqwait.svc.cluster.local -U zeroqwait -d zeroqwait
 ```
 
 ### Port conflicts

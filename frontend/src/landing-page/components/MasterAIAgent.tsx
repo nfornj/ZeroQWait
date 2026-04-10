@@ -38,12 +38,29 @@ import InlineRegistrationForm, {
   FormStepData,
   FormDoneData,
 } from "./InlineRegistrationForm";
+import InlineQueueJoinForm from "./InlineQueueJoinForm";
 import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
 
 type ActionCommand = {
   label: string;
   payload: string;
   relatedViewer?: "pricing" | "features" | "faq" | "shops" | null;
+};
+
+type ShopContext = {
+  id: number;
+  slug?: string;
+  name: string;
+  city?: string;
+  shopType?: string;
+};
+
+type MasterAIAgentProps = {
+  forceOpen?: boolean;
+  initialOpen?: boolean;
+  hideCloseButton?: boolean;
+  shopContext?: ShopContext | null;
+  initialInteractionMode?: "voice" | "chat";
 };
 
 const PROFESSIONAL_VOICE_INSTRUCT =
@@ -60,6 +77,21 @@ const DEFAULT_QUICK_ACTIONS: ActionCommand[] = [
     label: "Ask about our Products",
     payload: "Tell me about your products and pricing",
     relatedViewer: "pricing",
+  },
+];
+
+const getShopQuickActions = (shopName: string): ActionCommand[] => [
+  {
+    label: "Join Queue",
+    payload: `I want to join the queue at ${shopName}`,
+  },
+  {
+    label: "Check Wait Time",
+    payload: `What is the current wait time at ${shopName}?`,
+  },
+  {
+    label: "Queue Status",
+    payload: "How can I check my queue status?",
   },
 ];
 
@@ -149,15 +181,21 @@ const getActionableCommandFromText = (text: string): ActionCommand | null => {
     : null;
 };
 
-const MasterAIAgent: React.FC = () => {
-  const [isOpen, setIsOpen] = useState(false);
+const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
+  forceOpen = false,
+  initialOpen = false,
+  hideCloseButton = false,
+  shopContext = null,
+  initialInteractionMode = "voice",
+}) => {
+  const [isOpen, setIsOpen] = useState(forceOpen || initialOpen);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
   // "voice" = TTS enabled + orb prominent, "chat" = text-only, no TTS audio
-  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">("voice");
-  const interactionModeRef = useRef<"voice" | "chat">("voice");
+  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">(initialInteractionMode);
+  const interactionModeRef = useRef<"voice" | "chat">(initialInteractionMode);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
     null,
   );
@@ -181,13 +219,16 @@ const MasterAIAgent: React.FC = () => {
   const [sessionId, setSessionId] = useState<string>("");
 
   useEffect(() => {
-    let sid = sessionStorage.getItem("zeroq_session_id");
+    const sessionKey = shopContext
+      ? `zeroq_shop_session_${shopContext.id}`
+      : "zeroq_session_id";
+    let sid = sessionStorage.getItem(sessionKey);
     if (!sid) {
       sid = Math.random().toString(36).substring(2) + Date.now().toString(36);
-      sessionStorage.setItem("zeroq_session_id", sid);
+      sessionStorage.setItem(sessionKey, sid);
     }
     setSessionId(sid);
-  }, []);
+  }, [shopContext]);
 
   // Updated State Type for Dynamic Layout
   const [chatHistory, setChatHistory] = useState<
@@ -198,6 +239,8 @@ const MasterAIAgent: React.FC = () => {
       formStep?: FormStepData | null;
       formDone?: FormDoneData | null;
       formCompleted?: boolean;
+      queueJoinFormData?: any | null;
+      queueJoinFormSubmitted?: boolean;
       relatedViewer?:
         | "shops"
         | "pricing"
@@ -207,13 +250,25 @@ const MasterAIAgent: React.FC = () => {
         | null;
       quickActions?: ActionCommand[];
     }>
-  >([
-    {
-      role: "ai",
-      text: "Welcome to ZeroQwait! I'm ZeroQ. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?",
-      quickActions: DEFAULT_QUICK_ACTIONS,
-    },
-  ]);
+  >(() => {
+    if (shopContext) {
+      return [
+        {
+          role: "ai",
+          text: `Welcome to ${shopContext.name}. I'm ZeroQ, your AI concierge. Tell me your name, phone, and what service you need, and I'll add you to the queue.`,
+          quickActions: getShopQuickActions(shopContext.name),
+        },
+      ];
+    }
+
+    return [
+      {
+        role: "ai",
+        text: "Welcome to ZeroQwait! I'm ZeroQ. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?",
+        quickActions: DEFAULT_QUICK_ACTIONS,
+      },
+    ];
+  });
 
   const [activeViewer, setActiveViewer] = useState<
     "shops" | "pricing" | "features" | "faq" | "register" | null
@@ -631,6 +686,11 @@ const MasterAIAgent: React.FC = () => {
 
   // Visibility & Global Triggers
   useEffect(() => {
+    if (forceOpen) {
+      setIsOpen(true);
+      return;
+    }
+
     const handleToggle = () => {
       console.log("[DEBUG] AI Assistant trigger received");
       setIsOpen((prev) => !prev);
@@ -640,7 +700,7 @@ const MasterAIAgent: React.FC = () => {
     return () => {
       window.removeEventListener("trigger-zeroq-assistant", handleToggle);
     };
-  }, []);
+  }, [forceOpen]);
 
   // Note: Initial greeting is NOT spoken here — it will be spoken via
   // paired streaming when user sends first message (avoids duplicate voice).
@@ -692,6 +752,33 @@ const MasterAIAgent: React.FC = () => {
       }
     },
     [speak],
+  );
+
+  // --- Queue Join Form Result Handler ---
+  const handleQueueJoinFormSubmit = useCallback(
+    (result: { success: boolean; queueItemId?: number; position?: number; error?: string }, sourceIndex: number) => {
+      // Mark the current form as submitted
+      setChatHistory((prev) => {
+        const next = [...prev];
+        if (next[sourceIndex]) {
+          next[sourceIndex].queueJoinFormSubmitted = true;
+          
+          if (result.success) {
+            next[sourceIndex].text += `\n\n✅ **Great!** You've been added to the queue. Your position: #${result.position}`;
+            // Navigate to queue page after a short delay
+            setTimeout(() => {
+              if (shopContext) {
+                navigate(`/queue/${shopContext.id}`);
+              }
+            }, 1500);
+          } else {
+            next[sourceIndex].text += `\n\n❌ Error: ${result.error || 'Failed to join queue'}`;
+          }
+        }
+        return next;
+      });
+    },
+    [shopContext, navigate],
   );
 
   const handleChat = async (
@@ -750,6 +837,15 @@ const MasterAIAgent: React.FC = () => {
           context: {
             active_view: nextViewer,
             visible_shops: nextShops.map((s) => s.name),
+            ...(shopContext
+              ? {
+                  shop_id: shopContext.id,
+                  shop_slug: shopContext.slug,
+                  shop_name: shopContext.name,
+                  city: shopContext.city,
+                  preferred_category: shopContext.shopType,
+                }
+              : {}),
           },
           is_voice: interactionMode === "voice",
         }),
@@ -866,6 +962,24 @@ const MasterAIAgent: React.FC = () => {
                         : null,
                     );
                     // Note: form_step SSE event (received separately) will add the inline form
+                  } else if (
+                    action.tool === "join_queue" &&
+                    action.result?.success
+                  ) {
+                    const queueItemId = action.result?.queue_item_id;
+                    const joinedShopId =
+                      action.params?.shop_id || shopContext?.id;
+
+                    if (queueItemId && joinedShopId) {
+                      localStorage.setItem(
+                        `queue_item_${joinedShopId}`,
+                        String(queueItemId),
+                      );
+                    }
+
+                    if (joinedShopId) {
+                      setTimeout(() => navigate(`/queue/${joinedShopId}`), 1200);
+                    }
                   }
                 });
               } else {
@@ -895,6 +1009,17 @@ const MasterAIAgent: React.FC = () => {
                 const next = [...prev];
                 if (next[aiMessageIndex]) {
                   next[aiMessageIndex].formStep = formStepData;
+                }
+                return next;
+              });
+            } else if (data.type === "queue_join_form") {
+              // --- Inline queue join form ---
+              // Attach queue join form data to the current AI message
+              console.log(`[SSE] queue_join_form received for shop: ${data.shop_id}`);
+              setChatHistory((prev) => {
+                const next = [...prev];
+                if (next[aiMessageIndex]) {
+                  next[aiMessageIndex].queueJoinFormData = data;
                 }
                 return next;
               });
@@ -1041,22 +1166,24 @@ const MasterAIAgent: React.FC = () => {
               {interactionMode === "voice" ? "VOICE" : "CHAT"}
             </Typography>
           </Box>
-          <IconButton
-            onClick={() => setIsOpen(false)}
-            sx={{
-              color: theme.iconColor,
-              bgcolor: isDarkMode
-                ? "rgba(255,255,255,0.05)"
-                : "rgba(15,23,42,0.05)",
-              "&:hover": {
+          {!hideCloseButton && !forceOpen && (
+            <IconButton
+              onClick={() => setIsOpen(false)}
+              sx={{
+                color: theme.iconColor,
                 bgcolor: isDarkMode
-                  ? "rgba(255,255,255,0.1)"
-                  : "rgba(15,23,42,0.1)",
-              },
-            }}
-          >
-            <CloseIcon sx={{ fontSize: 32 }} />
-          </IconButton>
+                  ? "rgba(255,255,255,0.05)"
+                  : "rgba(15,23,42,0.05)",
+                "&:hover": {
+                  bgcolor: isDarkMode
+                    ? "rgba(255,255,255,0.1)"
+                    : "rgba(15,23,42,0.1)",
+                },
+              }}
+            >
+              <CloseIcon sx={{ fontSize: 32 }} />
+            </IconButton>
+          )}
         </Stack>
 
         <Box
@@ -1559,6 +1686,29 @@ const MasterAIAgent: React.FC = () => {
                           disabled={!!chat.formCompleted}
                           onFormResult={(result) =>
                             handleFormResult(result, index)
+                          }
+                        />
+                      </Box>
+                    )}
+                    {/* Inline queue join form (rendered BELOW the message bubble, inside the same chat row) */}
+                    {chat.queueJoinFormData && !chat.queueJoinFormSubmitted && (
+                      <Box
+                        sx={{
+                          width: "100%",
+                          maxWidth: { xs: "88%", sm: "85%", md: "85%" },
+                          mt: 1,
+                        }}
+                      >
+                        <InlineQueueJoinForm
+                          shopId={chat.queueJoinFormData.shop_id}
+                          shopName={chat.queueJoinFormData.shop_name}
+                          shopType={chat.queueJoinFormData.shop_type}
+                          sessionId={sessionId}
+                          theme={theme}
+                          isDarkMode={isDarkMode}
+                          disabled={!!chat.queueJoinFormSubmitted}
+                          onFormSubmit={(result) =>
+                            handleQueueJoinFormSubmit(result, index)
                           }
                         />
                       </Box>

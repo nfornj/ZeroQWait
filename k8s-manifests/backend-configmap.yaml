@@ -6,7 +6,7 @@ metadata:
 data:
   DB_HOST: "postgres.zeroqwait.svc.cluster.local"
   DB_PORT: "5432"
-  DB_NAME: "fastcuts_db"
+  DB_NAME: "zeroqwait"
   FRONTEND_URL: "http://192.168.2.134.nip.io"
   PYTHONUNBUFFERED: "1"
   USE_SUPABASE: "false"

@@ -3,7 +3,7 @@ from datetime import datetime
 from shared.schemas import DictModel
 from modules.queues.models import QueueStatus
 from modules.shops.schemas import Shop, ShopService
-from modules.employees.schemas import ShopEmployee
+from modules.auth.schemas import User as AssignedEmployeeUser
 
 # Queue Item schemas
 class QueueItemBase(DictModel):
@@ -26,7 +26,7 @@ class QueueItem(QueueItemBase):
     service_started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     assigned_employee_id: Optional[int] = None
-    assigned_employee: Optional[ShopEmployee] = None  # Populated with employee details
+    assigned_employee: Optional[AssignedEmployeeUser] = None  # relationship("User")
     service_cost: Optional[float] = 0.0
     service: Optional[ShopService] = None # Populated with service details
 

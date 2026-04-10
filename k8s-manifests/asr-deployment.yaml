@@ -47,7 +47,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: asr-service
-          image: localhost:5000/asr-service:v20260406120811-18332e3
+          image: localhost:5000/test/asr-service:v20260410110230-6a0b479
           env:
             - name: MODEL_SIZE
               value: "medium"

@@ -21,6 +21,10 @@ NC='\033[0m'
 
 cd "$PROJECT_ROOT"
 
+# Limit compose parallelism on heavy hosts to reduce peak memory usage.
+export COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}"
+echo "✓ Compose parallel limit: ${COMPOSE_PARALLEL_LIMIT}"
+
 # Check prerequisites
 echo -e "${BLUE}📋 Prerequisites Check:${NC}"
 if ! command -v docker &> /dev/null; then

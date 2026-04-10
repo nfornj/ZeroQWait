@@ -12,12 +12,14 @@ RUN apt-get update && \
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install TTS dependencies (includes qwen-tts and all its deps like librosa)
+# GPU optimization environment variables for Ada architecture (RTX 5060 Ti)
+ENV CUDA_COMPUTE_CAPABILITY=8.9
+ENV TORCH_CUDA_ARCH_LIST=8.9
+ENV CUDA_FORCE_PTX_JIT=0
+
+# Install TTS dependencies — qwen-tts pulls torch 2.11.0+cu13x with full GPU support
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
-
-# Force-reinstall CUDA-compatible torch + torchaudio AFTER qwen-tts (overrides CPU wheels)
-RUN pip install --no-cache-dir --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 COPY main.py /app/main.py
 WORKDIR /app

@@ -188,6 +188,22 @@ def _load_model_sync():
                 device_map=device_map,
                 dtype=dtype,
             )
+            
+            # GPU-specific optimizations for RTX 5060 Ti (Ada architecture)
+            if TTS_DEVICE == "gpu" and torch.cuda.is_available():
+                try:
+                    # Enable flash attention if available for faster computation
+                    if hasattr(_model, "model") and hasattr(_model.model, "config"):
+                        _model.model.config.use_flash_attn = True
+                    logger.info("Enabled GPU optimizations for RTX 5060 Ti (Ada architecture, compute_capability=8.9)")
+                except Exception as opt_err:
+                    logger.warning(f"Could not apply all GPU optimizations: {opt_err}")
+                
+                # Log GPU memory available
+                torch.cuda.empty_cache()
+                total_mem = torch.cuda.get_device_properties(0).total_memory / 1024**3
+                logger.info(f"GPU initialized: {torch.cuda.get_device_name(0)}, Total VRAM: {total_mem:.1f}GB")
+                
         except Exception as first_err:
             err_text = str(first_err)
             patched = _ensure_missing_preprocessor_config(err_text)

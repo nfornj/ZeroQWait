@@ -9,7 +9,7 @@ Idempotent: checks existing data before inserting.
 
 Usage:
   python seed_data.py                  # Local dev DB
-  DB_HOST=postgres DB_NAME=fastcuts_db DB_USER=fastcuts_user DB_PASSWORD=xxx python seed_data.py
+    DB_HOST=postgres DB_NAME=zeroqwait DB_USER=zeroqwait DB_PASSWORD=xxx python seed_data.py
 """
 
 import os
