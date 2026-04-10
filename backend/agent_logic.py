@@ -2300,6 +2300,11 @@ def get_categories_admin():
                 key=lambda x: x[1]["count"],
                 reverse=True
             )
+        ]
+    }
+
+
+def get_learnings_admin():
     """Admin: View learned patterns."""
     return {
         "synonyms": category_manager._synonym_map,
