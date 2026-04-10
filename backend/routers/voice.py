@@ -22,8 +22,17 @@ _tts_l1_cache: Dict[str, Tuple[bytes, str, str]] = {}
 _TTS_L1_MAX_ITEMS = 128
 
 
-def _tts_cache_key(text: str, voice: str, speed: float) -> str:
-    return hashlib.sha256(f"{text}|{voice}|{speed}".encode("utf-8")).hexdigest()
+def _tts_cache_key(
+    text: str,
+    voice: str,
+    speed: float,
+    model: str,
+    language: str,
+    instruct: str,
+) -> str:
+    return hashlib.sha256(
+        f"{text}|{voice}|{speed}|{model}|{language}|{instruct}".encode("utf-8")
+    ).hexdigest()
 
 
 def detect_audio_format(audio_bytes: bytes) -> tuple[str, str]:
@@ -41,6 +50,12 @@ class TTSRequest(BaseModel):
     text: str
     voice: str = "Vivian"
     speed: float = 1.0
+    model: str = "tts-1-en"
+    language: str = "English"
+    instruct: str = (
+        "Speak clearly and naturally with a warm, confident North American English accent. "
+        "Keep a steady, professional tone and consistent pacing. Enunciate each word precisely."
+    )
 
 @router.post("/transcribe")
 async def transcribe_voice(file: UploadFile = File(...)):
@@ -72,7 +87,14 @@ async def text_to_speech(req: TTSRequest):
     """
     from redis_client import redis_client
 
-    cache_key = _tts_cache_key(req.text, req.voice, req.speed)
+    cache_key = _tts_cache_key(
+        req.text,
+        req.voice,
+        req.speed,
+        req.model,
+        req.language,
+        req.instruct,
+    )
     t0 = time.perf_counter()
 
     # L2: Redis cache (shared across all backend pods)
@@ -109,12 +131,12 @@ async def text_to_speech(req: TTSRequest):
     # Cache miss — synthesize
     try:
         payload = {
-            "model": "tts-1-en",
+            "model": req.model,
             "input": req.text,
             "voice": req.voice,
             "speed": req.speed,
-            "language": "English",
-            "instruct": "Speak clearly and naturally with a warm, confident North American English accent. Enunciate each word precisely. Friendly and professional tone.",
+            "language": req.language,
+            "instruct": req.instruct,
             "response_format": "wav",
         }
 

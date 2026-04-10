@@ -1433,7 +1433,7 @@ class MasterAgent:
                     "voice": "Vivian",
                     "speed": 1.0,
                     "language": "English",
-                    "instruct": "Speak clearly and naturally with a warm, confident North American English accent. Enunciate each word precisely. Friendly and professional tone.",
+                    "instruct": "Speak clearly and naturally with a warm, confident North American English accent. Keep a steady, professional tone and consistent pacing. Enunciate each word precisely.",
                     "response_format": "wav"
                 },
                 headers={"Content-Type": "application/json"}

@@ -46,6 +46,9 @@ type ActionCommand = {
   relatedViewer?: "pricing" | "features" | "faq" | "shops" | null;
 };
 
+const PROFESSIONAL_VOICE_INSTRUCT =
+  "Speak clearly and naturally with a warm, confident North American English accent. Keep a steady, professional tone and consistent pacing. Enunciate each word precisely.";
+
 const DEFAULT_QUICK_ACTIONS: ActionCommand[] = [
   { label: "Register a Shop", payload: "I want to register a shop" },
   {
@@ -340,6 +343,10 @@ const MasterAIAgent: React.FC = () => {
   );
   const isPlayingQueueRef = useRef(false);
   const cancelQueueRef = useRef(false);
+  const lastUserSubmitRef = useRef<{ text: string; at: number }>({
+    text: "",
+    at: 0,
+  });
 
   const getAudioContext = () => {
     if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
@@ -540,7 +547,14 @@ const MasterAIAgent: React.FC = () => {
       const response = await fetch("/api/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: plainText, voice: "Vivian", speed: 1.0 }),
+        body: JSON.stringify({
+          text: plainText,
+          voice: "Vivian",
+          speed: 0.98,
+          model: "tts-1-en",
+          language: "English",
+          instruct: PROFESSIONAL_VOICE_INSTRUCT,
+        }),
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`TTS ${response.status}`);
@@ -685,6 +699,16 @@ const MasterAIAgent: React.FC = () => {
     requestedViewer?: "shops" | "pricing" | "features" | "faq" | null,
   ) => {
     if (!userText.trim()) return;
+
+    const normalized = userText.trim().toLowerCase();
+    const now = Date.now();
+    if (
+      lastUserSubmitRef.current.text === normalized &&
+      now - lastUserSubmitRef.current.at < 900
+    ) {
+      return;
+    }
+    lastUserSubmitRef.current = { text: normalized, at: now };
 
     const nextViewer = requestedViewer ?? activeViewer;
     const nextShops = nextViewer === "shops" ? activeShops : [];
@@ -1396,11 +1420,23 @@ const MasterAIAgent: React.FC = () => {
 
                                   return (
                                     <Box
-                                      component="button"
-                                      type="button"
-                                      onClick={() => {
+                                      component="span"
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
                                         if (!isProcessing) {
                                           handleActionCommand(action);
+                                        }
+                                      }}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter" || event.key === " ") {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          if (!isProcessing) {
+                                            handleActionCommand(action);
+                                          }
                                         }
                                       }}
                                       sx={{
