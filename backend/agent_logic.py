@@ -164,6 +164,13 @@ class IntentAnalysis(BaseModel):
     registration_type: Optional[str] = Field(default=None, description="shop_owner, customer, or null — for REGISTRATION intent.")
     context_updates: ContextUpdates
 
+
+class SearchRecoveryAnalysis(BaseModel):
+    is_search: bool = Field(description="True if the message is a request to find a service/shop/business.")
+    search_terms: str = Field(default="", description="Service/category terms such as 'salon' or 'barber'.")
+    city: Optional[str] = Field(default=None, description="City/location if explicitly mentioned.")
+    near_me: bool = Field(default=False, description="True if user asks for nearby/near me.")
+
 class UnifiedQueryAnalyzer:
     """Single-pass Pydantic LLM extractor. Replaces IntentRouter, QueryProcessor, ContextExtractor."""
     
@@ -185,6 +192,9 @@ REGISTRATION — User wants to sign up, register, create account, list their bus
 
 SEARCH — User wants to find shops, businesses, or services.
   Examples: "find barbers near me", "any salons in Toronto?", "search shops", "look for a clinic"
+    IMPORTANT: Treat short/shorthand requests as SEARCH even without explicit verbs like "find" or "search".
+    Examples: "salon at oshawa", "barber oshawa", "clinic in scarborough", "dentist near toronto", "spa downtown".
+    If a service/category and location are present, this is SEARCH with specificity=SPECIFIC.
   - specificity=VAGUE if NO service type is mentioned (e.g. "search shops", "find stores", "show me businesses")
   - specificity=SPECIFIC if a service type, category, or query is given (e.g. "find barbers", "salons near me")
   - search_terms: extract core service type ONLY for SPECIFIC searches. Empty string otherwise.
@@ -210,9 +220,17 @@ CONVERSATION — General conversation, answering a question ZeroQ asked, follow-
     User: "auto shop" → intent=SEARCH, specificity=SPECIFIC, search_terms="auto shop"
     User: "barber in Toronto" → intent=SEARCH, specificity=SPECIFIC, search_terms="barber", city="Toronto"
     User: "salon" → intent=SEARCH, specificity=SPECIFIC, search_terms="salon"
+    User: "salon at oshawa" → intent=SEARCH, specificity=SPECIFIC, search_terms="salon", city="Oshawa"
 
-UNCLEAR — Ambiguous message that doesn't clearly fit other intents. When in doubt, prefer UNCLEAR.
+UNCLEAR — Ambiguous message that doesn't clearly fit other intents.
   Examples: "ok", "maybe", "hmm", single characters, random text
+
+Do NOT classify as UNCLEAR if the message contains a recognizable service/business category and/or location request.
+
+Decision priority:
+1) If the message plausibly asks to find a service/shop (even tersely), choose SEARCH.
+2) Use UNCLEAR only for filler/acknowledgement text with no actionable search meaning.
+3) Between SEARCH and UNCLEAR, prefer SEARCH.
 
 ## Field Rules
 - search_terms, city, near_me, specificity: only meaningful for SEARCH intent. Use defaults for other intents.
@@ -221,7 +239,35 @@ UNCLEAR — Ambiguous message that doesn't clearly fit other intents. When in do
 - For non-applicable intents, use default values (empty string, null, false).
 - context_updates.last_category / last_city: track latest search category and city across conversation turns.
 """,
-            model_settings={'temperature': 0.1, 'max_tokens': 250}
+            model_settings={'temperature': 0.0, 'max_tokens': 250}
+        )
+
+        self.search_recovery_agent = Agent(
+            model,
+            output_type=SearchRecoveryAnalysis,
+            system_prompt="""You are a search-intent disambiguator for ZeroQwait.
+
+Your task: decide whether the user message is actually a request to find a service/shop/business,
+especially when phrasing is short or telegraphic.
+
+Treat these as SEARCH:
+- "salon at oshawa"
+- "barber toronto"
+- "dentist in mississauga"
+- "spa near me"
+- "clinic scarborough"
+
+If a message contains a recognizable service/category term (such as salon, barber, spa, clinic, dentist, auto shop, pharmacy, restaurant), it should be treated as SEARCH unless the user is clearly discussing registration or platform pricing/features.
+
+If it is search:
+- is_search=true
+- extract search_terms (service/category) when present
+- extract city when present
+- near_me=true only for nearby/near me style wording
+
+If it is not search, set is_search=false and leave other fields empty/default.
+""",
+            model_settings={'temperature': 0.0, 'max_tokens': 120}
         )
         
         self.conversation_agent = Agent(
@@ -270,17 +316,12 @@ RULES:
         r'list\s*my\s*business|set\s*up\s*(my\s*)?(shop|business|store))\b',
         re.IGNORECASE
     )
-    _SEARCH_TRIGGER_RE = re.compile(
-        r'\b(find|search|look(?:ing)?\s*for|show\s*me|near\s*me|nearby)\b',
-        re.IGNORECASE
-    )
-    _SERVICE_KEYWORD_RE = re.compile(
+    _CITY_HINT_RE = re.compile(r'\b(?:in|at|near)\s+([A-Za-z][A-Za-z\s\-]{1,40})\b', re.IGNORECASE)
+    _SERVICE_FALLBACK_RE = re.compile(
         r'\b(barber|barbers|barbershop|salon|spa|clinic|hospital|dentist|dental|'
         r'auto\s*shop|mechanic|car\s*wash|gym|fitness|restaurant|cafe|pharmacy)\b',
-        re.IGNORECASE
+        re.IGNORECASE,
     )
-    _CITY_IN_RE = re.compile(r'\bin\s+([A-Za-z][A-Za-z\s\-]{1,40})\b')
-
     def _fast_intent_check(self, user_msg: str) -> Optional[IntentAnalysis]:
         """Regex-based fast path for obvious intents. Returns None if unsure (falls through to LLM)."""
         msg = user_msg.strip()
@@ -318,43 +359,6 @@ RULES:
                                  platform_target=None,
                                  context_updates=ContextUpdates(last_category=None, last_city=None))
 
-        # Search fast path — skip LLM for obvious "find/search/near me" requests.
-        if self._SEARCH_TRIGGER_RE.search(msg):
-            near_me = "near me" in lower_msg or "nearby" in lower_msg
-            service_match = self._SERVICE_KEYWORD_RE.search(msg)
-            city_match = self._CITY_IN_RE.search(msg)
-            city = city_match.group(1).strip() if city_match else None
-            if service_match:
-                search_terms = service_match.group(1).strip().lower()
-                # Normalize common plurals/variants for cleaner search.
-                if search_terms == "barbers":
-                    search_terms = "barber"
-                elif search_terms == "barbershop":
-                    search_terms = "barber"
-                elif search_terms == "dental":
-                    search_terms = "dentist"
-                return IntentAnalysis(
-                    intent='SEARCH',
-                    search_terms=search_terms,
-                    city=city,
-                    near_me=near_me,
-                    specificity="SPECIFIC",
-                    platform_target=None,
-                    registration_type=None,
-                    context_updates=ContextUpdates(last_category=search_terms, last_city=city)
-                )
-
-            return IntentAnalysis(
-                intent='SEARCH',
-                search_terms="",
-                city=city,
-                near_me=near_me,
-                specificity="VAGUE",
-                platform_target=None,
-                registration_type=None,
-                context_updates=ContextUpdates(last_category=None, last_city=city)
-            )
-
         return None  # Not obvious — fall through to LLM
 
     async def analyze(self, user_msg: str, history_context: str = "") -> IntentAnalysis:
@@ -363,29 +367,89 @@ RULES:
         if fast_result:
             logger.info(f"Fast intent match: {fast_result.intent} (skipped LLM)")
             return fast_result
-        
-        # Check Semantic Cache First
-        cached_dict = semantic_cache.get(user_msg)
-        if cached_dict:
-            return IntentAnalysis(**cached_dict)
+
+        # Query-only semantic cache can be misleading for contextual follow-ups,
+        # so use it only when there is no conversation context.
+        use_query_cache = not bool((history_context or "").strip())
+        if use_query_cache:
+            cached_dict = semantic_cache.get(user_msg)
+            if cached_dict and cached_dict.get("intent") != "UNCLEAR":
+                return IntentAnalysis(**cached_dict)
             
         full_prompt = f"{history_context}\n\nCurrent message: {user_msg}" if history_context else user_msg
         
         try:
             result = await self.analyzer_agent.run(full_prompt)
             analysis = result.output
+
+            if analysis.intent == "UNCLEAR":
+                recovery_result = await self.search_recovery_agent.run(full_prompt)
+                recovered = recovery_result.output
+                recovered_terms = (recovered.search_terms or "").strip().lower()
+                recovered_city = (recovered.city or "").strip() or None
+
+                # Dynamic category fallback from DB-driven category manager for terse queries.
+                category_fallback = await category_manager.detect_category(user_msg)
+
+                if recovered.is_search or category_fallback:
+                    final_terms = recovered_terms or (category_fallback or "")
+                    return IntentAnalysis(
+                        intent="SEARCH",
+                        search_terms=final_terms,
+                        city=recovered_city,
+                        near_me=bool(recovered.near_me),
+                        specificity="SPECIFIC" if final_terms else "VAGUE",
+                        platform_target=None,
+                        registration_type=None,
+                        context_updates=ContextUpdates(
+                            last_category=final_terms or None,
+                            last_city=recovered_city,
+                        ),
+                    )
             
-            # Write successful extraction backwards into Semantic Cache
-            semantic_cache.set(user_msg, analysis.model_dump())
+            # Store only stable, non-ambiguous query-only classifications.
+            if use_query_cache and analysis.intent != "UNCLEAR":
+                semantic_cache.set(user_msg, analysis.model_dump())
             return analysis
         except Exception as e:
             logger.error(f"Unified analyzer failed: {e}")
-            # Degrade gracefully so the main agent can still attempt to answer
+            # LLM unavailable fallback: infer SEARCH from dynamic categories + basic location hints.
+            fallback_category = await category_manager.detect_category(user_msg)
+            if not fallback_category:
+                service_match = self._SERVICE_FALLBACK_RE.search(user_msg or "")
+                if service_match:
+                    fallback_category = service_match.group(1).strip().lower()
+                    if fallback_category == "barbers":
+                        fallback_category = "barber"
+                    elif fallback_category == "barbershop":
+                        fallback_category = "barber"
+                    elif fallback_category == "dental":
+                        fallback_category = "dentist"
+            city_match = self._CITY_HINT_RE.search(user_msg or "")
+            fallback_city = city_match.group(1).strip() if city_match else None
+            fallback_near_me = "near me" in user_msg.lower() or "nearby" in user_msg.lower()
+
+            if fallback_category or fallback_city or fallback_near_me:
+                return IntentAnalysis(
+                    intent='SEARCH',
+                    search_terms=fallback_category or "",
+                    city=fallback_city,
+                    near_me=fallback_near_me,
+                    specificity="SPECIFIC" if fallback_category else "VAGUE",
+                    platform_target=None,
+                    registration_type=None,
+                    context_updates=ContextUpdates(
+                        last_category=fallback_category,
+                        last_city=fallback_city,
+                    )
+                )
+
+            # Last resort fallback
             return IntentAnalysis(
                 intent='UNCLEAR',
                 search_terms="",
                 city=None,
-                near_me="near" in user_msg.lower() or "nearby" in user_msg.lower(),
+                near_me=fallback_near_me,
                 specificity="SPECIFIC",
                 platform_target=None,
                 registration_type=None,
