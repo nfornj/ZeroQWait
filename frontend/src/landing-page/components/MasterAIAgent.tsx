@@ -61,6 +61,7 @@ type MasterAIAgentProps = {
   hideCloseButton?: boolean;
   shopContext?: ShopContext | null;
   initialInteractionMode?: "voice" | "chat";
+  embedded?: boolean;
 };
 
 const PROFESSIONAL_VOICE_INSTRUCT =
@@ -187,6 +188,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   hideCloseButton = false,
   shopContext = null,
   initialInteractionMode = "voice",
+  embedded = false,
 }) => {
   const [isOpen, setIsOpen] = useState(forceOpen || initialOpen);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -1080,12 +1082,12 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
       <Box
         id="immersive-ai-overlay"
         sx={{
-          position: "fixed",
+          position: embedded ? "relative" : "fixed",
           top: 0,
           left: 0,
-          width: "100vw",
-          height: { xs: "100dvh", md: "100vh" },
-          zIndex: 10000,
+          width: embedded ? "100%" : "100vw",
+          height: embedded ? "100%" : { xs: "100dvh", md: "100vh" },
+          zIndex: embedded ? 1 : 10000,
           background: theme.bg,
           backdropFilter: theme.glass,
           display: "flex",
@@ -1095,13 +1097,20 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
           color: theme.text,
           overflow: "hidden", // Changed to hidden - scrolling happens inside child
           transition: "all 0.5s ease",
+          borderRadius: embedded ? "20px" : 0,
+          border: embedded ? `1px solid ${theme.cardBorder}` : "none",
         }}
       >
         {/* Controls Top Right */}
         <Stack
           direction="row"
           spacing={2}
-          sx={{ position: "absolute", top: 40, right: 40, zIndex: 20000 }}
+          sx={{
+            position: "absolute",
+            top: embedded ? { xs: 12, sm: 14 } : 40,
+            right: embedded ? { xs: 12, sm: 14 } : 40,
+            zIndex: 20000,
+          }}
         >
           <IconButton
             onClick={() => setIsDarkMode(!isDarkMode)}
@@ -1196,8 +1205,8 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
           <Box
             sx={{
               position: "absolute",
-              top: { xs: 20, sm: 24, md: 28 },
-              left: { xs: 16, sm: 20, md: 28 },
+              top: embedded ? { xs: 12, sm: 14 } : { xs: 20, sm: 24, md: 28 },
+              left: embedded ? { xs: 12, sm: 14 } : { xs: 16, sm: 20, md: 28 },
               zIndex: 20000,
               px: { xs: 1.5, sm: 2 },
               py: 1,
@@ -1207,7 +1216,9 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 ? "rgba(255,255,255,0.05)"
                 : "rgba(255,255,255,0.85)",
               backdropFilter: "blur(8px)",
-              maxWidth: { xs: "68vw", sm: "60vw", md: "40vw" },
+              maxWidth: embedded
+                ? { xs: "62%", sm: "58%", md: "52%" }
+                : { xs: "68vw", sm: "60vw", md: "40vw" },
             }}
           >
             <Typography

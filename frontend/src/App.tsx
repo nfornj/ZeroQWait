@@ -25,7 +25,6 @@ import ShopSettingsPage from "./pages/ShopSettingsPage";
 import EmployeeManagementPage from "./pages/EmployeeManagementPage";
 import EmployeeQueuePage from "./pages/EmployeeQueuePage";
 import QueueManagementPage from "./pages/QueueManagementPage";
-import QueueViewPage from "./pages/QueueViewPage";
 import InShopDisplayPage from "./pages/InShopDisplayPage";
 import WidgetPage from "./pages/WidgetPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -59,7 +58,7 @@ function App() {
 
           {/* AI Shop page (localhost dev mode) */}
           <Route path="/shop-ai/:shopId" element={<AIShopPublicPage />} />
-          <Route path="/queue/:shopId" element={<QueueViewPage />} />
+          <Route path="/queue/:shopId" element={<AIShopPublicPage />} />
 
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>
