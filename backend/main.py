@@ -183,6 +183,18 @@ async def websocket_endpoint(websocket: WebSocket, shop_id: str):
     except Exception:
         manager.disconnect(websocket, shop_id)
 
+
+@app.websocket("/api/ws/{shop_id}")
+async def api_websocket_endpoint(websocket: WebSocket, shop_id: str):
+    await manager.connect(websocket, shop_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except Exception:
+        manager.disconnect(websocket, shop_id)
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to Universal Queue System API"}

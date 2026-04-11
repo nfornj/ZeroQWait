@@ -5,6 +5,7 @@ from modules.queues.service import queue_service
 from modules.shops.service import shop_service
 from modules.auth.service import auth_service
 from db_interface import db_interface
+from websocket_manager import manager
 from shared.auth_utils import get_current_user, get_current_user_optional
 from permissions import check_shop_access
 from redis_client import redis_client
@@ -65,6 +66,38 @@ QUEUE_STATUS_BEING_SERVED = "being_served"
 QUEUE_STATUS_COMPLETED = "completed"
 QUEUE_STATUS_CANCELLED = "cancelled"
 
+
+def _build_shop_live_snapshot(shop_id: int) -> Dict:
+    """Build a single payload consumed by kiosk/public real-time panels."""
+    queues = queue_service.get_active_queues(shop_id)
+    queue_items: List[Dict] = []
+    if queues:
+        queue = queues[0]
+        items = queue_service.get_queue_items(queue.id)
+        active_items = [item for item in items if item.status in [QUEUE_STATUS_WAITING, QUEUE_STATUS_BEING_SERVED]]
+        active_items.sort(key=lambda x: x.position)
+        for idx, item in enumerate(active_items, start=1):
+            queue_items.append({
+                "id": item.id,
+                "position": idx,
+                "status": item.status,
+                "checked_in_at": getattr(item, "checked_in_at", None),
+            })
+
+    metrics = db_interface.get_shop_live_wait_metrics(shop_id)
+    return {
+        "type": "shop_live_snapshot",
+        "shop_id": shop_id,
+        "queue_items": queue_items,
+        "live_metrics": metrics,
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+
+
+async def _broadcast_shop_live_snapshot(shop_id: int) -> None:
+    """Push current queue + metrics to all websocket clients for this shop."""
+    await manager.broadcast(str(shop_id), _build_shop_live_snapshot(shop_id))
+
 @router.get("/shop/{shop_id}/active", response_model=schemas.Queue)
 def get_active_queue(
     shop_id: int,
@@ -112,7 +145,7 @@ def get_active_queue(
         raise HTTPException(status_code=500, detail=f"Failed to fetch queue: {str(e)}")
 
 @router.post("/shop/{shop_id}/join", response_model=schemas.QueueItem)
-def join_queue(
+async def join_queue(
     shop_id: int,
     queue_item: schemas.QueueItemCreate
 ):
@@ -138,13 +171,14 @@ def join_queue(
             all_items = queue_service.get_queue_items(queue.id)
             active_items = [i for i in all_items if i.status in [QUEUE_STATUS_WAITING, QUEUE_STATUS_BEING_SERVED]]
             new_item.position = len(active_items)
+            await _broadcast_shop_live_snapshot(shop_id)
             return new_item
         raise HTTPException(status_code=500, detail="Failed to join queue")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to join queue: {str(e)}")
 
 @router.patch("/items/{item_id}/status")
-def update_queue_item_status(
+async def update_queue_item_status(
     item_id: int,
     new_status: str,
     current_user: dict = Depends(get_current_user)
@@ -169,12 +203,13 @@ def update_queue_item_status(
         updated = queue_service.update_queue_item(item_id, update_data)
         # Invalidate queue cache for this shop
         redis_client.invalidate_queue_cache(queue.shop_id)
+        await _broadcast_shop_live_snapshot(queue.shop_id)
         return updated
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{queue_id}/call-next", response_model=schemas.QueueItem)
-def call_next_customer(
+async def call_next_customer(
     queue_id: int,
     employee_id: Optional[int] = None,
     current_user: dict = Depends(get_current_user)
@@ -218,6 +253,7 @@ def call_next_customer(
         result = queue_service.update_queue_item(next_item.id, update_data)
         # Invalidate queue cache for this shop
         redis_client.invalidate_queue_cache(queue.shop_id)
+        await _broadcast_shop_live_snapshot(queue.shop_id)
         
         if result and result.assigned_employee_id:
              user = auth_service.get_user_by_id(result.assigned_employee_id)

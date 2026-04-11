@@ -782,6 +782,7 @@ class DatabaseInterface:
                     "effective_service_time_minutes": float(shop.average_service_time or 15),
                     "efficiency_factor": 1.0,
                     "confidence": "medium",
+                    "generated_at": datetime.utcnow().isoformat(),
                 }
 
             waiting_count = db.query(QueueItem).filter(
@@ -895,6 +896,7 @@ class DatabaseInterface:
                 "effective_service_time_minutes": round(adjusted_service_time, 1),
                 "efficiency_factor": round(efficiency_factor, 2),
                 "confidence": confidence,
+                "generated_at": datetime.utcnow().isoformat(),
             }
         finally:
             db.close()

@@ -25,10 +25,10 @@ interface AIShopPublicPageProps {
 
 interface QueueItem {
   id: number;
-  customer_name: string;
+  customer_name?: string;
   position: number;
   status: string;
-  checked_in_at: string;
+  checked_in_at?: string;
 }
 
 interface WaitEstimate {
@@ -48,6 +48,7 @@ interface LiveMetrics {
   effective_service_time_minutes: number;
   efficiency_factor: number;
   confidence: 'low' | 'medium' | 'high';
+  generated_at?: string;
 }
 
 const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
@@ -59,8 +60,61 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
   const [myQueueItem, setMyQueueItem] = useState<QueueItem | null>(null);
   const [waitEstimate, setWaitEstimate] = useState<WaitEstimate | null>(null);
   const [liveMetrics, setLiveMetrics] = useState<LiveMetrics | null>(null);
+  const [etaTrend, setEtaTrend] = useState<'up' | 'down' | 'flat'>('flat');
+  const [lastLiveUpdateAt, setLastLiveUpdateAt] = useState<Date | null>(null);
+  const [secondsSinceUpdate, setSecondsSinceUpdate] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const applyLiveMetrics = (incoming: LiveMetrics) => {
+    let trend: 'up' | 'down' | 'flat' = 'flat';
+    setLiveMetrics((prev) => {
+      if (prev) {
+        if (incoming.estimated_wait_minutes > prev.estimated_wait_minutes) trend = 'up';
+        else if (incoming.estimated_wait_minutes < prev.estimated_wait_minutes) trend = 'down';
+      }
+      return incoming;
+    });
+    setEtaTrend(trend);
+    setLastLiveUpdateAt(incoming.generated_at ? new Date(incoming.generated_at) : new Date());
+  };
+
+  const reconcileMyQueueItem = async (items: QueueItem[], resolvedShopId: number) => {
+    const savedItemId =
+      localStorage.getItem(`queue_item_${resolvedShopId}`) ||
+      (shopId ? localStorage.getItem(`queue_item_${shopId}`) : null);
+
+    if (!savedItemId) {
+      setMyQueueItem(null);
+      return;
+    }
+
+    const numericId = parseInt(savedItemId, 10);
+    const found = items.find((i) => i.id === numericId);
+
+    if (found) {
+      setMyQueueItem(found);
+      localStorage.setItem(`queue_item_${resolvedShopId}`, String(numericId));
+      return;
+    }
+
+    try {
+      const checkRes = await axios.get(`/queues/items/${numericId}/estimate`);
+      if (checkRes.data && checkRes.data.status !== 'completed' && checkRes.data.status !== 'cancelled') {
+        setMyQueueItem({
+          id: numericId,
+          customer_name: 'You',
+          position: checkRes.data.position,
+          status: checkRes.data.status,
+          checked_in_at: new Date().toISOString(),
+        });
+      } else {
+        setMyQueueItem(null);
+      }
+    } catch {
+      setMyQueueItem(null);
+    }
+  };
 
   const waitingCustomers = useMemo(
     () =>
@@ -104,54 +158,94 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
 
         try {
           const metricsRes = await axios.get(`/queues/shop/${shop.id}/live-metrics`);
-          setLiveMetrics(metricsRes.data as LiveMetrics);
+          applyLiveMetrics(metricsRes.data as LiveMetrics);
         } catch {
           // keep previous metrics if temporary failure
         }
-
-        const savedItemId =
-          localStorage.getItem(`queue_item_${shop.id}`) ||
-          (shopId ? localStorage.getItem(`queue_item_${shopId}`) : null);
-
-        if (!savedItemId) {
-          setMyQueueItem(null);
-          return;
-        }
-
-        const numericId = parseInt(savedItemId, 10);
-        const found = items.find((i) => i.id === numericId);
-
-        if (found) {
-          setMyQueueItem(found);
-          localStorage.setItem(`queue_item_${shop.id}`, String(numericId));
-          return;
-        }
-
-        try {
-          const checkRes = await axios.get(`/queues/items/${numericId}/estimate`);
-          if (checkRes.data && checkRes.data.status !== 'completed' && checkRes.data.status !== 'cancelled') {
-            setMyQueueItem({
-              id: numericId,
-              customer_name: 'You',
-              position: checkRes.data.position,
-              status: checkRes.data.status,
-              checked_in_at: new Date().toISOString(),
-            });
-          } else {
-            setMyQueueItem(null);
-          }
-        } catch {
-          setMyQueueItem(null);
-        }
+        await reconcileMyQueueItem(items, shop.id);
       } catch {
         // keep previous state; polling will retry
       }
     };
 
     void fetchQueue();
-    const interval = setInterval(fetchQueue, 5000);
+    const interval = setInterval(fetchQueue, 20000);
     return () => clearInterval(interval);
   }, [shop?.id, shopId]);
+
+  useEffect(() => {
+    if (!shop?.id) return;
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    let pingTimer: number | undefined;
+    let reconnectTimer: number | undefined;
+    let cancelled = false;
+    let socket: WebSocket | null = null;
+
+    const connect = () => {
+      if (cancelled) return;
+      socket = new WebSocket(`${wsProtocol}://${window.location.host}/api/ws/${shop.id}`);
+
+      socket.onopen = () => {
+        pingTimer = window.setInterval(() => {
+          if (socket?.readyState === WebSocket.OPEN) {
+            socket.send('ping');
+          }
+        }, 20000);
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload?.type !== 'shop_live_snapshot') return;
+
+          const incomingItems: QueueItem[] = Array.isArray(payload.queue_items) ? payload.queue_items : [];
+          setQueueItems(incomingItems);
+          void reconcileMyQueueItem(incomingItems, shop.id);
+
+          if (payload.live_metrics && !payload.live_metrics.error) {
+            applyLiveMetrics(payload.live_metrics as LiveMetrics);
+          }
+        } catch {
+          // ignore malformed socket payloads
+        }
+      };
+
+      socket.onclose = () => {
+        if (pingTimer) window.clearInterval(pingTimer);
+        if (!cancelled) {
+          reconnectTimer = window.setTimeout(connect, 3000);
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (pingTimer) window.clearInterval(pingTimer);
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close();
+      }
+    };
+  }, [shop?.id]);
+
+  useEffect(() => {
+    if (!lastLiveUpdateAt) {
+      setSecondsSinceUpdate(0);
+      return;
+    }
+
+    const tick = () => {
+      const deltaSec = Math.max(0, Math.floor((Date.now() - lastLiveUpdateAt.getTime()) / 1000));
+      setSecondsSinceUpdate(deltaSec);
+    };
+
+    tick();
+    const interval = window.setInterval(tick, 1000);
+    return () => window.clearInterval(interval);
+  }, [lastLiveUpdateAt]);
 
   useEffect(() => {
     if (!myQueueItem?.id) {
@@ -239,6 +333,17 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
                           color="success"
                           label={`ETA: ${waitEstimate?.estimated_wait_minutes ?? liveMetrics?.estimated_wait_minutes ?? '-'} min`}
                         />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={
+                            etaTrend === 'up'
+                              ? 'Trend: Rising'
+                              : etaTrend === 'down'
+                                ? 'Trend: Improving'
+                                : 'Trend: Stable'
+                          }
+                        />
                       </Stack>
                       <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
                         <Chip
@@ -272,6 +377,9 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
                       </Stack>
                       <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                         AI model factors: active staff, parallel queues, historical service analytics, and real-time throughput.
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                        Live update: {secondsSinceUpdate}s ago
                       </Typography>
                     </Box>
                   )}
