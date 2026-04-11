@@ -4,6 +4,7 @@ from modules.queues import schemas
 from modules.queues.service import queue_service
 from modules.shops.service import shop_service
 from modules.auth.service import auth_service
+from db_interface import db_interface
 from shared.auth_utils import get_current_user, get_current_user_optional
 from permissions import check_shop_access
 from redis_client import redis_client
@@ -230,3 +231,31 @@ def call_next_customer(
 
 # Additional endpoints (remove, leave, estimate) follow similar pattern
 # Omitting for brevity unless specifically requested to ensure file size limits
+
+
+@router.get("/items/{item_id}/estimate")
+def get_wait_estimate(item_id: int):
+    """Get a customer's current position, people ahead and estimated wait."""
+    try:
+        result = db_interface.get_queue_position(item_id)
+        if result.get("error"):
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get wait estimate: {str(e)}")
+
+
+@router.get("/shop/{shop_id}/live-metrics")
+def get_shop_live_metrics(shop_id: int):
+    """AI-enhanced real-time wait metrics for kiosk/landing experiences."""
+    try:
+        result = db_interface.get_shop_live_wait_metrics(shop_id)
+        if result.get("error"):
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get live metrics: {str(e)}")

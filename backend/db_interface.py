@@ -10,7 +10,7 @@ from sqlalchemy import or_, func, desc
 from database import SessionLocal
 from models import (
     User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, 
-    ShopService, ShopCustomer, ConversationHistory, CategoryAlias, 
+    ShopService, ShopCustomer, DailyAnalytics, ConversationHistory, CategoryAlias, 
     LearnedSynonym, AgentKnowledge
 )
 import schemas
@@ -751,6 +751,150 @@ class DatabaseInterface:
                 "wait_minutes": estimated_wait,
                 "queue_length": waiting_count,
                 "average_service_time": avg_service_time
+            }
+        finally:
+            db.close()
+
+    def get_shop_live_wait_metrics(self, shop_id: int) -> Dict[str, Any]:
+        """AI-enhanced live wait metrics using staffing, parallel queues, historical analytics, and real throughput."""
+        db = self.get_session()
+        try:
+            shop = db.query(Shop).filter(Shop.id == shop_id).first()
+            if not shop:
+                return {"error": "Shop not found"}
+
+            active_queues = db.query(Queue).filter(
+                Queue.shop_id == shop_id,
+                Queue.is_active == True,
+            ).all()
+            queue_ids = [q.id for q in active_queues]
+
+            if not queue_ids:
+                return {
+                    "shop_id": shop_id,
+                    "shop_name": shop.name,
+                    "estimated_wait_minutes": 0,
+                    "queue_length": 0,
+                    "people_waiting": 0,
+                    "people_being_served": 0,
+                    "active_employees": 1,
+                    "parallel_queues": 1,
+                    "effective_service_time_minutes": float(shop.average_service_time or 15),
+                    "efficiency_factor": 1.0,
+                    "confidence": "medium",
+                }
+
+            waiting_count = db.query(QueueItem).filter(
+                QueueItem.queue_id.in_(queue_ids),
+                QueueItem.status == 'waiting'
+            ).count()
+
+            serving_items = db.query(QueueItem).filter(
+                QueueItem.queue_id.in_(queue_ids),
+                QueueItem.status == 'being_served'
+            ).all()
+            serving_count = len(serving_items)
+
+            # Active staffing signals
+            employees_on_shift = db.query(EmployeeShift).filter(
+                EmployeeShift.shop_id == shop_id,
+                EmployeeShift.clock_out == None,
+            ).count()
+
+            assigned_serving_employee_ids = {
+                s.assigned_employee_id for s in serving_items if s.assigned_employee_id
+            }
+            employees_serving_now = len(assigned_serving_employee_ids)
+
+            active_employee_records = db.query(ShopEmployee).filter(
+                ShopEmployee.shop_id == shop_id,
+                ShopEmployee.is_active == True,
+            ).count()
+
+            active_employees = max(
+                1,
+                employees_on_shift,
+                employees_serving_now,
+                min(active_employee_records, 2) if active_employee_records else 0,
+            )
+
+            parallel_queues = max(1, len(active_queues))
+
+            # Baseline + historical + realized service time model
+            baseline_service_time = float(shop.average_service_time or 15)
+
+            analytics_avg = db.query(func.avg(DailyAnalytics.avg_service_time_minutes)).filter(
+                DailyAnalytics.shop_id == shop_id,
+                DailyAnalytics.avg_service_time_minutes != None,
+            ).scalar()
+
+            recent_completed = db.query(QueueItem).join(Queue, Queue.id == QueueItem.queue_id).filter(
+                Queue.shop_id == shop_id,
+                QueueItem.status == 'completed',
+                QueueItem.service_started_at != None,
+                QueueItem.completed_at != None,
+            ).order_by(desc(QueueItem.completed_at)).limit(160).all()
+
+            if recent_completed:
+                durations = []
+                for item in recent_completed:
+                    minutes = (item.completed_at - item.service_started_at).total_seconds() / 60.0
+                    if 2 <= minutes <= 180:
+                        durations.append(minutes)
+                realized_avg = (sum(durations) / len(durations)) if durations else None
+            else:
+                realized_avg = None
+
+            weighted_parts = [baseline_service_time * 0.45]
+            if analytics_avg:
+                weighted_parts.append(float(analytics_avg) * 0.35)
+            if realized_avg:
+                weighted_parts.append(float(realized_avg) * 0.20)
+
+            effective_service_time = sum(weighted_parts)
+            effective_service_time = max(6.0, min(90.0, effective_service_time))
+
+            # Throughput efficiency over last ~2 hours
+            now = datetime.utcnow()
+            completed_last_2h = db.query(QueueItem).join(Queue, Queue.id == QueueItem.queue_id).filter(
+                Queue.shop_id == shop_id,
+                QueueItem.status == 'completed',
+                QueueItem.completed_at != None,
+                QueueItem.completed_at >= now.replace(minute=0, second=0, microsecond=0),
+            ).count()
+
+            expected_per_hour = max(0.1, active_employees * (60.0 / effective_service_time))
+            observed_per_hour = max(0.1, completed_last_2h / 2.0)
+            efficiency_factor = observed_per_hour / expected_per_hour
+            efficiency_factor = max(0.75, min(1.35, efficiency_factor))
+
+            adjusted_service_time = effective_service_time / efficiency_factor
+            service_channels = max(1.0, float(active_employees), float(parallel_queues) * 0.8)
+
+            estimated_wait_minutes = int(round((waiting_count * adjusted_service_time) / service_channels))
+            estimated_wait_minutes = max(0, estimated_wait_minutes)
+
+            if waiting_count == 0 and serving_count == 0:
+                confidence = "high"
+            elif realized_avg and analytics_avg:
+                confidence = "high"
+            elif realized_avg or analytics_avg:
+                confidence = "medium"
+            else:
+                confidence = "low"
+
+            return {
+                "shop_id": shop_id,
+                "shop_name": shop.name,
+                "estimated_wait_minutes": estimated_wait_minutes,
+                "queue_length": waiting_count + serving_count,
+                "people_waiting": waiting_count,
+                "people_being_served": serving_count,
+                "active_employees": int(active_employees),
+                "parallel_queues": int(parallel_queues),
+                "effective_service_time_minutes": round(adjusted_service_time, 1),
+                "efficiency_factor": round(efficiency_factor, 2),
+                "confidence": confidence,
             }
         finally:
             db.close()

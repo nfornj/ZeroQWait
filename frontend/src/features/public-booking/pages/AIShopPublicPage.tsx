@@ -38,6 +38,18 @@ interface WaitEstimate {
   status: string;
 }
 
+interface LiveMetrics {
+  estimated_wait_minutes: number;
+  queue_length: number;
+  people_waiting: number;
+  people_being_served: number;
+  active_employees: number;
+  parallel_queues: number;
+  effective_service_time_minutes: number;
+  efficiency_factor: number;
+  confidence: 'low' | 'medium' | 'high';
+}
+
 const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
   const { shopId } = useParams<{ shopId: string }>();
   const effectiveId = shopSlug || shopId;
@@ -46,6 +58,7 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [myQueueItem, setMyQueueItem] = useState<QueueItem | null>(null);
   const [waitEstimate, setWaitEstimate] = useState<WaitEstimate | null>(null);
+  const [liveMetrics, setLiveMetrics] = useState<LiveMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -88,6 +101,13 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
         const response = await axios.get(`/queues/shop/${shop.id}/active`);
         const items: QueueItem[] = response.data?.queue_items || [];
         setQueueItems(items);
+
+        try {
+          const metricsRes = await axios.get(`/queues/shop/${shop.id}/live-metrics`);
+          setLiveMetrics(metricsRes.data as LiveMetrics);
+        } catch {
+          // keep previous metrics if temporary failure
+        }
 
         const savedItemId =
           localStorage.getItem(`queue_item_${shop.id}`) ||
@@ -217,7 +237,24 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
                         />
                         <Chip
                           color="success"
-                          label={`ETA: ${waitEstimate?.estimated_wait_minutes ?? '-'} min`}
+                          label={`ETA: ${waitEstimate?.estimated_wait_minutes ?? liveMetrics?.estimated_wait_minutes ?? '-'} min`}
+                        />
+                      </Stack>
+                      <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`Employees: ${liveMetrics?.active_employees ?? '-'}`}
+                        />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`Queues: ${liveMetrics?.parallel_queues ?? '-'}`}
+                        />
+                        <Chip
+                          size="small"
+                          color={liveMetrics?.confidence === 'high' ? 'success' : liveMetrics?.confidence === 'medium' ? 'warning' : 'default'}
+                          label={`Confidence: ${liveMetrics?.confidence ?? '-'}`}
                         />
                       </Stack>
                     </Box>
@@ -228,6 +265,13 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
                       </Typography>
                       <Typography color="text.secondary">
                         Use the AI panel to the right to join the queue instantly.
+                      </Typography>
+                      <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
+                        <Chip color="primary" label={`Live ETA: ${liveMetrics?.estimated_wait_minutes ?? '-'} min`} />
+                        <Chip variant="outlined" label={`Waiting: ${liveMetrics?.people_waiting ?? waitingCustomers.length}`} />
+                      </Stack>
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                        AI model factors: active staff, parallel queues, historical service analytics, and real-time throughput.
                       </Typography>
                     </Box>
                   )}
@@ -291,7 +335,7 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
               <MasterAIAgent
                 forceOpen={true}
                 hideCloseButton={true}
-                initialInteractionMode="chat"
+                initialInteractionMode="voice"
                 embedded={true}
                 shopContext={{
                   id: shop.id,
