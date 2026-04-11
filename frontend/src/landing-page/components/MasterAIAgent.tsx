@@ -765,6 +765,12 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
           
           if (result.success) {
             next[sourceIndex].text += `\n\n✅ **Great!** You've been added to the queue. Your position: #${result.position}`;
+            if (shopContext && result.queueItemId) {
+              localStorage.setItem(
+                `queue_item_${shopContext.id}`,
+                String(result.queueItemId),
+              );
+            }
             // Navigate to queue page after a short delay
             setTimeout(() => {
               if (shopContext) {

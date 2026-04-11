@@ -59,6 +59,7 @@ function App() {
 
           {/* AI Shop page (localhost dev mode) */}
           <Route path="/shop-ai/:shopId" element={<AIShopPublicPage />} />
+          <Route path="/queue/:shopId" element={<QueueViewPage />} />
 
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>
@@ -67,7 +68,6 @@ function App() {
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/search" element={<SearchPage />} />
-            <Route path="/queue/:shopId" element={<QueueViewPage />} />
             <Route path="/queue-counter" element={<QueueCounterPage />} />
           </Route>
 
