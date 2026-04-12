@@ -11,7 +11,12 @@ import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 import { useThemeContext } from '../../../contexts/ThemeContext';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 // Common Timezones for Simplicity
 const COMMON_TIMEZONES = [
@@ -70,9 +75,8 @@ export default function Header() {
         alignItems: { xs: 'flex-start', md: 'center' },
         justifyContent: 'space-between',
         maxWidth: { sm: '100%', md: '1700px' },
-        pt: 1.5,
-        pb: 12, // Padding-bottom instead of margin to force spacing
-        borderBottom: '1px solid transparent', // Force layout boundary
+        pt: 0.5,
+        pb: 1.5,
       }}
       spacing={2}
     >
@@ -80,7 +84,7 @@ export default function Header() {
       <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
 
         {/* Time & Timezone Selector */}
-        <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, bgcolor: 'background.paper', borderRadius: 1, px: 1, border: '1px solid', borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(18px)', borderRadius: 2, px: 1, border: '1px solid', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}>
           <Typography variant="body1" sx={{ fontWeight: 'bold', mr: 1, minWidth: 70, textAlign: 'right' }}>
             {formattedTime}
           </Typography>

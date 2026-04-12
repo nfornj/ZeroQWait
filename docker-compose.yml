@@ -1,3 +1,5 @@
+name: zeroqwait
+
 services:
   # PostgreSQL
   db:
@@ -41,6 +43,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - DB_HOST=db
+      - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002/v1}
+      - MODEL_NAME=${MODEL_NAME:-gpt-oss:20b}
+      - TTS_SERVICE_URL=${TTS_SERVICE_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30880}
       - UV_CACHE_DIR=/tmp/uv-cache
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -49,19 +55,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
-
-  # Qwen3-TTS Service (GPU)
-  tts:
-    build: ./tts_service
-    ports:
-      - "${TTS_HOST_PORT:-8880}:8880"
-    environment:
-      - TTS_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
-      - TTS_DEVICE=gpu
-      - CUDA_VISIBLE_DEVICES=0
-      - TORCH_CUDA_ARCH_LIST=8.9
-    runtime: nvidia
     restart: unless-stopped
 
   # React Frontend

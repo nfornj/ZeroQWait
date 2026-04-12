@@ -123,7 +123,7 @@ export default function MainGrid() {
             <Select
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
-              sx={{ minWidth: 150 }}
+              sx={{ minWidth: 150, bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(18px)', borderRadius: 2, boxShadow: 'var(--owner-glass-shadow)', '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--owner-glass-border)' } }}
             >
               <MenuItem value="30">Last 30 Days</MenuItem>
               <MenuItem value="60">Last 60 Days</MenuItem>
@@ -141,6 +141,7 @@ export default function MainGrid() {
                 InputLabelProps={{ shrink: true }}
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(18px)', boxShadow: 'var(--owner-glass-shadow)', '& fieldset': { borderColor: 'var(--owner-glass-border)' } } }}
               />
               <TextField
                 type="date"
@@ -149,6 +150,7 @@ export default function MainGrid() {
                 InputLabelProps={{ shrink: true }}
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(18px)', boxShadow: 'var(--owner-glass-shadow)', '& fieldset': { borderColor: 'var(--owner-glass-border)' } } }}
               />
             </>
           )}

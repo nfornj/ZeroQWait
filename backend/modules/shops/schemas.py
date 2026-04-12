@@ -17,7 +17,7 @@ class ShopBase(DictModel):
     website: Optional[str] = None
     average_service_time: int = 30
     logo_url: Optional[str] = None
-    primary_color: Optional[str] = "#1976d2"
+    primary_color: Optional[str] = "#FF5A5F"
     secondary_color: Optional[str] = None
     accent_color: Optional[str] = None
     background_color: Optional[str] = None

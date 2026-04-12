@@ -21,39 +21,9 @@ spec:
     spec:
       priorityClassName: voice-critical
       runtimeClassName: nvidia
-      tolerations:
-        - key: "workload-pool"
-          operator: "Equal"
-          value: "voice-gpu"
-          effect: "NoSchedule"
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
-                  - key: zeroqwait.io/node-pool
-                    operator: In
-                    values: ["voice-gpu"]
-            - weight: 50
-              preference:
-                matchExpressions:
-                  - key: nvidia.com/gpu.present
-                    operator: In
-                    values: ["true"]
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchExpressions:
-                    - key: app
-                      operator: In
-                      values: ["ollama", "asr-service"]
-                topologyKey: kubernetes.io/hostname
       containers:
         - name: tts-service
-          image: localhost:5000/test/tts-service:v20260410110230-6a0b479
+          image: localhost:5000/test/tts-service:v20260411223946-c5f88d4
           imagePullPolicy: Always
           ports:
             - containerPort: 8880
@@ -72,7 +42,7 @@ spec:
             - name: TTS_DEVICE
               value: "gpu"
             - name: TTS_WARMUP_ON_START
-              value: "true"
+              value: "false"
             - name: CUDA_VISIBLE_DEVICES
               value: "0"
             - name: NVIDIA_VISIBLE_DEVICES
@@ -81,12 +51,11 @@ spec:
               value: "compute,utility"
           resources:
             requests:
-              memory: "4Gi"
+              memory: "8Gi"
               cpu: "1"
             limits:
-              memory: "8Gi"
+              memory: "16Gi"
               cpu: "2"
-              nvidia.com/gpu: "1"
           volumeMounts:
             - name: model-cache
               mountPath: /home/appuser/.cache/huggingface
@@ -129,10 +98,11 @@ metadata:
   labels:
     app: tts-service
 spec:
-  type: ClusterIP
+  type: NodePort
   ports:
     - port: 8880
       targetPort: 8880
+      nodePort: 30880
       protocol: TCP
   selector:
     app: tts-service

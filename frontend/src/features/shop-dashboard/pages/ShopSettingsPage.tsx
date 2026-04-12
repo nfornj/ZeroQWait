@@ -10,6 +10,7 @@ import {
     CircularProgress,
     Avatar,
     Card,
+    Grid,
     CardActionArea,
     CardContent,
     Tabs,
@@ -69,6 +70,7 @@ function CustomTabPanel(props: TabPanelProps) {
 const ShopSettingsPage: React.FC = () => {
     // Shared State
     const { themePreset, setThemePreset, setDashboardGradient } = useThemeContext();
+    const presetTheme = THEMES.find((item) => item.id === themePreset) || THEMES[0];
     const [shop, setShop] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [tabValue, setTabValue] = useState(0);
@@ -81,7 +83,7 @@ const ShopSettingsPage: React.FC = () => {
     const [logoPreview, setLogoPreview] = useState<string>('');
     const [formData, setFormData] = useState({
         name: '', description: '', phone: '', website: '',
-        primary_color: '#1976d2', secondary_color: '', accent_color: '', background_color: '',
+        primary_color: presetTheme.primary, secondary_color: presetTheme.secondary, accent_color: '', background_color: '',
         logo_url: '', slug: '', dashboard_gradient: 'violet' as string
     });
 
@@ -119,8 +121,8 @@ const ShopSettingsPage: React.FC = () => {
                     description: shopData.description || '',
                     phone: shopData.phone,
                     website: shopData.website || '',
-                    primary_color: shopData.primary_color || '#1976d2',
-                    secondary_color: shopData.secondary_color || '',
+                    primary_color: shopData.primary_color || presetTheme.primary,
+                    secondary_color: shopData.secondary_color || presetTheme.secondary,
                     accent_color: shopData.accent_color || '',
                     background_color: shopData.background_color || '',
                     logo_url: shopData.logo_url || '',
@@ -275,7 +277,13 @@ const ShopSettingsPage: React.FC = () => {
         }
     };
 
-    if (loading) return <CircularProgress />;
+    if (loading) {
+        return (
+            <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+                <CircularProgress />
+            </Box>
+        );
+    }
     if (!shop) return <Alert severity="warning">No shop found</Alert>;
 
     const serviceColumns: GridColDef[] = [
@@ -301,19 +309,36 @@ const ShopSettingsPage: React.FC = () => {
     ];
 
     return (
-        <Container maxWidth="lg">
-            <Box sx={{ width: '100%', mb: 4 }}>
+        <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
+            <Box sx={{ width: '100%', mb: 2 }}>
                 <Header />
             </Box>
 
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                <Typography variant="h4" sx={{ fontWeight: 'bold' }}>Shop Setup</Typography>
-            </Box>
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid size={{ xs: 12, md: 8 }}>
+                    <Card variant="outlined" sx={{ borderRadius: 3 }}>
+                        <CardContent>
+                            <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5 }}>Shop Setup</Typography>
+                            <Typography color="text.secondary">
+                                Configure branding, services, and schedule settings for your owner workspace.
+                            </Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                    <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
+                        <CardContent>
+                            <Typography variant="body2" color="text.secondary">Current Shop</Typography>
+                            <Typography variant="h6" sx={{ fontWeight: 700, mt: 0.5 }}>{shop.name}</Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+            </Grid>
 
             {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>{error}</Alert>}
             {success && <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>{success}</Alert>}
 
-            <Paper sx={{ width: '100%' }}>
+            <Paper variant="outlined" sx={{ width: '100%', borderRadius: 3, overflow: 'hidden' }}>
                 <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
                     <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
                         <Tab label="General Settings" />
@@ -491,7 +516,7 @@ const ShopSettingsPage: React.FC = () => {
                     <Button variant="contained" onClick={handleServiceSubmit} disabled={!serviceFormData.name}>Save</Button>
                 </DialogActions>
             </Dialog>
-        </Container>
+        </Box>
     );
 };
 

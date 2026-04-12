@@ -14,55 +14,23 @@ spec:
         app: asr-service
     spec:
       priorityClassName: voice-critical
-      runtimeClassName: nvidia
-      tolerations:
-        - key: "workload-pool"
-          operator: "Equal"
-          value: "voice-gpu"
-          effect: "NoSchedule"
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
-                  - key: zeroqwait.io/node-pool
-                    operator: In
-                    values: ["voice-gpu"]
-            - weight: 50
-              preference:
-                matchExpressions:
-                  - key: nvidia.com/gpu.present
-                    operator: In
-                    values: ["true"]
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 90
-              podAffinityTerm:
-                labelSelector:
-                  matchExpressions:
-                    - key: app
-                      operator: In
-                      values: ["tts-service"]
-                topologyKey: kubernetes.io/hostname
       containers:
         - name: asr-service
-          image: localhost:5000/test/asr-service:v20260410110230-6a0b479
+          image: localhost:5000/test/asr-service:v20260411223946-c5f88d4
+          imagePullPolicy: Always
           env:
             - name: MODEL_SIZE
               value: "medium"
             - name: DEVICE
-              value: "cuda"
+              value: "cpu"
             - name: COMPUTE_TYPE
-              value: "float16"
+              value: "int8"
           ports:
             - containerPort: 8000
           resources:
             requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
               memory: "2Gi"
               cpu: "1000m"
-              nvidia.com/gpu: "1"
-            limits:
-              memory: "4Gi"
-              cpu: "2000m"
-              nvidia.com/gpu: "1"

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Response
+from fastapi.responses import FileResponse, RedirectResponse
 from typing import List, Optional
 from modules.shops import schemas
 from modules.shops.service import shop_service
@@ -8,6 +9,7 @@ from shared.auth_utils import get_current_user, get_current_user_optional
 from permissions import sanitize_queue_data_for_public
 import random
 from pathlib import Path
+from datetime import datetime
 
 router = APIRouter()
 
@@ -173,6 +175,63 @@ def update_shop(
         return updated
     except Exception as e:
          raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{shop_id}/logo")
+def upload_shop_logo(
+    shop_id: int,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        shop = shop_service.get_shop(shop_id)
+        if not shop:
+            raise HTTPException(status_code=404, detail="Shop not found")
+
+        if shop.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        content_type = (file.content_type or "").lower()
+        allowed_types = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+        if content_type not in allowed_types:
+            raise HTTPException(status_code=400, detail="Only PNG/JPG/WEBP logo files are supported")
+
+        extension = Path(file.filename or "logo.png").suffix.lower() or ".png"
+        safe_extension = extension if extension in {".png", ".jpg", ".jpeg", ".webp"} else ".png"
+        filename = f"shop_{shop_id}_{int(datetime.utcnow().timestamp())}{safe_extension}"
+        file_path = UPLOAD_DIR / filename
+
+        with file_path.open("wb") as f:
+            f.write(file.file.read())
+
+        static_logo_url = f"/static/uploads/shop-logos/{filename}"
+        updated = shop_service.update_shop(shop_id, {"logo_url": static_logo_url})
+        if not updated:
+            raise HTTPException(status_code=500, detail="Failed to update shop logo")
+
+        return {"message": "Logo uploaded", "logo_url": static_logo_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload logo: {str(e)}")
+
+
+@router.get("/{shop_id}/logo")
+def get_shop_logo(shop_id: int):
+    shop = shop_service.get_shop(shop_id)
+    if not shop or not shop.logo_url:
+        raise HTTPException(status_code=404, detail="Logo not found")
+
+    logo_url = str(shop.logo_url)
+    if logo_url.startswith("http://") or logo_url.startswith("https://"):
+        return RedirectResponse(url=logo_url)
+
+    filename = Path(logo_url).name
+    file_path = UPLOAD_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Logo file not found")
+
+    return FileResponse(file_path)
 
 @router.get("/s/{slug}", response_model=queue_schemas.ShopWithQueue)
 def get_shop_by_slug(slug: str, current_user: Optional[dict] = Depends(get_current_user_optional)):

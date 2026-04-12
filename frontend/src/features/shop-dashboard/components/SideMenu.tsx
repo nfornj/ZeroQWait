@@ -32,7 +32,10 @@ export default function SideMenu() {
       sx={{
         display: { xs: 'none', md: 'block' },
         [`& .${drawerClasses.paper}`]: {
-          backgroundColor: 'background.paper',
+          backgroundColor: 'var(--owner-glass-bg-strong)',
+          backdropFilter: 'blur(24px)',
+          borderRight: '1px solid var(--owner-glass-border)',
+          boxShadow: 'var(--owner-glass-shadow)',
         },
       }}
     >
@@ -64,7 +67,7 @@ export default function SideMenu() {
           gap: 1,
           alignItems: 'center',
           borderTop: '1px solid',
-          borderColor: 'divider',
+          borderColor: 'var(--owner-glass-border)',
         }}
       >
         <Avatar

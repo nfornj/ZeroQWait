@@ -82,11 +82,9 @@ spec:
             requests:
               memory: "8Gi"
               cpu: "2"
-              nvidia.com/gpu: "1"
             limits:
               memory: "14Gi"
               cpu: "4"
-              nvidia.com/gpu: "1"
           livenessProbe:
             httpGet:
               path: /

@@ -1,9 +1,7 @@
 import React from 'react';
-import { DataGrid, GridColDef, GridActionsCellItem, GridRenderCellParams } from '@mui/x-data-grid';
-import { Chip, IconButton, Tooltip } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
+import { DataGrid, GridColDef, GridActionsCellItem, GridRenderCellParams, GridToolbar } from '@mui/x-data-grid';
+import { Chip } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
-import TvIcon from '@mui/icons-material/Tv';
 
 interface Queue {
     id: number;
@@ -66,6 +64,13 @@ export default function QueueDataGrid({ rows, onEdit, onDelete }: QueueDataGridP
             autoHeight
             rows={rows}
             columns={columns}
+            slots={{ toolbar: GridToolbar }}
+            slotProps={{
+                toolbar: {
+                    showQuickFilter: true,
+                    quickFilterProps: { debounceMs: 250 }
+                }
+            }}
             initialState={{
                 pagination: { paginationModel: { pageSize: 10 } },
             }}
@@ -76,6 +81,19 @@ export default function QueueDataGrid({ rows, onEdit, onDelete }: QueueDataGridP
             sx={{
                 border: 0,
                 backgroundColor: 'background.paper',
+                '& .MuiDataGrid-columnHeaders': {
+                    bgcolor: 'background.default',
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                },
+                '& .MuiDataGrid-cell:focus, & .MuiDataGrid-columnHeader:focus': {
+                    outline: 'none',
+                },
+                '& .MuiDataGrid-toolbarContainer': {
+                    p: 1,
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                },
             }}
         />
     );

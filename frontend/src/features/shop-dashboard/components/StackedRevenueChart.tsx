@@ -45,7 +45,7 @@ export default function StackedRevenueChart() {
 
     if (loading) {
         return (
-            <Card variant="outlined" sx={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+            <Card variant="outlined" sx={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300, bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}>
                 <CircularProgress />
             </Card>
         );
@@ -53,7 +53,7 @@ export default function StackedRevenueChart() {
 
     if (chartData.length === 0) {
         return (
-            <Card variant="outlined" sx={{ width: '100%', height: '100%' }}>
+            <Card variant="outlined" sx={{ width: '100%', height: '100%', bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}>
                 <CardContent>
                     <Typography variant="h6" gutterBottom>Monthly Revenue by Service</Typography>
                     <Box height={250} display="flex" alignItems="center" justifyContent="center">
@@ -88,7 +88,7 @@ export default function StackedRevenueChart() {
     };
 
     return (
-        <Card variant="outlined" sx={{ width: '100%', height: '100%' }}>
+        <Card variant="outlined" sx={{ width: '100%', height: '100%', bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}>
             <CardContent>
                 <Typography component="h2" variant="subtitle2" gutterBottom>
                     Monthly Revenue by Service

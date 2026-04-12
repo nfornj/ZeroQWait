@@ -37,7 +37,7 @@ export default function SessionsChart({ seriesData = [], xLabels = [] }: Session
   ];
 
   return (
-    <Card variant="outlined" sx={{ width: '100%' }}>
+    <Card variant="outlined" sx={{ width: '100%', bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}>
       <CardContent>
         <Typography component="h2" variant="subtitle2" gutterBottom>
           Daily Visits

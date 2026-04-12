@@ -9,6 +9,7 @@ import { ShopProvider } from "./contexts/ShopContext";
 // Components
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
+import AppErrorBoundary from "./components/AppErrorBoundary";
 
 // Pages
 import HomePage from "./pages/HomePage";
@@ -33,6 +34,7 @@ import ShopLayout from "./layouts/ShopLayout";
 // PublicShopPage is used via SubdomainHandler (subdomain routing only)
 import PublicLayout from "./layouts/PublicLayout";
 import QueueCounterPage from "./pages/QueueCounterPage";
+import AgentInbox from "./features/agent-inbox/AgentInbox";
 
 import SignInSide from "./auth-sign-in/SignInSide";
 import ShopOwnerSignUp from "./auth-sign-up/ShopOwnerSignUp";
@@ -87,11 +89,21 @@ function App() {
           </Route>
 
           {/* Shop Owner Portal Routes (No Global Navbar) */}
-          <Route element={<ShopLayout />}>
-            <Route path="/dashboard" element={<ShopDashboardPage />} />
+          <Route
+            element={
+              <ProtectedRoute>
+                <AppErrorBoundary>
+                  <ShopLayout />
+                </AppErrorBoundary>
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/dashboard" element={<AgentInbox />} />
+            <Route path="/overview" element={<ShopDashboardPage />} />
             <Route path="/employees" element={<EmployeeManagementPage />} />
             <Route path="/settings" element={<ShopSettingsPage />} />
             <Route path="/queues" element={<QueueManagementPage />} />
+            <Route path="/agent-inbox" element={<AgentInbox />} />
           </Route>
 
           <Route path="*" element={<NotFoundPage />} />

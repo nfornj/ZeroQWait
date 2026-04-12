@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
 import { useShop } from '../../../contexts/ShopContext';
 import axios from 'axios';
-import { Chip, CircularProgress, Typography, Box } from '@mui/material';
+import { CircularProgress, Typography, Box } from '@mui/material';
 
 export default function RecentVisitsDataGrid() {
     const { shop } = useShop();
@@ -46,6 +46,12 @@ export default function RecentVisitsDataGrid() {
         fetchHistory();
     }, [shop]);
 
+    const getRowFromGetterArgs = (firstArg: any, secondArg: any) => {
+        if (secondArg && typeof secondArg === 'object') return secondArg;
+        if (firstArg && typeof firstArg === 'object' && 'row' in firstArg) return firstArg.row;
+        return {};
+    };
+
     const columns: GridColDef[] = [
         { field: 'customer_name', headerName: 'Customer', flex: 1.5, minWidth: 150 },
         {
@@ -53,37 +59,53 @@ export default function RecentVisitsDataGrid() {
             headerName: 'Service',
             flex: 1,
             minWidth: 120,
-            valueGetter: (params, row) => row.notes || 'General Service'
+            valueGetter: (params, row) => {
+                const safeRow = getRowFromGetterArgs(params, row);
+                return safeRow.notes || 'General Service';
+            }
         },
         {
             field: 'assigned_employee',
             headerName: 'Served By',
             flex: 1,
-            valueGetter: (params, row) => row.assigned_employee?.username || 'Shop Owner'
+            valueGetter: (params, row) => {
+                const safeRow = getRowFromGetterArgs(params, row);
+                return safeRow.assigned_employee?.username || 'Shop Owner';
+            }
         },
         {
             field: 'cost',
             headerName: 'Paid',
             type: 'number',
             width: 80,
-            valueGetter: (params, row) => row.service_cost || 0,
-            valueFormatter: (value) => `$${Number(value).toFixed(2)}`,
+            valueGetter: (params, row) => {
+                const safeRow = getRowFromGetterArgs(params, row);
+                return safeRow.service_cost || 0;
+            },
+            valueFormatter: (value: any) => {
+                const numeric = typeof value === 'object' && value?.value !== undefined ? value.value : value;
+                return `$${Number(numeric || 0).toFixed(2)}`;
+            },
         },
         {
             field: 'completed_at',
             headerName: 'Date',
             flex: 1,
             minWidth: 120,
-            valueFormatter: (value) => new Date(value).toLocaleDateString(),
+            valueFormatter: (value: any) => {
+                const dateValue = typeof value === 'object' && value?.value !== undefined ? value.value : value;
+                return dateValue ? new Date(dateValue).toLocaleDateString() : '-';
+            },
         },
         {
             field: 'duration',
             headerName: 'Duration',
             flex: 0.8,
             valueGetter: (params, row) => {
-                if (!row.service_started_at || !row.completed_at) return '-';
-                const start = new Date(row.service_started_at).getTime();
-                const end = new Date(row.completed_at).getTime();
+                const safeRow = getRowFromGetterArgs(params, row);
+                if (!safeRow.service_started_at || !safeRow.completed_at) return '-';
+                const start = new Date(safeRow.service_started_at).getTime();
+                const end = new Date(safeRow.completed_at).getTime();
                 const minutes = Math.round((end - start) / 60000);
                 return `${minutes} min`;
             }
@@ -118,6 +140,19 @@ export default function RecentVisitsDataGrid() {
             pageSizeOptions={[10, 20]}
             disableColumnResize
             density="compact"
+            sx={{
+                bgcolor: 'var(--owner-glass-bg)',
+                backdropFilter: 'blur(20px)',
+                border: '1px solid var(--owner-glass-border)',
+                boxShadow: 'var(--owner-glass-shadow)',
+                '& .MuiDataGrid-columnHeaders': {
+                    bgcolor: 'rgba(255,255,255,0.05)',
+                    borderBottom: '1px solid var(--owner-glass-border)',
+                },
+                '& .MuiDataGrid-footerContainer': {
+                    borderTop: '1px solid var(--owner-glass-border)',
+                },
+            }}
             slotProps={{
                 filterPanel: {
                     filterFormProps: {

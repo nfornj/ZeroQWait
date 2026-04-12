@@ -30,7 +30,7 @@ spec:
                 values: ["edge-cpu"]
       containers:
       - name: frontend
-        image: localhost:5000/test/frontend:v20260410110230-6a0b479
+        image: localhost:5000/test/frontend:v20260411223946-c5f88d4
         imagePullPolicy: Always
         ports:
         - containerPort: 80

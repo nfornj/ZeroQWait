@@ -1,7 +1,8 @@
 # ZeroQwait — Project Rules & Context
 
-> **Last updated**: 2026-04-07
+> **Last updated**: 2026-04-10
 > **Live URL**: https://zeroqwait.com (test ingress: http://192.168.2.134.nip.io)
+> **Product pivot (2026-04-10)**: Transitioning from queue-management SaaS → **Agent-as-a-Service (AaaS)** platform powered by LangGraph
 
 ---
 
@@ -15,13 +16,14 @@
 
 | Protected Artefact | Current Value | Why It Matters |
 | ---- | ---- | ---- |
+| Agent framework | LangGraph (langgraph >= 0.4) on FastAPI | Core state machine for all agent graphs; changing breaks checkpoint compatibility |
 | LLM model | `gpt-oss:20b` via Ollama | Swapping models breaks agent behaviour and costs GPU re-pull time |
 | TTS engine | Qwen3-TTS (`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`) | Kokoro / Coqui incident on 2026-02-14 required emergency rollback |
 | TTS voice | `Vivian` | Voice is a brand experience choice |
 | TTS port | `8880` | Ingress and backend config hard-wired to this port |
 | ASR engine | faster-whisper (`medium`) | GPU compute budget depends on this model size |
 | Embedding model | `all-MiniLM-L6-v2` | Semantic cache keys are tied to these embeddings |
-| Database engine | PostgreSQL 15 | Alembic migrations target this version |
+| Database engine | PostgreSQL 15 | Alembic migrations + LangGraph checkpoints target this version |
 | Orchestration | K3s namespace `zeroqwait` | All K8s manifests target this namespace |
 
 **Before swapping any model/engine/service**: stop, surface the proposal to the user, explain the tradeoffs, and wait for explicit approval.
@@ -35,7 +37,10 @@ The following changes require user approval before implementation:
 - Adding new external service dependencies (new APIs, new LLM providers)
 - Modifying authentication or authorization logic
 - Changing database schema in ways that skip Alembic migrations
-- Modifying `backend/agent_logic.py` intent routing or tool definitions substantially
+- Modifying LangGraph graph topology (adding/removing nodes, edges, or breakpoints)
+- Changing the Supervisor → sub-agent routing logic in `backend/agents/supervisor.py`
+- Adding or removing MCP server registrations
+- Modifying `tenant_id` injection or multi-tenancy isolation logic
 
 ### 0.3 Allowed Without Approval
 
@@ -49,13 +54,38 @@ The following changes require user approval before implementation:
 
 ## 1. What Is ZeroQwait
 
-A **universal queue management platform** where service businesses (barbers, salons, clinics, auto shops, etc.) register, and customers can discover them, join queues remotely, and view real-time wait times — all powered by an AI agent assistant.
+An **Agent-as-a-Service (AaaS) platform** where service businesses (barbers, salons, clinics, auto shops, etc.) each get their own **team of AI agents** — a Receptionist, Finance manager, and HR assistant — orchestrated by a Supervisor agent. Shop owners manage their entire business operations via natural-language chat with Human-in-the-Loop approval workflows. Customers interact with the shop's Receptionist agent to discover services, join queues, and get real-time updates.
+
+### Product Vision
+
+Every shop owner gets a personalized AI operations team that:
+- **Automates** routine tasks (bookings, queue management, shift scheduling)
+- **Reports** business metrics and financial summaries on demand
+- **Asks for approval** before executing high-impact actions (e.g., changing schedules, processing refunds)
+- **Learns** the shop's patterns and adapts over time
 
 ### Core User Flows
 
-1. **Customer** → Lands on marketing page → Interacts with AI agent (text/voice) → Finds shops → Joins queue → Gets position updates.
-2. **Shop Owner** → Signs up → Registers shop → Manages queue dashboard → Views analytics.
-3. **Employee** → Logs in → Manages individual queue from employee dashboard.
+1. **Shop Owner** → Signs up → Gets AI agent team → Manages everything via chat inbox → Approves/rejects agent proposals → Views dashboards.
+2. **Customer** → Lands on marketing page or shop page → Interacts with shop's Receptionist agent (text/voice) → Discovers services → Joins queue → Gets position updates.
+3. **Employee** → Logs in → Receives shift assignments from HR agent → Manages individual queue from employee dashboard.
+
+### Three Public-Facing Capabilities (Customer Side)
+
+The customer-facing AI agent always presents **exactly three capabilities**:
+
+1. **Register a Shop** — Set up your business and get your own AI agent team
+2. **Search for Shops** — Find services nearby and join an AI-powered queue
+3. **Ask about our Products** — Pricing, features, and how it all works
+
+These three items must appear consistently across:
+
+- Frontend welcome message (`MasterAIAgent.tsx` initial `chatHistory`)
+- Backend GREETING intent handler in `stream_chat()` and `chat()`
+- Backend conversation agent fallback (`get_conversational_response()` exception handler)
+- Backend conversation agent system prompt (rules section)
+
+**Rule**: Never change the wording of these three features without updating all four locations.
 
 ---
 
@@ -65,14 +95,28 @@ A **universal queue management platform** where service businesses (barbers, sal
 | --------------------------- | ---------------------------------------- | ------------------------------------------------------------------- |
 | **Frontend**                | React 18 + TypeScript                    | MUI v7.3.7, react-router-dom v6, axios                              |
 | **Backend**                 | FastAPI 0.128.0 (Python 3.9+)            | Uvicorn 0.39.0, SQLAlchemy 2.0.44                                   |
+| **Agent Framework**         | LangGraph >= 0.4 on FastAPI              | Graph-based state machines, Human-in-the-Loop breakpoints, PostgreSQL checkpoints |
+| **Agent Checkpoints**       | langgraph-checkpoint-postgres             | Persistent agent state per tenant in PostgreSQL                     |
 | **Database**                | PostgreSQL 15                            | Via K8s StatefulSet (prod DB: `fastcuts_db`, user: `fastcuts_user`) |
-| **Cache**                   | Redis 5.0.1                              | Session history, category cache, rate limiting                      |
-| **AI/LLM**                  | pydantic-ai 0.8.1 + Ollama               | Model: `gpt-oss:20b` (13.8GB, MXFP4 quantized)                      |
+| **Cache**                   | Redis 5.0.1                              | Session history, category cache, rate limiting, agent state cache   |
+| **AI/LLM**                  | LangGraph + langchain-ollama + Ollama     | Model: `gpt-oss:20b` (13.8GB, MXFP4 quantized)                      |
 | **Embeddings**              | sentence-transformers (all-MiniLM-L6-v2) | Semantic cache for query analysis                                   |
+| **MCP Tooling**             | Model Context Protocol servers            | BookingMCP, FinanceMCP, HRMCP — tools decoupled from agents        |
 | **Voice ASR**               | Whisper (via `asr_service/`)             | GPU-accelerated, separate K8s pod                                   |
 | **Voice TTS**               | Qwen3-TTS 1.7B (via `tts_service/`)     | `/v1/audio/speech` OpenAI-compatible, voice: `Vivian`, port 8880 — **DO NOT REPLACE** (see §6) |
 | **Container Orchestration** | K3s (lightweight K8s)                    | Namespace: `zeroqwait`, Traefik ingress                             |
 | **Deployment**              | GitHub Actions + self-hosted runner      | Branch push triggers automatic deploy workflow                       |
+
+### Key Dependencies (New for AaaS Pivot)
+
+```
+langgraph >= 0.4                       # Core graph-based agent framework
+langgraph-checkpoint-postgres >= 2.0   # PostgreSQL checkpoint persistence
+langchain-ollama >= 0.3                # Ollama LLM integration for LangGraph
+langchain-core >= 0.3                  # Base abstractions (messages, tools)
+```
+
+> **Migration note**: `pydantic-ai 0.8.1` is being phased out. The existing `agent_logic.py` (pydantic-ai) continues to serve the **customer-facing landing page chat** during transition. New **owner-facing agent graphs** are built on LangGraph from the start.
 
 ---
 
@@ -113,7 +157,12 @@ zeroqwait/
 │   │   │   ├── admin/               # Admin panel components
 │   │   │   ├── auth/                # Sign-in/sign-up pages (Material template based)
 │   │   │   ├── public-booking/      # Public shop view, queue joining
-│   │   │   └── shop-dashboard/      # Owner dashboard, analytics, queue management
+│   │   │   ├── shop-dashboard/      # Owner dashboard, analytics, queue management
+│   │   │   └── agent-inbox/         # NEW: Owner agent inbox/feed (approvals, updates, chat)
+│   │   │       ├── AgentInbox.tsx    # Main inbox view — agent updates + approval cards
+│   │   │       ├── ApprovalCard.tsx  # Human-in-the-loop approval/reject widget
+│   │   │       ├── AgentChat.tsx     # Owner ↔ Supervisor chat interface
+│   │   │       └── AgentFeed.tsx     # Chronological feed of agent actions
 │   │   ├── hooks/
 │   │   │   ├── useAudioRecorder.tsx  # Records audio blobs (used by MasterAIAgent)
 │   │   │   ├── useAudioVisualizer.ts # Audio waveform visualization
@@ -125,7 +174,19 @@ zeroqwait/
 │
 ├── backend/                          # FastAPI application
 │   ├── main.py                       # App entry, lifespan, CORS, router mounting
-│   ├── agent_logic.py                # AI agent: MasterAgent, tools, query analysis (1314 lines)
+│   ├── agent_logic.py                # LEGACY: pydantic-ai customer-facing agent (kept during transition)
+│   ├── agents/                       # NEW: LangGraph agent graphs
+│   │   ├── __init__.py
+│   │   ├── state.py                  # AgentState TypedDict (shared across all graphs)
+│   │   ├── supervisor.py             # Supervisor agent graph (routes to sub-agents)
+│   │   ├── receptionist.py           # Receptionist sub-agent (bookings, queue, customer care)
+│   │   ├── finance.py                # Finance sub-agent (revenue, analytics, reporting)
+│   │   ├── hr.py                     # HR sub-agent (employees, shifts, scheduling)
+│   │   ├── checkpoints.py            # PostgreSQL checkpoint saver setup
+│   │   └── tools/                    # LangGraph tool definitions (thin wrappers → MCP calls)
+│   │       ├── booking_tools.py
+│   │       ├── finance_tools.py
+│   │       └── hr_tools.py
 │   ├── db_interface.py               # Database abstraction layer (SQLAlchemy, 853 lines)
 │   ├── database.py                   # Engine, SessionLocal, connection config
 │   ├── models.py                     # Re-exports all SQLAlchemy models
@@ -135,9 +196,12 @@ zeroqwait/
 │   ├── scheduler.py                  # Background analytics scheduler
 │   ├── permissions.py                # Authorization helpers
 │   ├── tier_limits.py                # Subscription tier enforcement
+│   ├── tenant_manager.py             # Multi-tenancy schema isolation
+│   ├── registration_agent.py         # Registration state machine (Redis-backed)
 │   ├── Dockerfile                    # Python 3.9-slim, uv sync, sentence-transformer pre-warm
-│   ├── routers/                      # Legacy/shared API routers
-│   │   ├── agent.py                  # /api/agent/master/chat, /chat/stream
+│   ├── routers/                      # API routers
+│   │   ├── agent.py                  # LEGACY: /api/agent/master/chat, /chat/stream
+│   │   ├── agent_v2.py               # NEW: /api/v2/agent/ — LangGraph supervisor endpoints
 │   │   ├── voice.py                  # /api/voice/transcribe, /tts, /tts/health
 │   │   ├── analytics.py
 │   │   ├── services.py
@@ -154,6 +218,25 @@ zeroqwait/
 │   │   └── agent/                    # Agent-related models (ConversationHistory, etc.)
 │   ├── shared/                       # Shared utilities (auth_utils, schemas)
 │   └── test_live.py                  # End-to-end remote agent test script
+│
+├── mcps/                             # MCP servers (Model Context Protocol)
+│   ├── booking/                      # NEW: BookingMCP — queue, appointments, wait times
+│   │   ├── server.py
+│   │   └── Dockerfile
+│   ├── finance/                      # NEW: FinanceMCP — revenue, analytics, invoicing
+│   │   ├── server.py
+│   │   └── Dockerfile
+│   ├── hr/                           # NEW: HRMCP — employees, shifts, scheduling
+│   │   ├── server.py
+│   │   └── Dockerfile
+│   └── voice/                        # Existing: Voice MCP (TTS + ASR proxy)
+│       ├── server.py
+│       └── Dockerfile
+│
+├── voice_mcp/                        # Existing: Unified voice gateway (TTS + ASR + MCP)
+│   ├── server.py
+│   ├── Dockerfile
+│   └── requirements.txt
 │
 ├── asr_service/                      # Whisper ASR microservice
 │   ├── main.py
@@ -193,16 +276,147 @@ zeroqwait/
 
 ## 5. AI Agent Architecture
 
-### Three Core Features (User-Facing)
+### Overview (AaaS Pivot — 2026-04-10)
 
-The AI agent (ZeroQ) always presents **exactly three capabilities** to users:
+Each shop owner receives a **team of AI agents** powered by **LangGraph state machines**. A **Supervisor agent** acts as the central router, interpreting the owner's natural-language commands and delegating to specialized **sub-agents**: Receptionist, Finance, and HR. All agent state is checkpointed to PostgreSQL per tenant for persistence and Human-in-the-Loop approval workflows.
 
-1. **Register a Shop** — Set up your business on our platform
+### Architecture Diagram
+
+```
+                    ┌─────────────────────────────────┐
+                    │       Shop Owner (Chat)          │
+                    │   Frontend Agent Inbox / Feed    │
+                    └──────────────┬──────────────────┘
+                                   │ SSE / WebSocket
+                                   ▼
+                    ┌─────────────────────────────────┐
+                    │     POST /api/v2/agent/chat      │
+                    │     (FastAPI + Auth + tenant_id)  │
+                    └──────────────┬──────────────────┘
+                                   │
+                    ┌──────────────▼──────────────────┐
+                    │       SUPERVISOR AGENT            │
+                    │   (LangGraph StateGraph)          │
+                    │   ┌─────────────────────────┐    │
+                    │   │ classify_intent (node)   │    │
+                    │   │ route_to_agent (edges)   │    │
+                    │   │ human_approval (break)   │    │
+                    │   │ respond (node)           │    │
+                    │   └─────────────────────────┘    │
+                    └───┬───────────┬─────────────┬────┘
+                        │           │             │
+              ┌─────────▼──┐  ┌────▼────────┐ ┌──▼──────────┐
+              │ RECEPTIONIST│  │  FINANCE    │ │     HR      │
+              │  Sub-Agent  │  │  Sub-Agent  │ │  Sub-Agent  │
+              │ (StateGraph)│  │ (StateGraph)│ │ (StateGraph) │
+              └──────┬──────┘  └─────┬───────┘ └──────┬──────┘
+                     │               │                │
+              ┌──────▼──────┐  ┌─────▼───────┐ ┌──────▼──────┐
+              │ BookingMCP  │  │ FinanceMCP  │ │   HRMCP     │
+              │  (tools)    │  │  (tools)    │ │  (tools)    │
+              └─────────────┘  └─────────────┘ └─────────────┘
+                     │               │                │
+              ┌──────▼───────────────▼────────────────▼──────┐
+              │          PostgreSQL (tenant-isolated)          │
+              │   queues │ services │ analytics │ employees   │
+              │          LangGraph checkpoints table           │
+              └──────────────────────────────────────────────┘
+```
+
+### Agent Components
+
+| Component | File | Purpose |
+| --------- | ---- | ------- |
+| **AgentState** | `backend/agents/state.py` | Shared `TypedDict` state: messages, tenant_id, current_agent, pending_approval, tool_results |
+| **Supervisor** | `backend/agents/supervisor.py` | Central router: classifies owner intent → routes to sub-agent → collects result → responds |
+| **Receptionist** | `backend/agents/receptionist.py` | Customer-facing: bookings, queue join/leave, wait times, service discovery |
+| **Finance** | `backend/agents/finance.py` | Owner-facing: revenue summaries, daily/weekly analytics, financial reports |
+| **HR** | `backend/agents/hr.py` | Owner-facing: employee management, shift scheduling, availability |
+| **Checkpoints** | `backend/agents/checkpoints.py` | PostgreSQL-backed `AsyncPostgresSaver` for persistent graph state |
+
+### AgentState Schema
+
+```python
+from typing import TypedDict, Annotated, Sequence, Optional
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
+
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], add_messages]
+    tenant_id: int                        # Shop ID — injected at entry, never changeable by agent
+    user_id: int                          # Authenticated owner's user ID
+    current_agent: str                    # "supervisor" | "receptionist" | "finance" | "hr"
+    pending_approval: Optional[dict]      # Action awaiting owner's approve/reject
+    tool_results: Optional[dict]          # Latest tool execution results
+    needs_human_input: bool               # True when at a Human-in-the-Loop breakpoint
+```
+
+### Supervisor Routing Logic
+
+The Supervisor classifies the owner's message and routes to the appropriate sub-agent:
+
+| Owner Intent | Target Agent | Example Commands |
+| ------------ | ------------ | ---------------- |
+| Booking / queue / appointment | Receptionist | "How many people are in the queue?", "Close the queue for today" |
+| Revenue / analytics / reports | Finance | "What was yesterday's revenue?", "Show me this week's analytics" |
+| Employees / shifts / schedule | HR | "Add a new employee", "Show me today's shift schedule" |
+| General / unclear | Supervisor (self) | "Hello", "What can you do?", "Help me with my shop" |
+
+### Human-in-the-Loop (HITL) Approval Flow
+
+High-impact actions pause at a LangGraph `interrupt_before` breakpoint and wait for the owner's explicit approval:
+
+```
+Agent proposes action → State saved to checkpoint → SSE event: {type: 'approval_required', action, details}
+     → Owner sees ApprovalCard in inbox → Clicks Approve/Reject
+     → POST /api/v2/agent/approve → Graph resumes from checkpoint → Executes or cancels
+```
+
+**Actions requiring approval** (configurable per shop):
+- Closing/opening the queue
+- Modifying employee schedules
+- Processing refunds or adjusting prices
+- Sending bulk customer notifications
+- Changing shop operating hours
+
+### Multi-Tenancy in Agent Context
+
+Every agent graph invocation is **strictly tenant-scoped**:
+
+1. **Entry point** (`routers/agent_v2.py`): Extracts `tenant_id` (shop_id) from authenticated JWT + shop ownership check
+2. **State injection**: `tenant_id` is set in `AgentState` at graph invocation — agents cannot modify it
+3. **Tool execution**: Every MCP tool call includes `tenant_id` in its context → `tenant_manager.tenant_session(shop_id)` ensures DB queries hit the correct schema
+4. **Checkpoint isolation**: Thread ID format: `tenant_{shop_id}_{user_id}` — ensures checkpoint data is tenant-scoped
+
+### MCP Tool Servers
+
+Tools are decoupled from agents via Model Context Protocol servers. Each MCP server exposes a set of tools that agents call through thin wrappers.
+
+| MCP Server | Tools Exposed | Backing |
+| ---------- | ------------- | ------- |
+| **BookingMCP** | `list_queue`, `join_queue`, `call_next`, `get_wait_time`, `close_queue`, `search_services` | `db_interface.py` queue + service methods |
+| **FinanceMCP** | `daily_revenue`, `weekly_summary`, `top_services`, `customer_metrics`, `export_report` | `db_interface.py` analytics methods + `daily_analytics` table |
+| **HRMCP** | `list_employees`, `add_employee`, `remove_employee`, `get_shifts`, `assign_shift`, `clock_in_out` | `db_interface.py` employee/shift methods |
+| **VoiceMCP** | `transcribe_audio`, `synthesize_speech` | Existing `voice_mcp/server.py` (TTS + ASR proxy) |
+
+**MCP ↔ Agent binding**: Each sub-agent's LangGraph `ToolNode` calls the corresponding MCP server. This separation means:
+- Tools can be tested independently of agents
+- New tools can be added to an MCP server without modifying agent graph topology
+- MCP servers can be deployed as separate K8s pods for scaling (future)
+
+### Legacy Customer-Facing Agent (Transition Period)
+
+During the AaaS transition, the existing **pydantic-ai agent** (`agent_logic.py`) continues to serve:
+- Landing page chat (`MasterAIAgent.tsx`)
+- Public shop discovery and queue joining
+- Registration flow
+
+The three customer-facing capabilities remain unchanged:
+1. **Register a Shop** — Set up your business and get your own AI agent team
 2. **Search for Shops** — Find services nearby and join an AI-powered queue
 3. **Ask about our Products** — Pricing, features, and how it all works
 
 These three items must appear consistently across:
-
 - Frontend welcome message (`MasterAIAgent.tsx` initial `chatHistory`)
 - Backend GREETING intent handler in `stream_chat()` and `chat()`
 - Backend conversation agent fallback (`get_conversational_response()` exception handler)
@@ -210,80 +424,42 @@ These three items must appear consistently across:
 
 **Rule**: Never change the wording of these three features without updating all four locations.
 
-### Overview
+### Owner-Facing Agent (New — LangGraph)
 
-The AI agent (`agent_logic.py`) is powered by **pydantic-ai 0.8.1** and runs on a self-hosted **gpt-oss:20b** model via Ollama. It uses a structured output model (`MasterResponse`) to ensure reliable tool coordination.
+After a shop owner logs in and navigates to their dashboard, they interact with the **Supervisor agent** via the **Agent Inbox**:
 
-### Key Components
+| Feature | Implementation |
+| ------- | -------------- |
+| **Chat** | SSE streaming via `POST /api/v2/agent/chat/stream` |
+| **Approvals** | `POST /api/v2/agent/approve` resumes checkpointed graph |
+| **Feed** | WebSocket broadcast of agent actions (queue updates, shift changes, etc.) |
+| **History** | LangGraph checkpoint + `conversation_history` table |
+| **Voice** | Same voice pipeline (Qwen3-TTS Vivian), routed through owner chat |
 
-| Component              | Purpose                                                                                      |
-| ---------------------- | -------------------------------------------------------------------------------------------- |
-| `UnifiedQueryAnalyzer` | Single-pass LLM intent classifier: 6 intents (GREETING/REGISTRATION/SEARCH/PLATFORM_INFO/CONVERSATION/UNCLEAR) with structured `IntentAnalysis` output |
-| `IntentAnalysis`       | Pydantic model: intent, search_terms, city, near_me, specificity (VAGUE/SPECIFIC), platform_target, registration_type, context_updates |
-| `SemanticCache`        | Sentence-transformer embeddings cache (all-MiniLM-L6-v2, cosine threshold 0.92)              |
-| `CategoryManager`      | Dynamic category system — zero hardcoded categories, all database-driven with Redis cache    |
-| `MasterAgent`          | Main orchestrator — routes queries by classified intent, invokes tools, manages context      |
-| `MasterResponse`       | Pydantic output model with `reasoning` and `response` fields (used by master LLM fallback)  |
+### Chat Flow (Owner → Supervisor)
 
-### Agent Tools
+1. Owner sends message via Agent Inbox → `POST /api/v2/agent/chat/stream`
+2. JWT auth → extract `user_id` + `shop_id` (tenant_id)
+3. Load or create LangGraph checkpoint: `tenant_{shop_id}_{user_id}`
+4. Supervisor graph invoked with `AgentState{messages, tenant_id, user_id}`
+5. Supervisor classifies intent → routes to sub-agent (conditional edge)
+6. Sub-agent executes tools via MCP → returns result to Supervisor
+7. If HITL required → `interrupt_before` → SSE `approval_required` event → wait
+8. If no HITL → Supervisor formats response → SSE stream to frontend
+9. State checkpointed to PostgreSQL after each graph step
 
-| Tool                 | Function                                             |
-| -------------------- | ---------------------------------------------------- |
-| `search_shops`       | Search businesses by category/city/coordinates/query |
-| `join_queue`         | Add customer to a shop's queue                       |
-| `get_wait_time`      | Check queue length and estimated wait                |
-| `check_queue_status` | Check position by ticket ID                          |
-| `check_pricing`      | Navigate UI to pricing section                       |
-| `see_features`       | Navigate UI to features section                      |
-| `see_faq`            | Navigate UI to FAQ section                           |
-| `see_testimonials`   | Navigate UI to testimonials                          |
-| `start_registration` | Trigger sign-up wizard (shop_owner or customer)      |
+### Streaming (SSE) — Extended Events
 
-### Intent-Based Routing (Refactored 2026-03-08)
-
-All intent detection is handled by a **single LLM intent classifier** (`UnifiedQueryAnalyzer.analyze()`) that returns an `IntentAnalysis` Pydantic model. No regex-based routing — the LLM classifies every message into one of 6 intents.
-
-**Only exception**: `_CANCEL_REGISTRATION_RE` regex is kept inside the active-registration Redis block for low-latency cancel handling (user is frustrated mid-registration).
-
-**Flow** (both `stream_chat()` and `chat()`):
-1. **Active registration check** (Redis state) → if active, remind or cancel. Return early.
-2. **LLM Intent Classification** → `UnifiedQueryAnalyzer.analyze()` returns `IntentAnalysis`
-3. **Route by intent**:
-   - `GREETING` → Canned greeting with 3 core features
-   - `REGISTRATION` → Start `registration_agent` session, emit form_step
-   - `SEARCH + VAGUE` → Ask "What type of service?" (no service type specified)
-   - `SEARCH + SPECIFIC` → Direct `search_shops()` call with extracted terms/city
-   - `PLATFORM_INFO` → Navigate to section (pricing/features/faq/testimonials) with `platform_target` normalization
-   - `CONVERSATION` → Stream via `conversation_agent` (token-by-token with TTS)
-   - `UNCLEAR` → Ask user for clarification, present 3 core features
-   - Fallback → Master LLM agent run with tools (300s timeout)
-
-**Active registration protection**: Before any processing, `stream_chat()` checks if a registration session exists in Redis. If so:
-- Normal messages → Reminder to complete the form + re-emit form_step
-- Cancel keywords (`_CANCEL_REGISTRATION_RE`) → Clears the session
-
-**Registration state machine** (`registration_agent.py`):
-- Steps (shop_owner): `account_type → email → username → password → shop_name → shop_type → shop_address → confirm → done`
-- Steps (customer): `account_type → email → username → password → confirm → done`
-- State persisted in Redis with 30-min TTL
-- Each step validated server-side before advancing
-- Frontend renders forms via `InlineRegistrationForm` component in chat bubbles
-
-### Chat Flow
-
-1. User message → Redis rate limit check (20/min per IP)
-2. Server-side history loaded from Redis (last 10 messages)
-3. **Active registration check** → if session exists, remind or cancel
-4. **LLM intent classification** → `UnifiedQueryAnalyzer.analyze()` returns `IntentAnalysis`
-5. **Intent-based routing** → GREETING/REGISTRATION/SEARCH/PLATFORM_INFO/CONVERSATION/UNCLEAR
-6. Response + actions returned; history persisted to Redis + PostgreSQL
-7. On validation/timeout errors → fallback to conversational response
-
-### Streaming (SSE)
-
-- Endpoint: `POST /api/agent/master/chat/stream`
-- Events: `{type: 'text', content}`, `{type: 'actions', actions}`, `[DONE]`
-- Frontend parses SSE via `ReadableStream` API and renders token-by-token
+- Endpoint: `POST /api/v2/agent/chat/stream`
+- Events:
+  - `{type: 'text', content}` — streaming text tokens
+  - `{type: 'agent_switch', agent}` — sub-agent delegation indicator
+  - `{type: 'tool_call', tool, args}` — tool execution started
+  - `{type: 'tool_result', tool, result}` — tool execution completed
+  - `{type: 'approval_required', action, details}` — HITL breakpoint
+  - `{type: 'actions', actions}` — quick-action buttons
+  - `{type: 'sentence', text, audio}` — paired text+TTS (voice mode)
+  - `[DONE]` — stream complete
 
 ---
 
@@ -530,25 +706,84 @@ Implementation details:
 1. **Semantic cache `__version__` errors**: `SemanticCache.set()` and `.get()` still throw `Failed to set cache: '__version__'` because the `json.load` monkey-patch only covers model initialization, not subsequent `encode()` calls. The semantic cache effectively doesn't work, but the agent functions normally without it. Fix: extend the monkey-patch scope or upgrade sentence-transformers.
 2. **Duplicate `except` block**: `SemanticCache.set()` (around line 97-109 in `agent_logic.py`) has two `except Exception` clauses — the second is dead code.
 
-### Recommended Next Steps
+### AaaS Transition Roadmap (2026-04-10)
 
-1. **Fix semantic cache**: Either permanently patch `json.load` for the sentence-transformers `__version__` bug, or pin a version that doesn't have this issue.
-2. **Frontend streaming polish**: Monitor SSE responsiveness now that backend is stable.
-3. **Extended tool testing**: Verify `join_queue` and `search_shops` correctly update UI state in real-time via SSE stream.
-4. **Reset password endpoint**: Currently returns 501 (not implemented).
-5. **Shop subdomain routing**: Verify `*.192.168.2.134.nip.io` subdomains correctly resolve to individual shop pages.
+> **Deployment policy**: All phases are tested in the **test environment** (`deploy-test.yml` / Docker Compose) first. Production deployment to `zeroqwait.com` only after explicit approval.
+
+#### Phase 1: LangGraph Foundation (Current)
+- [ ] Add `langgraph`, `langgraph-checkpoint-postgres`, `langchain-ollama`, `langchain-core` to `pyproject.toml`
+- [ ] Create `backend/agents/` package: `state.py`, `checkpoints.py`
+- [ ] Implement `AgentState` TypedDict with `tenant_id`, `user_id`, message history
+- [ ] Set up `AsyncPostgresSaver` checkpoint persistence
+- [ ] Create basic Supervisor graph (classify intent → respond) — no sub-agents yet
+- [ ] Add `routers/agent_v2.py` with `/api/v2/agent/chat` and `/api/v2/agent/chat/stream`
+- [ ] Verify LangGraph ↔ Ollama integration (gpt-oss:20b via langchain-ollama)
+- [ ] **Test**: End-to-end owner chat → Supervisor responds via LangGraph
+
+#### Phase 2: Sub-Agent Graphs
+- [ ] Implement Receptionist sub-agent graph (queue tools, service discovery)
+- [ ] Implement Finance sub-agent graph (analytics, revenue reports)
+- [ ] Implement HR sub-agent graph (employees, shifts, scheduling)
+- [ ] Wire Supervisor → sub-agent routing via conditional edges
+- [ ] Add `tenant_id` injection + validation (agents cannot cross tenant boundaries)
+- [ ] **Test**: Owner commands route correctly to sub-agents and return results
+
+#### Phase 3: MCP Tool Servers
+- [ ] Create `mcps/booking/server.py` — wraps `db_interface` queue/service methods
+- [ ] Create `mcps/finance/server.py` — wraps analytics/revenue methods
+- [ ] Create `mcps/hr/server.py` — wraps employee/shift methods
+- [ ] Wire sub-agent `ToolNode`s to call MCP servers instead of direct DB calls
+- [ ] Add Dockerfiles + K8s manifests for MCP pods (optional — can run in-process initially)
+- [ ] **Test**: Tool calls flow through MCP layer correctly
+
+#### Phase 4: Human-in-the-Loop Approvals
+- [ ] Define HITL action categories (queue close, schedule change, refund, etc.)
+- [ ] Add `interrupt_before` breakpoints to sub-agent graphs for high-impact actions
+- [ ] Implement `POST /api/v2/agent/approve` endpoint (resume graph from checkpoint)
+- [ ] SSE event: `{type: 'approval_required', action, details}`
+- [ ] **Test**: Agent pauses at breakpoint → owner approves → action executes
+
+#### Phase 5: Frontend Agent Inbox
+- [ ] Create `features/agent-inbox/` directory: `AgentInbox.tsx`, `AgentChat.tsx`, `AgentFeed.tsx`, `ApprovalCard.tsx`
+- [ ] Implement owner ↔ Supervisor SSE chat interface
+- [ ] Implement approval card UI (approve/reject buttons + action summary)
+- [ ] Implement chronological agent activity feed (WebSocket updates)
+- [ ] Wire into existing shop dashboard navigation
+- [ ] **Test**: Full end-to-end owner experience in test environment
+
+#### Phase 6: Migration & Cutover
+- [ ] Migrate customer-facing chat from pydantic-ai → LangGraph Receptionist (optional — can keep dual-stack)
+- [ ] Update landing page `MasterAIAgent.tsx` to use v2 endpoints
+- [ ] Performance testing: checkpoint latency, concurrent tenants, GPU utilization
+- [ ] **Production deploy** after test environment validation + explicit approval
+
+### Recommended Near-Term Fixes (Carry-Over)
+1. **Fix semantic cache**: Upgrade sentence-transformers or extend monkey-patch
+2. **Reset password endpoint**: Currently returns 501 (not implemented)
+3. **Shop subdomain routing**: Verify `*.192.168.2.134.nip.io` resolution
 
 ---
 
 ## 12. Key API Endpoints
 
-### Agent
+### Agent (Legacy — Customer-Facing)
 
 | Method | Path                            | Description        |
 | ------ | ------------------------------- | ------------------ |
 | POST   | `/api/agent/master/chat`        | Synchronous chat   |
 | POST   | `/api/agent/master/chat/stream` | SSE streaming chat |
 | GET    | `/api/agent/health`             | Agent health check |
+
+### Agent v2 (New — Owner-Facing, LangGraph)
+
+| Method | Path                               | Description                              |
+| ------ | ---------------------------------- | ---------------------------------------- |
+| POST   | `/api/v2/agent/chat`               | Synchronous owner chat                   |
+| POST   | `/api/v2/agent/chat/stream`        | SSE streaming owner chat                 |
+| POST   | `/api/v2/agent/approve`            | Approve/reject HITL action               |
+| GET    | `/api/v2/agent/history`            | Get agent conversation history           |
+| GET    | `/api/v2/agent/pending`            | Get pending approval actions             |
+| GET    | `/api/v2/agent/health`             | LangGraph agent health check             |
 
 ### Voice
 

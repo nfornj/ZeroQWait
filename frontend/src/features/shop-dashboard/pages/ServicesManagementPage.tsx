@@ -5,6 +5,9 @@ import {
     Typography,
     Button,
     Paper,
+    Card,
+    CardContent,
+    Grid,
     Dialog,
     DialogTitle,
     DialogContent,
@@ -15,7 +18,7 @@ import {
     CircularProgress,
     InputAdornment
 } from '@mui/material';
-import { DataGrid, GridColDef, GridActionsCellItem } from '@mui/x-data-grid';
+import { DataGrid, GridColDef, GridActionsCellItem, GridToolbar } from '@mui/x-data-grid';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -174,31 +177,67 @@ const ServicesManagementPage: React.FC = () => {
         <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
             <Header />
 
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} mt={2}>
-                <Typography component="h2" variant="h6">Services Menu</Typography>
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleOpenDialog()}
-                >
-                    Add Service
-                </Button>
-            </Box>
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid size={{ xs: 12, md: 8 }}>
+                    <Card variant="outlined" sx={{ borderRadius: 3 }}>
+                        <CardContent>
+                            <Box display="flex" justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} flexDirection={{ xs: 'column', md: 'row' }} gap={2}>
+                                <Box>
+                                    <Typography variant="h5" sx={{ mb: 0.5, fontWeight: 700 }}>Service Catalog</Typography>
+                                    <Typography color="text.secondary">
+                                        Curate your menu with pricing, duration, and descriptions for customers.
+                                    </Typography>
+                                </Box>
+                                <Button
+                                    variant="contained"
+                                    startIcon={<AddIcon />}
+                                    onClick={() => handleOpenDialog()}
+                                >
+                                    Add Service
+                                </Button>
+                            </Box>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                    <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
+                        <CardContent>
+                            <Typography variant="body2" color="text.secondary">Published Services</Typography>
+                            <Typography variant="h4" sx={{ fontWeight: 700, mt: 0.5 }}>{services.length}</Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+            </Grid>
 
             {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>{error}</Alert>}
             {success && <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>{success}</Alert>}
 
-            <Paper sx={{ width: '100%', overflow: 'hidden' }}>
+            <Paper variant="outlined" sx={{ width: '100%', overflow: 'hidden', borderRadius: 3 }}>
                 <DataGrid
                     rows={services}
                     columns={columns}
                     autoHeight
+                    slots={{ toolbar: GridToolbar }}
+                    slotProps={{ toolbar: { showQuickFilter: true, quickFilterProps: { debounceMs: 250 } } }}
                     pageSizeOptions={[10, 25]}
                     initialState={{
                         pagination: { paginationModel: { pageSize: 10 } },
                     }}
                     loading={loading}
                     disableRowSelectionOnClick
+                    sx={{
+                        border: 0,
+                        '& .MuiDataGrid-columnHeaders': {
+                            bgcolor: 'background.default',
+                            borderBottom: '1px solid',
+                            borderColor: 'divider',
+                        },
+                        '& .MuiDataGrid-toolbarContainer': {
+                            p: 1,
+                            borderBottom: '1px solid',
+                            borderColor: 'divider',
+                        },
+                    }}
                 />
             </Paper>
 

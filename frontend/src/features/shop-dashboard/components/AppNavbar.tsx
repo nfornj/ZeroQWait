@@ -44,11 +44,12 @@ export default function AppNavbar() {
       position="fixed"
       sx={{
         display: { xs: 'auto', md: 'none' },
-        boxShadow: 0,
-        bgcolor: 'background.paper',
+        boxShadow: 'var(--owner-glass-shadow)',
+        bgcolor: 'var(--owner-glass-bg-strong)',
+        backdropFilter: 'blur(20px)',
         backgroundImage: 'none',
         borderBottom: '1px solid',
-        borderColor: 'divider',
+        borderColor: 'var(--owner-glass-border)',
         top: 'var(--template-frame-height, 0px)',
       }}
     >

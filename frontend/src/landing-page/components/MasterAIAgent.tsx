@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
+  alpha,
   Box,
   Typography,
   IconButton,
@@ -47,6 +48,19 @@ type ActionCommand = {
   relatedViewer?: "pricing" | "features" | "faq" | "shops" | null;
 };
 
+type ChatHistoryEntry = {
+  role: "ai" | "user";
+  text: string;
+  shops?: any[];
+  formStep?: FormStepData | null;
+  formDone?: FormDoneData | null;
+  formCompleted?: boolean;
+  queueJoinFormData?: any | null;
+  queueJoinFormSubmitted?: boolean;
+  relatedViewer?: "shops" | "pricing" | "features" | "faq" | "register" | null;
+  quickActions?: ActionCommand[];
+};
+
 type ShopContext = {
   id: number;
   slug?: string;
@@ -62,6 +76,17 @@ type MasterAIAgentProps = {
   shopContext?: ShopContext | null;
   initialInteractionMode?: "voice" | "chat";
   embedded?: boolean;
+  streamEndpoint?: string;
+  requestHeaders?: Record<string, string>;
+  extraRequestBody?: Record<string, unknown>;
+  initialChatHistory?: ChatHistoryEntry[];
+  disableVoiceMode?: boolean;
+  hideUtilityControls?: boolean;
+  compactEmbedded?: boolean;
+  brandPrimaryColor?: string;
+  brandSecondaryColor?: string;
+  onStreamEvent?: (event: Record<string, any>) => void;
+  onChatHistoryChange?: (history: ChatHistoryEntry[]) => void;
 };
 
 const PROFESSIONAL_VOICE_INSTRUCT =
@@ -189,6 +214,17 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   shopContext = null,
   initialInteractionMode = "voice",
   embedded = false,
+  streamEndpoint = "/api/agent/master/chat/stream",
+  requestHeaders,
+  extraRequestBody,
+  initialChatHistory,
+  disableVoiceMode = false,
+  hideUtilityControls = false,
+  compactEmbedded = false,
+  brandPrimaryColor,
+  brandSecondaryColor,
+  onStreamEvent,
+  onChatHistoryChange,
 }) => {
   const [isOpen, setIsOpen] = useState(forceOpen || initialOpen);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -196,8 +232,9 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
   // "voice" = TTS enabled + orb prominent, "chat" = text-only, no TTS audio
-  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">(initialInteractionMode);
-  const interactionModeRef = useRef<"voice" | "chat">(initialInteractionMode);
+  const effectiveInitialMode = disableVoiceMode ? "chat" : initialInteractionMode;
+  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">(effectiveInitialMode);
+  const interactionModeRef = useRef<"voice" | "chat">(effectiveInitialMode);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
     null,
   );
@@ -233,26 +270,11 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   }, [shopContext]);
 
   // Updated State Type for Dynamic Layout
-  const [chatHistory, setChatHistory] = useState<
-    Array<{
-      role: "ai" | "user";
-      text: string;
-      shops?: any[];
-      formStep?: FormStepData | null;
-      formDone?: FormDoneData | null;
-      formCompleted?: boolean;
-      queueJoinFormData?: any | null;
-      queueJoinFormSubmitted?: boolean;
-      relatedViewer?:
-        | "shops"
-        | "pricing"
-        | "features"
-        | "faq"
-        | "register"
-        | null;
-      quickActions?: ActionCommand[];
-    }>
-  >(() => {
+  const [chatHistory, setChatHistory] = useState<ChatHistoryEntry[]>(() => {
+    if (initialChatHistory && initialChatHistory.length > 0) {
+      return initialChatHistory;
+    }
+
     if (shopContext) {
       return [
         {
@@ -664,27 +686,32 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   };
 
   // Theme & Visibility Configuration
+  const resolvedPrimary = brandPrimaryColor || "#2563EB";
+  const resolvedSecondary = brandSecondaryColor || resolvedPrimary;
   const theme = {
     bg: isDarkMode
-      ? "radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 50%, 15%), #05050A)" // Deep violet dark mode
-      : "radial-gradient(ellipse 80% 50% at 50% -20%, hsl(270, 80%, 90%), #FFFFFF)", // Bright violet light mode - Matches Hero
+      ? `radial-gradient(ellipse 80% 50% at 50% -20%, ${alpha(resolvedPrimary, 0.24)}, #05050A)`
+      : `radial-gradient(ellipse 80% 50% at 50% -20%, ${alpha(resolvedPrimary, 0.22)}, ${alpha(resolvedSecondary, 0.08)} 50%, #FFFFFF)`,
     glass: isDarkMode ? "blur(20px)" : "blur(40px)", // Reduced blur for crisper bg visibility
     text: isDarkMode ? "#ffffff" : "#0f172a",
     textSecondary: isDarkMode
       ? "rgba(255, 255, 255, 0.7)"
       : "rgba(15, 23, 42, 0.7)",
-    accent: isDarkMode ? "#E879F9" : "#C026D3", // Fuchsia 400 (Dark) / Fuchsia 600 (Light) - Vibrant & Neon
+    accent: resolvedPrimary,
     cardBg: isDarkMode
       ? "rgba(255, 255, 255, 0.05)"
       : "rgba(255, 255, 255, 0.6)",
     cardBorder: isDarkMode
-      ? "rgba(232, 121, 249, 0.2)"
-      : "rgba(192, 38, 211, 0.15)",
+      ? alpha(resolvedPrimary, 0.24)
+      : alpha(resolvedPrimary, 0.16),
     inputBg: isDarkMode
       ? "rgba(255, 255, 255, 0.07)"
       : "rgba(255, 255, 255, 0.8)",
     iconColor: isDarkMode ? "#ffffff" : "#0f172a",
   };
+
+  const shouldRenderVoiceOrb = !(embedded && compactEmbedded && disableVoiceMode);
+  const shouldShowShopBadge = !(embedded && compactEmbedded && hideUtilityControls);
 
   // Visibility & Global Triggers
   useEffect(() => {
@@ -828,10 +855,11 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
     ]);
 
     try {
-      const response = await fetch("/api/agent/master/chat/stream", {
+      const response = await fetch(streamEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(requestHeaders || {}),
         },
         body: JSON.stringify({
           message: userText,
@@ -856,6 +884,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
               : {}),
           },
           is_voice: interactionMode === "voice",
+          ...(extraRequestBody || {}),
         }),
       });
 
@@ -893,6 +922,9 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
 
           try {
             const data = JSON.parse(dataStr);
+            if (onStreamEvent) {
+              onStreamEvent(data);
+            }
 
             if (data.type === "sentence") {
               // --- Paired sentence event: {text, audio} ---
@@ -1077,6 +1109,12 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
     }
   }, [chatHistory]);
 
+  useEffect(() => {
+    if (onChatHistoryChange) {
+      onChatHistoryChange(chatHistory);
+    }
+  }, [chatHistory, onChatHistoryChange]);
+
   return (
     <Fade in={isOpen}>
       <Box
@@ -1112,75 +1150,79 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
             zIndex: 20000,
           }}
         >
-          <IconButton
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            sx={{
-              color: theme.iconColor,
-              bgcolor: isDarkMode
-                ? "rgba(255,255,255,0.05)"
-                : "rgba(15,23,42,0.05)",
-              "&:hover": {
-                bgcolor: isDarkMode
-                  ? "rgba(255,255,255,0.1)"
-                  : "rgba(15,23,42,0.1)",
-              },
-            }}
-          >
-            {isDarkMode ? (
-              <LightModeIcon sx={{ fontSize: 24 }} />
-            ) : (
-              <DarkModeIcon sx={{ fontSize: 24 }} />
-            )}
-          </IconButton>
-          {/* Voice / Chat Mode Toggle */}
-          <Box
-            onClick={() => {
-              const newMode = interactionMode === "voice" ? "chat" : "voice";
-              if (newMode === "chat") {
-                stopCurrentAudio();
-                // Stop recording if switching to chat during active recording
-                if (isRecording) stopRecording();
-              }
-              setInteractionMode(newMode);
-            }}
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 0.5,
-              px: 1.5,
-              py: 0.75,
-              borderRadius: "20px",
-              cursor: "pointer",
-              bgcolor: isDarkMode
-                ? "rgba(255,255,255,0.05)"
-                : "rgba(15,23,42,0.05)",
-              border: `1px solid ${interactionMode === "voice" ? theme.accent + "44" : theme.cardBorder}`,
-              transition: "all 0.2s ease",
-              "&:hover": {
-                bgcolor: isDarkMode
-                  ? "rgba(255,255,255,0.1)"
-                  : "rgba(15,23,42,0.1)",
-              },
-            }}
-          >
-            {interactionMode === "voice" ? (
-              <VolumeUpIcon sx={{ fontSize: 18, color: theme.accent }} />
-            ) : (
-              <VolumeOffIcon sx={{ fontSize: 18, color: theme.textSecondary }} />
-            )}
-            <Typography
-              variant="caption"
-              sx={{
-                fontWeight: 600,
-                fontSize: "0.65rem",
-                letterSpacing: "0.05em",
-                color: interactionMode === "voice" ? theme.accent : theme.textSecondary,
-                userSelect: "none",
-              }}
-            >
-              {interactionMode === "voice" ? "VOICE" : "CHAT"}
-            </Typography>
-          </Box>
+          {!hideUtilityControls && (
+            <>
+              <IconButton
+                onClick={() => setIsDarkMode(!isDarkMode)}
+                sx={{
+                  color: theme.iconColor,
+                  bgcolor: isDarkMode
+                    ? "rgba(255,255,255,0.05)"
+                    : "rgba(15,23,42,0.05)",
+                  "&:hover": {
+                    bgcolor: isDarkMode
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(15,23,42,0.1)",
+                  },
+                }}
+              >
+                {isDarkMode ? (
+                  <LightModeIcon sx={{ fontSize: 24 }} />
+                ) : (
+                  <DarkModeIcon sx={{ fontSize: 24 }} />
+                )}
+              </IconButton>
+              {!disableVoiceMode && (
+                <Box
+                  onClick={() => {
+                    const newMode = interactionMode === "voice" ? "chat" : "voice";
+                    if (newMode === "chat") {
+                      stopCurrentAudio();
+                      if (isRecording) stopRecording();
+                    }
+                    setInteractionMode(newMode);
+                  }}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.5,
+                    px: 1.5,
+                    py: 0.75,
+                    borderRadius: "20px",
+                    cursor: "pointer",
+                    bgcolor: isDarkMode
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(15,23,42,0.05)",
+                    border: `1px solid ${interactionMode === "voice" ? theme.accent + "44" : theme.cardBorder}`,
+                    transition: "all 0.2s ease",
+                    "&:hover": {
+                      bgcolor: isDarkMode
+                        ? "rgba(255,255,255,0.1)"
+                        : "rgba(15,23,42,0.1)",
+                    },
+                  }}
+                >
+                  {interactionMode === "voice" ? (
+                    <VolumeUpIcon sx={{ fontSize: 18, color: theme.accent }} />
+                  ) : (
+                    <VolumeOffIcon sx={{ fontSize: 18, color: theme.textSecondary }} />
+                  )}
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontWeight: 600,
+                      fontSize: "0.65rem",
+                      letterSpacing: "0.05em",
+                      color: interactionMode === "voice" ? theme.accent : theme.textSecondary,
+                      userSelect: "none",
+                    }}
+                  >
+                    {interactionMode === "voice" ? "VOICE" : "CHAT"}
+                  </Typography>
+                </Box>
+              )}
+            </>
+          )}
           {!hideCloseButton && !forceOpen && (
             <IconButton
               onClick={() => setIsOpen(false)}
@@ -1201,7 +1243,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
           )}
         </Stack>
 
-        {shopContext && (
+        {shopContext && shouldShowShopBadge && (
           <Box
             sx={{
               position: "absolute",
@@ -1289,9 +1331,9 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
               // CHANGED: Center vertically in both single and split view
               alignItems: "center",
               justifyContent: "center",
-              py: { xs: 2, sm: 3, md: 4 },
+              py: embedded && compactEmbedded ? { xs: 0.5, md: 1 } : { xs: 2, sm: 3, md: 4 },
               px: { xs: 2, sm: 3, md: 4, lg: 6 },
-              gap: { xs: 3, sm: 3, md: 4 },
+              gap: embedded && compactEmbedded ? { xs: 1, md: 1.5 } : { xs: 3, sm: 3, md: 4 },
               width: "100%",
               // WIDER CONTAINER for Split View (Monitor Mode)
               // Constrained to 1400px for better balance on large screens
@@ -1312,7 +1354,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "flex-start",
-                gap: { xs: 2, sm: 2.5, md: 3 },
+                gap: embedded && compactEmbedded ? { xs: 1, md: 1.25 } : { xs: 2, sm: 2.5, md: 3 },
                 transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
                 width: "100%",
                 // Fixed width constraint
@@ -1321,13 +1363,16 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                   : { xs: "100%", sm: "500px", md: "600px" },
                 height: activeViewer
                   ? { xs: "calc(100dvh - 170px)", md: "70vh" }
-                  : { xs: "calc(100dvh - 170px)", md: "78vh" },
+                  : embedded && compactEmbedded
+                    ? { xs: "calc(100dvh - 150px)", md: "72vh" }
+                    : { xs: "calc(100dvh - 170px)", md: "78vh" },
                 position: "relative",
-                py: { xs: 1, md: 2 },
+                py: embedded && compactEmbedded ? { xs: 0, md: 0.5 } : { xs: 1, md: 2 },
                 order: { xs: 0, md: activeViewer ? 1 : 0 },
               }}
             >
               {/* Clickable Orb for Voice Activation */}
+              {shouldRenderVoiceOrb && (
               <Box
                 onClick={interactionMode === "voice" ? handleVoiceToggle : undefined}
                 sx={{
@@ -1392,7 +1437,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 </Box>
 
                 {/* Mic Icon Overlay - shows on hover or when idle (voice mode only) */}
-                {interactionMode === "voice" && (
+                {!disableVoiceMode && interactionMode === "voice" && (
                 <Box
                   sx={{
                     position: "absolute",
@@ -1435,8 +1480,10 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 </Box>
                 )}
               </Box>
+              )}
 
               {/* Voice Status Indicator - below orb */}
+              {shouldRenderVoiceOrb && (
               <Typography
                 variant="caption"
                 sx={{
@@ -1463,7 +1510,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                     opacity: 1,
                   },
                 }}
-                onClick={interactionMode === "voice" ? handleVoiceToggle : undefined}
+                onClick={!disableVoiceMode && interactionMode === "voice" ? handleVoiceToggle : undefined}
               >
                 {interactionMode === "chat"
                   ? "CHAT MODE"
@@ -1473,6 +1520,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                       ? transcript || "LISTENING..."
                       : "TAP ORB TO SPEAK"}
               </Typography>
+              )}
 
               <Box
                 ref={scrollRef}

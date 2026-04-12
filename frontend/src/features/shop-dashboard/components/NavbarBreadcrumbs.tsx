@@ -2,6 +2,7 @@ import { styled } from '@mui/material/styles';
 import Typography from '@mui/material/Typography';
 import Breadcrumbs, { breadcrumbsClasses } from '@mui/material/Breadcrumbs';
 import NavigateNextRoundedIcon from '@mui/icons-material/NavigateNextRounded';
+import { useLocation } from 'react-router-dom';
 
 const StyledBreadcrumbs = styled(Breadcrumbs)(({ theme }) => ({
   margin: theme.spacing(1, 0),
@@ -14,11 +15,10 @@ const StyledBreadcrumbs = styled(Breadcrumbs)(({ theme }) => ({
   },
 }));
 
-import { useLocation } from 'react-router-dom';
-
 const routeNameMap: { [key: string]: string } = {
   '/dashboard': 'Home',
   '/queues': 'Queues',
+  '/agent-inbox': 'Agent Inbox',
   '/employees': 'Team',
   '/analytics': 'Analytics',
   '/settings': 'Settings',

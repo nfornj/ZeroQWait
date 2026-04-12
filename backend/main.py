@@ -5,7 +5,7 @@ from starlette.requests import Request
 import re as _re
 import uvicorn
 from contextlib import asynccontextmanager
-from routers import subscriptions, analytics, uploads, data_generation, services, agent, voice, registration, tenants
+from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants
 from modules.auth.router import router as auth_router
 from modules.users.router import router as users_router
 from modules.shops.router import router as shops_router
@@ -33,6 +33,15 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting analytics scheduler...")
     await start_scheduler(run_at_hour=0, run_at_minute=30)  # Run at 00:30 daily
+    
+    # Setup LangGraph checkpoint tables (Phase 1)
+    try:
+        logger.info("Setting up LangGraph checkpoint tables...")
+        from agents.checkpoints import setup_checkpoint_tables
+        await setup_checkpoint_tables()
+        logger.info("LangGraph checkpoint tables ready.")
+    except Exception as e:
+        logger.warning(f"LangGraph checkpoint setup warning: {e}")
     
     # Pre-warm the semantic cache (loads sentence-transformer model) before serving requests.
     # This avoids a 60-90s stall on the first chat request after a pod restart.
@@ -165,6 +174,7 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"]
 app.include_router(data_generation.router, prefix="/api", tags=["Data Generation"])
 app.include_router(services.router, prefix="/api", tags=["Services"])
 app.include_router(agent.router, prefix="/api/agent", tags=["AI Agent"])
+app.include_router(agent_v2.router, prefix="", tags=["AI Agent v2"])
 app.include_router(registration.router, prefix="/api/agent/registration", tags=["Registration"])
 app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
 app.include_router(tenants.router, prefix="/api", tags=["Tenants"])

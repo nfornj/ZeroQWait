@@ -5,6 +5,9 @@ import {
     Typography,
     Button,
     Paper,
+    Card,
+    CardContent,
+    Grid,
     Dialog,
     DialogTitle,
     DialogContent,
@@ -270,23 +273,50 @@ const EmployeeManagementPage: React.FC = () => {
     return (
         <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
             <Header />
-            <Box display="flex" justifyContent="flex-end" alignItems="center" mb={3} mt={2}>
-                {currentTab === 0 && (
-                    <Button
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        onClick={() => setOpenDialog(true)}
-                        disabled={!shopId}
-                    >
-                        Add Employee
-                    </Button>
-                )}
-            </Box>
+
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid size={{ xs: 12, md: 8 }}>
+                    <Card variant="outlined" sx={{ borderRadius: 3 }}>
+                        <CardContent>
+                            <Box display="flex" justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} flexDirection={{ xs: 'column', md: 'row' }} gap={2}>
+                                <Box>
+                                    <Typography variant="h5" sx={{ mb: 0.5, fontWeight: 700 }}>
+                                        Team Management
+                                    </Typography>
+                                    <Typography color="text.secondary">
+                                        Manage employees, assign roles, and review attendance in one place.
+                                    </Typography>
+                                </Box>
+                                {currentTab === 0 && (
+                                    <Button
+                                        variant="contained"
+                                        startIcon={<AddIcon />}
+                                        onClick={() => setOpenDialog(true)}
+                                        disabled={!shopId}
+                                    >
+                                        Add Employee
+                                    </Button>
+                                )}
+                            </Box>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                    <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
+                        <CardContent>
+                            <Typography variant="body2" color="text.secondary">Active Team Members</Typography>
+                            <Typography variant="h4" sx={{ fontWeight: 700, mt: 0.5 }}>
+                                {employees.filter((e) => e.is_active).length}
+                            </Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+            </Grid>
 
             {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>{error}</Alert>}
             {success && <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>{success}</Alert>}
 
-            <Paper sx={{ mb: 3 }}>
+            <Paper variant="outlined" sx={{ mb: 3, borderRadius: 3, overflow: 'hidden' }}>
                 <Tabs value={currentTab} onChange={handleTabChange} aria-label="team management tabs">
                     <Tab label="Employee List" icon={<PeopleIcon />} iconPosition="start" />
                     <Tab label="Attendance Calendar" icon={<CalendarMonthIcon />} iconPosition="start" />
@@ -294,7 +324,7 @@ const EmployeeManagementPage: React.FC = () => {
             </Paper>
 
             {currentTab === 0 && (
-                <Paper sx={{ width: '100%', overflow: 'hidden' }}>
+                <Paper variant="outlined" sx={{ width: '100%', overflow: 'hidden', borderRadius: 3 }}>
                     <TeamDataGrid
                         rows={employees}
                         onDelete={handleRemoveEmployee}

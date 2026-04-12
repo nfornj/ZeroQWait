@@ -1,161 +1,242 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-    Typography,
-    Paper,
-
-    IconButton,
-    Button,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    TextField,
-    Alert,
-    Chip,
-    Box,
-    Stack
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  Grid,
+  Paper,
+  Stack,
+  TextField,
+  Typography,
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
+import { alpha, useTheme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import TvIcon from '@mui/icons-material/Tv';
+import QueueRoundedIcon from '@mui/icons-material/QueueRounded';
+import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import axios from 'axios';
 import Header from '../components/Header';
 import QueueDataGrid from '../components/QueueDataGrid';
-
+import { useShop } from '../../../contexts/ShopContext';
 
 const QueueManagementPage: React.FC = () => {
-    const [queues, setQueues] = useState<any[]>([]);
-    const [shop, setShop] = useState<any>(null);
-    const [open, setOpen] = useState(false);
-    const [newQueueName, setNewQueueName] = useState('');
-    const [error, setError] = useState('');
+  const theme = useTheme();
+  const { shop: contextShop } = useShop();
 
-    useEffect(() => {
-        console.log("QueueManagementPage: AI Version Loaded");
-        fetchShopAndQueues();
-    }, []);
+  const [queues, setQueues] = useState<any[]>([]);
+  const [shop, setShop] = useState<any>(null);
+  const [open, setOpen] = useState(false);
+  const [newQueueName, setNewQueueName] = useState('');
+  const [error, setError] = useState('');
 
-    const fetchShopAndQueues = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            const shopRes = await axios.get(`/shops/my-shops`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+  useEffect(() => {
+    fetchShopAndQueues();
+  }, []);
 
-            if (shopRes.data.length > 0) {
-                const currentShop = shopRes.data[0];
-                setShop(currentShop);
+  const fetchShopAndQueues = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const shopRes = await axios.get(`/shops/my-shops`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-                // Fetch all queues for the shop
-                const queueRes = await axios.get(`/queues/shop/${currentShop.id}/all`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setQueues(queueRes.data);
-            }
-        } catch (err) {
-            // Silently fail - error will show in UI
-        }
-    };
+      if (shopRes.data.length > 0) {
+        const currentShop = shopRes.data[0];
+        setShop(currentShop);
 
-    const handleCreateQueue = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            setError('');
-            await axios.post(`/queues/shop/${shop.id}`,
-                { name: newQueueName },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            setOpen(false);
-            setNewQueueName('');
-            fetchShopAndQueues(); // Refresh list
-        } catch (err: any) {
-            const errorMsg = err.response?.data?.detail || 'Failed to create queue';
-            setError(errorMsg);
-            setOpen(false);
-        }
-    };
+        const queueRes = await axios.get(`/queues/shop/${currentShop.id}/all`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setQueues(queueRes.data);
+      }
+    } catch {
+      // Keep UI usable even if initial fetch fails.
+    }
+  };
 
-    return (
-        <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
-            <Header />
-            <Box display="flex" justifyContent="flex-end" alignItems="center" mb={3} mt={2}>
+  const handleCreateQueue = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      setError('');
+      await axios.post(
+        `/queues/shop/${shop.id}`,
+        { name: newQueueName },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setOpen(false);
+      setNewQueueName('');
+      fetchShopAndQueues();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to create queue');
+      setOpen(false);
+    }
+  };
+
+  const activeQueues = queues.filter((q) => q.is_active).length;
+  const brandPrimary = contextShop?.primary_color || shop?.primary_color || theme.palette.primary.main;
+  const brandSecondary = contextShop?.secondary_color || shop?.secondary_color || brandPrimary;
+
+  return (
+    <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
+      <Header />
+
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid size={{ xs: 12, lg: 8 }}>
+          <Card variant="outlined" sx={{ borderRadius: 3 }}>
+            <CardContent>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between">
+                <Stack spacing={0.5}>
+                  <Typography variant="h5" fontWeight={700}>Queue Operations</Typography>
+                  <Typography color="text.secondary">
+                    Manage your queues, launch public display modes, and monitor queue status in real time.
+                  </Typography>
+                </Stack>
                 <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={() => setOpen(true)}
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => setOpen(true)}
+                  sx={{ alignSelf: { xs: 'flex-start', md: 'center' } }}
                 >
-                    Create Queue
+                  Create Queue
                 </Button>
-            </Box>
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
 
-            {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        <Grid size={{ xs: 12, sm: 4, lg: 1.33 }}>
+          <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
+            <CardContent>
+              <Stack spacing={1}>
+                <QueueRoundedIcon color="primary" />
+                <Typography variant="h5" fontWeight={700}>{queues.length}</Typography>
+                <Typography variant="body2" color="text.secondary">Total Queues</Typography>
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
 
-            {shop && (
-                <Alert severity="info" sx={{ mb: 2 }} icon={<TvIcon />}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                        <Box>
-                            <Typography variant="subtitle2" fontWeight="bold">AI Public Shop Display</Typography>
-                            <Typography variant="body2">
-                                Launch the animated AI voice agent for your shop queue
-                            </Typography>
-                        </Box>
-                        <Stack direction="row" spacing={2}>
-                            <Button
-                                variant="outlined"
-                                size="small"
-                                startIcon={<TvIcon />}
-                                onClick={() => window.open(`/display/${shop.id}`, '_blank')}
-                            >
-                                Standard Display
-                            </Button>
-                            <Button
-                                variant="contained"
-                                color="secondary"
-                                size="small"
-                                startIcon={<TvIcon />}
-                                onClick={() => window.open(`/shop-ai/${shop.id}`, '_blank')}
-                                sx={{ borderRadius: 4, fontWeight: 'bold' }}
-                            >
-                                Launch AI Agent
-                            </Button>
-                        </Stack>
-                    </Box>
-                </Alert>
-            )}
+        <Grid size={{ xs: 12, sm: 4, lg: 1.33 }}>
+          <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
+            <CardContent>
+              <Stack spacing={1}>
+                <CheckCircleRoundedIcon color="success" />
+                <Typography variant="h5" fontWeight={700}>{activeQueues}</Typography>
+                <Typography variant="body2" color="text.secondary">Active Queues</Typography>
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
 
-            <Paper sx={{ width: '100%', overflow: 'hidden' }}>
-                <QueueDataGrid
-                    rows={queues}
-                    onEdit={(queue) => {
-                        // For now just allow editing name via same dialog logic if we want, 
-                        // or just keep it simple. The original code didn't have edit.
-                        // We'll treat "Create" as the only action for now or repurpose.
-                        // Let's just log or ignore for this step as backend might not support update yet.
-                        console.log('Edit queue', queue);
-                    }}
-                />
-            </Paper>
+        <Grid size={{ xs: 12, sm: 4, lg: 1.33 }}>
+          <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
+            <CardContent>
+              <Stack spacing={1}>
+                <PeopleRoundedIcon color="secondary" />
+                <Typography variant="h5" fontWeight={700}>{shop ? 1 : 0}</Typography>
+                <Typography variant="body2" color="text.secondary">Connected Shops</Typography>
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
 
-            <Dialog open={open} onClose={() => setOpen(false)}>
-                <DialogTitle>Create New Queue</DialogTitle>
-                <DialogContent>
-                    <TextField
-                        autoFocus
-                        margin="dense"
-                        label="Queue Name"
-                        fullWidth
-                        value={newQueueName}
-                        onChange={(e) => setNewQueueName(e.target.value)}
-                        placeholder="e.g., Barber 2, Walk-ins"
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOpen(false)}>Cancel</Button>
-                    <Button onClick={handleCreateQueue} variant="contained">Create</Button>
-                </DialogActions>
-            </Dialog>
-        </Box>
-    );
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+      {shop && (
+        <Card
+          variant="outlined"
+          sx={{
+            mb: 2,
+            borderRadius: 3,
+            borderColor: alpha(brandPrimary, 0.3),
+            background: `linear-gradient(135deg, ${alpha(brandPrimary, 0.2)} 0%, ${alpha(brandSecondary, 0.15)} 100%)`,
+            backdropFilter: 'blur(18px)',
+          }}
+        >
+          <CardContent>
+            <Stack spacing={1.5}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <TvIcon sx={{ color: brandPrimary }} />
+                <Typography variant="subtitle1" fontWeight={700}>AI Public Shop Display</Typography>
+              </Stack>
+              <Typography variant="body2" sx={{ color: alpha(theme.palette.text.primary, 0.82) }}>
+                Launch your public queue display or open the AI-powered customer experience surface.
+              </Typography>
+              <Divider />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<TvIcon />}
+                  onClick={() => window.open(`/display/${shop.id}`, '_blank')}
+                  sx={{
+                    color: brandPrimary,
+                    borderColor: alpha(brandPrimary, 0.5),
+                    bgcolor: alpha('#ffffff', theme.palette.mode === 'dark' ? 0.04 : 0.35),
+                  }}
+                >
+                  Standard Display
+                </Button>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<TvIcon />}
+                  onClick={() => window.open(`/shop-ai/${shop.id}`, '_blank')}
+                  sx={{
+                    fontWeight: 700,
+                    background: `linear-gradient(135deg, ${brandPrimary}, ${brandSecondary})`,
+                    boxShadow: `0 10px 24px ${alpha(brandPrimary, 0.3)}`,
+                    '&:hover': {
+                      background: `linear-gradient(135deg, ${alpha(brandPrimary, 0.9)}, ${alpha(brandSecondary, 0.9)})`,
+                    },
+                  }}
+                >
+                  Launch AI Agent
+                </Button>
+              </Stack>
+            </Stack>
+          </CardContent>
+        </Card>
+      )}
+
+      <Paper sx={{ width: '100%', overflow: 'hidden', borderRadius: 3 }} variant="outlined">
+        <QueueDataGrid
+          rows={queues}
+          onEdit={(queue) => {
+            console.log('Edit queue', queue);
+          }}
+        />
+      </Paper>
+
+      <Dialog open={open} onClose={() => setOpen(false)}>
+        <DialogTitle>Create New Queue</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Queue Name"
+            fullWidth
+            value={newQueueName}
+            onChange={(e) => setNewQueueName(e.target.value)}
+            placeholder="e.g., Barber 2, Walk-ins"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <Button onClick={handleCreateQueue} variant="contained">Create</Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
 };
 
 export default QueueManagementPage;

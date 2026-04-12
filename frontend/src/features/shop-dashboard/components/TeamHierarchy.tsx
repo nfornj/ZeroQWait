@@ -204,7 +204,7 @@ export default function TeamHierarchy() {
     return (
         <Card
             variant="outlined"
-            sx={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}
+            sx={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1, bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}
         >
             <CardContent>
                 <Typography component="h2" variant="subtitle2">

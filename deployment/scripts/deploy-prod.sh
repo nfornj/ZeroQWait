@@ -116,6 +116,7 @@ fi
 
 echo "==> Ensuring required namespaces exist"
 kctl create namespace zeroqwait --dry-run=client -o yaml | kctl apply -f -
+kctl create namespace llm --dry-run=client -o yaml | kctl apply -f -
 
 sudo env \
   SKIP_TESTS="${SKIP_TESTS:-true}" \
@@ -128,6 +129,13 @@ sudo env \
   bash "${PROJECT_ROOT}/deployment/scripts/run-local-pipeline.sh"
 
 echo "==> Applying K8s manifests"
+echo "==> Applying shared LLM manifests"
+kctl apply -f "${K8S_MANIFESTS}/ollama-pvc.yaml"
+kctl apply -f "${K8S_MANIFESTS}/ollama-deployment.yaml"
+
+echo "==> Waiting for shared LLM rollout"
+kctl rollout status deployment/ollama -n llm --timeout=900s
+
 echo "==> Applying core data manifests (Postgres/Redis)"
 kctl apply -f "${K8S_MANIFESTS}/postgres-secret.yaml"
 kctl apply -f "${K8S_MANIFESTS}/postgres-pvc.yaml"

@@ -37,6 +37,15 @@ const themePalettes: Record<ThemePreset, { primary: string; secondary: string }>
     corporate: { primary: '#1565c0', secondary: '#42a5f5' },
 };
 
+const appFontFamily = [
+    'Inter',
+    'Segoe UI',
+    'Roboto',
+    'Helvetica Neue',
+    'Arial',
+    'sans-serif',
+].join(',');
+
 export const gradientPresets: Record<GradientPreset, { light: string; dark: string }> = {
     minimal: { light: 'none', dark: 'none' },
     violet: {
@@ -108,6 +117,24 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     main: themePalettes[themePreset].secondary,
                 },
                 // ...
+            },
+            typography: {
+                fontFamily: appFontFamily,
+                h1: { fontWeight: 700, letterSpacing: '-0.02em' },
+                h2: { fontWeight: 700, letterSpacing: '-0.02em' },
+                h3: { fontWeight: 700, letterSpacing: '-0.015em' },
+                h4: { fontWeight: 700, letterSpacing: '-0.01em' },
+                h5: { fontWeight: 650 },
+                h6: { fontWeight: 650 },
+                subtitle1: { fontWeight: 600 },
+                subtitle2: { fontWeight: 600 },
+                body1: { fontWeight: 500 },
+                body2: { fontWeight: 500 },
+                button: {
+                    fontWeight: 600,
+                    letterSpacing: '0.01em',
+                    textTransform: 'none',
+                },
             },
             // ...
         });
