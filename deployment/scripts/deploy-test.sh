@@ -252,13 +252,15 @@ echo "==> Test deployment successful"
 echo "    Frontend: http://localhost:${FRONTEND_PUBLISHED_PORT}"
 echo "    Backend : http://localhost:${BACKEND_PUBLISHED_PORT}"
 
+ARCHIVE_SERVICES="${TEST_ARCHIVE_SERVICES:-backend,frontend}"
 echo "==> Archiving test images to local registry (retain last 3 tags)"
+echo "==> Archive services: ${ARCHIVE_SERVICES}"
 sudo env \
 	SKIP_TESTS="true" \
 	IMAGE_NAMESPACE="test" \
 	RETAIN_VERSIONS="3" \
 	SKIP_REGISTRY_PRUNE="false" \
-	SERVICES="backend,frontend,asr-service,tts-service,voice-mcp" \
+	SERVICES="${ARCHIVE_SERVICES}" \
 	AUTO_COMMIT="false" \
 	ARGOCD_SYNC="false" \
 	bash "${PROJECT_ROOT}/deployment/scripts/run-local-pipeline.sh"
