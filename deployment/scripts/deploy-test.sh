@@ -79,10 +79,10 @@ cat > "${CI_OVERRIDE_FILE}" <<'EOF'
 services:
   backend:
     volumes: []
-		environment:
-			- OLLAMA_URL=${SHARED_OLLAMA_URL}
-			- MODEL_NAME=${SHARED_MODEL_NAME}
-			- TTS_SERVICE_URL=${SHARED_TTS_URL}
+    environment:
+      - OLLAMA_URL=${SHARED_OLLAMA_URL}
+      - MODEL_NAME=${SHARED_MODEL_NAME}
+      - TTS_SERVICE_URL=${SHARED_TTS_URL}
     command: /opt/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 EOF
 
