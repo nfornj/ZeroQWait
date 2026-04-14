@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, JSON
 from datetime import datetime
 from database import Base
 
@@ -36,5 +36,22 @@ class AgentKnowledge(Base):
     key = Column(String, unique=True, index=True, nullable=False)
     content = Column(Text, nullable=False)
     description = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AgentMemory(Base):
+    __tablename__ = "agent_memory"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, index=True, nullable=False)
+    user_id = Column(Integer, index=True, nullable=True)
+    memory_type = Column(String, index=True, nullable=False, default="episodic")
+    content = Column(Text, nullable=False)
+    source = Column(String, nullable=True)
+    importance_score = Column(Float, nullable=False, default=0.5)
+    memory_meta = Column(JSON, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    last_accessed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

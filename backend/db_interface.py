@@ -11,7 +11,7 @@ from database import SessionLocal
 from models import (
     User, Shop, Queue, QueueItem, ShopEmployee, EmployeeShift, 
     ShopService, ShopCustomer, DailyAnalytics, ConversationHistory, CategoryAlias, 
-    LearnedSynonym, AgentKnowledge
+    LearnedSynonym, AgentKnowledge, AgentMemory
 )
 import schemas
 
@@ -630,6 +630,104 @@ class DatabaseInterface:
                 db.add(item)
                 db.commit()
                 db.refresh(item)
+            return self._model_to_dict(item)
+        finally:
+            db.close()
+
+    # --- Agent Memory (tenant-scoped, extensible for vector search) ---
+    def add_agent_memory(
+        self,
+        shop_id: int,
+        content: str,
+        memory_type: str = "episodic",
+        user_id: Optional[int] = None,
+        source: Optional[str] = None,
+        importance_score: float = 0.5,
+        memory_meta: Optional[Dict[str, Any]] = None,
+    ) -> Dict:
+        db = self.get_session()
+        try:
+            item = AgentMemory(
+                shop_id=shop_id,
+                user_id=user_id,
+                memory_type=memory_type,
+                content=content,
+                source=source,
+                importance_score=max(0.0, min(1.0, importance_score)),
+                memory_meta=memory_meta or {},
+                is_active=True,
+                created_at=datetime.utcnow(),
+            )
+            db.add(item)
+            db.commit()
+            db.refresh(item)
+            return self._model_to_dict(item)
+        finally:
+            db.close()
+
+    def get_agent_memories(
+        self,
+        shop_id: int,
+        memory_type: Optional[str] = None,
+        user_id: Optional[int] = None,
+        limit: int = 50,
+    ) -> List[Dict]:
+        db = self.get_session()
+        try:
+            query = db.query(AgentMemory).filter(
+                AgentMemory.shop_id == shop_id,
+                AgentMemory.is_active == True,
+            )
+            if memory_type:
+                query = query.filter(AgentMemory.memory_type == memory_type)
+            if user_id is not None:
+                query = query.filter(AgentMemory.user_id == user_id)
+
+            items = query.order_by(
+                desc(AgentMemory.importance_score),
+                desc(AgentMemory.created_at),
+            ).limit(limit).all()
+            return [self._model_to_dict(item) for item in items]
+        finally:
+            db.close()
+
+    def search_agent_memories(
+        self,
+        shop_id: int,
+        query_text: str,
+        memory_type: Optional[str] = None,
+        user_id: Optional[int] = None,
+        limit: int = 20,
+    ) -> List[Dict]:
+        db = self.get_session()
+        try:
+            query = db.query(AgentMemory).filter(
+                AgentMemory.shop_id == shop_id,
+                AgentMemory.is_active == True,
+                AgentMemory.content.ilike(f"%{query_text}%"),
+            )
+            if memory_type:
+                query = query.filter(AgentMemory.memory_type == memory_type)
+            if user_id is not None:
+                query = query.filter(AgentMemory.user_id == user_id)
+
+            items = query.order_by(
+                desc(AgentMemory.importance_score),
+                desc(AgentMemory.created_at),
+            ).limit(limit).all()
+            return [self._model_to_dict(item) for item in items]
+        finally:
+            db.close()
+
+    def touch_agent_memory(self, memory_id: int) -> Optional[Dict]:
+        db = self.get_session()
+        try:
+            item = db.query(AgentMemory).filter(AgentMemory.id == memory_id).first()
+            if not item:
+                return None
+            item.last_accessed_at = datetime.utcnow()
+            db.commit()
+            db.refresh(item)
             return self._model_to_dict(item)
         finally:
             db.close()

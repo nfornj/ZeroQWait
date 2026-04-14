@@ -30,17 +30,20 @@ from fastapi.responses import StreamingResponse
 from typing import Dict, Any, cast, Optional
 import json
 import logging
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
 
 from agents.supervisor import create_supervisor_runnable
+from agents.memory_context import merge_and_rank_memories, format_memory_context
 from agents.state import AgentState
 from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_saver
 from shared.auth_utils import get_current_user
+from db_interface import DatabaseInterface
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v2/agent", tags=["agent_v2"])
+db_interface = DatabaseInterface()
 
 
 # PostgreSQL checkpoint persistence is mandatory.
@@ -125,6 +128,66 @@ def _get_owned_shop_ids(current_user: Dict[str, Any]) -> list[int]:
         db.close()
 
 
+def _persist_chat_turn_memory(
+    *,
+    shop_id: int,
+    user_id: int,
+    user_message: str,
+    assistant_response: str,
+    route: str,
+) -> None:
+    """Best-effort persistence for tenant-scoped owner chat memory."""
+    try:
+        db_interface.add_agent_memory(
+            shop_id=shop_id,
+            user_id=user_id,
+            memory_type="chat_user",
+            content=user_message,
+            source=route,
+            importance_score=0.6,
+            memory_meta={"role": "user"},
+        )
+        db_interface.add_agent_memory(
+            shop_id=shop_id,
+            user_id=user_id,
+            memory_type="chat_assistant",
+            content=assistant_response,
+            source=route,
+            importance_score=0.7,
+            memory_meta={"role": "assistant"},
+        )
+    except Exception as e:
+        logger.warning("Agent memory persistence failed (non-fatal): %s", str(e))
+
+
+def _build_memory_context(shop_id: int, user_id: int, query_text: str) -> str:
+    """Best-effort retrieval of tenant-scoped memory context for supervisor input."""
+    try:
+        relevant = db_interface.search_agent_memories(
+            shop_id=shop_id,
+            query_text=query_text,
+            user_id=user_id,
+            limit=6,
+        )
+        recent = db_interface.get_agent_memories(
+            shop_id=shop_id,
+            user_id=user_id,
+            limit=8,
+        )
+        selected = merge_and_rank_memories(relevant, recent, max_items=8)
+
+        # Touch selected memories for recency tracking.
+        for memory in selected:
+            memory_id = memory.get("id")
+            if isinstance(memory_id, int):
+                db_interface.touch_agent_memory(memory_id)
+
+        return format_memory_context(selected)
+    except Exception as e:
+        logger.warning("Agent memory retrieval failed (non-fatal): %s", str(e))
+        return ""
+
+
 # ============================================================================
 # Chat Endorsement - Synchronous
 # ============================================================================
@@ -192,8 +255,14 @@ async def chat_sync(
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
     
     # Create initial state
+    memory_context = _build_memory_context(shop_id, int(user_id), message)
+    input_messages = []
+    if memory_context:
+        input_messages.append(SystemMessage(content=memory_context))
+    input_messages.append(HumanMessage(content=message))
+
     initial_state: AgentState = {
-        "messages": [HumanMessage(content=message)],
+        "messages": input_messages,
         "tenant_id": shop_id,
         "user_id": int(user_id),
         "current_agent": "supervisor",
@@ -219,6 +288,14 @@ async def chat_sync(
             response_text = getattr(final_message, "content", str(final_message))
         else:
             response_text = "No response"
+
+        _persist_chat_turn_memory(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            user_message=message,
+            assistant_response=response_text,
+            route="/api/v2/agent/chat",
+        )
         
         return {
             "response": response_text,
@@ -297,8 +374,14 @@ async def chat_stream(
             checkpoint_config = build_checkpoint_config(shop_id, user_id)
             
             # Create initial state
+            memory_context = _build_memory_context(shop_id, int(user_id), message)
+            input_messages = []
+            if memory_context:
+                input_messages.append(SystemMessage(content=memory_context))
+            input_messages.append(HumanMessage(content=message))
+
             initial_state: AgentState = {
-                "messages": [HumanMessage(content=message)],
+                "messages": input_messages,
                 "tenant_id": shop_id,
                 "user_id": int(user_id),
                 "current_agent": "supervisor",
@@ -323,6 +406,14 @@ async def chat_stream(
                 response_text = getattr(final_message, "content", str(final_message))
             else:
                 response_text = "No response"
+
+            _persist_chat_turn_memory(
+                shop_id=shop_id,
+                user_id=int(user_id),
+                user_message=message,
+                assistant_response=response_text,
+                route="/api/v2/agent/chat/stream",
+            )
             
             # Stream response as typed tokens (simulation)
             for char in response_text:
