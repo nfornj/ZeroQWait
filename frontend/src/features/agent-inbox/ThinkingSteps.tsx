@@ -106,7 +106,20 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
     );
   });
 
-  const doneCount = pipeline.filter((s) => s.status === "done").length;
+  // Some streams move a step from pending->done too quickly to ever paint "active".
+  // Keep the first pending step visibly active while the pipeline is in progress.
+  const hasActiveStep = pipeline.some((s) => s.status === "active");
+  const displayPipeline: ThinkingStep[] = !isComplete && !hasActiveStep
+    ? (() => {
+        const firstPendingIndex = pipeline.findIndex((s) => s.status === "pending");
+        if (firstPendingIndex < 0) return pipeline;
+        return pipeline.map((s, idx) =>
+          idx === firstPendingIndex ? { ...s, status: "active" as const } : s,
+        );
+      })()
+    : pipeline;
+
+  const doneCount = displayPipeline.filter((s) => s.status === "done").length;
 
   return (
     <Box
@@ -139,7 +152,7 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
       >
         <Stack direction="row" spacing={0.6} alignItems="center">
           {/* Compact dot-row summary */}
-          {pipeline.map((s) => (
+          {displayPipeline.map((s) => (
             <Box
               key={s.step}
               sx={{
@@ -186,8 +199,8 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
       {/* Expandable pipeline steps */}
       <Collapse in={expanded}>
         <Box sx={{ px: 1.5, pt: 0.5, pb: 1.25 }}>
-          {pipeline.map((step, idx) => {
-            const isLast = idx === pipeline.length - 1;
+          {displayPipeline.map((step, idx) => {
+            const isLast = idx === displayPipeline.length - 1;
             return (
               <Box
                 key={step.step}
@@ -208,7 +221,7 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
                     flexShrink: 0,
                   }}
                 >
-                  <StepIcon status={step.status} color={accent} />
+                  <StepIcon status={step.status} color={processingColor} />
                   {!isLast && (
                     <Box
                       sx={{
