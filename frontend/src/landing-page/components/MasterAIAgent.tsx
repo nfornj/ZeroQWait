@@ -2010,8 +2010,8 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                     )}
                   </Box>
                 ))}
-                {/* Thinking indicator - shows in chat while processing */}
-                {isProcessing && (
+                {/* Thinking indicator - suppressed when embedded (AgentInbox shows ThinkingSteps instead) */}
+                {isProcessing && !(embedded && compactEmbedded) && (
                   <Box
                     sx={{
                       width: "100%",
