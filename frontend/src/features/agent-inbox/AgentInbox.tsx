@@ -23,7 +23,6 @@ import {
 } from "@mui/material";
 import AutorenewRoundedIcon from "@mui/icons-material/AutorenewRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import { useShop } from "../../contexts/ShopContext";
 import AgentFeed from "./AgentFeed";
 import ApprovalCard from "./ApprovalCard";
@@ -725,7 +724,6 @@ const AgentInbox: React.FC = () => {
                     <Button
                       variant="text"
                       onClick={() => setInsightsOpen((o) => !o)}
-                      startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />}
                       endIcon={
                         <ExpandMoreRoundedIcon
                           sx={{
@@ -736,20 +734,16 @@ const AgentInbox: React.FC = () => {
                         />
                       }
                       sx={{
-                        color: brandPrimary,
+                        color: "#0078d4",
                         textTransform: "none",
                         fontSize: "0.8rem",
                         lineHeight: 1.2,
                         fontWeight: 600,
                         py: 0,
-                        px: 0.25,
+                        px: 0,
                         minHeight: 22,
                         minWidth: "auto",
                         justifyContent: "flex-start",
-                        "& .MuiButton-startIcon": {
-                          marginLeft: 0,
-                          marginRight: 0.5,
-                        },
                         "& .MuiButton-endIcon": {
                           marginLeft: 0.25,
                           marginRight: 0,
