@@ -1,5 +1,6 @@
 """Utilities for selecting and formatting tenant-scoped agent memories."""
 
+import json
 from typing import Dict, List
 
 
@@ -42,3 +43,65 @@ def format_memory_context(memories: List[Dict], max_chars_per_item: int = 240) -
         lines.append(f"{idx}. [{memory_type}] {content}")
 
     return "\n".join(lines)
+
+
+def save_conversation_turn(
+    redis_client,
+    shop_id: str,
+    user_id: str,
+    role: str,
+    content: str,
+    max_turns: int = 20,
+) -> None:
+    """Save one conversation message to Redis list conv:{shop_id}:{user_id}."""
+    if not getattr(redis_client, "enabled", False):
+        return
+
+    client = getattr(redis_client, "client", None)
+    if client is None:
+        return
+
+    if role not in {"user", "assistant"}:
+        return
+
+    payload = json.dumps({"role": role, "content": str(content or "")})
+    key = f"conv:{shop_id}:{user_id}"
+
+    try:
+        client.rpush(key, payload)
+        client.ltrim(key, -max_turns * 2, -1)
+    except Exception:
+        return
+
+
+def get_conversation_history(redis_client, shop_id: str, user_id: str) -> List[Dict]:
+    """Get stored conversation messages from Redis key conv:{shop_id}:{user_id}."""
+    if not getattr(redis_client, "enabled", False):
+        return []
+
+    client = getattr(redis_client, "client", None)
+    if client is None:
+        return []
+
+    key = f"conv:{shop_id}:{user_id}"
+    try:
+        raw_items = client.lrange(key, 0, -1)
+    except Exception:
+        return []
+
+    if not raw_items:
+        return []
+
+    history: List[Dict] = []
+    for raw in raw_items:
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            continue
+
+        role = parsed.get("role")
+        content = parsed.get("content")
+        if role in {"user", "assistant"} and isinstance(content, str):
+            history.append({"role": role, "content": content})
+
+    return history

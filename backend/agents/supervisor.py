@@ -89,6 +89,8 @@ from langgraph.types import Command, interrupt
 
 from .state import AgentState
 from .tools import booking_tools, hr_tools
+from .memory_context import get_conversation_history, save_conversation_turn
+from redis_client import redis_client
 
 
 _FINANCE_MONTH_TOKENS = [
@@ -300,6 +302,55 @@ def _latest_user_text(state: AgentState) -> str:
     return ""
 
 
+def _conversation_history_messages(state: AgentState) -> List[BaseMessage]:
+    """Load persisted per-shop conversation history from Redis and map to messages."""
+    shop_id = state.get("tenant_id")
+    user_id = state.get("user_id")
+    if shop_id is None or user_id is None:
+        return []
+
+    history_items = get_conversation_history(redis_client, str(shop_id), str(user_id))
+    history_messages: List[BaseMessage] = []
+    for item in history_items:
+        role = item.get("role")
+        content = str(item.get("content", ""))
+        if not content:
+            continue
+        if role == "user":
+            history_messages.append(HumanMessage(content=content))
+        elif role == "assistant":
+            history_messages.append(AIMessage(content=content))
+    return history_messages
+
+
+def _persist_conversation_turns(state: AgentState, assistant_text: str) -> None:
+    """Persist user and assistant turns to Redis conversation history."""
+    shop_id = state.get("tenant_id")
+    user_id = state.get("user_id")
+    if shop_id is None or user_id is None:
+        return
+
+    user_text = _latest_user_text(state).strip()
+    assistant_text = str(assistant_text or "").strip()
+
+    if user_text:
+        save_conversation_turn(
+            redis_client,
+            str(shop_id),
+            str(user_id),
+            "user",
+            user_text,
+        )
+    if assistant_text:
+        save_conversation_turn(
+            redis_client,
+            str(shop_id),
+            str(user_id),
+            "assistant",
+            assistant_text,
+        )
+
+
 def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
     """
     Classify owner's intent from the latest message.
@@ -446,6 +497,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
         )
 
     llm = get_llm()
+    history_messages = _conversation_history_messages(state)
 
     # Classification prompt
     classification_prompt = f"""Classify the following shop owner command into one of these categories:
@@ -461,7 +513,7 @@ Respond with ONLY the category name (one word): booking, finance, hr, or general
     
     # Get classification
     try:
-        response = llm.invoke([HumanMessage(content=classification_prompt)])
+        response = llm.invoke(history_messages + [HumanMessage(content=classification_prompt)])
         raw_content = response.content
         if isinstance(raw_content, str):
             intent = raw_content.strip().lower()
@@ -604,7 +656,9 @@ def synthesize_response(state: AgentState) -> dict:
     """
     
     # Get conversation history
-    messages = state.get("messages", [])
+    messages = list(state.get("messages", []) or [])
+    history_messages = _conversation_history_messages(state)
+    llm_messages = history_messages + messages
     metadata = state.get("metadata") or {}
 
     current_agent = state.get("current_agent", "supervisor")
@@ -616,8 +670,9 @@ def synthesize_response(state: AgentState) -> dict:
                 mixed_intents=(metadata.get("mixed_intents") or None),
             )
         )
+        _persist_conversation_turns(state, str(clarifier.content))
         return {
-            "messages": list(messages) + [clarifier],
+            "messages": messages + [clarifier],
             "tool_results": state.get("tool_results"),
             "metadata": _merge_metadata(state, {"requires_clarification": False}),
         }
@@ -635,8 +690,9 @@ def synthesize_response(state: AgentState) -> dict:
                     followup = AIMessage(
                         content=_clarifying_prompt(_latest_user_text(state), mixed_intents=next_domains)
                     )
+                    _persist_conversation_turns(state, str(followup.content))
                     return {
-                        "messages": list(messages) + [followup],
+                        "messages": messages + [followup],
                         "tool_results": state.get("tool_results"),
                         "metadata": _merge_metadata(
                             state,
@@ -646,8 +702,9 @@ def synthesize_response(state: AgentState) -> dict:
                             },
                         ),
                     }
+            _persist_conversation_turns(state, str(last_message.content))
             return {
-                "messages": list(messages),
+                "messages": messages,
                 "tool_results": state.get("tool_results"),
             }
 
@@ -676,19 +733,21 @@ If a specialist agent already produced raw output, synthesize it into:
     
     # Invoke LLM
     try:
-        response = llm.invoke([SystemMessage(content=system_prompt)] + list(messages))
+        response = llm.invoke([SystemMessage(content=system_prompt)] + llm_messages)
     except Exception:
         fallback = AIMessage(
             content="I can help with operations across receptionist, finance, and HR. "
                     "Tell me what you want to do and I will route it to the right agent."
         )
+        _persist_conversation_turns(state, str(fallback.content))
         return {
-            "messages": list(messages) + [fallback],
+            "messages": messages + [fallback],
             "tool_results": state.get("tool_results")
         }
     
     # Add response to messages
-    messages_with_response = list(messages) + [response]
+    messages_with_response = messages + [response]
+    _persist_conversation_turns(state, str(getattr(response, "content", "")))
     
     return {
         "messages": messages_with_response,
