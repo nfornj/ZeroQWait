@@ -12,6 +12,7 @@ import {
   Divider,
   FormControl,
   Grid,
+  IconButton,
   InputLabel,
   MenuItem,
   Select,
@@ -720,38 +721,23 @@ const AgentInbox: React.FC = () => {
                 }}
                 initialChatHistory={ownerInitialChatHistory}
                 embeddedFooter={
-                  <Box sx={{ width: "100%", pt: 0.25 }}>
-                    <Button
-                      variant="text"
+                  <Box sx={{ width: "100%" }}>
+                    <IconButton
+                      size="small"
                       onClick={() => setInsightsOpen((o) => !o)}
-                      endIcon={
-                        <ExpandMoreRoundedIcon
-                          sx={{
-                            fontSize: 16,
-                            transition: "transform 0.18s",
-                            transform: insightsOpen ? "rotate(180deg)" : "rotate(0deg)",
-                          }}
-                        />
-                      }
                       sx={{
                         color: "#0078d4",
-                        textTransform: "none",
-                        fontSize: "0.8rem",
-                        lineHeight: 1.2,
-                        fontWeight: 600,
-                        py: 0,
-                        px: 0,
-                        minHeight: 22,
-                        minWidth: "auto",
-                        justifyContent: "flex-start",
-                        "& .MuiButton-endIcon": {
-                          marginLeft: 0.25,
-                          marginRight: 0,
-                        },
+                        p: 0.25,
                       }}
                     >
-                      Context Snapshot
-                    </Button>
+                      <ExpandMoreRoundedIcon
+                        sx={{
+                          fontSize: 18,
+                          transition: "transform 0.18s",
+                          transform: insightsOpen ? "rotate(180deg)" : "rotate(0deg)",
+                        }}
+                      />
+                    </IconButton>
                     <Collapse in={insightsOpen} unmountOnExit>
                       <Box mt={0.75}>
                         <AgentInsights
