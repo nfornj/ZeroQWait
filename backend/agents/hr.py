@@ -25,7 +25,12 @@ Data sources:
 - employee_clock_in_out table (if tracking time)
 """
 
+import json as _json
+import os
+import re
+
 from langchain_core.messages import AIMessage, BaseMessage
+from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 
 from .state import AgentState
@@ -35,6 +40,74 @@ from .tools import hr_tools
 def classify_entry(state: AgentState) -> dict:
     """No-op node so conditional routing can inspect state safely."""
     return {}
+
+
+def _latest_user_text(state: AgentState) -> str:
+    messages = state.get("messages", [])
+    if not messages:
+        return ""
+    latest = messages[-1]
+    return str(latest.content) if isinstance(latest, BaseMessage) else str(latest)
+
+
+def _ollama_base_url() -> str:
+    base_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1").rstrip("/")
+    if base_url.endswith("/v1"):
+        return base_url[:-3]
+    return base_url
+
+
+def _get_hr_writer_llm() -> ChatOllama:
+    return ChatOllama(
+        model=os.getenv("MODEL_NAME", "gpt-oss:20b"),
+        base_url=_ollama_base_url(),
+        temperature=0.2,
+        top_p=0.9,
+    )
+
+
+def _generate_hr_response(
+    state: AgentState,
+    response_type: str,
+    facts: dict,
+    *,
+    extra_instructions: str = "",
+) -> str:
+    query = _latest_user_text(state)
+    llm = _get_hr_writer_llm()
+    style_rules = [
+        "You are the HR assistant agent for a service business.",
+        "Your role is workforce operations: employees, shifts, availability, and attendance actions.",
+        "Use only the data in FACTS_JSON and never fabricate names, schedules, or statuses.",
+        "Be concise, professional, and action-oriented.",
+        "Do not mention internal systems, JSON, tools, routing, or shop_id unless the user asked.",
+        "No emojis.",
+        "Use bullets only when listing employees, shifts, or availability groups.",
+    ]
+    if extra_instructions:
+        style_rules.append(extra_instructions)
+
+    prompt = (
+        "\n".join(style_rules)
+        + f"\n\nRESPONSE_TYPE: {response_type}"
+        + f"\nUSER_QUESTION: {_json.dumps(query)}"
+        + f"\nFACTS_JSON: {_json.dumps(facts, default=str)}"
+        + "\n\nReturn only the owner-facing HR response text."
+    )
+
+    try:
+        response = llm.invoke([{"role": "user", "content": prompt}])
+        content = response.content if hasattr(response, "content") else str(response)
+        if isinstance(content, list):
+            content = " ".join(str(chunk) for chunk in content)
+        text = str(content).strip()
+        text = re.sub(r"^```(?:text|markdown)?\s*", "", text).rstrip("`").strip()
+        if text:
+            return text
+    except Exception:
+        pass
+
+    return "I have the HR data, but I couldn't phrase a clean response right now."
 
 
 def hr_intent_classifier(state: AgentState) -> str:
@@ -78,16 +151,14 @@ def handle_list_employees(state: AgentState) -> dict:
         response = AIMessage(content=f"I couldn't load the employee roster: {result['error']}")
         return {"messages": list(state["messages"]) + [response], "tool_results": result}
 
-    employees = result.get("employees", [])
-    if employees:
-        lines = [
-            f"{index}. {employee.get('user', {}).get('username', f'User {employee.get("user_id")}')} - {'Active' if employee.get('is_active') else 'Inactive'}"
-            for index, employee in enumerate(employees, start=1)
-        ]
-        content = f"👥 Employees for Shop {shop_id}:\n" + "\n".join(lines) + f"\n\nTotal: {result.get('count', len(employees))} employees"
-    else:
-        content = "There are no employees configured for this shop yet."
-    response = AIMessage(content=content)
+    response = AIMessage(
+        content=_generate_hr_response(
+            state,
+            "list_employees",
+            result,
+            extra_instructions="If employees exist, provide a clear roster with active/inactive status and total count.",
+        )
+    )
     
     return {
         "messages": list(state["messages"]) + [response],
@@ -133,16 +204,14 @@ def handle_shift_schedule(state: AgentState) -> dict:
         response = AIMessage(content=f"I couldn't load today's shifts: {result['error']}")
         return {"messages": list(state["messages"]) + [response], "tool_results": result}
 
-    shifts = result.get("shifts", [])
-    if shifts:
-        lines = [
-            f"- User {shift.get('user_id')}: {shift.get('clock_in')} to {shift.get('clock_out') or 'active'}"
-            for shift in shifts[:8]
-        ]
-        content = f"📅 Today's Shift Schedule (Shop {shop_id}):\n" + "\n".join(lines)
-    else:
-        content = "No shifts are scheduled for today yet."
-    response = AIMessage(content=content)
+    response = AIMessage(
+        content=_generate_hr_response(
+            state,
+            "shift_schedule",
+            result,
+            extra_instructions="Summarize today's shifts and highlight unfilled or inactive coverage if implied by data.",
+        )
+    )
     
     return {
         "messages": list(state["messages"]) + [response],
@@ -171,10 +240,12 @@ def handle_clock_in_out(state: AgentState) -> dict:
 
     shift = result.get("shift", {})
     response = AIMessage(
-        content=f"⏰ Clock Record:"
-                f"\n- Employee User ID: {user_id}"
-                f"\n- Action: Clocked {'In' if action == 'in' else 'Out'}"
-                f"\n- Time: {shift.get('clock_in') if action == 'in' else shift.get('clock_out')}"
+        content=_generate_hr_response(
+            state,
+            "clock_in_out",
+            {**result, "employee_user_id": user_id, "clock_action": action},
+            extra_instructions="Confirm the attendance action and timestamp in the first sentence.",
+        )
     )
     
     return {
@@ -206,10 +277,17 @@ def handle_availability(state: AgentState) -> dict:
         if employee.get("user_id") in active_shift_user_ids
     ]
     response = AIMessage(
-        content=f"🗓️ Availability Check:"
-                f"\n- Available: {', '.join(available) if available else 'No one currently free'}"
-                f"\n- Unavailable: {', '.join(unavailable) if unavailable else 'No active shifts'}"
-                f"\n\nWhich employee would you like to assign?"
+        content=_generate_hr_response(
+            state,
+            "availability",
+            {
+                "employees": employees_result,
+                "shifts": shifts_result,
+                "available": available,
+                "unavailable": unavailable,
+            },
+            extra_instructions="Group people into available and unavailable clearly, then suggest a next staffing action.",
+        )
     )
     
     return {
@@ -227,13 +305,20 @@ def handle_other(state: AgentState) -> dict:
     """Generic HR response."""
     
     response = AIMessage(
-        content="I can help with:"
-                "\n- List all employees"
-                "\n- Add a new employee"
-                "\n- View shift schedule"
-                "\n- Employee clock in/out"
-                "\n- Check availability"
-                "\n\nWhat do you need help with?"
+        content=_generate_hr_response(
+            state,
+            "fallback_help",
+            {
+                "capabilities": [
+                    "List all employees",
+                    "Add a new employee",
+                    "View shift schedule",
+                    "Employee clock in/out",
+                    "Check availability",
+                ]
+            },
+            extra_instructions="Offer concise HR support options and ask what staffing task to handle next.",
+        )
     )
     
     return {

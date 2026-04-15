@@ -5,7 +5,7 @@ Run this to populate the database with test users and shops
 import sys
 from database import SessionLocal
 from models import User, Shop, Queue, QueueItem, UserRole, QueueStatus, SubscriptionTier, ShopService
-from auth_utils import get_password_hash
+from shared.auth_utils import get_password_hash
 from datetime import datetime
 
 def create_sample_data():

@@ -25,7 +25,12 @@ HITL breakpoints:
 """
 
 from typing import Any, Dict
+import json as _json
+import os
+import re
+
 from langchain_core.messages import AIMessage, BaseMessage
+from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 
 from .state import AgentState
@@ -35,6 +40,74 @@ from .tools import booking_tools
 def classify_entry(state: AgentState) -> dict:
     """No-op node so conditional routing can inspect state safely."""
     return {}
+
+
+def _latest_user_text(state: AgentState) -> str:
+    messages = state.get("messages", [])
+    if not messages:
+        return ""
+    latest = messages[-1]
+    return str(latest.content) if isinstance(latest, BaseMessage) else str(latest)
+
+
+def _ollama_base_url() -> str:
+    base_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1").rstrip("/")
+    if base_url.endswith("/v1"):
+        return base_url[:-3]
+    return base_url
+
+
+def _get_receptionist_writer_llm() -> ChatOllama:
+    return ChatOllama(
+        model=os.getenv("MODEL_NAME", "gpt-oss:20b"),
+        base_url=_ollama_base_url(),
+        temperature=0.25,
+        top_p=0.9,
+    )
+
+
+def _generate_receptionist_response(
+    state: AgentState,
+    response_type: str,
+    facts: Dict[str, Any],
+    *,
+    extra_instructions: str = "",
+) -> str:
+    query = _latest_user_text(state)
+    llm = _get_receptionist_writer_llm()
+    style_rules = [
+        "You are the Receptionist agent for a service business.",
+        "Your role is customer-facing operations: queue updates, service guidance, and clear next steps.",
+        "Be warm, concise, and practical.",
+        "Use only the facts provided in FACTS_JSON. Never invent numbers, names, or queue events.",
+        "Do not mention internal systems, JSON, tools, routing, or shop_id unless asked.",
+        "No emojis.",
+        "Keep replies to short prose; bullets are allowed only when listing services or queue details.",
+    ]
+    if extra_instructions:
+        style_rules.append(extra_instructions)
+
+    prompt = (
+        "\n".join(style_rules)
+        + f"\n\nRESPONSE_TYPE: {response_type}"
+        + f"\nUSER_QUESTION: {_json.dumps(query)}"
+        + f"\nFACTS_JSON: {_json.dumps(facts, default=str)}"
+        + "\n\nReturn only the owner/customer-facing reply text."
+    )
+
+    try:
+        response = llm.invoke([{"role": "user", "content": prompt}])
+        content = response.content if hasattr(response, "content") else str(response)
+        if isinstance(content, list):
+            content = " ".join(str(chunk) for chunk in content)
+        text = str(content).strip()
+        text = re.sub(r"^```(?:text|markdown)?\s*", "", text).rstrip("`").strip()
+        if text:
+            return text
+    except Exception:
+        pass
+
+    return "I have the queue and service details, but I couldn't phrase the response cleanly right now."
 
 
 def receptionist_intent_classifier(state: AgentState) -> str:
@@ -78,12 +151,14 @@ def handle_queue_status(state: AgentState) -> dict:
 
     metrics = result.get("live_metrics", {})
     response = AIMessage(
-        content=f"[Receptionist] Queue status for shop {shop_id}:"
-                f"\n- Total in queue: {result.get('total_in_queue', 0)} people"
-                f"\n- Waiting: {result.get('waiting_count', 0)}"
-                f"\n- Being served: {result.get('serving_count', 0)}"
-                f"\n- Estimated wait: {metrics.get('estimated_wait_minutes', 0)} minutes"
-                f"\n- Next customer: {result.get('next_customer') or 'No one waiting'}"
+        content=_generate_receptionist_response(
+            state,
+            "queue_status",
+            result,
+            extra_instructions=(
+                "Give a clear live queue update with total in queue, waiting, serving, estimated wait, and next customer when available."
+            ),
+        )
     )
     
     return {
@@ -105,11 +180,14 @@ def handle_join_queue(state: AgentState) -> dict:
         return {"messages": list(state["messages"]) + [response], "tool_results": result}
 
     response = AIMessage(
-        content="Thank you for joining the queue!"
-                f"\n- Position: #{result.get('position', '?')}"
-                f"\n- Estimated wait: {result.get('estimated_wait_minutes', 0)} minutes"
-                f"\n- Customer: {result.get('customer_name', customer_name)}"
-                "\nWe'll notify you when we're ready for you."
+        content=_generate_receptionist_response(
+            state,
+            "join_queue",
+            result,
+            extra_instructions=(
+                "Confirm queue join with position and estimated wait in the first sentence, then tell the customer what happens next."
+            ),
+        )
     )
     
     return {
@@ -133,16 +211,16 @@ def handle_services_inquiry(state: AgentState) -> dict:
         response = AIMessage(content=f"I couldn't load the service catalog right now: {result['error']}")
         return {"messages": list(state["messages"]) + [response], "tool_results": result}
 
-    services = result.get("services", [])
-    if services:
-        lines = [
-            f"- {service.get('name')}: ${float(service.get('cost', 0.0)):.2f} ({service.get('duration_minutes', 0)} min)"
-            for service in services[:6]
-        ]
-        content = "Available services at our shop:\n" + "\n".join(lines) + "\n\nWhich service are you interested in?"
-    else:
-        content = "I couldn't find any matching services right now."
-    response = AIMessage(content=content)
+    response = AIMessage(
+        content=_generate_receptionist_response(
+            state,
+            "services_inquiry",
+            result,
+            extra_instructions=(
+                "If services are available, present a concise helpful list including service name, cost, and duration, and end with a selection prompt."
+            ),
+        )
+    )
     
     return {
         "messages": list(state["messages"]) + [response],
@@ -184,12 +262,19 @@ def handle_other(state: AgentState) -> dict:
     """Generic receptionist response."""
     
     response = AIMessage(
-        content="I can help with:"
-                "\n- Queue status and wait times"
-                "\n- Joining the queue"
-                "\n- Service information"
-                "\n- Closing the queue (manager approval required)"
-                "\n\nWhat would you like to know?"
+        content=_generate_receptionist_response(
+            state,
+            "fallback_help",
+            {
+                "capabilities": [
+                    "Queue status and wait times",
+                    "Joining the queue",
+                    "Service information",
+                    "Closing the queue (manager approval required)",
+                ]
+            },
+            extra_instructions="Offer concise receptionist help options and invite the next request.",
+        )
     )
     
     return {

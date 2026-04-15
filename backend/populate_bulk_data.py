@@ -4,7 +4,7 @@ import argparse
 from datetime import datetime, timedelta
 from database import SessionLocal
 from models import User, Shop, Queue, QueueItem, UserRole, QueueStatus, SubscriptionTier, ShopService, ShopEmployee
-from auth_utils import get_password_hash
+from shared.auth_utils import get_password_hash
 from sqlalchemy import text, or_
 
 # Geographic Data
