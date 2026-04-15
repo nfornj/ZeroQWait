@@ -52,6 +52,8 @@ type ActionCommand = {
 type ChatHistoryEntry = {
   role: "ai" | "user";
   text: string;
+  status?: "sending" | "streaming" | "done" | "error";
+  _retryText?: string;
   shops?: any[];
   formStep?: FormStepData | null;
   formDone?: FormDoneData | null;
@@ -852,6 +854,8 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
       {
         role: "ai",
         text: "",
+        status: "streaming",
+        _retryText: userText,
         shops: nextShops,
         relatedViewer: nextViewer,
         thinkingSteps: [],
@@ -899,8 +903,6 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
       }
       if (!response.body) throw new Error("No response body");
 
-      setIsProcessing(false);
-
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
 
@@ -929,7 +931,11 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
               const next = [...prev];
               const idx = next.length - 1;
               if (idx >= 0 && next[idx].role === "ai") {
-                next[idx] = { ...next[idx], thinkingComplete: true };
+                next[idx] = {
+                  ...next[idx],
+                  thinkingComplete: true,
+                  status: "done",
+                };
               }
               return next;
             });
@@ -1172,12 +1178,32 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
       }
     } catch (error) {
       console.error("[DEBUG] MasterAgent API Stream Error:", error);
-      setIsProcessing(false);
       setChatHistory((prev) => {
         const next = [...prev];
         if (next[aiMessageIndex]) {
-          next[aiMessageIndex].text =
-            "I encountered an error trying to process that request.";
+          next[aiMessageIndex] = {
+            ...next[aiMessageIndex],
+            text: "I encountered an error trying to process that request.",
+            status: "error",
+          };
+        }
+        return next;
+      });
+    } finally {
+      setIsProcessing(false);
+      setChatHistory((prev) => {
+        const next = [...prev];
+        const idx = next.length - 1;
+        if (
+          idx >= 0 &&
+          next[idx].role === "ai" &&
+          (!next[idx].text?.trim() || next[idx].status === "streaming")
+        ) {
+          next[idx] = {
+            ...next[idx],
+            text: "Something went wrong — please try again.",
+            status: "error",
+          };
         }
         return next;
       });
@@ -1724,8 +1750,16 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                             />
                           )}
                           {chat.text && (
-                            <ReactMarkdown
-                              components={{
+                            <Box
+                              sx={{
+                                color:
+                                  chat.status === "error"
+                                    ? "var(--color-error, #a12c7b)"
+                                    : "inherit",
+                              }}
+                            >
+                              <ReactMarkdown
+                                components={{
                                 li: ({ children }) => {
                                   const action = getQuickActionFromListItem(children);
                                   if (!action) {
@@ -1810,10 +1844,48 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                                     </Box>
                                   );
                                 },
+                                }}
+                              >
+                                {chat.text}
+                              </ReactMarkdown>
+                            </Box>
+                          )}
+                          {chat.status === "streaming" && (
+                            <Box
+                              component="span"
+                              sx={{
+                                display: "inline-block",
+                                width: "8px",
+                                height: "1em",
+                                bgcolor: "currentColor",
+                                ml: 0.5,
+                                verticalAlign: "text-bottom",
+                                animation: "blink 1s step-end infinite",
+                                "@keyframes blink": {
+                                  "0%, 100%": { opacity: 1 },
+                                  "50%": { opacity: 0 },
+                                },
+                              }}
+                            />
+                          )}
+                          {chat.status === "error" && chat._retryText && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => handleChat(chat._retryText!)}
+                              sx={{
+                                mt: 1,
+                                borderColor: "var(--color-error, #a12c7b)",
+                                color: "var(--color-error, #a12c7b)",
+                                fontSize: "0.75rem",
+                                "&:hover": {
+                                  bgcolor: "rgba(161,44,123,0.08)",
+                                  borderColor: "var(--color-error, #a12c7b)",
+                                },
                               }}
                             >
-                              {chat.text}
-                            </ReactMarkdown>
+                              Retry
+                            </Button>
                           )}
                           {((chat.quickActions && chat.quickActions.length > 0) ||
                             (chat.role === "ai" &&
