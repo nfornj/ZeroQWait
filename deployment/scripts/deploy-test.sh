@@ -16,6 +16,27 @@ trap cleanup EXIT
 
 cd "${PROJECT_ROOT}"
 
+ensure_docker_daemon() {
+	if sudo systemctl is-active --quiet docker; then
+		echo "==> Docker daemon is active"
+	else
+		echo "==> Docker daemon is inactive; starting docker service"
+		sudo systemctl start docker
+	fi
+
+	if [[ ! -S /var/run/docker.sock ]]; then
+		echo "!! Docker socket missing at /var/run/docker.sock after daemon start"
+		exit 1
+	fi
+
+	if ! sudo docker info >/dev/null 2>&1; then
+		echo "!! Docker daemon is not reachable after startup"
+		exit 1
+	fi
+}
+
+ensure_docker_daemon
+
 LOCAL_UID="$(id -u)"
 LOCAL_GID="$(id -g)"
 # Limit compose parallelism on heavy hosts to reduce peak RAM during build/start.
