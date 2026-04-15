@@ -8,6 +8,7 @@ import {
   Card,
   CardContent,
   Chip,
+  Collapse,
   Divider,
   FormControl,
   Grid,
@@ -21,6 +22,7 @@ import {
   useTheme,
 } from "@mui/material";
 import AutorenewRoundedIcon from "@mui/icons-material/AutorenewRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import { useShop } from "../../contexts/ShopContext";
 import AgentFeed from "./AgentFeed";
 import ApprovalCard from "./ApprovalCard";
@@ -69,6 +71,7 @@ const AgentInbox: React.FC = () => {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
+  const [insightsOpen, setInsightsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -720,6 +723,30 @@ const AgentInbox: React.FC = () => {
                 onChatHistoryChange={handleChatHistoryChange}
               />
             )}
+            {/* Collapsible Context Snapshot — toggle below chat */}
+            <Box mt={1}>
+              <Button
+                size="small"
+                variant="text"
+                onClick={() => setInsightsOpen((o) => !o)}
+                endIcon={
+                  <ExpandMoreRoundedIcon
+                    sx={{
+                      transition: "transform 0.2s",
+                      transform: insightsOpen ? "rotate(180deg)" : "rotate(0deg)",
+                    }}
+                  />
+                }
+                sx={{ color: "text.secondary", textTransform: "none", fontSize: "0.75rem" }}
+              >
+                Context Snapshot
+              </Button>
+              <Collapse in={insightsOpen} unmountOnExit>
+                <Box mt={1}>
+                  <AgentInsights messages={messages} events={feedEvents} pendingApprovals={pendingApprovals} />
+                </Box>
+              </Collapse>
+            </Box>
           </Grid>
           <Grid size={{ xs: 12, xl: 4.5 }}>
             <Stack spacing={1.5}>
@@ -761,7 +788,6 @@ const AgentInbox: React.FC = () => {
                   </CardContent>
                 </Card>
               )}
-              <AgentInsights messages={messages} events={feedEvents} pendingApprovals={pendingApprovals} />
               <AgentFeed events={feedEvents} />
             </Stack>
           </Grid>
