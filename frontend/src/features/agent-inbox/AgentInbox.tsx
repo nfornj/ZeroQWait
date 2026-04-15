@@ -28,9 +28,10 @@ import { useShop } from "../../contexts/ShopContext";
 import AgentFeed from "./AgentFeed";
 import ApprovalCard from "./ApprovalCard";
 import AgentInsights from "./AgentInsights";
+import InsightsPanel from "./InsightsPanel";
 import ThinkingSteps, { ThinkingStep } from "./ThinkingSteps";
 import MasterAIAgent from "../../landing-page/components/MasterAIAgent";
-import type { AgentFeedEvent, ChatMessage, PendingApproval } from "./types";
+import type { AgentFeedEvent, ChatMessage, InsightItem, PendingApproval } from "./types";
 
 type ShopSummary = {
   id: number;
@@ -73,6 +74,7 @@ const AgentInbox: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [insightItems, setInsightItems] = useState<InsightItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -148,6 +150,7 @@ const AgentInbox: React.FC = () => {
       setMessages([buildIntroMessage(selected.name)]);
       setFeedEvents([]);
       setPendingApprovals([]);
+      setInsightItems([]);
       setError(null);
     },
     [ownedShops, setShop]
@@ -611,6 +614,26 @@ const AgentInbox: React.FC = () => {
               : s
           )
         );
+        return;
+      }
+
+      // Accumulate charts and files into the right-panel InsightsPanel
+      if (eventType === "chart" && event._parsed_chart) {
+        const chart = event._parsed_chart;
+        setInsightItems((prev) => [
+          { id: chart.id, type: "chart", chart, timestamp: chart.timestamp },
+          ...prev,
+        ]);
+        return;
+      }
+
+      if (eventType === "file" && event._parsed_file) {
+        const file = event._parsed_file;
+        setInsightItems((prev) => [
+          { id: file.id, type: "file", file, timestamp: file.timestamp },
+          ...prev,
+        ]);
+        return;
       }
     },
     [addFeedEvent, refreshPendingApprovals]
@@ -756,6 +779,7 @@ const AgentInbox: React.FC = () => {
           </Grid>
           <Grid size={{ xs: 12, xl: 4.5 }}>
             <Stack spacing={1.5}>
+              <InsightsPanel items={insightItems} />
               {latestPending.length > 0 && (
                 <Card
                   variant="outlined"

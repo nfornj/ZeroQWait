@@ -43,3 +43,40 @@ export interface AgentFeedEvent {
   timestamp: string;
   payload?: unknown;
 }
+
+/* ── Rich content types for charts, files, and follow-up suggestions ── */
+
+export type ChartType = "bar" | "line" | "pie" | "sparkline";
+
+export interface ChartDataPoint {
+  label: string;
+  value: number;
+  [key: string]: unknown;
+}
+
+export interface AgentChart {
+  id: string;
+  title: string;
+  chartType: ChartType;
+  data: ChartDataPoint[];
+  xKey?: string;
+  yKey?: string;
+  timestamp: string;
+}
+
+export interface AgentFile {
+  id: string;
+  filename: string;
+  /** base64-encoded blob OR a URL */
+  content: string;
+  mimeType: string;
+  timestamp: string;
+}
+
+export interface InsightItem {
+  id: string;
+  type: "chart" | "file";
+  chart?: AgentChart;
+  file?: AgentFile;
+  timestamp: string;
+}

@@ -95,6 +95,55 @@ def _extract_current_agent_from_output(out: Any) -> Optional[str]:
     return None
 
 
+# Agent-specific follow-up suggestion pools
+_FOLLOWUP_POOLS: Dict[Optional[str], list] = {
+    "receptionist": [
+        "How many people are waiting right now?",
+        "Close the queue for today",
+        "What's the average wait time?",
+        "Show today's queue summary",
+        "Who was served last?",
+    ],
+    "finance": [
+        "Show this week's revenue trend",
+        "What was yesterday's revenue?",
+        "Which services earn the most?",
+        "Export this month's report as CSV",
+        "Compare this week vs last week",
+    ],
+    "hr": [
+        "Who is on shift right now?",
+        "Show tomorrow's schedule",
+        "Add a new employee",
+        "How many hours did the team work this week?",
+        "Are there any open shifts?",
+    ],
+    None: [
+        "Give me today's queue summary",
+        "Show this week's revenue trend",
+        "Who is on shift now?",
+        "What can you help me with?",
+    ],
+}
+
+
+def _generate_followup_suggestions(
+    routed_agent: Optional[str],
+    user_message: str,
+    max_count: int = 3,
+) -> list:
+    """Return a small list of contextual follow-up questions."""
+    import random
+
+    pool = _FOLLOWUP_POOLS.get(routed_agent, _FOLLOWUP_POOLS[None])
+    user_lower = user_message.lower()
+    # Filter out prompts that are too similar to what the user just asked
+    filtered = [s for s in pool if s.lower()[:20] not in user_lower]
+    if not filtered:
+        filtered = pool
+    return random.sample(filtered, min(max_count, len(filtered)))
+
+
 def _resolve_thinking_node(event: Any) -> Optional[str]:
     """Resolve LangGraph node name across event formats and normalize variants."""
     metadata = event.get("metadata") or {}
@@ -543,6 +592,11 @@ async def chat_stream(
             # Stream response text character-by-character.
             for char in (final_response_text or ""):
                 yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+
+            # Emit contextual follow-up suggestions based on the routed agent.
+            follow_ups = _generate_followup_suggestions(routed_agent, message)
+            if follow_ups:
+                yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': follow_ups})}\n\n"
 
             yield "data: [DONE]\n\n"
 

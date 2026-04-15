@@ -30,6 +30,10 @@ import LightModeIcon from "@mui/icons-material/LightMode";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import ReactMarkdown from "react-markdown";
 import ThinkingSteps, { ThinkingStep } from "../../features/agent-inbox/ThinkingSteps";
+import { BarChart } from "@mui/x-charts/BarChart";
+import { LineChart } from "@mui/x-charts/LineChart";
+import { PieChart } from "@mui/x-charts/PieChart";
+import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
 
 import Pricing from "./Pricing";
 import Features from "./Features";
@@ -42,6 +46,8 @@ import InlineRegistrationForm, {
 } from "./InlineRegistrationForm";
 import InlineQueueJoinForm from "./InlineQueueJoinForm";
 import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
+
+import type { AgentChart, AgentFile } from "../../features/agent-inbox/types";
 
 type ActionCommand = {
   label: string;
@@ -62,6 +68,9 @@ type ChatHistoryEntry = {
   queueJoinFormSubmitted?: boolean;
   relatedViewer?: "shops" | "pricing" | "features" | "faq" | "register" | null;
   quickActions?: ActionCommand[];
+  suggestedFollowups?: string[];
+  charts?: AgentChart[];
+  files?: AgentFile[];
   thinkingSteps?: ThinkingStep[];
   thinkingComplete?: boolean;
 };
@@ -1167,6 +1176,56 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 }
                 return next;
               });
+            } else if (data.type === "suggestions") {
+              // --- Follow-up question suggestions ---
+              const suggestions: string[] = Array.isArray(data.suggestions) ? data.suggestions : [];
+              if (suggestions.length > 0) {
+                setChatHistory((prev) => {
+                  const next = [...prev];
+                  if (next[aiMessageIndex]) {
+                    next[aiMessageIndex].suggestedFollowups = suggestions;
+                  }
+                  return next;
+                });
+              }
+            } else if (data.type === "chart") {
+              // --- Inline chart data ---
+              const chart: import("../../features/agent-inbox/types").AgentChart = {
+                id: `chart_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                title: data.title || "Chart",
+                chartType: data.chartType || "bar",
+                data: Array.isArray(data.data) ? data.data : [],
+                xKey: data.xKey,
+                yKey: data.yKey,
+                timestamp: new Date().toISOString(),
+              };
+              setChatHistory((prev) => {
+                const next = [...prev];
+                if (next[aiMessageIndex]) {
+                  const existing = next[aiMessageIndex].charts ?? [];
+                  next[aiMessageIndex].charts = [...existing, chart];
+                }
+                return next;
+              });
+              if (onStreamEvent) onStreamEvent({ ...data, _parsed_chart: chart });
+            } else if (data.type === "file") {
+              // --- Downloadable file ---
+              const file: import("../../features/agent-inbox/types").AgentFile = {
+                id: `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                filename: data.filename || "download",
+                content: data.content || "",
+                mimeType: data.mimeType || "application/octet-stream",
+                timestamp: new Date().toISOString(),
+              };
+              setChatHistory((prev) => {
+                const next = [...prev];
+                if (next[aiMessageIndex]) {
+                  const existing = next[aiMessageIndex].files ?? [];
+                  next[aiMessageIndex].files = [...existing, file];
+                }
+                return next;
+              });
+              if (onStreamEvent) onStreamEvent({ ...data, _parsed_file: file });
             }
           } catch (e) {
             console.warn("Failed to parse SSE data chunk:", dataStr);
@@ -1454,7 +1513,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 : "column",
               // CHANGED: Center vertically in both single and split view
               alignItems: "center",
-              justifyContent: "center",
+              justifyContent: embedded && compactEmbedded ? "flex-start" : "center",
               py: embedded && compactEmbedded ? { xs: 0.5, md: 1 } : { xs: 2, sm: 3, md: 4 },
               px: { xs: 2, sm: 3, md: 4, lg: 6 },
               gap: embedded && compactEmbedded ? { xs: 1, md: 1.5 } : { xs: 3, sm: 3, md: 4 },
@@ -1488,7 +1547,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 height: activeViewer
                   ? { xs: "calc(100dvh - 170px)", md: "70vh" }
                   : embedded && compactEmbedded
-                    ? { xs: "calc(100dvh - 150px)", md: "72vh" }
+                    ? "100%"
                     : { xs: "calc(100dvh - 170px)", md: "78vh" },
                 position: "relative",
                 py: embedded && compactEmbedded ? { xs: 0, md: 0.5 } : { xs: 1, md: 2 },
@@ -1906,6 +1965,105 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                                     "&:hover": {
                                       bgcolor: theme.accent,
                                       color: isDarkMode ? "#000" : "#fff",
+                                    },
+                                  }}
+                                />
+                              ))}
+                            </Box>
+                          )}
+                          {/* ── Inline charts ── */}
+                          {chat.charts && chat.charts.length > 0 && (
+                            <Box sx={{ mt: 1.5, width: "100%" }}>
+                              {chat.charts.map((c) => {
+                                const labels = c.data.map((d) => d.label);
+                                const values = c.data.map((d) => d.value);
+                                return (
+                                  <Box key={c.id} sx={{ mb: 1 }}>
+                                    <Typography variant="caption" sx={{ fontWeight: 700, mb: 0.5, display: "block", color: theme.accent }}>
+                                      {c.title}
+                                    </Typography>
+                                    {c.chartType === "line" ? (
+                                      <LineChart
+                                        xAxis={[{ data: labels, scaleType: "band" }]}
+                                        series={[{ data: values, color: theme.accent }]}
+                                        height={140}
+                                        margin={{ top: 8, right: 8, bottom: 24, left: 36 }}
+                                        slotProps={{ legend: { hidden: true } }}
+                                      />
+                                    ) : c.chartType === "pie" ? (
+                                      <PieChart
+                                        series={[{ data: c.data.map((d, i) => ({ id: i, value: d.value, label: d.label })) }]}
+                                        height={140}
+                                        slotProps={{ legend: { hidden: true } }}
+                                      />
+                                    ) : (
+                                      <BarChart
+                                        xAxis={[{ data: labels, scaleType: "band" }]}
+                                        series={[{ data: values, color: theme.accent }]}
+                                        height={140}
+                                        margin={{ top: 8, right: 8, bottom: 24, left: 36 }}
+                                        slotProps={{ legend: { hidden: true } }}
+                                      />
+                                    )}
+                                  </Box>
+                                );
+                              })}
+                            </Box>
+                          )}
+                          {/* ── Downloadable files ── */}
+                          {chat.files && chat.files.length > 0 && (
+                            <Stack spacing={0.75} sx={{ mt: 1 }}>
+                              {chat.files.map((f) => (
+                                <Button
+                                  key={f.id}
+                                  size="small"
+                                  variant="outlined"
+                                  startIcon={<FileDownloadRoundedIcon />}
+                                  onClick={() => {
+                                    const link = document.createElement("a");
+                                    if (f.content.startsWith("http")) link.href = f.content;
+                                    else link.href = `data:${f.mimeType};base64,${f.content}`;
+                                    link.download = f.filename;
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    document.body.removeChild(link);
+                                  }}
+                                  sx={{
+                                    textTransform: "none",
+                                    fontWeight: 600,
+                                    borderColor: theme.accent,
+                                    color: theme.accent,
+                                    justifyContent: "flex-start",
+                                    "&:hover": { bgcolor: `${theme.accent}14` },
+                                  }}
+                                >
+                                  {f.filename}
+                                </Button>
+                              ))}
+                            </Stack>
+                          )}
+                          {/* ── Follow-up suggestions ── */}
+                          {chat.suggestedFollowups && chat.suggestedFollowups.length > 0 && chat.status === "done" && (
+                            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75, mt: 1.5 }}>
+                              {chat.suggestedFollowups.map((suggestion) => (
+                                <Chip
+                                  key={suggestion}
+                                  label={suggestion}
+                                  onClick={() => handleChat(suggestion)}
+                                  disabled={isProcessing}
+                                  size="small"
+                                  sx={{
+                                    cursor: "pointer",
+                                    fontWeight: 600,
+                                    fontSize: "0.75rem",
+                                    borderRadius: "16px",
+                                    border: `1px dashed ${theme.accent}88`,
+                                    color: theme.accent,
+                                    bgcolor: "transparent",
+                                    transition: "all 0.2s ease",
+                                    "&:hover": {
+                                      bgcolor: `${theme.accent}14`,
+                                      borderStyle: "solid",
                                     },
                                   }}
                                 />
