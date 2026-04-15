@@ -213,8 +213,8 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
                     <Box
                       sx={{
                         position: "absolute",
-                        top: 8,
-                        bottom: -8,
+                        top: 5,
+                        bottom: -11,
                         left: 5.25,
                         width: "1.5px",
                         bgcolor: lineColor,
