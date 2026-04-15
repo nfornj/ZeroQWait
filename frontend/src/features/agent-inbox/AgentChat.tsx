@@ -171,8 +171,41 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
                       </Typography>
                     </Stack>
                     <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
-                      {msg.content || (msg.role === "assistant" ? "..." : "")}
+                      <Box component="span" sx={{ color: msg.status === "error" ? "text.secondary" : "inherit" }}>
+                        {msg.content || (msg.role === "assistant" ? "..." : "")}
+                      </Box>
+                      {msg.status === "streaming" && (
+                        <Box
+                          component="span"
+                          sx={{
+                            ml: 0.4,
+                            opacity: 0.8,
+                            animation: "agentInboxBlink 1s step-end infinite",
+                          }}
+                        >
+                          ...
+                        </Box>
+                      )}
                     </Typography>
+                    {msg.status === "error" && msg.retryMessage && (
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={() => void onSend(msg.retryMessage || "")}
+                        disabled={isStreaming}
+                        sx={{
+                          mt: 0.75,
+                          px: 0,
+                          minWidth: 0,
+                          textTransform: "none",
+                          color: "text.secondary",
+                          fontWeight: 600,
+                          alignSelf: "flex-start",
+                        }}
+                      >
+                        Retry
+                      </Button>
+                    )}
                     <Typography variant="caption" sx={{ opacity: 0.72, mt: 0.5, display: "block" }}>
                       {new Date(msg.timestamp).toLocaleTimeString()}
                     </Typography>
@@ -232,6 +265,12 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
           </Stack>
         </Box>
       </CardContent>
+      <style>{`
+        @keyframes agentInboxBlink {
+          0%, 100% { opacity: 0.2; }
+          50% { opacity: 1; }
+        }
+      `}</style>
     </Card>
   );
 };

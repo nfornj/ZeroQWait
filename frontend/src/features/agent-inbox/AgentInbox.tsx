@@ -47,6 +47,7 @@ const buildIntroMessage = (shopName?: string): ChatMessage => ({
   content: shopName
     ? `Welcome back to ${shopName}. I can help with queue status, team scheduling, approvals, and daily performance summaries. What would you like to handle first?`
     : "Welcome to your Supervisor workspace. I can help with queue status, team scheduling, approvals, and daily performance summaries.",
+  status: "done",
   timestamp: nowIso(),
 });
 
@@ -229,6 +230,7 @@ const AgentInbox: React.FC = () => {
         id: toId("msg_user"),
         role: "user",
         content: messageText,
+        status: "done",
         timestamp: nowIso(),
       };
 
@@ -237,6 +239,8 @@ const AgentInbox: React.FC = () => {
         id: assistantMessageId,
         role: "assistant",
         content: "",
+        status: "streaming",
+        retryMessage: messageText,
         timestamp: nowIso(),
       };
 
@@ -246,6 +250,8 @@ const AgentInbox: React.FC = () => {
         title: "Owner message sent",
         description: messageText,
       });
+
+      let streamEndedWithDone = false;
 
       try {
         const token = localStorage.getItem("token");
@@ -277,6 +283,7 @@ const AgentInbox: React.FC = () => {
                 ? {
                     ...msg,
                     content: `${msg.content}${delta}`,
+                    status: "streaming",
                   }
                 : msg
             )
@@ -284,7 +291,20 @@ const AgentInbox: React.FC = () => {
         };
 
         const handleEventData = (raw: string) => {
-          if (raw === "[DONE]") return;
+          if (raw === "[DONE]") {
+            streamEndedWithDone = true;
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? {
+                      ...msg,
+                      status: "done",
+                    }
+                  : msg
+              )
+            );
+            return;
+          }
 
           let eventJson: Record<string, any>;
           try {
@@ -397,7 +417,45 @@ const AgentInbox: React.FC = () => {
           title: "Chat stream failed",
           description: detail,
         });
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId
+              ? {
+                  ...msg,
+                  status: "error",
+                }
+              : msg
+          )
+        );
       } finally {
+        setMessages((prev) => {
+          const target = prev.find((msg) => msg.id === assistantMessageId);
+          if (!target) return prev;
+
+          const contentEmpty = !String(target.content || "").trim();
+          if (contentEmpty || !streamEndedWithDone) {
+            return prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    content: contentEmpty
+                      ? "Something went wrong — please try again."
+                      : msg.content,
+                    status: "error",
+                  }
+                : msg
+            );
+          }
+
+          return prev.map((msg) =>
+            msg.id === assistantMessageId
+              ? {
+                  ...msg,
+                  status: msg.status === "error" ? "error" : "done",
+                }
+              : msg
+          );
+        });
         setIsStreaming(false);
       }
     },
@@ -429,6 +487,7 @@ const AgentInbox: React.FC = () => {
             id: toId("msg_system"),
             role: "system",
             content: response.data.message || `Action ${approved ? "approved" : "rejected"}.`,
+            status: "done",
             timestamp: nowIso(),
             agent: response.data.agent,
           },
@@ -559,6 +618,7 @@ const AgentInbox: React.FC = () => {
         id: item.id || `mirrored_${index}`,
         role: item.role === "user" ? "user" : "assistant",
         content: item.text || "",
+        status: item.status || "done",
         timestamp: item.timestamp || nowIso(),
       }))
     );

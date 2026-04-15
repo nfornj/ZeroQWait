@@ -17,8 +17,10 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  status: "sending" | "streaming" | "done" | "error";
   timestamp: string;
   agent?: string;
+  retryMessage?: string;
   pendingAction?: PendingApproval;
   thinkingSteps?: ThinkingStep[];
   thinkingComplete?: boolean;
