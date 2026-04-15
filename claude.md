@@ -42,9 +42,39 @@ The following changes require user approval before implementation:
 - Adding or removing MCP server registrations
 - Modifying `tenant_id` injection or multi-tenancy isolation logic
 
-### 0.3 Allowed Without Approval
+### 0.3 No Patches or Workarounds Without Approval
 
-- Bug fixes that do not change model outputs (e.g. fixing a wrong env var default)
+**The goal is correct design, not patchwork.**
+
+A **patch** is any change that:
+- Works around a root-cause problem instead of fixing it properly
+- Adds a special-case condition or flag to compensate for a design flaw
+- Hacks around a missing abstraction (e.g. monkey-patching, `try/except` swallowing real errors, ad-hoc state overrides)
+- Adds inference/heuristic logic to compensate for a structural gap (e.g. inferring missing context from message history because state is improperly reset)
+
+**Before implementing a patch**: stop, clearly describe:
+1. What the root cause is
+2. What the proper design fix would be
+3. Why a patch is being proposed instead (e.g. time, scope, risk)
+
+Then **wait for explicit user approval** before proceeding with the patch.
+
+If the right fix requires a refactor, schema change, or architectural adjustment — propose it. Do not silently introduce workarounds to avoid that work.
+
+### 0.5 Stabilization-First Policy (No Fallbacks Yet)
+
+During the current stabilization phase, do **not** add fallback paths for failing core logic (classification, routing, tool execution, synthesis, persistence) unless the user explicitly approves.
+
+Required behavior during stabilization:
+- Let failures surface with clear logs and observable errors
+- Fix root causes directly (code, state handling, schema, graph logic)
+- Avoid masking failures with generic fallback responses
+
+Fallback methods can be introduced later, after core flows are stable and validated.
+
+### 0.4 Allowed Without Approval
+
+- Bug fixes that address the actual root cause with proper design
 - Performance optimizations that keep the same service/model
 - Creating new microservices that are additive (e.g. MCP wrapper)
 - Updating timeouts, retry counts, connection pool sizes
@@ -926,3 +956,9 @@ Use a **local Docker registry only** (no cloud image registry), persist image bl
 - `prod` branch push → **Production deploy** to `https://zeroqwait.com` via `.github/workflows/deploy-prod.yml`
 - Any non-`prod` branch push → **Test deploy** to `http://localhost:3000` via `.github/workflows/deploy-test.yml`
 - Legacy auto-deploy workflows are manual-only (`workflow_dispatch`) to avoid conflicts.
+
+### Assistant Execution Rules (Mandatory)
+
+- **Single backend rule**: Use only one backend instance for local/test work. Do not start additional backend stacks/projects just for ad-hoc testing when an existing test environment is available.
+- **Test environment rule**: All validation should run against the established test environment; do not create parallel backend environments unless explicitly approved by the user.
+- **Commit and push rule**: After completing code changes and verification, always create a commit and push to the active branch so test deployment workflows can run.
