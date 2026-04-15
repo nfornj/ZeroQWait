@@ -117,7 +117,7 @@ def _get_tts_client() -> httpx.AsyncClient:
 
 # --- Configuration ---
 ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
-model_name = os.getenv("MODEL_NAME", "llama3.2:latest")
+model_name = os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M")
 model = OpenAIModel(
     model_name,
     provider=OpenAIProvider(base_url=ollama_url, api_key='ollama'),

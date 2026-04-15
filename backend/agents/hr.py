@@ -59,10 +59,11 @@ def _ollama_base_url() -> str:
 
 def _get_hr_writer_llm() -> ChatOllama:
     return ChatOllama(
-        model=os.getenv("MODEL_NAME", "gpt-oss:20b"),
+        model=os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M"),
         base_url=_ollama_base_url(),
         temperature=0.2,
         top_p=0.9,
+        num_gpu=-1,
     )
 
 

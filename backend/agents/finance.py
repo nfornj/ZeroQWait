@@ -203,8 +203,8 @@ def _llm_plan_finance_intent(query: str, today_str: str) -> dict:
     Returns {} on any LLM or parse failure (callers fall back to heuristics).
     """
     ollama_url = _ollama_base_url()
-    model_name = os.getenv("MODEL_NAME", "gpt-oss:20b")
-    llm = ChatOllama(model=model_name, base_url=ollama_url, temperature=0.0, format="json")
+    model_name = os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M")
+    llm = ChatOllama(model=model_name, base_url=ollama_url, temperature=0.0, format="json", num_gpu=-1)
 
     system_prompt = (
         f"You are a finance query analyzer for a shop management system. Today is {today_str}.\n"
@@ -322,12 +322,13 @@ def _points_to_csv(points: List[dict]) -> str:
 
 def _get_finance_writer_llm() -> ChatOllama:
     ollama_url = _ollama_base_url()
-    model_name = os.getenv("MODEL_NAME", "gpt-oss:20b")
+    model_name = os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M")
     return ChatOllama(
         model=model_name,
         base_url=ollama_url,
         temperature=0.2,
         top_p=0.9,
+        num_gpu=-1,
     )
 
 

@@ -17,7 +17,7 @@
 | Protected Artefact | Current Value | Why It Matters |
 | ---- | ---- | ---- |
 | Agent framework | LangGraph (langgraph >= 0.4) on FastAPI | Core state machine for all agent graphs; changing breaks checkpoint compatibility |
-| LLM model | `gpt-oss:20b` via Ollama | Swapping models breaks agent behaviour and costs GPU re-pull time |
+| LLM model | `qwen3:14b-q4_K_M` via Ollama | Swapping models breaks agent behaviour and costs GPU re-pull time |
 | TTS engine | Qwen3-TTS (`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`) | Kokoro / Coqui incident on 2026-02-14 required emergency rollback |
 | TTS voice | `Vivian` | Voice is a brand experience choice |
 | TTS port | `8880` | Ingress and backend config hard-wired to this port |
@@ -129,7 +129,7 @@ These three items must appear consistently across:
 | **Agent Checkpoints**       | langgraph-checkpoint-postgres             | Persistent agent state per tenant in PostgreSQL                     |
 | **Database**                | PostgreSQL 15                            | Via K8s StatefulSet (prod DB: `fastcuts_db`, user: `fastcuts_user`) |
 | **Cache**                   | Redis 5.0.1                              | Session history, category cache, rate limiting, agent state cache   |
-| **AI/LLM**                  | LangGraph + langchain-ollama + Ollama     | Model: `gpt-oss:20b` (13.8GB, MXFP4 quantized)                      |
+| **AI/LLM**                  | LangGraph + langchain-ollama + Ollama     | Model: `qwen3:14b-q4_K_M` (~8-9GB, Q4_K_M quantized, GPU-only)      |
 | **Embeddings**              | sentence-transformers (all-MiniLM-L6-v2) | Semantic cache for query analysis                                   |
 | **MCP Tooling**             | Model Context Protocol servers            | BookingMCP, FinanceMCP, HRMCP — tools decoupled from agents        |
 | **Voice ASR**               | Whisper (via `asr_service/`)             | GPU-accelerated, separate K8s pod                                   |
@@ -647,9 +647,9 @@ Implementation details:
 - **Persistent storage**: 50Gi PVC (`ollama-data-pvc`, local-path) mounted at `/root/.ollama`
 - Internal URL: `http://ollama.llm.svc.cluster.local:11434/v1` (ClusterIP, used by backend)
 - External URL: `http://192.168.2.134:30002/v1` (NodePort, for debugging only)
-- Models: `gpt-oss:20b` (13.8GB, MXFP4 quantized, primary)
+- Models: `qwen3:14b-q4_K_M` (~8-9GB, Q4_K_M quantized, GPU-only via `num_gpu=-1`, primary)
 - Config: `OLLAMA_URL` and `MODEL_NAME` in backend-configmap
-- **Model repull required** after PVC data loss: `sudo kubectl exec deployment/ollama -n llm -- ollama pull gpt-oss:20b`
+- **Model repull required** after PVC data loss: `sudo kubectl exec deployment/ollama -n llm -- ollama pull qwen3:14b-q4_K_M`
 
 ---
 
@@ -664,7 +664,7 @@ Implementation details:
 ### Fix 2: LLM Response Timeout
 
 - **Issue**: `asyncio.TimeoutError` on first query
-- **Root Cause**: gpt-oss:20b takes ~120-150s for initial inference
+- **Root Cause**: gpt-oss:20b (now replaced by qwen3:14b-q4_K_M) took ~120-150s for initial inference
 - **Fix**: Increased `asyncio.wait_for` timeout from 90s to 300s
 
 ### Fix 3: Database Serialization
@@ -700,7 +700,7 @@ Implementation details:
 - **Fixes**:
   1. Created 50Gi PVC (`ollama-data-pvc`, local-path StorageClass) in `llm` namespace
   2. Patched Ollama deployment to mount PVC instead of `emptyDir` at `/root/.ollama`
-  3. Re-pulled `gpt-oss:20b` model into persistent storage
+  3. Re-pulled `gpt-oss:20b` model into persistent storage (later replaced by `qwen3:14b-q4_K_M`)
   4. Cleaned up 3 stale Ollama pods (UnexpectedAdmissionError, ContainerStatusUnknown)
   5. Changed `OLLAMA_URL` from NodePort (`http://<runner-host-ip>:30002/v1`) to cluster-internal DNS (`http://ollama.llm.svc.cluster.local:11434/v1`) for lower latency
   6. Added backend health probes (liveness + readiness on `/api/agent/health`)
@@ -749,7 +749,7 @@ Implementation details:
 - [ ] Set up `AsyncPostgresSaver` checkpoint persistence
 - [ ] Create basic Supervisor graph (classify intent → respond) — no sub-agents yet
 - [ ] Add `routers/agent_v2.py` with `/api/v2/agent/chat` and `/api/v2/agent/chat/stream`
-- [ ] Verify LangGraph ↔ Ollama integration (gpt-oss:20b via langchain-ollama)
+- [ ] Verify LangGraph ↔ Ollama integration (qwen3:14b-q4_K_M via langchain-ollama)
 - [ ] **Test**: End-to-end owner chat → Supervisor responds via LangGraph
 
 #### Phase 2: Sub-Agent Graphs

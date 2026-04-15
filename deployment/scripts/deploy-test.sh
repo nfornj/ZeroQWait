@@ -49,7 +49,7 @@ FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
 # Shared K8s endpoints: one LLM + one TTS for both test/prod workloads.
 K8S_NODE_IP="${K8S_NODE_IP:-192.168.2.134}"
 SHARED_OLLAMA_URL="${SHARED_OLLAMA_URL:-http://${K8S_NODE_IP}:30002/v1}"
-SHARED_MODEL_NAME="${SHARED_MODEL_NAME:-gpt-oss:20b}"
+SHARED_MODEL_NAME="${SHARED_MODEL_NAME:-qwen3:14b-q4_K_M}"
 SHARED_TTS_URL="${SHARED_TTS_URL:-http://${K8S_NODE_IP}:30880}"
 # Fixed project name so every run replaces the previous stack.
 # Do not use a separate test project; keep exactly one compose stack.
@@ -70,7 +70,7 @@ DB_PASSWORD=zeroqwait_dev
 REDIS_HOST=redis
 REDIS_PORT=6379
 OLLAMA_URL=http://192.168.2.134:30002/v1
-MODEL_NAME=gpt-oss:20b
+MODEL_NAME=qwen3:14b-q4_K_M
 TTS_SERVICE_URL=http://192.168.2.134:30880
 FRONTEND_URL=http://localhost:3000
 EOF

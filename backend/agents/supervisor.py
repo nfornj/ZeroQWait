@@ -268,18 +268,19 @@ def _infer_previous_target_from_history(state: AgentState) -> Optional[str]:
     return None
 
 
-# Initialize LLM (gpt-oss:20b via Ollama)
+# Initialize LLM (qwen3:14b-q4_K_M via Ollama)
 def get_llm():
     """Create LLM instance for agent graphs."""
     import os
     ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
-    model_name = os.getenv("MODEL_NAME", "gpt-oss:20b")
+    model_name = os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M")
     
     return ChatOllama(
         model=model_name,
         base_url=ollama_url,
         temperature=0.3,  # Deterministic for tool calling
         top_p=0.9,
+        num_gpu=-1,
     )
 
 

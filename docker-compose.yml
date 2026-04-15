@@ -45,7 +45,7 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - DB_HOST=db
       - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002/v1}
-      - MODEL_NAME=${MODEL_NAME:-gpt-oss:20b}
+      - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
       - TTS_SERVICE_URL=${TTS_SERVICE_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30880}
       - UV_CACHE_DIR=/tmp/uv-cache
     extra_hosts:

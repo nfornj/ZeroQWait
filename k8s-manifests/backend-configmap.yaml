@@ -11,7 +11,7 @@ data:
   PYTHONUNBUFFERED: "1"
   USE_SUPABASE: "false"
   OLLAMA_URL: "http://ollama.llm.svc.cluster.local:11434/v1"
-  MODEL_NAME: "gpt-oss:20b"
+  MODEL_NAME: "qwen3:14b-q4_K_M"
   REDIS_HOST: "redis.zeroqwait.svc.cluster.local"
   REDIS_PORT: "6379"
   # All voice operations route through voice-mcp (the MCP voice gateway).
