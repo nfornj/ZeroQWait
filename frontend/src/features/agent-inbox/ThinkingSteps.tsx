@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import {
   alpha,
   Box,
-  CircularProgress,
   Collapse,
   Stack,
   Tooltip,
@@ -10,8 +9,6 @@ import {
   useTheme,
 } from "@mui/material";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
-import RadioButtonUncheckedRoundedIcon from "@mui/icons-material/RadioButtonUncheckedRounded";
-import ErrorRoundedIcon from "@mui/icons-material/ErrorRounded";
 import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
 import KeyboardArrowUpRoundedIcon from "@mui/icons-material/KeyboardArrowUpRounded";
 
@@ -29,32 +26,8 @@ interface ThinkingStepsProps {
   accentColor?: string;
 }
 
-const PROCESSING_COLOR = "#eab308";
 const COMPLETE_COLOR = "#22c55e";
 const ERROR_COLOR = "#ef4444";
-
-const StepIcon: React.FC<{ status: ThinkingStep["status"]; color: string }> = ({
-  status,
-  color,
-}) => {
-  if (status === "active") {
-    return <CircularProgress size={14} thickness={5} sx={{ color }} />;
-  }
-  if (status === "completed") {
-    return (
-      <CheckCircleRoundedIcon sx={{ fontSize: 15, color: COMPLETE_COLOR }} />
-    );
-  }
-  if (status === "error") {
-    return <ErrorRoundedIcon sx={{ fontSize: 15, color: ERROR_COLOR }} />;
-  }
-  // pending
-  return (
-    <RadioButtonUncheckedRoundedIcon
-      sx={{ fontSize: 15, color: "action.disabled" }}
-    />
-  );
-};
 
 const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
   steps,
@@ -64,8 +37,7 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
   const muiTheme = useTheme();
   const [expanded, setExpanded] = useState(true);
 
-  const accent = accentColor || muiTheme.palette.primary.main;
-  const processingColor = PROCESSING_COLOR;
+  const accent = accentColor || "#2563EB";
 
   // Auto-collapse 1.8 s after the whole pipeline completes.
   useEffect(() => {
@@ -110,12 +82,8 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
       sx={{
         mb: 1,
         borderRadius: "10px",
-        border: `1px solid ${alpha(isComplete ? COMPLETE_COLOR : processingColor, 0.26)}`,
-        bgcolor: alpha(
-          isComplete ? COMPLETE_COLOR : processingColor,
-          muiTheme.palette.mode === "dark" ? 0.08 : 0.06,
-        ),
         overflow: "hidden",
+        bgcolor: "transparent",
       }}
     >
       {/* Header row — always visible, toggles expanded state */}
@@ -130,48 +98,75 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
           cursor: "pointer",
           userSelect: "none",
           "&:hover": {
-            bgcolor: alpha(isComplete ? COMPLETE_COLOR : processingColor, 0.08),
+            bgcolor: "rgba(0,0,0,0.03)",
           },
         }}
       >
         <Stack direction="row" spacing={0.6} alignItems="center">
-          {/* Compact dot-row summary */}
-          {displayPipeline.map((s) => (
-            <Box
-              key={s.id}
-              sx={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                bgcolor:
-                  s.status === "completed"
-                    ? COMPLETE_COLOR
-                    : s.status === "active"
-                      ? processingColor
-                      : s.status === "error"
-                        ? ERROR_COLOR
-                        : alpha(muiTheme.palette.text.primary, 0.18),
-                transition: "background-color 0.4s ease",
-                ...(s.status === "active" && {
-                  boxShadow: `0 0 0 3px ${alpha(processingColor, 0.28)}`,
-                  animation: "pulse 1.4s ease-in-out infinite",
-                }),
-              }}
-            />
-          ))}
-          <Typography
-            variant="caption"
-            sx={{
-              ml: 0.5,
-              fontWeight: 600,
-              color: isComplete ? COMPLETE_COLOR : processingColor,
-              fontSize: "0.7rem",
-            }}
-          >
-            {isComplete ? `${doneCount} steps complete` : "Thinking\u2026"}
-          </Typography>
+          {!isComplete ? (
+            <>
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <Box
+                  sx={{
+                    width: 5,
+                    height: 5,
+                    borderRadius: "50%",
+                    bgcolor: accent,
+                    animation: "thinkingDot 0.9s ease-in-out infinite",
+                    animationDelay: "0ms",
+                  }}
+                />
+                <Box
+                  sx={{
+                    width: 5,
+                    height: 5,
+                    borderRadius: "50%",
+                    bgcolor: accent,
+                    animation: "thinkingDot 0.9s ease-in-out infinite",
+                    animationDelay: "160ms",
+                  }}
+                />
+                <Box
+                  sx={{
+                    width: 5,
+                    height: 5,
+                    borderRadius: "50%",
+                    bgcolor: accent,
+                    animation: "thinkingDot 0.9s ease-in-out infinite",
+                    animationDelay: "320ms",
+                  }}
+                />
+              </Stack>
+              <Typography
+                variant="caption"
+                sx={{
+                  ml: 0.4,
+                  fontWeight: 500,
+                  color: "text.secondary",
+                  fontSize: "0.7rem",
+                }}
+              >
+                Thinking...
+              </Typography>
+            </>
+          ) : (
+            <>
+              <CheckCircleRoundedIcon sx={{ fontSize: 14, color: COMPLETE_COLOR }} />
+              <Typography
+                variant="caption"
+                sx={{
+                  ml: 0.4,
+                  fontWeight: 600,
+                  color: COMPLETE_COLOR,
+                  fontSize: "0.7rem",
+                }}
+              >
+                {doneCount} steps
+              </Typography>
+            </>
+          )}
         </Stack>
-        <Box sx={{ color: "text.secondary", display: "flex" }}>
+        <Box sx={{ color: "text.disabled", display: "flex" }}>
           {expanded ? (
             <KeyboardArrowUpRoundedIcon sx={{ fontSize: 16 }} />
           ) : (
@@ -185,46 +180,67 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
         <Box sx={{ px: 1.5, pt: 0.5, pb: 1.25 }}>
           {displayPipeline.map((step, idx) => {
             const isLast = idx === displayPipeline.length - 1;
+            const lineColor =
+              step.status === "completed"
+                ? "rgba(34,197,94,0.5)"
+                : step.status === "active"
+                  ? alpha(accent, 0.6)
+                  : step.status === "error"
+                    ? "rgba(239,68,68,0.5)"
+                    : alpha(muiTheme.palette.text.primary, 0.1);
             return (
               <Box
                 key={step.id}
                 sx={{
                   display: "flex",
                   alignItems: "flex-start",
-                  minHeight: 28,
+                  minHeight: 30,
+                  animation: "stepSlideIn 0.25s ease forwards",
+                  animationDelay: `${idx * 40}ms`,
                 }}
               >
-                {/* Left column: icon + connector line */}
+                {/* Left column: timeline track + status dot */}
                 <Box
                   sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    mr: 1.25,
-                    mt: "3px",
+                    position: "relative",
+                    width: 14,
+                    minHeight: 26,
+                    mr: 1.1,
                     flexShrink: 0,
                   }}
                 >
-                  <StepIcon status={step.status} color={processingColor} />
-                  {!isLast && (
-                    <Box
-                      sx={{
-                        width: "2px",
-                        flex: 1,
-                        minHeight: 10,
-                        mt: "2px",
-                        mb: "2px",
-                        bgcolor:
-                          step.status === "completed"
-                            ? alpha(COMPLETE_COLOR, 0.45)
-                            : step.status === "active"
-                              ? alpha(PROCESSING_COLOR, 0.4)
-                            : alpha(muiTheme.palette.text.primary, 0.12),
-                        borderRadius: "1px",
-                        transition: "background-color 0.4s ease",
-                      }}
-                    />
-                  )}
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      top: 0,
+                      bottom: 0,
+                      left: 5.25,
+                      width: "1.5px",
+                      bgcolor: lineColor,
+                      transition: "background-color 0.3s ease",
+                    }}
+                  />
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      top: 2,
+                      left: 3,
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      bgcolor:
+                        step.status === "completed"
+                          ? COMPLETE_COLOR
+                          : step.status === "active"
+                            ? accent
+                            : step.status === "error"
+                              ? ERROR_COLOR
+                              : alpha(muiTheme.palette.text.primary, 0.1),
+                      ...(step.status === "active" && {
+                        animation: "dotPulse 1.2s ease-in-out infinite",
+                      }),
+                    }}
+                  />
                 </Box>
 
                 {/* Right column: step label */}
@@ -237,22 +253,63 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
                     <Typography
                       variant="caption"
                       sx={{
-                        display: "block",
-                        fontWeight: step.status === "active" ? 700 : 500,
+                        display: "inline-block",
+                        fontWeight:
+                          step.status === "active"
+                            ? 600
+                            : step.status === "pending"
+                              ? 400
+                              : 500,
                         color:
                           step.status === "completed"
                             ? muiTheme.palette.text.primary
                             : step.status === "active"
-                              ? processingColor
+                              ? accent
                               : step.status === "error"
                                 ? ERROR_COLOR
                                 : muiTheme.palette.text.disabled,
                         fontSize: "0.72rem",
                         lineHeight: 1.4,
-                        transition: "color 0.3s ease, font-weight 0.2s ease",
+                        transition: "color 0.3s ease",
                       }}
                     >
+                      {step.status === "completed" && (
+                        <Box component="span" sx={{ color: COMPLETE_COLOR, mr: 0.4 }}>
+                          ✓
+                        </Box>
+                      )}
                       {step.label}
+                      {step.status === "active" && (
+                        <Box component="span" sx={{ ml: 0.4 }}>
+                          <Box
+                            component="span"
+                            sx={{
+                              animation: "ellipsisDot 1.2s infinite",
+                              animationDelay: "0s",
+                            }}
+                          >
+                            .
+                          </Box>
+                          <Box
+                            component="span"
+                            sx={{
+                              animation: "ellipsisDot 1.2s infinite",
+                              animationDelay: "0.2s",
+                            }}
+                          >
+                            .
+                          </Box>
+                          <Box
+                            component="span"
+                            sx={{
+                              animation: "ellipsisDot 1.2s infinite",
+                              animationDelay: "0.4s",
+                            }}
+                          >
+                            .
+                          </Box>
+                        </Box>
+                      )}
                     </Typography>
                     {step.agent && step.status !== "pending" && (
                       <Typography
@@ -275,11 +332,23 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
         </Box>
       </Collapse>
 
-      {/* Keyframe for the active-dot pulse */}
+      {/* Keyframes */}
       <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.45; }
+        @keyframes thinkingDot {
+          0%, 100% { opacity: 0.35; transform: translateY(0); }
+          50% { opacity: 1; transform: translateY(-2px); }
+        }
+        @keyframes dotPulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.6); }
+        }
+        @keyframes stepSlideIn {
+          from { opacity: 0; transform: translateX(-8px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes ellipsisDot {
+          0%, 80%, 100% { opacity: 0; }
+          40% { opacity: 1; }
         }
       `}</style>
     </Box>
