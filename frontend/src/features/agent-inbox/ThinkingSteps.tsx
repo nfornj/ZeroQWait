@@ -204,22 +204,24 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
                   sx={{
                     position: "relative",
                     width: 14,
-                    minHeight: 26,
+                    minHeight: 28,
                     mr: 1.1,
                     flexShrink: 0,
                   }}
                 >
-                  <Box
-                    sx={{
-                      position: "absolute",
-                      top: 0,
-                      bottom: 0,
-                      left: 5.25,
-                      width: "1.5px",
-                      bgcolor: lineColor,
-                      transition: "background-color 0.3s ease",
-                    }}
-                  />
+                  {!isLast && (
+                    <Box
+                      sx={{
+                        position: "absolute",
+                        top: 8,
+                        bottom: -8,
+                        left: 5.25,
+                        width: "1.5px",
+                        bgcolor: lineColor,
+                        transition: "background-color 0.3s ease",
+                      }}
+                    />
+                  )}
                   <Box
                     sx={{
                       position: "absolute",

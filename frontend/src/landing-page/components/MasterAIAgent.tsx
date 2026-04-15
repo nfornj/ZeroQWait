@@ -1852,24 +1852,6 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                               </ReactMarkdown>
                             </Box>
                           )}
-                          {chat.status === "streaming" && (
-                            <Box
-                              component="span"
-                              sx={{
-                                display: "inline-block",
-                                width: "8px",
-                                height: "1em",
-                                bgcolor: "currentColor",
-                                ml: 0.5,
-                                verticalAlign: "text-bottom",
-                                animation: "blink 1s step-end infinite",
-                                "@keyframes blink": {
-                                  "0%, 100%": { opacity: 1 },
-                                  "50%": { opacity: 0 },
-                                },
-                              }}
-                            />
-                          )}
                           {chat.status === "error" && chat._retryText && (
                             <Button
                               size="small"
@@ -2120,21 +2102,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                           (isTranscribing
                             ? "Processing audio..."
                             : "Listening...")}
-                        {isRecording && !transcript && (
-                          <span
-                            style={{
-                              display: "inline-block",
-                              width: "4px",
-                              height: "14px",
-                              backgroundColor: "currentColor",
-                              marginLeft: "4px",
-                              animation: "blink 1s step-end infinite",
-                              verticalAlign: "middle",
-                            }}
-                          />
-                        )}
                       </Typography>
-                      <style>{`@keyframes blink { 50% { opacity: 0; } }`}</style>
                     </Box>
                   </Box>
                 )}
