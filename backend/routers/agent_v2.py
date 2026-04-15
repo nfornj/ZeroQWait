@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any, cast, Optional
 import asyncio
+import base64
 import json
 import logging
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -513,6 +514,7 @@ async def chat_stream(
             runnable = _SUPERVISOR_RUNNABLE
             routed_agent: Optional[str] = None
             final_response_text = ""
+            final_tool_results: Dict[str, Any] = {}
 
             # ----------------------------------------------------------------
             # Stream graph execution node-by-node via sync stream updates.
@@ -552,6 +554,9 @@ async def chat_stream(
                             if msgs:
                                 final_response_text = getattr(msgs[-1], "content", "") or ""
 
+                        if isinstance(out, dict) and isinstance(out.get("tool_results"), dict):
+                            final_tool_results = out.get("tool_results") or final_tool_results
+
                         done_label = _thinking_label_done(lg_node, routed_agent)
                         yield f"data: {json.dumps({'type': 'thinking_step', 'step': lg_node, 'label': done_label, 'status': 'done', 'agent': routed_agent})}\n\n"
 
@@ -573,6 +578,8 @@ async def chat_stream(
                     if snapshot and snapshot.values:
                         state_vals = dict(snapshot.values)
                         final_response_text = _state_last_text(state_vals)
+                        if isinstance(state_vals.get("tool_results"), dict):
+                            final_tool_results = state_vals.get("tool_results") or final_tool_results
                         if snapshot.next:
                             # Graph is paused at a breakpoint (approval required).
                             pending_action = _extract_pending_action(state_vals)
@@ -592,6 +599,43 @@ async def chat_stream(
             # Stream response text character-by-character.
             for char in (final_response_text or ""):
                 yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+
+            # Emit structured chart/file payloads for frontend insights panel and inline attachments.
+            if routed_agent == "finance" and isinstance(final_tool_results, dict):
+                points = final_tool_results.get("points")
+                if isinstance(points, list) and points:
+                    chart_points = []
+                    for row in points[:60]:
+                        try:
+                            chart_points.append(
+                                {
+                                    "label": str(row.get("period", "")),
+                                    "value": float(row.get("revenue", 0.0) or 0.0),
+                                }
+                            )
+                        except (TypeError, ValueError):
+                            continue
+
+                    if chart_points:
+                        chart_event = {
+                            "type": "chart",
+                            "title": f"Revenue Trend ({final_tool_results.get('window', 'custom').replace('_', ' ')})",
+                            "chartType": "line" if len(chart_points) > 2 else "bar",
+                            "data": chart_points,
+                            "xKey": "label",
+                            "yKey": "value",
+                        }
+                        yield f"data: {json.dumps(chart_event)}\n\n"
+
+                csv_content = final_tool_results.get("csv_content")
+                if isinstance(csv_content, str) and csv_content.strip():
+                    file_event = {
+                        "type": "file",
+                        "filename": final_tool_results.get("filename") or "finance_export.csv",
+                        "mimeType": "text/csv",
+                        "content": base64.b64encode(csv_content.encode("utf-8")).decode("ascii"),
+                    }
+                    yield f"data: {json.dumps(file_event)}\n\n"
 
             # Emit contextual follow-up suggestions based on the routed agent.
             follow_ups = _generate_followup_suggestions(routed_agent, message)

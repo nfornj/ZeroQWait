@@ -166,6 +166,28 @@ def _wants_day_by_day_output(text: str) -> bool:
     ])
 
 
+def _wants_period_list_output(text: str) -> bool:
+    normalized = _normalize_for_matching(text)
+    return any(token in normalized for token in [
+        "list",
+        "each month",
+        "for each month",
+        "per month",
+        "month wise",
+        "month-wise",
+        "monthly breakdown",
+        "each week",
+        "for each week",
+        "per week",
+        "week wise",
+        "week-wise",
+        "each day",
+        "for each day",
+        "each date",
+        "for each date",
+    ])
+
+
 def _requested_specific_date(state: AgentState) -> Optional[str]:
     query = _resolve_finance_query(state)
     return finance_tools.extract_requested_date(query)
@@ -278,7 +300,7 @@ def _wants_concise_period_summary(text: str) -> bool:
         "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
     ])
     wants_detail = any(token in normalized for token in [
-        "trend", "points", "breakdown", "day by day", "each day", "each date", "for each date", "per day", "date wise", "date-wise", "forecast", "chart",
+        "trend", "points", "breakdown", "day by day", "each day", "each date", "for each date", "per day", "date wise", "date-wise", "each month", "for each month", "per month", "month wise", "month-wise", "forecast", "chart",
     ])
     return asks_total_revenue and asks_period and not wants_detail
 
@@ -376,7 +398,7 @@ def _deterministic_finance_response(
         )
 
     if response_type == "trend_detailed":
-        if _wants_day_by_day_output(query) and points:
+        if (_wants_day_by_day_output(query) or _wants_period_list_output(query)) and points:
             return (
                 f"For {window_label}, total revenue was {total_revenue}. "
                 f"All points: {_format_trend_points(points)}."
