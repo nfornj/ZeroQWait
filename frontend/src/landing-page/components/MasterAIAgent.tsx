@@ -2197,20 +2197,23 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                   />
                 )}
 
-                {embeddedFooter && (
-                  <Box
-                    sx={{
-                      width: "100%",
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      mt: 0.25,
-                    }}
-                  >
-                    {embeddedFooter}
-                  </Box>
-                )}
               </Box>
             </Box>
+
+            {/* Embedded footer — absolutely positioned bottom-right, zero layout height */}
+            {embeddedFooter && (
+              <Box
+                sx={{
+                  position: "absolute",
+                  bottom: 8,
+                  right: 12,
+                  zIndex: 3,
+                  lineHeight: 0,
+                }}
+              >
+                {embeddedFooter}
+              </Box>
+            )}
 
             {/* RESULTS PANEL: Content Viewer - Only show when there's actual content */}
             {activeViewer && (
