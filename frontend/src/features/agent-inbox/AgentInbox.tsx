@@ -652,8 +652,8 @@ const AgentInbox: React.FC = () => {
   }, []);
 
   return (
-    <Box sx={{ width: "100%", maxWidth: { sm: "100%", md: "1700px" } }}>
-      <Stack spacing={1}>
+    <Box sx={{ width: "100%", maxWidth: { sm: "100%", md: "1700px" }, height: "calc(100dvh - 64px)", display: "flex", flexDirection: "column" }}>
+      <Stack spacing={1} sx={{ flex: 1, minHeight: 0 }}>
 
         {error && <Alert severity="error">{error}</Alert>}
 
@@ -709,8 +709,8 @@ const AgentInbox: React.FC = () => {
           </Alert>
         )}
 
-        <Grid container spacing={1.5}>
-          <Grid size={{ xs: 12, xl: 7.5 }}>
+        <Grid container spacing={1.5} sx={{ flex: 1, minHeight: 0 }}>
+          <Grid size={{ xs: 12, xl: 7.5 }} sx={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
             {thinkingSteps.length > 0 && (
               <ThinkingSteps
                 steps={thinkingSteps}
