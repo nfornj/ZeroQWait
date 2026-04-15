@@ -2203,6 +2203,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                       width: "100%",
                       display: "flex",
                       justifyContent: "flex-start",
+                      mt: 0.5,
                     }}
                   >
                     {embeddedFooter}

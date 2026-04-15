@@ -721,16 +721,16 @@ const AgentInbox: React.FC = () => {
                 }}
                 initialChatHistory={ownerInitialChatHistory}
                 embeddedFooter={
-                  <Box sx={{ width: "100%" }}>
+                  <Box sx={{ width: "100%", pt: 0.25 }}>
                     <Button
-                      size="small"
                       variant="text"
                       onClick={() => setInsightsOpen((o) => !o)}
-                      startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 15 }} />}
+                      startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />}
                       endIcon={
                         <ExpandMoreRoundedIcon
                           sx={{
-                            transition: "transform 0.2s",
+                            fontSize: 16,
+                            transition: "transform 0.18s",
                             transform: insightsOpen ? "rotate(180deg)" : "rotate(0deg)",
                           }}
                         />
@@ -738,16 +738,28 @@ const AgentInbox: React.FC = () => {
                       sx={{
                         color: brandPrimary,
                         textTransform: "none",
-                        fontSize: "0.95rem",
+                        fontSize: "0.8rem",
+                        lineHeight: 1.2,
                         fontWeight: 600,
-                        px: 0,
+                        py: 0,
+                        px: 0.25,
+                        minHeight: 22,
                         minWidth: "auto",
+                        justifyContent: "flex-start",
+                        "& .MuiButton-startIcon": {
+                          marginLeft: 0,
+                          marginRight: 0.5,
+                        },
+                        "& .MuiButton-endIcon": {
+                          marginLeft: 0.25,
+                          marginRight: 0,
+                        },
                       }}
                     >
                       Context Snapshot
                     </Button>
                     <Collapse in={insightsOpen} unmountOnExit>
-                      <Box mt={1}>
+                      <Box mt={0.75}>
                         <AgentInsights
                           messages={messages}
                           events={feedEvents}
