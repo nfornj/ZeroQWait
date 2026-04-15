@@ -23,6 +23,7 @@ import {
 } from "@mui/material";
 import AutorenewRoundedIcon from "@mui/icons-material/AutorenewRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import { useShop } from "../../contexts/ShopContext";
 import AgentFeed from "./AgentFeed";
 import ApprovalCard from "./ApprovalCard";
@@ -719,34 +720,47 @@ const AgentInbox: React.FC = () => {
                   is_voice: false,
                 }}
                 initialChatHistory={ownerInitialChatHistory}
+                embeddedFooter={
+                  <Box sx={{ width: "100%" }}>
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={() => setInsightsOpen((o) => !o)}
+                      startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 15 }} />}
+                      endIcon={
+                        <ExpandMoreRoundedIcon
+                          sx={{
+                            transition: "transform 0.2s",
+                            transform: insightsOpen ? "rotate(180deg)" : "rotate(0deg)",
+                          }}
+                        />
+                      }
+                      sx={{
+                        color: brandPrimary,
+                        textTransform: "none",
+                        fontSize: "0.95rem",
+                        fontWeight: 600,
+                        px: 0,
+                        minWidth: "auto",
+                      }}
+                    >
+                      Context Snapshot
+                    </Button>
+                    <Collapse in={insightsOpen} unmountOnExit>
+                      <Box mt={1}>
+                        <AgentInsights
+                          messages={messages}
+                          events={feedEvents}
+                          pendingApprovals={pendingApprovals}
+                        />
+                      </Box>
+                    </Collapse>
+                  </Box>
+                }
                 onStreamEvent={handleAgentStreamEvent}
                 onChatHistoryChange={handleChatHistoryChange}
               />
             )}
-            {/* Collapsible Context Snapshot — toggle below chat */}
-            <Box mt={1}>
-              <Button
-                size="small"
-                variant="text"
-                onClick={() => setInsightsOpen((o) => !o)}
-                endIcon={
-                  <ExpandMoreRoundedIcon
-                    sx={{
-                      transition: "transform 0.2s",
-                      transform: insightsOpen ? "rotate(180deg)" : "rotate(0deg)",
-                    }}
-                  />
-                }
-                sx={{ color: "text.secondary", textTransform: "none", fontSize: "0.75rem" }}
-              >
-                Context Snapshot
-              </Button>
-              <Collapse in={insightsOpen} unmountOnExit>
-                <Box mt={1}>
-                  <AgentInsights messages={messages} events={feedEvents} pendingApprovals={pendingApprovals} />
-                </Box>
-              </Collapse>
-            </Box>
           </Grid>
           <Grid size={{ xs: 12, xl: 4.5 }}>
             <Stack spacing={1.5}>

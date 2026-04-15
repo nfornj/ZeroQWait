@@ -90,6 +90,7 @@ type MasterAIAgentProps = {
   compactEmbedded?: boolean;
   brandPrimaryColor?: string;
   brandSecondaryColor?: string;
+  embeddedFooter?: React.ReactNode;
   onStreamEvent?: (event: Record<string, any>) => void;
   onChatHistoryChange?: (history: ChatHistoryEntry[]) => void;
 };
@@ -228,6 +229,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   compactEmbedded = false,
   brandPrimaryColor,
   brandSecondaryColor,
+  embeddedFooter,
   onStreamEvent,
   onChatHistoryChange,
 }) => {
@@ -2193,6 +2195,18 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                       },
                     }}
                   />
+                )}
+
+                {embeddedFooter && (
+                  <Box
+                    sx={{
+                      width: "100%",
+                      display: "flex",
+                      justifyContent: "flex-start",
+                    }}
+                  >
+                    {embeddedFooter}
+                  </Box>
                 )}
               </Box>
             </Box>
