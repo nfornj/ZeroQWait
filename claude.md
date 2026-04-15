@@ -335,18 +335,18 @@ Each shop owner receives a **team of AI agents** powered by **LangGraph state ma
                     │   └─────────────────────────┘    │
                     └───┬───────────┬─────────────┬────┘
                         │           │             │
-              ┌─────────▼──┐  ┌────▼────────┐ ┌──▼──────────┐
+              ┌─────────┘  ┌────────┘ ┌──────────┘
               │ RECEPTIONIST│  │  FINANCE    │ │     HR      │
               │  Sub-Agent  │  │  Sub-Agent  │ │  Sub-Agent  │
               │ (StateGraph)│  │ (StateGraph)│ │ (StateGraph) │
               └──────┬──────┘  └─────┬───────┘ └──────┬──────┘
                      │               │                │
-              ┌──────▼──────┐  ┌─────▼───────┐ ┌──────▼──────┐
+              ┌──────┘        ┌──────┘        ┌──────┘
               │ BookingMCP  │  │ FinanceMCP  │ │   HRMCP     │
               │  (tools)    │  │  (tools)    │ │  (tools)    │
               └─────────────┘  └─────────────┘ └─────────────┘
                      │               │                │
-              ┌──────▼───────────────▼────────────────▼──────┐
+              ┌──────┘──────────────┘───────────────┘──────┐
               │          PostgreSQL (tenant-isolated)          │
               │   queues │ services │ analytics │ employees   │
               │          LangGraph checkpoints table           │
