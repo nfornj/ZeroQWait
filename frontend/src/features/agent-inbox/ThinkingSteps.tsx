@@ -16,10 +16,11 @@ import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownR
 import KeyboardArrowUpRoundedIcon from "@mui/icons-material/KeyboardArrowUpRounded";
 
 export interface ThinkingStep {
-  step: string;
+  id: string;
   label: string;
-  status: "pending" | "active" | "done" | "error";
+  status: "pending" | "active" | "completed" | "error";
   agent?: string | null;
+  toolName?: string | null;
 }
 
 interface ThinkingStepsProps {
@@ -27,22 +28,6 @@ interface ThinkingStepsProps {
   isComplete: boolean;
   accentColor?: string;
 }
-
-// The canonical node order that always appears in the pipeline UI.
-const PIPELINE_ORDER = [
-  "classify_intent",
-  "route_to_agent",
-  "execute_plan",
-  "synthesize_response",
-];
-
-// Default labels shown before the server sends a real label.
-const DEFAULT_LABELS: Record<string, string> = {
-  classify_intent: "Classifying request",
-  route_to_agent: "Selecting specialist",
-  execute_plan: "Fetching data",
-  synthesize_response: "Generating response",
-};
 
 const PROCESSING_COLOR = "#eab308";
 const COMPLETE_COLOR = "#22c55e";
@@ -55,7 +40,7 @@ const StepIcon: React.FC<{ status: ThinkingStep["status"]; color: string }> = ({
   if (status === "active") {
     return <CircularProgress size={14} thickness={5} sx={{ color }} />;
   }
-  if (status === "done") {
+  if (status === "completed") {
     return (
       <CheckCircleRoundedIcon sx={{ fontSize: 15, color: COMPLETE_COLOR }} />
     );
@@ -94,26 +79,16 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
 
   if (steps.length === 0) return null;
 
-  // Build the full ordered pipeline merging server events with defaults.
+  // Build the pipeline from incoming dynamic steps.
   // Strip any arrow-like symbols from label and agent fields before rendering.
   // Handles: →, ⇒, ➔, ➡, and similar Unicode arrows.
   const stripArrows = (text: string | null | undefined) =>
     (text || "").replace(/[\s\u2190-\u21FF\u27A1\u2794\u279C\u27B2\u27A4\u27B3\u2B05-\u2B07\u279E\u279F\u27A0\u27A2\u27A3\u27A5\u27A6\u27A7\u27A8\u27A9\u27AB\u27AD\u27AF\u27B1\u27B4\u27B5\u27B6\u27B7\u27B8\u27B9\u27BA\u27BB\u27BC\u27BD\u27BE\u27BF\u27C0\u27C1\u27C2\u27C3\u27C4\u27C5\u27C6\u27C7\u27C8\u27C9\u27CA\u27CB\u27CC\u27CD\u27CE\u27CF\u27D0\u27D1\u27D2\u27D3\u27D4\u27D5\u27D6\u27D7\u27D8\u27D9\u27DA\u27DB\u27DC\u27DD\u27DE\u27DF\u27E0\u27E1\u27E2\u27E3\u27E4\u27E5\u27E6\u27E7\u27E8\u27E9\u27EA\u27EB\u27EC\u27ED\u27EE\u27EF\u27F0\u27F1\u27F2\u27F3\u27F4\u27F5\u27F6\u27F7\u27F8\u27F9\u27FA\u27FB\u27FC\u27FD\u27FE\u27FF]+/g, " ").replace(/\s+/g, " ").trim();
-  const pipeline: ThinkingStep[] = PIPELINE_ORDER.map((key) => {
-    const found = steps.find((s) => s.step === key);
-    if (found) {
-      return {
-        ...found,
-        label: stripArrows(found.label),
-        agent: stripArrows(found.agent),
-      };
-    }
-    return {
-      step: key,
-      label: stripArrows(DEFAULT_LABELS[key] ?? key),
-      status: "pending",
-    };
-  });
+  const pipeline: ThinkingStep[] = (steps || []).map((s) => ({
+    ...s,
+    label: stripArrows(s.label),
+    agent: stripArrows(s.agent),
+  }));
 
   // Some streams move a step from pending->done too quickly to ever paint "active".
   // Keep the first pending step visibly active while the pipeline is in progress.
@@ -128,7 +103,7 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
       })()
     : pipeline;
 
-  const doneCount = displayPipeline.filter((s) => s.status === "done").length;
+  const doneCount = displayPipeline.filter((s) => s.status === "completed").length;
 
   return (
     <Box
@@ -163,13 +138,13 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
           {/* Compact dot-row summary */}
           {displayPipeline.map((s) => (
             <Box
-              key={s.step}
+              key={s.id}
               sx={{
                 width: 8,
                 height: 8,
                 borderRadius: "50%",
                 bgcolor:
-                  s.status === "done"
+                  s.status === "completed"
                     ? COMPLETE_COLOR
                     : s.status === "active"
                       ? processingColor
@@ -212,7 +187,7 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
             const isLast = idx === displayPipeline.length - 1;
             return (
               <Box
-                key={step.step}
+                key={step.id}
                 sx={{
                   display: "flex",
                   alignItems: "flex-start",
@@ -240,7 +215,7 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
                         mt: "2px",
                         mb: "2px",
                         bgcolor:
-                          step.status === "done"
+                          step.status === "completed"
                             ? alpha(COMPLETE_COLOR, 0.45)
                             : step.status === "active"
                               ? alpha(PROCESSING_COLOR, 0.4)
@@ -265,7 +240,7 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
                         display: "block",
                         fontWeight: step.status === "active" ? 700 : 500,
                         color:
-                          step.status === "done"
+                          step.status === "completed"
                             ? muiTheme.palette.text.primary
                             : step.status === "active"
                               ? processingColor

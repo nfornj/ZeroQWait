@@ -1,3 +1,11 @@
+export interface ThinkingStep {
+  id: string;
+  label: string;
+  status: "pending" | "active" | "completed" | "error";
+  agent?: string | null;
+  toolName?: string | null;
+}
+
 export interface PendingApproval {
   action_id?: string;
   action: string;
@@ -12,6 +20,8 @@ export interface ChatMessage {
   timestamp: string;
   agent?: string;
   pendingAction?: PendingApproval;
+  thinkingSteps?: ThinkingStep[];
+  thinkingComplete?: boolean;
 }
 
 export interface AgentFeedEvent {

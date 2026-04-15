@@ -29,6 +29,7 @@ import { useNavigate } from "react-router-dom";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import ReactMarkdown from "react-markdown";
+import ThinkingSteps, { ThinkingStep } from "../../features/agent-inbox/ThinkingSteps";
 
 import Pricing from "./Pricing";
 import Features from "./Features";
@@ -59,6 +60,8 @@ type ChatHistoryEntry = {
   queueJoinFormSubmitted?: boolean;
   relatedViewer?: "shops" | "pricing" | "features" | "faq" | "register" | null;
   quickActions?: ActionCommand[];
+  thinkingSteps?: ThinkingStep[];
+  thinkingComplete?: boolean;
 };
 
 type ShopContext = {
@@ -851,6 +854,8 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
         text: "",
         shops: nextShops,
         relatedViewer: nextViewer,
+        thinkingSteps: [],
+        thinkingComplete: false,
       },
     ]);
 
@@ -918,7 +923,18 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const dataStr = line.slice(6);
-          if (dataStr === "[DONE]") continue;
+          if (dataStr === "[DONE]") {
+            // Mark thinking pipeline complete
+            setChatHistory((prev) => {
+              const next = [...prev];
+              const idx = next.length - 1;
+              if (idx >= 0 && next[idx].role === "ai") {
+                next[idx] = { ...next[idx], thinkingComplete: true };
+              }
+              return next;
+            });
+            continue;
+          }
 
           try {
             const data = JSON.parse(dataStr);
@@ -957,6 +973,86 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                     ...next[idx],
                     text: (next[idx].text || "") + newText,
                   };
+                }
+                return next;
+              });
+            } else if (data.type === "thinking_step") {
+              // Real-time reasoning pipeline step from LangGraph astream_events
+              const incoming: ThinkingStep = {
+                id: `pipeline-${String(data.step || "step")}`,
+                label: data.label,
+                status: data.status === "done" ? "completed" : data.status,
+                agent: data.agent ?? null,
+              };
+              setChatHistory((prev) => {
+                const next = [...prev];
+                const idx = next.length - 1;
+                if (idx >= 0 && next[idx].role === "ai") {
+                  const existing = next[idx].thinkingSteps ?? [];
+                  const pos = existing.findIndex((s) => s.id === incoming.id);
+                  const updated =
+                    pos >= 0
+                      ? existing.map((s) => (s.id === incoming.id ? incoming : s))
+                      : [...existing, incoming];
+                  next[idx] = { ...next[idx], thinkingSteps: updated };
+                }
+                return next;
+              });
+            } else if (data.type === "tool_call") {
+              const toolName = String(data.tool_name || data.tool || "unknown_tool");
+              const toolStepId = `tool-${toolName}-${Date.now()}`;
+
+              setChatHistory((prev) => {
+                const next = [...prev];
+                const idx = next.length - 1;
+                if (idx >= 0 && next[idx].role === "ai") {
+                  const existing = [...(next[idx].thinkingSteps ?? [])];
+                  const updatedExisting = existing.map((s, i) => {
+                    if (i === existing.length - 1 && s.status === "active") {
+                      return { ...s, status: "completed" as const };
+                    }
+                    return s;
+                  });
+
+                  const toolStep: ThinkingStep = {
+                    id: toolStepId,
+                    label: `Calling ${toolName}...`,
+                    status: "active",
+                    toolName,
+                  };
+
+                  next[idx] = {
+                    ...next[idx],
+                    thinkingSteps: [...updatedExisting, toolStep],
+                  };
+                }
+                return next;
+              });
+            } else if (data.type === "tool_result") {
+              const toolName = String(data.tool_name || data.tool || "unknown_tool");
+              const hasError = Boolean(data.error || data.result?.error);
+
+              setChatHistory((prev) => {
+                const next = [...prev];
+                const idx = next.length - 1;
+                if (idx >= 0 && next[idx].role === "ai") {
+                  const existing = [...(next[idx].thinkingSteps ?? [])];
+                  const targetIndex = [...existing]
+                    .map((s, i) => ({ s, i }))
+                    .reverse()
+                    .find(({ s }) => s.toolName === toolName && s.status === "active")?.i;
+
+                  if (typeof targetIndex === "number") {
+                    const target = existing[targetIndex];
+                    existing[targetIndex] = {
+                      ...target,
+                      status: hasError ? "error" : "completed",
+                      label: hasError
+                        ? `${target.label.replace(/\.\.\.$/, "")} failed`
+                        : target.label,
+                    };
+                    next[idx] = { ...next[idx], thinkingSteps: existing };
+                  }
                 }
                 return next;
               });
@@ -1620,6 +1716,13 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                         </Typography>
                       ) : (
                         <>
+                          {chat.thinkingSteps && chat.thinkingSteps.length > 0 && (
+                            <ThinkingSteps
+                              steps={chat.thinkingSteps}
+                              isComplete={chat.thinkingComplete ?? false}
+                              accentColor={theme.accent}
+                            />
+                          )}
                           {chat.text && (
                             <ReactMarkdown
                               components={{
