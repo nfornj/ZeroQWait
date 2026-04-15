@@ -102,8 +102,6 @@ const InsightsPanel: React.FC<InsightsPanelProps> = ({ items }) => {
     downloadFile(file);
   }, []);
 
-  if (items.length === 0) return null;
-
   return (
     <Card
       variant="outlined"
@@ -118,19 +116,30 @@ const InsightsPanel: React.FC<InsightsPanelProps> = ({ items }) => {
         <Stack spacing={1}>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">Insights</Typography>
-            <Chip
-              size="small"
-              label={items.length}
-              sx={{
-                bgcolor: alpha(brandPrimary, 0.14),
-                color: brandPrimary,
-                border: `1px solid ${alpha(brandPrimary, 0.22)}`,
-                fontWeight: 700,
-              }}
-            />
+            {items.length > 0 && (
+              <Chip
+                size="small"
+                label={items.length}
+                sx={{
+                  bgcolor: alpha(brandPrimary, 0.14),
+                  color: brandPrimary,
+                  border: `1px solid ${alpha(brandPrimary, 0.22)}`,
+                  fontWeight: 700,
+                }}
+              />
+            )}
           </Stack>
 
           <Divider sx={{ borderColor: alpha(brandPrimary, 0.12) }} />
+
+          {items.length === 0 && (
+            <Stack alignItems="center" spacing={0.5} py={2}>
+              <BarChartRoundedIcon sx={{ fontSize: 28, color: alpha(brandPrimary, 0.3) }} />
+              <Typography variant="body2" color="text.secondary" textAlign="center">
+                Ask financial or analytics questions to see charts and insights here.
+              </Typography>
+            </Stack>
+          )}
 
           <Stack spacing={1.5} sx={{ maxHeight: 400, overflowY: "auto" }}>
             {items.map((item) => (
