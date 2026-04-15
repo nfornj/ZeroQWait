@@ -59,7 +59,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
             : "linear-gradient(170deg, rgba(255,255,255,0.96) 0%, rgba(250,252,255,0.92) 100%)",
       }}
     >
-      <CardContent sx={{ display: "flex", flexDirection: "column", height: "100%", p: { xs: 2, md: 2.5 } }}>
+      <CardContent sx={{ display: "flex", flexDirection: "column", height: "100%", p: { xs: 2, md: 2.5 }, pb: "0 !important" }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
           <Typography variant="h5" sx={{ fontWeight: 700 }}>
             Supervisor Chat
@@ -103,7 +103,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
           ))}
         </Stack>
 
-        <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, maxHeight: { xs: 460, md: 720 }, overflowY: "auto", pr: 0.5, mb: 2 }}>
+        <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, overflowY: "auto", pr: 0.5, mb: 2 }}>
           {messages.length === 0 ? (
             <Box
               sx={{
@@ -136,40 +136,34 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
                   <Box
                     sx={{
                       maxWidth: { xs: "88%", sm: "85%" },
-                      px: { xs: 2, md: 2.5 },
-                      py: { xs: 1.5, md: 1.75 },
-                      borderRadius:
-                        msg.role === "user"
-                          ? "20px 20px 4px 20px"
-                          : "20px 20px 20px 4px",
-                      bgcolor:
-                        msg.role === "user"
-                          ? brandPrimary
-                          : muiTheme.palette.mode === "dark"
-                            ? "rgba(255,255,255,0.04)"
-                            : "rgba(255,255,255,0.88)",
-                      color:
-                        msg.role === "user"
-                          ? userBubbleText
-                          : muiTheme.palette.text.primary,
-                      border:
-                        msg.role === "user"
-                          ? "none"
-                          : `1px solid ${muiTheme.palette.divider}`,
-                      boxShadow:
-                        msg.role === "user"
-                          ? "0 2px 10px rgba(0,0,0,0.1)"
-                          : "0 2px 12px rgba(0,0,0,0.06)",
+                      ...(msg.role === "user"
+                        ? {
+                            px: { xs: 2, md: 2.5 },
+                            py: { xs: 1.5, md: 1.75 },
+                            borderRadius: "20px 20px 4px 20px",
+                            bgcolor: brandPrimary,
+                            color: userBubbleText,
+                            border: "none",
+                            boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+                          }
+                        : {
+                            px: 0,
+                            py: 0,
+                            borderRadius: 0,
+                            bgcolor: "transparent",
+                            color: muiTheme.palette.text.primary,
+                            border: "none",
+                            boxShadow: "none",
+                          }),
                     }}
                   >
-                    <Stack direction="row" spacing={0.75} alignItems="center" mb={0.5}>
-                      {msg.role !== "user" && (
-                        <SmartToyRoundedIcon sx={{ fontSize: 16, color: brandSecondary }} />
-                      )}
-                      <Typography variant="caption" sx={{ opacity: 0.82, fontWeight: 600 }}>
-                        {msg.role === "user" ? "You" : msg.role === "assistant" ? "Supervisor" : "System"}
-                      </Typography>
-                    </Stack>
+                    {msg.role === "user" && (
+                      <Stack direction="row" spacing={0.75} alignItems="center" mb={0.5}>
+                        <Typography variant="caption" sx={{ opacity: 0.82, fontWeight: 600 }}>
+                          You
+                        </Typography>
+                      </Stack>
+                    )}
                     <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
                       <Box component="span" sx={{ color: msg.status === "error" ? "text.secondary" : "inherit" }}>
                         {msg.content || (msg.role === "assistant" ? "..." : "")}
