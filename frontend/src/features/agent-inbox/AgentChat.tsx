@@ -103,7 +103,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
           ))}
         </Stack>
 
-        <Stack spacing={1.5} sx={{ flex: 1, minHeight: 420, maxHeight: { xs: 460, md: 720 }, overflowY: "auto", pr: 0.5, mb: 2 }}>
+        <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, maxHeight: { xs: 460, md: 720 }, overflowY: "auto", pr: 0.5, mb: 2 }}>
           {messages.length === 0 ? (
             <Box
               sx={{
