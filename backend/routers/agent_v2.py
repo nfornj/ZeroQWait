@@ -28,6 +28,7 @@ Streaming (SSE):
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any, cast, Optional
+import asyncio
 import json
 import logging
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -44,6 +45,75 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v2/agent", tags=["agent_v2"])
 db_interface = DatabaseInterface()
+
+# ---------------------------------------------------------------------------
+# Real-time thinking-step metadata for the streaming UI
+# ---------------------------------------------------------------------------
+
+# LangGraph node names that are surfaced as visible pipeline steps in the UI.
+_THINKING_NODES: frozenset = frozenset(
+    {"classify_intent", "route_to_agent", "execute_plan", "synthesize_response"}
+)
+
+_AGENT_DISPLAY_LABELS: Dict[str, str] = {
+    "receptionist": "Receptionist",
+    "finance": "Finance Manager",
+    "hr": "HR Assistant",
+    "booking": "Receptionist",
+}
+
+
+def _thinking_label_active(node: str, routed_agent: Optional[str]) -> str:
+    has_agent = routed_agent and routed_agent not in ("supervisor", "general")
+    agent_name = _AGENT_DISPLAY_LABELS.get(routed_agent or "", "Specialist")
+    return {
+        "classify_intent": "Classifying your request",
+        "route_to_agent": f"Routing to {agent_name}" if has_agent else "Routing request",
+        "execute_plan": f"Running {agent_name}" if has_agent else "Processing request",
+        "synthesize_response": "Generating response",
+    }.get(node, node)
+
+
+def _thinking_label_done(node: str, routed_agent: Optional[str]) -> str:
+    has_agent = routed_agent and routed_agent not in ("supervisor", "general")
+    agent_name = _AGENT_DISPLAY_LABELS.get(routed_agent or "", "Specialist")
+    return {
+        "classify_intent": f"Classified {agent_name}" if has_agent else "Classified General",
+        "route_to_agent": f"{agent_name}" if has_agent else "Supervisor",
+        "execute_plan": f"{agent_name} complete" if has_agent else "Processing complete",
+        "synthesize_response": "Response ready",
+    }.get(node, f"{node} complete")
+
+
+def _extract_current_agent_from_output(out: Any) -> Optional[str]:
+    """Extract current_agent from a node output — handles both plain dict and LangGraph Command."""
+    if isinstance(out, dict):
+        return out.get("current_agent") or None
+    # LangGraph Command object has an .update dict
+    if hasattr(out, "update") and isinstance(getattr(out, "update", None), dict):
+        return out.update.get("current_agent") or None
+    return None
+
+
+def _resolve_thinking_node(event: Any) -> Optional[str]:
+    """Resolve LangGraph node name across event formats and normalize variants."""
+    metadata = event.get("metadata") or {}
+    raw_name = metadata.get("langgraph_node") or event.get("name") or ""
+    if not raw_name:
+        return None
+
+    # Some runtimes include prefixes/suffixes in node names.
+    # Normalize to the canonical node key expected by the UI.
+    candidates = [
+        raw_name,
+        str(raw_name).split(".")[-1],
+        str(raw_name).split(":")[-1],
+        str(raw_name).split("/")[-1],
+    ]
+    for candidate in candidates:
+        if candidate in _THINKING_NODES:
+            return candidate
+    return None
 
 
 # PostgreSQL checkpoint persistence is mandatory.
@@ -372,7 +442,7 @@ async def chat_stream(
         try:
             # Build checkpoint config
             checkpoint_config = build_checkpoint_config(shop_id, user_id)
-            
+
             # Create initial state
             memory_context = _build_memory_context(shop_id, int(user_id), message)
             input_messages = []
@@ -388,53 +458,94 @@ async def chat_stream(
                 "pending_approval": None,
                 "needs_human_input": False,
                 "tool_results": None,
-                "metadata": {"shop_id": shop_id, "user_id": user_id, "is_voice": is_voice}
+                "metadata": {"shop_id": shop_id, "user_id": user_id, "is_voice": is_voice},
             }
-            
-            # Run supervisor (streaming)
+
             runnable = _SUPERVISOR_RUNNABLE
-            
-            # For Phase 1, simple streaming (no actual streaming LLM calls yet)
-            result = cast(Dict[str, Any], runnable.invoke(initial_state, checkpoint_config))
-            pending_action = _extract_pending_action(result)
-            approval_required = bool((result.get("__interrupt__") or []) or result.get("needs_human_input", False))
-            
-            # Extract response
-            messages = result.get("messages", [])
-            if messages:
-                final_message = messages[-1]
-                response_text = getattr(final_message, "content", str(final_message))
-            else:
-                response_text = "No response"
+            routed_agent: Optional[str] = None
+            final_response_text = ""
+
+            # ----------------------------------------------------------------
+            # Stream graph execution node-by-node via sync stream updates.
+            # This keeps compatibility with the sync Postgres checkpointer
+            # while still emitting real-time thinking-step events.
+            # ----------------------------------------------------------------
+            try:
+                update_iter = runnable.stream(
+                    initial_state,
+                    config=checkpoint_config,
+                    stream_mode="updates",
+                )
+
+                while True:
+                    update = await asyncio.to_thread(next, update_iter, None)
+                    if update is None:
+                        break
+                    if not isinstance(update, dict):
+                        continue
+
+                    for raw_node_name, out in update.items():
+                        lg_node = _resolve_thinking_node({"name": raw_node_name})
+                        if not lg_node:
+                            continue
+
+                        # Emit active first for visual progression.
+                        start_label = _thinking_label_active(lg_node, routed_agent)
+                        yield f"data: {json.dumps({'type': 'thinking_step', 'step': lg_node, 'label': start_label, 'status': 'active', 'agent': routed_agent})}\n\n"
+
+                        ca = _extract_current_agent_from_output(out)
+                        if ca and ca not in ("supervisor", "general", "", None):
+                            routed_agent = ca
+
+                        # Capture final synthesized text when available.
+                        if lg_node == "synthesize_response" and isinstance(out, dict):
+                            msgs = out.get("messages") or []
+                            if msgs:
+                                final_response_text = getattr(msgs[-1], "content", "") or ""
+
+                        done_label = _thinking_label_done(lg_node, routed_agent)
+                        yield f"data: {json.dumps({'type': 'thinking_step', 'step': lg_node, 'label': done_label, 'status': 'done', 'agent': routed_agent})}\n\n"
+
+            except Exception as stream_exc:
+                exc_name = type(stream_exc).__name__
+                if "interrupt" in exc_name.lower() or "Interrupt" in exc_name:
+                    logger.info("Graph interrupted (approval gate): %s", exc_name)
+                    # Fall through — state retrieval below will surface the pending action.
+                else:
+                    raise
+
+            # ----------------------------------------------------------------
+            # If response text wasn't captured via astream_events (e.g. graph
+            # intercepted for approval), retrieve it from the final checkpoint.
+            # ----------------------------------------------------------------
+            if not final_response_text:
+                try:
+                    snapshot = await asyncio.to_thread(runnable.get_state, checkpoint_config)
+                    if snapshot and snapshot.values:
+                        state_vals = dict(snapshot.values)
+                        final_response_text = _state_last_text(state_vals)
+                        if snapshot.next:
+                            # Graph is paused at a breakpoint (approval required).
+                            pending_action = _extract_pending_action(state_vals)
+                            if pending_action:
+                                yield f"data: {json.dumps({'type': 'approval_required', 'action': pending_action.get('action'), 'details': pending_action})}\n\n"
+                except Exception as state_exc:
+                    logger.warning("Could not retrieve final checkpoint state: %s", state_exc)
 
             _persist_chat_turn_memory(
                 shop_id=shop_id,
                 user_id=int(user_id),
                 user_message=message,
-                assistant_response=response_text,
+                assistant_response=final_response_text,
                 route="/api/v2/agent/chat/stream",
             )
-            
-            # Stream response as typed tokens (simulation)
-            for char in response_text:
-                event_data = {
-                    "type": "text",
-                    "content": char
-                }
-                yield f"data: {json.dumps(event_data)}\n\n"
-            
-            # Signal approval required if needed
-            if approval_required:
-                approval_event = {
-                    "type": "approval_required",
-                    "action": (pending_action or {}).get("action"),
-                    "details": pending_action or {}
-                }
-                yield f"data: {json.dumps(approval_event)}\n\n"
-            
-            # Signal complete
+
+            # Stream response text character-by-character.
+            for char in (final_response_text or ""):
+                yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+
             yield "data: [DONE]\n\n"
-        
+
         except Exception as e:
             logger.error(f"Stream error: {str(e)}", exc_info=True)
             error_event = {"type": "error", "message": str(e)}
