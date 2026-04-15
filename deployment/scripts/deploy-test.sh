@@ -6,7 +6,7 @@ COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.yml"
 BACKEND_ENV_FILE="${PROJECT_ROOT}/backend/.env"
 CI_OVERRIDE_FILE="$(mktemp)"
 
-echo "==> Test deploy (non-prod branch)"
+echo "==> Single-stack deploy (non-prod branch)"
 echo "==> Project root: ${PROJECT_ROOT}"
 
 cleanup() {
@@ -42,31 +42,19 @@ LOCAL_GID="$(id -g)"
 # Limit compose parallelism on heavy hosts to reduce peak RAM during build/start.
 COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}"
 export COMPOSE_PARALLEL_LIMIT
-DB_HOST_PORT="${DB_HOST_PORT:-0}"
-# Keep frontend endpoint stable so users hit the latest deployed stack when possible.
-BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-0}"
-FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT:-3000}"
+DB_HOST_PORT="5432"
+BACKEND_HOST_PORT="8000"
+FRONTEND_HOST_PORT="3000"
 FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
 # Shared K8s endpoints: one LLM + one TTS for both test/prod workloads.
 K8S_NODE_IP="${K8S_NODE_IP:-192.168.2.134}"
 SHARED_OLLAMA_URL="${SHARED_OLLAMA_URL:-http://${K8S_NODE_IP}:30002/v1}"
 SHARED_MODEL_NAME="${SHARED_MODEL_NAME:-gpt-oss:20b}"
 SHARED_TTS_URL="${SHARED_TTS_URL:-http://${K8S_NODE_IP}:30880}"
-# Fixed project name so every run replaces the previous test stack
-# instead of spawning a new isolated set of containers per run.
-COMPOSE_PROJECT_NAME="zeroqwait-test"
+# Fixed project name so every run replaces the previous stack.
+# Do not use a separate test project; keep exactly one compose stack.
+COMPOSE_PROJECT_NAME="zeroqwait"
 export COMPOSE_PROJECT_NAME
-
-# If requested host ports are busy, fall back to ephemeral ports to avoid hard failures.
-if [[ "${FRONTEND_HOST_PORT}" != "0" ]] && ss -ltn "( sport = :${FRONTEND_HOST_PORT} )" | tail -n +2 | grep -q .; then
-	echo "==> FRONTEND_HOST_PORT ${FRONTEND_HOST_PORT} is busy; falling back to an ephemeral port"
-	FRONTEND_HOST_PORT="0"
-fi
-
-if [[ "${BACKEND_HOST_PORT}" != "0" ]] && ss -ltn "( sport = :${BACKEND_HOST_PORT} )" | tail -n +2 | grep -q .; then
-	echo "==> BACKEND_HOST_PORT ${BACKEND_HOST_PORT} is busy; falling back to an ephemeral port"
-	BACKEND_HOST_PORT="0"
-fi
 
 # Actions checkout on self-hosted runners may not include backend/.env
 # because it is typically gitignored. Create a local CI-safe file when absent.
@@ -109,9 +97,8 @@ EOF
 
 COMPOSE_ARGS=(-p "${COMPOSE_PROJECT_NAME}" -f "${COMPOSE_FILE}" -f "${CI_OVERRIDE_FILE}")
 
-# Tear down any previous test stack (same project name) before starting fresh.
-# This is what prevents stale containers from accumulating across runs.
-echo "==> Tearing down previous test stack (if any)"
+# Tear down previous stack before starting fresh.
+echo "==> Tearing down previous stack (if any)"
 sudo --preserve-env=LOCAL_UID,LOCAL_GID,DB_HOST_PORT,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,FRONTEND_URL,SHARED_OLLAMA_URL,SHARED_MODEL_NAME,SHARED_TTS_URL,COMPOSE_PROJECT_NAME,COMPOSE_PARALLEL_LIMIT env \
 	LOCAL_UID="${LOCAL_UID}" \
 	LOCAL_GID="${LOCAL_GID}" \
@@ -123,8 +110,8 @@ sudo --preserve-env=LOCAL_UID,LOCAL_GID,DB_HOST_PORT,BACKEND_HOST_PORT,FRONTEND_
 	COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" \
 	docker compose "${COMPOSE_ARGS[@]}" down --remove-orphans --timeout 30 || true
 
-# Cleanup legacy compose TTS containers from older project names to prevent GPU contention.
-for legacy_project in zeroqwait zeroqwait-test; do
+# Cleanup compose TTS containers for the single active project to prevent GPU contention.
+for legacy_project in zeroqwait; do
 	legacy_tts_id="$(sudo docker ps -aq --filter "label=com.docker.compose.project=${legacy_project}" --filter "label=com.docker.compose.service=tts" || true)"
 	if [[ -n "${legacy_tts_id}" ]]; then
 		echo "==> Removing legacy Docker TTS container(s) for project: ${legacy_project}"
@@ -132,7 +119,7 @@ for legacy_project in zeroqwait zeroqwait-test; do
 	fi
 done
 
-# Build and run test stack locally with non-conflicting host ports.
+# Build and run a single fixed stack on localhost ports.
 sudo --preserve-env=LOCAL_UID,LOCAL_GID,DB_HOST_PORT,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,FRONTEND_URL,SHARED_OLLAMA_URL,SHARED_MODEL_NAME,SHARED_TTS_URL,COMPOSE_PROJECT_NAME,COMPOSE_PARALLEL_LIMIT env \
 	LOCAL_UID="${LOCAL_UID}" \
 	LOCAL_GID="${LOCAL_GID}" \
@@ -205,34 +192,8 @@ finally:
 	db.close()
 PY
 
-resolve_published_port() {
-	local service="$1"
-	local target_port="$2"
-	local timeout_seconds="${3:-60}"
-	local elapsed=0
-	local resolved=""
-
-	while (( elapsed < timeout_seconds )); do
-		resolved="$(sudo env DB_HOST_PORT="${DB_HOST_PORT}" BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" SHARED_OLLAMA_URL="${SHARED_OLLAMA_URL}" SHARED_MODEL_NAME="${SHARED_MODEL_NAME}" SHARED_TTS_URL="${SHARED_TTS_URL}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT}" docker compose "${COMPOSE_ARGS[@]}" port "${service}" "${target_port}" 2>/dev/null | awk -F: 'NF {print $NF}' | tail -n1 || true)"
-		if [[ -n "${resolved}" ]]; then
-			echo "${resolved}"
-			return 0
-		fi
-		sleep 2
-		elapsed=$((elapsed + 2))
-	done
-
-	return 1
-}
-
-FRONTEND_PUBLISHED_PORT="$(resolve_published_port frontend 80 60 || true)"
-BACKEND_PUBLISHED_PORT="$(resolve_published_port backend 8000 60 || true)"
-
-if [[ -z "${FRONTEND_PUBLISHED_PORT}" || -z "${BACKEND_PUBLISHED_PORT}" ]]; then
-	echo "!! Failed to resolve published ports from docker compose"
-	sudo env DB_HOST_PORT="${DB_HOST_PORT}" BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" SHARED_OLLAMA_URL="${SHARED_OLLAMA_URL}" SHARED_MODEL_NAME="${SHARED_MODEL_NAME}" SHARED_TTS_URL="${SHARED_TTS_URL}" COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT}" docker compose "${COMPOSE_ARGS[@]}" ps || true
-	exit 1
-fi
+FRONTEND_PUBLISHED_PORT="${FRONTEND_HOST_PORT}"
+BACKEND_PUBLISHED_PORT="${BACKEND_HOST_PORT}"
 
 echo "==> Waiting for services to become ready"
 
@@ -269,7 +230,7 @@ if ! wait_for_http "backend" "http://localhost:${BACKEND_PUBLISHED_PORT}" 360; t
 	exit 1
 fi
 
-echo "==> Test deployment successful"
+echo "==> Deployment successful"
 echo "    Frontend: http://localhost:${FRONTEND_PUBLISHED_PORT}"
 echo "    Backend : http://localhost:${BACKEND_PUBLISHED_PORT}"
 

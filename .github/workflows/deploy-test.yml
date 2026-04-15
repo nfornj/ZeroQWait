@@ -7,17 +7,15 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: zeroqwait-test-deploy
+  group: zeroqwait-deploy
   cancel-in-progress: false
 
 jobs:
   deploy-test:
     runs-on: self-hosted
     env:
-      # Fixed checkout path so Docker Compose always uses the project name
-      # "zeroqwait-test" (derived in deploy-test.sh) rather than a unique
-      # run-specific path. Previous containers are torn down before each run.
-      CHECKOUT_PATH: zeroqwait-test-deploy
+      # Fixed checkout path to prevent run-specific directory buildup.
+      CHECKOUT_PATH: zeroqwait-deploy
     steps:
       - name: Checkout
         uses: actions/checkout@v4

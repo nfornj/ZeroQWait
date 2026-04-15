@@ -1,6 +1,6 @@
 # ZeroQwait — Project Rules & Context
 
-> **Last updated**: 2026-04-10
+> **Last updated**: 2026-04-14
 > **Live URL**: https://zeroqwait.com (test ingress: http://192.168.2.134.nip.io)
 > **Product pivot (2026-04-10)**: Transitioning from queue-management SaaS → **Agent-as-a-Service (AaaS)** platform powered by LangGraph
 
@@ -623,7 +623,7 @@ Users toggle between **Voice Mode** and **Chat Mode** via a pill button in the t
 ### Deployment Flow (Authoritative)
 
 ```bash
-# Test environment auto-deploy (any branch except prod)
+# Non-prod branch auto-deploy (single local Compose stack)
 git push origin <branch>
 
 # Production auto-deploy
@@ -635,7 +635,9 @@ gh run list --workflow deploy-prod.yml
 ```
 
 Implementation details:
-- `deploy-test.yml` (branches-ignore: `prod`) deploys test using Docker Compose via `deployment/scripts/deploy-test.sh`.
+- `deploy-test.yml` (branches-ignore: `prod`) deploys using Docker Compose via `deployment/scripts/deploy-test.sh`.
+  - Strictly one Compose project: `zeroqwait`.
+  - Strict frontend endpoint: `http://localhost:3000` (no random/ephemeral frontend host ports).
 - `deploy-prod.yml` (branch: `prod`) runs local image pipeline + applies K8s manifests + rollout checks in `zeroqwait`.
 
 ### LLM Setup (Ollama)
@@ -738,7 +740,7 @@ Implementation details:
 
 ### AaaS Transition Roadmap (2026-04-10)
 
-> **Deployment policy**: All phases are tested in the **test environment** (`deploy-test.yml` / Docker Compose) first. Production deployment to `zeroqwait.com` only after explicit approval.
+> **Deployment policy**: All phases are validated via the single local Docker Compose deployment path (`deploy-test.yml` / `deployment/scripts/deploy-test.sh`) first. Production deployment to `zeroqwait.com` only after explicit approval.
 
 #### Phase 1: LangGraph Foundation (Current)
 - [ ] Add `langgraph`, `langgraph-checkpoint-postgres`, `langchain-ollama`, `langchain-core` to `pyproject.toml`
@@ -954,11 +956,11 @@ Use a **local Docker registry only** (no cloud image registry), persist image bl
 ### Branch-Based Deployment Policy
 
 - `prod` branch push → **Production deploy** to `https://zeroqwait.com` via `.github/workflows/deploy-prod.yml`
-- Any non-`prod` branch push → **Test deploy** to `http://localhost:3000` via `.github/workflows/deploy-test.yml`
+- Any non-`prod` branch push → **Local compose deploy** to `http://localhost:3000` via `.github/workflows/deploy-test.yml`
 - Legacy auto-deploy workflows are manual-only (`workflow_dispatch`) to avoid conflicts.
 
 ### Assistant Execution Rules (Mandatory)
 
-- **Single backend rule**: Use only one backend instance for local/test work. Do not start additional backend stacks/projects just for ad-hoc testing when an existing test environment is available.
-- **Test environment rule**: All validation should run against the established test environment; do not create parallel backend environments unless explicitly approved by the user.
+- **Single stack rule**: Use only one Docker Compose project for local/non-prod work: `zeroqwait`. Do not create `zeroqwait-test` (or any other parallel project) unless explicitly approved by the user.
+- **Strict localhost port rule**: Frontend must remain on `http://localhost:3000` for local/non-prod Compose deployment. Do not switch to random or ephemeral frontend host ports.
 - **Commit and push rule**: After completing code changes and verification, always create a commit and push to the active branch so test deployment workflows can run.
