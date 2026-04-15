@@ -25,6 +25,7 @@ import { useShop } from "../../contexts/ShopContext";
 import AgentFeed from "./AgentFeed";
 import ApprovalCard from "./ApprovalCard";
 import AgentInsights from "./AgentInsights";
+import ThinkingSteps, { ThinkingStep } from "./ThinkingSteps";
 import MasterAIAgent from "../../landing-page/components/MasterAIAgent";
 import type { AgentFeedEvent, ChatMessage, PendingApproval } from "./types";
 
@@ -63,6 +64,7 @@ const AgentInbox: React.FC = () => {
   const [shopsLoading, setShopsLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [feedEvents, setFeedEvents] = useState<AgentFeedEvent[]>([]);
+  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
@@ -221,6 +223,7 @@ const AgentInbox: React.FC = () => {
 
       setError(null);
       setIsStreaming(true);
+      setThinkingSteps([]);
 
       const userMessage: ChatMessage = {
         id: toId("msg_user"),
@@ -337,6 +340,19 @@ const AgentInbox: React.FC = () => {
               description: "Tool execution started.",
               payload: eventJson,
             });
+            setThinkingSteps((prev) => {
+              const updated = prev.map((s) =>
+                s.status === "active" ? { ...s, status: "completed" as const } : s
+              );
+              return [
+                ...updated,
+                {
+                  id: `tool-${String(eventJson.tool || "unknown")}-${Date.now()}`,
+                  label: `Calling ${String(eventJson.tool || "unknown")}...`,
+                  status: "active" as const,
+                },
+              ];
+            });
             return;
           }
 
@@ -347,6 +363,13 @@ const AgentInbox: React.FC = () => {
               description: "Tool execution completed.",
               payload: eventJson,
             });
+            setThinkingSteps((prev) =>
+              prev.map((s) =>
+                s.label === `Calling ${String(eventJson.tool || "unknown")}...`
+                  ? { ...s, status: eventJson.error ? ("error" as const) : ("completed" as const) }
+                  : s
+              )
+            );
           }
         };
 
@@ -495,6 +518,19 @@ const AgentInbox: React.FC = () => {
           description: "Tool execution started.",
           payload: event,
         });
+        setThinkingSteps((prev) => {
+          const updated = prev.map((s) =>
+            s.status === "active" ? { ...s, status: "completed" as const } : s
+          );
+          return [
+            ...updated,
+            {
+              id: `tool-${String(event.tool || "unknown")}-${Date.now()}`,
+              label: `Calling ${String(event.tool || "unknown")}...`,
+              status: "active" as const,
+            },
+          ];
+        });
         return;
       }
 
@@ -505,6 +541,13 @@ const AgentInbox: React.FC = () => {
           description: "Tool execution completed.",
           payload: event,
         });
+        setThinkingSteps((prev) =>
+          prev.map((s) =>
+            s.label === `Calling ${String(event.tool || "unknown")}...`
+              ? { ...s, status: event.error ? ("error" as const) : ("completed" as const) }
+              : s
+          )
+        );
       }
     },
     [addFeedEvent, refreshPendingApprovals]
@@ -581,6 +624,12 @@ const AgentInbox: React.FC = () => {
 
         <Grid container spacing={1.5}>
           <Grid size={{ xs: 12, xl: 7.5 }}>
+            {thinkingSteps.length > 0 && (
+              <ThinkingSteps
+                steps={thinkingSteps}
+                isComplete={!isStreaming}
+              />
+            )}
             {shop?.id && (
               <MasterAIAgent
                 key={shop.id}
