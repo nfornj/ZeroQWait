@@ -1075,7 +1075,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
               });
             } else if (data.type === "error") {
               const errText =
-                data.content || "Something went wrong. Please try again.";
+                data.content || data.message || "Something went wrong. Please try again.";
               setChatHistory((prev) => {
                 const next = [...prev];
                 const idx = next.length - 1;

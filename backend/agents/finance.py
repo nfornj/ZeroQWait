@@ -278,7 +278,7 @@ def _wants_concise_period_summary(text: str) -> bool:
         "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
     ])
     wants_detail = any(token in normalized for token in [
-        "trend", "points", "breakdown", "day by day", "each day", "per day", "forecast", "chart",
+        "trend", "points", "breakdown", "day by day", "each day", "each date", "for each date", "per day", "date wise", "date-wise", "forecast", "chart",
     ])
     return asks_total_revenue and asks_period and not wants_detail
 
@@ -320,6 +320,112 @@ def _points_to_csv(points: List[dict]) -> str:
     return "\n".join(lines)
 
 
+def _format_currency(value: Any) -> str:
+    try:
+        return f"${float(value or 0.0):.2f}"
+    except (TypeError, ValueError):
+        return "$0.00"
+
+
+def _format_trend_points(points: List[dict]) -> str:
+    return "; ".join(
+        f"{p.get('period')}: {_format_currency(p.get('revenue'))}"
+        for p in points
+    )
+
+
+def _deterministic_finance_response(
+    state: AgentState,
+    response_type: str,
+    result: Dict[str, Any],
+) -> Optional[str]:
+    query = _latest_user_text(state)
+    points = result.get("points") or []
+    total_revenue = _format_currency(result.get("total_revenue"))
+    avg_transaction = _format_currency(result.get("average_transaction"))
+    best_period = result.get("best_period") or "the strongest period"
+    best_period_revenue = _format_currency(result.get("best_period_revenue"))
+    window_label = _format_window_label(result)
+
+    if response_type == "daily_revenue":
+        target_date = result.get("date") or result.get("range_start") or "that day"
+        completed = int(result.get("completed_services") or 0)
+        return (
+            f"On {target_date}, total revenue was {total_revenue}. "
+            f"That came from {completed} completed services with an average ticket of {avg_transaction}."
+        )
+
+    if response_type == "weekly_summary":
+        week_label = result.get("week_label") or window_label
+        best_day = result.get("best_day") or result.get("best_period")
+        best_day_text = f" Best day was {best_day}." if best_day else ""
+        return (
+            f"For {week_label}, total revenue was {total_revenue}. "
+            f"Average ticket was {avg_transaction}.{best_day_text}"
+        )
+
+    if response_type == "trend_peak_period":
+        return (
+            f"The highest revenue in {window_label} was on {best_period} at {best_period_revenue}."
+        )
+
+    if response_type == "trend_concise_period_summary":
+        return (
+            f"For {window_label}, total revenue was {total_revenue}. "
+            f"Average ticket was {avg_transaction}, and the strongest period was {best_period} at {best_period_revenue}."
+        )
+
+    if response_type == "trend_detailed":
+        if _wants_day_by_day_output(query) and points:
+            return (
+                f"For {window_label}, total revenue was {total_revenue}. "
+                f"All points: {_format_trend_points(points)}."
+            )
+        return (
+            f"For {window_label}, total revenue was {total_revenue}. "
+            f"The strongest period was {best_period} at {best_period_revenue}, with an average ticket of {avg_transaction}."
+        )
+
+    if response_type == "services_breakdown":
+        services = result.get("services") or result.get("top_services") or []
+        if services:
+            ranked = ", ".join(
+                f"{row.get('service_name') or row.get('name')}: {_format_currency(row.get('revenue'))}"
+                for row in services[:5]
+            )
+            return f"Your top revenue-generating services are {ranked}."
+        return "I couldn't find service-level revenue rows for this shop yet."
+
+    if response_type == "customer_metrics":
+        total_customers = result.get("total_customers") or 0
+        repeat_customers = result.get("repeat_customers")
+        avg_ltv = result.get("average_ltv")
+        parts = [f"You had {int(total_customers)} customers in the requested period."]
+        if repeat_customers is not None:
+            parts.append(f"Repeat customers: {int(repeat_customers)}.")
+        if avg_ltv is not None:
+            parts.append(f"Average customer LTV is {_format_currency(avg_ltv)}.")
+        return " ".join(parts)
+
+    if response_type == "export_csv":
+        return (
+            f"I prepared {result.get('filename', 'the CSV export')} with {int(result.get('row_count') or 0)} rows "
+            f"covering {result.get('range_start')} to {result.get('range_end')}."
+        )
+
+    if response_type == "export_dates_only":
+        values = result.get("values") or []
+        return "Dates: " + ", ".join(str(v) for v in values)
+
+    if response_type == "export_revenue_only":
+        values = result.get("points") or []
+        return "Revenue values: " + "; ".join(
+            f"{row.get('period')}: {_format_currency(row.get('revenue'))}" for row in values
+        )
+
+    return None
+
+
 def _get_finance_writer_llm() -> ChatOllama:
     ollama_url = _ollama_base_url()
     model_name = os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M")
@@ -349,6 +455,10 @@ def _generate_finance_response(
     *,
     extra_instructions: str = "",
 ) -> str:
+    deterministic = _deterministic_finance_response(state, response_type, result)
+    if deterministic:
+        return deterministic
+
     query = _latest_user_text(state)
     llm = _get_finance_writer_llm()
     prompt_facts = _prompt_facts_for_llm(result)
@@ -405,11 +515,35 @@ def classify_entry(state: AgentState) -> dict:
     plan instead of re-parsing the query with heuristics.
     """
     query = _resolve_finance_query(state)
+    heuristic_intent = _heuristic_intent_classifier(state)
+    if heuristic_intent != "other":
+        heuristic_plan = {
+            "intent": heuristic_intent,
+            "confidence": 1.0,
+        }
+        requested_date = finance_tools.extract_requested_date(query)
+        if requested_date:
+            heuristic_plan["date"] = requested_date
+        if heuristic_intent == "weekly_summary":
+            week_start, week_label = _requested_week_start(state)
+            if week_start:
+                heuristic_plan["week_start"] = week_start
+            heuristic_plan["time_window"] = week_label.replace(" ", "_")
+
+        existing = dict(state.get("tool_results") or {})
+        existing["llm_plan"] = heuristic_plan
+        return {"tool_results": existing}
+
     today_str = datetime.now().strftime("%Y-%m-%d")
     plan = _llm_plan_finance_intent(query, today_str)
     existing = dict(state.get("tool_results") or {})
     existing["llm_plan"] = plan
     return {"tool_results": existing}
+
+
+def finance_intent_classifier(state: AgentState) -> str:
+    """Compatibility wrapper for tests and callers expecting a public classifier."""
+    return _heuristic_intent_classifier(state)
 
 
 def _heuristic_intent_classifier(state: AgentState) -> str:
@@ -829,5 +963,6 @@ def create_finance_runnable():
 
 __all__ = [
     "build_finance_graph",
-    "create_finance_runnable"
+    "create_finance_runnable",
+    "finance_intent_classifier",
 ]
