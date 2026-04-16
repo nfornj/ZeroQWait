@@ -97,19 +97,15 @@ def _generate_receptionist_response(
         + "\n\nReturn only the owner/customer-facing reply text."
     )
 
-    try:
-        response = llm.invoke([{"role": "user", "content": prompt}])
-        content = response.content if hasattr(response, "content") else str(response)
-        if isinstance(content, list):
-            content = " ".join(str(chunk) for chunk in content)
-        text = str(content).strip()
-        text = re.sub(r"^```(?:text|markdown)?\s*", "", text).rstrip("`").strip()
-        if text:
-            return text
-    except Exception:
-        pass
-
-    return "I have the queue and service details, but I couldn't phrase the response cleanly right now."
+    response = llm.invoke([{"role": "user", "content": prompt}])
+    content = response.content if hasattr(response, "content") else str(response)
+    if isinstance(content, list):
+        content = " ".join(str(chunk) for chunk in content)
+    text = str(content).strip()
+    text = re.sub(r"^```(?:text|markdown)?\s*", "", text).rstrip("`").strip()
+    if not text:
+        raise RuntimeError("LLM returned empty response for receptionist query")
+    return text
 
 
 def receptionist_intent_classifier(state: AgentState) -> str:

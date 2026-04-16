@@ -864,18 +864,8 @@ If a specialist agent already produced raw output, synthesize it into:
 3) next best action for owner."""
     
     # Invoke LLM
-    try:
-        response = llm.invoke([SystemMessage(content=system_prompt)] + llm_messages)
-    except Exception:
-        fallback = AIMessage(
-            content="I can help with operations across receptionist, finance, and HR. "
-                    "Tell me what you want to do and I will route it to the right agent."
-        )
-        _persist_conversation_turns(state, str(fallback.content))
-        return {
-            "messages": messages + [fallback],
-            "tool_results": state.get("tool_results")
-        }
+    # No fallback during stabilization — let LLM errors surface.
+    response = llm.invoke([SystemMessage(content=system_prompt)] + llm_messages)
     
     # Add response to messages
     messages_with_response = messages + [response]

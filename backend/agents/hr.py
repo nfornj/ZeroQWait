@@ -96,19 +96,15 @@ def _generate_hr_response(
         + "\n\nReturn only the owner-facing HR response text."
     )
 
-    try:
-        response = llm.invoke([{"role": "user", "content": prompt}])
-        content = response.content if hasattr(response, "content") else str(response)
-        if isinstance(content, list):
-            content = " ".join(str(chunk) for chunk in content)
-        text = str(content).strip()
-        text = re.sub(r"^```(?:text|markdown)?\s*", "", text).rstrip("`").strip()
-        if text:
-            return text
-    except Exception:
-        pass
-
-    return "I have the HR data, but I couldn't phrase a clean response right now."
+    response = llm.invoke([{"role": "user", "content": prompt}])
+    content = response.content if hasattr(response, "content") else str(response)
+    if isinstance(content, list):
+        content = " ".join(str(chunk) for chunk in content)
+    text = str(content).strip()
+    text = re.sub(r"^```(?:text|markdown)?\s*", "", text).rstrip("`").strip()
+    if not text:
+        raise RuntimeError("LLM returned empty response for HR query")
+    return text
 
 
 def hr_intent_classifier(state: AgentState) -> str:

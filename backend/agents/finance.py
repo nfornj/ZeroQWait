@@ -557,9 +557,10 @@ def _generate_finance_response(
     *,
     extra_instructions: str = "",
 ) -> str:
-    deterministic = _deterministic_finance_response(state, response_type, result)
-    if deterministic:
-        return deterministic
+    # Deterministic bypass disabled during stabilization — always use LLM.
+    # deterministic = _deterministic_finance_response(state, response_type, result)
+    # if deterministic:
+    #     return deterministic
 
     query = _latest_user_text(state)
     llm = _get_finance_writer_llm()
@@ -595,19 +596,15 @@ def _generate_finance_response(
         + "\n\nReturn only the owner-facing reply text."
     )
 
-    try:
-        response = llm.invoke([HumanMessage(content=writer_prompt)])
-        content = response.content if hasattr(response, "content") else str(response)
-        if isinstance(content, list):
-            content = " ".join(str(chunk) for chunk in content)
-        text = str(content).strip()
-        text = re.sub(r"^```(?:text|markdown)?\s*", "", text).rstrip("`").strip()
-        if text:
-            return text
-    except Exception:
-        pass
-
-    return "I have the finance data, but I couldn't turn it into a clean response right now."
+    response = llm.invoke([HumanMessage(content=writer_prompt)])
+    content = response.content if hasattr(response, "content") else str(response)
+    if isinstance(content, list):
+        content = " ".join(str(chunk) for chunk in content)
+    text = str(content).strip()
+    text = re.sub(r"^```(?:text|markdown)?\s*", "", text).rstrip("`").strip()
+    if not text:
+        raise RuntimeError(f"LLM returned empty response for finance {response_type}")
+    return text
 
 
 def classify_entry(state: AgentState) -> dict:
