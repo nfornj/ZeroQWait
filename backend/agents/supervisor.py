@@ -92,6 +92,8 @@ from .tools import booking_tools, hr_tools
 from .memory_context import get_conversation_history, save_conversation_turn
 from redis_client import redis_client
 
+from integrations.odoo_client import ODOO_ENABLED
+
 
 _FINANCE_MONTH_TOKENS = [
     "jan", "january", "feb", "february", "mar", "march", "apr", "april", "may",
@@ -116,6 +118,19 @@ _CRM_KEYWORDS = [
     "company", "companies", "opportunity", "opportunities", "pipeline",
     "deal", "deals", "prospect", "prospects", "note", "notes", "task", "tasks",
 ]
+
+# When Odoo is the main ERP, route ERP-specific terms to CRM agent
+# and remove overlapping terms from finance to avoid mixed-intent detection
+if ODOO_ENABLED:
+    _CRM_KEYWORDS.extend([
+        "invoice", "invoices", "bill", "bills", "accounting",
+        "journal", "ledger", "trial balance", "chart of accounts",
+        "product", "catalog", "odoo", "payment", "payments",
+        "refund", "billing", "receipt",
+    ])
+    # Remove terms now handled by Odoo CRM agent
+    _ODOO_MANAGED_TERMS = {"invoice", "payment", "refund", "billing", "receipt"}
+    _FINANCE_KEYWORDS = [kw for kw in _FINANCE_KEYWORDS if kw not in _ODOO_MANAGED_TERMS]
 
 
 def _detect_intent_domains(text: str) -> list[str]:
@@ -659,55 +674,94 @@ def route_to_agent(state: AgentState) -> dict:
 
 
 async def _run_crm_agent(state: AgentState) -> dict:
-    """Dispatch CRM query to Twenty CRM and return LLM-formatted response."""
+    """Dispatch CRM query to Odoo CRM (preferred) or Twenty CRM (legacy)."""
     import re as _re
-    from .tools import crm_tools
 
     user_text = _latest_user_text(state)
     messages = list(state.get("messages", []) or [])
     shop_id = state.get("tenant_id")
     lowered = user_text.lower()
 
-    try:
-        if any(w in lowered for w in ["pipeline", "opportunity", "opportunities", "deal", "deals"]):
-            if any(w in lowered for w in ["summary", "overview", "how many", "total"]):
-                data = await crm_tools.crm_get_pipeline_summary()
+    if ODOO_ENABLED:
+        from .tools import odoo_tools
+        crm_source = "Odoo"
+        try:
+            if any(w in lowered for w in ["pipeline", "opportunity", "opportunities", "deal", "deals"]):
+                if any(w in lowered for w in ["summary", "overview", "how many", "total"]):
+                    data = await odoo_tools.odoo_get_pipeline_summary()
+                else:
+                    data = await odoo_tools.odoo_get_leads()
+            elif any(w in lowered for w in ["compan", "companies"]):
+                data = await odoo_tools.odoo_get_companies()
+            elif any(w in lowered for w in ["lead", "leads"]):
+                data = await odoo_tools.odoo_get_leads()
+            elif any(w in lowered for w in ["invoice", "invoices", "bill", "bills"]):
+                data = await odoo_tools.odoo_get_invoices()
+            elif any(w in lowered for w in ["payment", "payments", "paid"]):
+                data = await odoo_tools.odoo_get_payments()
+            elif any(w in lowered for w in ["product", "products", "service", "services", "catalog"]):
+                data = await odoo_tools.odoo_get_products()
+            elif any(w in lowered for w in ["revenue", "sales", "income", "earnings"]):
+                data = await odoo_tools.odoo_get_revenue_summary()
+            elif any(w in lowered for w in ["journal", "accounting", "balance", "trial balance"]):
+                data = await odoo_tools.odoo_get_account_balance()
             else:
-                data = await crm_tools.crm_get_opportunities()
-        elif any(w in lowered for w in ["note", "notes"]):
-            data = await crm_tools.crm_get_notes()
-        elif any(w in lowered for w in ["task", "tasks", "todo"]):
-            data = await crm_tools.crm_get_tasks()
-        elif any(w in lowered for w in ["compan", "companies"]):
-            data = await crm_tools.crm_get_companies()
-        else:
-            name_match = _re.search(
-                r'(?:about|details|show|find|search|who is|contact)\s+'
-                r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
-                user_text,
-            )
-            if name_match:
-                data = await crm_tools.crm_search_person(name_match.group(1))
+                name_match = _re.search(
+                    r'(?:about|details|show|find|search|who is|contact)\s+'
+                    r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
+                    user_text,
+                )
+                if name_match:
+                    data = await odoo_tools.odoo_search_contact(name_match.group(1))
+                else:
+                    data = await odoo_tools.odoo_get_contacts()
+        except Exception as e:
+            data = {"error": str(e)}
+    else:
+        from .tools import crm_tools
+        crm_source = "Twenty CRM"
+        try:
+            if any(w in lowered for w in ["pipeline", "opportunity", "opportunities", "deal", "deals"]):
+                if any(w in lowered for w in ["summary", "overview", "how many", "total"]):
+                    data = await crm_tools.crm_get_pipeline_summary()
+                else:
+                    data = await crm_tools.crm_get_opportunities()
+            elif any(w in lowered for w in ["note", "notes"]):
+                data = await crm_tools.crm_get_notes()
+            elif any(w in lowered for w in ["task", "tasks", "todo"]):
+                data = await crm_tools.crm_get_tasks()
+            elif any(w in lowered for w in ["compan", "companies"]):
+                data = await crm_tools.crm_get_companies()
             else:
-                data = await crm_tools.crm_get_people()
-    except Exception as e:
-        data = {"error": str(e)}
+                name_match = _re.search(
+                    r'(?:about|details|show|find|search|who is|contact)\s+'
+                    r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
+                    user_text,
+                )
+                if name_match:
+                    data = await crm_tools.crm_search_person(name_match.group(1))
+                else:
+                    data = await crm_tools.crm_get_people()
+        except Exception as e:
+            data = {"error": str(e)}
 
     llm = get_llm()
     history_messages = _conversation_history_messages(state)
 
-    crm_system_prompt = f"""You are the CRM assistant for shop (shop_id={shop_id}).
-You have the owner's Twenty CRM data below. Answer naturally and concisely.
+    crm_system_prompt = f"""You are the CRM/ERP assistant for shop (shop_id={shop_id}).
+You have the owner's {crm_source} data below. Answer naturally and concisely.
 
 Formatting rules:
-- People: "Name (email) — Company"
-- Opportunities: "Deal Name — $X,XXX (Stage)"
+- People/Contacts: "Name (email) — Company"
+- Opportunities/Leads: "Deal Name — $X,XXX (Stage)"
 - Pipeline summary: table by stage
-- Empty results: "Your CRM doesn't have any [type] yet"
+- Invoices: "Invoice # — $Amount (Status)"
+- Payments: "Payment # — $Amount (Status, Date)"
+- Empty results: "Your {crm_source} doesn't have any [type] yet"
 - Always state the total count when listing items
 - NEVER invent data — only use what is provided
 
-CRM data:
+{crm_source} data:
 {data}
 
 Owner asked: {user_text}"""
@@ -718,7 +772,7 @@ Owner asked: {user_text}"""
         )
     except Exception as e:
         response = AIMessage(
-            content=f"I retrieved your CRM data but had trouble formatting it: {e}"
+            content=f"I retrieved your {crm_source} data but had trouble formatting it: {e}"
         )
 
     return {

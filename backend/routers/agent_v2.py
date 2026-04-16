@@ -891,7 +891,20 @@ async def health_check():
     except Exception as e:
         health["status"] = "error"
         health["components"]["graph"] = f"error: {str(e)}"
-    
+
+    # Check Odoo ERP
+    try:
+        from integrations.odoo_client import odoo_client
+        odoo_info = odoo_client.health_check()
+        if odoo_info.get("enabled"):
+            health["components"]["odoo"] = odoo_info.get("status", "unknown")
+            if odoo_info.get("version"):
+                health["components"]["odoo_version"] = odoo_info["version"]
+        else:
+            health["components"]["odoo"] = "disabled"
+    except Exception as e:
+        health["components"]["odoo"] = f"error: {str(e)}"
+
     return health
 
 
