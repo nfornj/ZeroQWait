@@ -48,22 +48,18 @@ const AgentFeed: React.FC<AgentFeedProps> = ({ events }) => {
       variant="outlined"
       sx={{
         borderRadius: 3,
-        minHeight: 320,
         borderColor: cardBorder,
         bgcolor: cardBg,
         backdropFilter: "blur(20px)",
         boxShadow: `0 18px 50px ${alpha(brandPrimary, 0.08)}`,
       }}
     >
-      <CardContent>
-        <Typography variant="h6" mb={1}>
+      <CardContent sx={{ py: 1.25, "&:last-child": { pb: 1.25 } }}>
+        <Typography variant="subtitle2" fontWeight={600} mb={1}>
           Activity Feed
         </Typography>
-        <Typography variant="body2" color="text.secondary" mb={2}>
-          Background timeline of orchestration events and live shop updates.
-        </Typography>
 
-        <Stack spacing={1.25} sx={{ maxHeight: 320, overflowY: "auto", pr: 0.5 }}>
+        <Stack spacing={1} sx={{ maxHeight: 160, overflowY: "auto", pr: 0.5 }}>
           {events.length === 0 ? (
             <Box py={2}>
               <Typography variant="body2" color="text.secondary">

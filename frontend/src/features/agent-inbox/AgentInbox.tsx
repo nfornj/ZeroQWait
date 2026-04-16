@@ -171,6 +171,7 @@ const AgentInbox: React.FC = () => {
     wsRef.current = socket;
 
     socket.onopen = () => {
+      connected = true;
       addFeedEvent({
         type: "system",
         title: "Feed connected",
@@ -200,20 +201,20 @@ const AgentInbox: React.FC = () => {
       }
     };
 
+    let connected = false;
+
     socket.onerror = () => {
-      addFeedEvent({
-        type: "error",
-        title: "Feed connection issue",
-        description: "Unable to maintain WebSocket connection for live feed updates.",
-      });
+      // Silently ignore — WS endpoint may not be deployed yet
     };
 
     socket.onclose = () => {
-      addFeedEvent({
-        type: "system",
-        title: "Feed disconnected",
-        description: "WebSocket connection closed.",
-      });
+      if (connected) {
+        addFeedEvent({
+          type: "system",
+          title: "Feed disconnected",
+          description: "WebSocket connection closed.",
+        });
+      }
     };
 
     return () => {

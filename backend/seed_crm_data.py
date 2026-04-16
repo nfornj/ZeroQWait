@@ -207,9 +207,6 @@ async def _gql(client: httpx.AsyncClient, query: str, variables: dict = {}) -> d
 async def create_company(client: httpx.AsyncClient, idx: int) -> str:
     name = COMPANY_NAMES[idx % len(COMPANY_NAMES)]
     domain = COMPANY_DOMAINS[idx % len(COMPANY_DOMAINS)]
-    city = random.choice(CITIES)
-    employees = random.randint(1, 200)
-    arr = random.choice([0, 5000, 10000, 25000, 50000, 100000, 250000]) * 1_000_000
 
     mutation = """
     mutation CreateCompany($input: CompanyCreateInput!) {
@@ -220,9 +217,6 @@ async def create_company(client: httpx.AsyncClient, idx: int) -> str:
         "input": {
             "name": name,
             "domainName": {"primaryLinkUrl": f"https://{domain}"},
-            "employees": employees,
-            "city": city,
-            "annualRecurringRevenue": {"amountMicros": arr, "currencyCode": "USD"},
         }
     })
     return result.get("createCompany", {}).get("id", "")
@@ -233,7 +227,6 @@ async def create_person(client: httpx.AsyncClient, company_id: str = None) -> st
     last = random.choice(LAST_NAMES)
     email = _random_email(first, last)
     phone = _random_phone()
-    city = random.choice(CITIES)
 
     mutation = """
     mutation CreatePerson($input: PersonCreateInput!) {
@@ -244,7 +237,6 @@ async def create_person(client: httpx.AsyncClient, company_id: str = None) -> st
         "name": {"firstName": first, "lastName": last},
         "emails": {"primaryEmail": email},
         "phones": {"primaryPhoneNumber": phone},
-        "city": city,
     }
     if company_id:
         person_input["companyId"] = company_id
@@ -456,6 +448,8 @@ async def seed_crm_data(
 
 
 def main():
+    global GRAPHQL_URL, API_KEY
+    
     parser = argparse.ArgumentParser(description="Seed Twenty CRM with test data")
     parser.add_argument("--url", default=GRAPHQL_URL, help="Twenty GraphQL endpoint")
     parser.add_argument("--api-key", default=API_KEY, help="Twenty API key")
@@ -468,7 +462,6 @@ def main():
     parser.add_argument("--tasks", type=int, default=30)
     args = parser.parse_args()
 
-    global GRAPHQL_URL, API_KEY
     GRAPHQL_URL = args.url
     API_KEY = args.api_key
 
