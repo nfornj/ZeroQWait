@@ -145,6 +145,8 @@ def test_crm_tools_directly():
 
 
 def main():
+    global BASE_URL, AUTH_TOKEN, TEST_SHOP_ID
+    
     parser = argparse.ArgumentParser(description="Test CRM integration")
     parser.add_argument("--base-url", default=BASE_URL)
     parser.add_argument("--token", default=AUTH_TOKEN)
@@ -153,7 +155,6 @@ def main():
     parser.add_argument("--stream-only", action="store_true", help="Only test SSE streaming")
     args = parser.parse_args()
 
-    global BASE_URL, AUTH_TOKEN, TEST_SHOP_ID
     BASE_URL = args.base_url
     AUTH_TOKEN = args.token
     TEST_SHOP_ID = args.shop_id
