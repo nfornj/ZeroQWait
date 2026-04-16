@@ -286,7 +286,8 @@ def test_1_book_appointment() -> bool:
     # Verify routing
     passed = True
     if result.get("agent") not in ("receptionist", "booking"):
-        log_warn(f"Expected receptionist routing, got: {result.get('agent')}")
+        log_fail(f"Expected receptionist routing, got: {result.get('agent')}")
+        passed = False
 
     # Check DB for new appointment
     appt_count_after = db_scalar(
@@ -311,15 +312,8 @@ def test_1_book_appointment() -> bool:
         else:
             log_warn(f"Customer name mismatch: DB has '{latest.get('customer_name')}'")
     else:
-        log_warn("No new appointment found in DB — agent may not have called the tool")
-        log_info("This is expected if agent asked for confirmation first or gave informational response")
-        # Still check the response text for relevant content
-        response_text = result.get("response", "").lower()
-        if any(w in response_text for w in ["appointment", "book", "schedule", "slot", "available"]):
-            log_pass("Agent response mentions appointment-related content")
-        else:
-            log_fail("Agent response doesn't mention appointments at all")
-            passed = False
+        log_fail("No new appointment found in DB — agent did not call booking tool")
+        passed = False
 
     record_result("book_appointment", passed, f"{result['_elapsed_s']}s", result['_elapsed_s'])
     return passed
@@ -477,10 +471,8 @@ def test_3_agent_manages_queue() -> bool:
     if item_status == "BEING_SERVED":
         log_pass(f"Queue item {expected_item_id} status changed to BEING_SERVED ✓")
     elif item_status == "WAITING":
-        log_warn(f"Queue item {expected_item_id} still WAITING — agent may not have executed tool")
-        # Check if response mentions calling next
-        if any(w in result2.get("response", "").lower() for w in ["serving", "called", "next"]):
-            log_info("Agent mentioned calling next but DB didn't update")
+        log_fail(f"Queue item {expected_item_id} still WAITING — agent did not execute call-next tool")
+        passed = False
     else:
         log_info(f"Queue item {expected_item_id} status: {item_status}")
 
@@ -529,6 +521,10 @@ def test_4_create_invoice_and_payment() -> bool:
     log_info(f"Agent response ({result['_elapsed_s']}s): {result.get('response', '')[:300]}")
     log_info(f"Routed to: {result.get('agent')}")
 
+    if result.get("agent") != "finance":
+        log_fail(f"Expected finance routing for invoice creation, got: {result.get('agent')}")
+        passed = False
+
     passed = True
 
     # Check DB for new invoice
@@ -546,14 +542,11 @@ def test_4_create_invoice_and_payment() -> bool:
             inv = latest_inv[0]
             invoice_id = inv["id"]
             log_info(f"  Invoice: #{inv['invoice_number']} | total=${inv['total']} | status={inv['status']}")
-            check_number_in_response(result.get("response", ""), float(inv["total"]), label="invoice total")
+            if not check_number_in_response(result.get("response", ""), float(inv["total"]), label="invoice total"):
+                passed = False
     else:
-        log_warn("No new invoice in DB — agent may need more specific instructions")
-        response_text = result.get("response", "").lower()
-        if any(w in response_text for w in ["invoice", "bill", "charge", "cost"]):
-            log_pass("Agent response mentions invoicing")
-        else:
-            log_warn("Agent response doesn't mention invoicing")
+        log_fail("No new invoice in DB — agent did not call invoice creation tool")
+        passed = False
 
     # Step 2: Record payment via agent
     payment_count_before = db_scalar("SELECT COUNT(*) FROM payments WHERE shop_id = %s", (TEST_SHOP_ID,))
@@ -576,13 +569,11 @@ def test_4_create_invoice_and_payment() -> bool:
         if latest_pmt:
             pmt = latest_pmt[0]
             log_info(f"  Payment: id={pmt['id']} | ${pmt['amount']} | {pmt['method']} | {pmt['status']}")
-            check_number_in_response(result2.get("response", ""), float(pmt["amount"]), label="payment amount")
+            if not check_number_in_response(result2.get("response", ""), float(pmt["amount"]), label="payment amount"):
+                passed = False
     else:
-        log_warn("No new payment in DB — checking response content")
-        if any(w in result2.get("response", "").lower() for w in ["payment", "paid", "cash", "recorded"]):
-            log_pass("Agent response mentions payment")
-        else:
-            log_warn("Agent may not have executed payment tool")
+        log_fail("No new payment in DB — agent did not execute payment recording tool")
+        passed = False
 
     record_result("invoice_and_payment", passed, f"invoice_id={invoice_id}")
     return passed
@@ -590,79 +581,85 @@ def test_4_create_invoice_and_payment() -> bool:
 
 def test_5_owner_crm_questions() -> bool:
     """
-    Test: Business owner asks complex CRM questions.
+    Test: Business owner asks CRM questions (Odoo-backed).
 
     Flow:
-    1. "Show me my CRM contacts"
-    2. Cross-check with Twenty CRM GraphQL
-    3. "Show pipeline summary"
-    4. Cross-check pipeline data
+    1. "Show me all my CRM contacts" → agent routes to CRM, fetches from Odoo
+    2. Cross-check contact count with Odoo directly via XML-RPC
+    3. "Show me my CRM leads/pipeline" → agent routes to CRM
     """
-    log_test("5. Owner CRM Questions")
+    log_test("5. Owner CRM Questions (Odoo)")
+
+    passed = True
 
     # Step 1: Ask for CRM contacts
     result = agent_chat("Show me all my CRM contacts")
     log_info(f"Agent response ({result['_elapsed_s']}s): {result.get('response', '')[:400]}")
     log_info(f"Routed to: {result.get('agent')}")
 
-    passed = True
     response_text = result.get("response", "")
 
-    # Verify routing
+    # Verify routing to CRM
     if result.get("agent") == "crm":
         log_pass("Correctly routed to CRM agent")
     else:
-        log_warn(f"Expected CRM routing, got: {result.get('agent')}")
+        log_fail(f"Expected CRM routing, got: {result.get('agent')}")
+        passed = False
 
-    # Cross-check: try to fetch contacts from Twenty CRM directly
-    twenty_url = os.getenv("TWENTY_GRAPHQL_URL", "http://localhost:3001/graphql")
-    twenty_key = os.getenv("TWENTY_API_KEY", "")
+    # Cross-check: fetch contacts from Odoo directly via XML-RPC
+    odoo_url = os.getenv("ODOO_URL", "http://localhost:8069")
+    odoo_db = os.getenv("ODOO_DB", "odoo")
+    odoo_user = os.getenv("ODOO_USER", "admin")
+    odoo_password = os.getenv("ODOO_PASSWORD", "admin")
+    odoo_company_id = db_scalar("SELECT odoo_company_id FROM shops WHERE id = %s", (TEST_SHOP_ID,))
 
-    if twenty_key:
-        try:
-            gql_resp = requests.post(
-                twenty_url,
-                json={
-                    "query": """{ people(first: 20, orderBy: { createdAt: { direction: DescNullsLast }}) { edges { node { name { firstName lastName } emails { primaryEmail } } } } }"""
-                },
-                headers={"Authorization": f"Bearer {twenty_key}", "Content-Type": "application/json"},
-                timeout=10,
-            )
-            crm_data = gql_resp.json()
-            edges = crm_data.get("data", {}).get("people", {}).get("edges", [])
-            log_info(f"Twenty CRM has {len(edges)} contacts")
+    try:
+        import xmlrpc.client
+        common = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/common")
+        uid = common.authenticate(odoo_db, odoo_user, odoo_password, {})
+        models = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/object")
+        domain = [("company_id", "=", odoo_company_id)] if odoo_company_id else []
+        contact_count = models.execute_kw(
+            odoo_db, uid, odoo_password, "res.partner", "search_count", [domain]
+        )
+        log_info(f"Odoo has {contact_count} contacts for company_id={odoo_company_id}")
 
-            # Check if agent mentioned the correct count
-            if len(edges) > 0:
-                check_number_in_response(response_text, len(edges), label="CRM contact count")
-                # Check if at least one name appears in response
-                first_person = edges[0]["node"]["name"]
-                first_name = first_person.get("firstName", "")
-                if first_name and first_name.lower() in response_text.lower():
-                    log_pass(f"CRM contact '{first_name}' found in agent response")
-                else:
-                    log_info(f"First CRM contact '{first_name}' not explicitly in response (may be summarized)")
-        except Exception as e:
-            log_warn(f"Could not cross-check with Twenty CRM: {e}")
-    else:
-        log_warn("TWENTY_API_KEY not set — skipping CRM cross-check")
+        if contact_count == 0:
+            # Empty CRM is valid — agent should say no contacts
+            if any(w in response_text.lower() for w in ["no contact", "no client", "empty", "don't have", "haven't", "yet", "0"]):
+                log_pass("Agent correctly reports empty CRM")
+            else:
+                log_info(f"Odoo CRM empty — agent response: {response_text[:200]}")
+        else:
+            # Agent should report correct count
+            check_number_in_response(response_text, contact_count, label="Odoo contact count")
+    except Exception as e:
+        log_warn(f"Could not cross-check with Odoo: {e}")
 
-    # Check response has meaningful content
-    if "crm" in response_text.lower() or "contact" in response_text.lower() or "people" in response_text.lower():
+    # Response must not contain a raw error
+    if "404" in response_text or "trouble formatting" in response_text:
+        log_fail(f"Agent returned error response: {response_text[:200]}")
+        passed = False
+    elif any(w in response_text.lower() for w in ["contact", "crm", "client", "partner", "no "]):
         log_pass("Response discusses CRM data")
-    elif "error" in response_text.lower() or "don't have" in response_text.lower():
-        log_info("CRM might be empty or Twenty CRM not configured")
     else:
-        log_warn("Response doesn't clearly discuss CRM contacts")
+            log_fail(f"Unexpected CRM response: {response_text[:200]}")
+            passed = False
 
-    # Step 2: Pipeline summary
-    result2 = agent_chat("Show me the CRM pipeline summary")
-    log_info(f"Pipeline response ({result2['_elapsed_s']}s): {result2.get('response', '')[:400]}")
+    # Step 2: CRM leads / pipeline
+    result2 = agent_chat("Show me my open CRM leads")
+    log_info(f"Leads response ({result2['_elapsed_s']}s): {result2.get('response', '')[:400]}")
 
     if result2.get("agent") == "crm":
-        log_pass("Pipeline query routed to CRM agent")
+        log_pass("Leads query routed to CRM agent")
     else:
-        log_warn(f"Pipeline routing: {result2.get('agent')}")
+        log_fail(f"Leads query routing: expected crm, got {result2.get('agent')}")
+        passed = False
+
+    resp2 = result2.get("response", "")
+    if "404" in resp2 or "trouble formatting" in resp2:
+        log_fail(f"Leads query returned error: {resp2[:200]}")
+        passed = False
 
     record_result("owner_crm_questions", passed, f"{result['_elapsed_s']}s + {result2['_elapsed_s']}s")
     return passed
@@ -728,7 +725,8 @@ def test_6_owner_finance_details() -> bool:
     if result.get("agent") in ("finance",):
         log_pass("Revenue query routed to Finance agent")
     else:
-        log_warn(f"Expected finance routing, got: {result.get('agent')}")
+        log_fail(f"Expected finance routing, got: {result.get('agent')}")
+        passed = False
 
     # Cross-check: revenue amount
     resp_text = result.get("response", "")
@@ -771,10 +769,11 @@ def test_6_owner_finance_details() -> bool:
     result3 = agent_chat(f"How many customers were served on {today}?")
     log_info(f"Customer count response ({result3['_elapsed_s']}s): {result3.get('response', '')[:300]}")
 
-    check_number_in_response(
+    if not check_number_in_response(
         result3.get("response", ""), actual_customers,
         tolerance=0.0, label=f"customer count for {today}",
-    )
+    ):
+        passed = False
 
     record_result("owner_finance_details", passed, f"revenue=${actual_revenue}")
     return passed
@@ -812,14 +811,16 @@ def test_7_payment_details_query() -> bool:
     if result.get("agent") in ("finance", "receptionist"):
         log_pass(f"POS query routed to: {result.get('agent')}")
     else:
-        log_warn(f"POS routing: {result.get('agent')}")
+        log_fail(f"POS routing: {result.get('agent')}")
+        passed = False
 
     # Cross-check
     if payments_today and float(payments_today[0]["total"]) > 0:
-        check_number_in_response(
+        if not check_number_in_response(
             result.get("response", ""), float(payments_today[0]["total"]),
             tolerance=0.05, label="today's payment total",
-        )
+        ):
+            passed = False
     else:
         response_lower = result.get("response", "").lower()
         if any(w in response_lower for w in ["no payment", "no transaction", "0", "zero", "no pos"]):
@@ -832,10 +833,11 @@ def test_7_payment_details_query() -> bool:
     log_info(f"Invoices response ({result2['_elapsed_s']}s): {result2.get('response', '')[:400]}")
 
     if invoices_count > 0:
-        check_number_in_response(
+        if not check_number_in_response(
             result2.get("response", ""), invoices_count,
             tolerance=0.0, label="total invoice count",
-        )
+        ):
+            passed = False
     else:
         response_lower = result2.get("response", "").lower()
         if any(w in response_lower for w in ["no invoice", "none", "0", "haven't", "don't have"]):
@@ -873,7 +875,8 @@ def test_8_multi_turn_conversation() -> bool:
     if result2.get("agent") in ("finance",):
         log_pass("Follow-up correctly routed to Finance (context retained)")
     else:
-        log_warn(f"Follow-up routed to {result2.get('agent')} instead of finance")
+        log_fail(f"Follow-up routed to {result2.get('agent')} instead of finance")
+        passed = False
 
     # Cross-check last week's revenue from DB
     last_week_start = (datetime.utcnow() - timedelta(days=datetime.utcnow().weekday() + 7)).strftime("%Y-%m-%d")
@@ -888,10 +891,11 @@ def test_8_multi_turn_conversation() -> bool:
     if last_week_data and last_week_data[0]["week_revenue"]:
         actual_last_week = float(last_week_data[0]["week_revenue"])
         log_info(f"DB last week revenue: ${actual_last_week}")
-        check_number_in_response(
+        if not check_number_in_response(
             result2.get("response", ""), actual_last_week,
             tolerance=0.1, label="last week's revenue",
-        )
+        ):
+            passed = False
 
     record_result("multi_turn_conversation", passed)
     return passed

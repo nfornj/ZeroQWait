@@ -143,7 +143,11 @@ def receptionist_intent_classifier(state: AgentState) -> str:
     if any(word in content for word in ["queue", "wait", "position", "line", "busy"]):
         if "close" in content or "end" in content or "stop" in content:
             return "close_queue"
+        if any(word in content for word in ["call", "next", "serve"]):
+            return "call_next"
         return "queue_status"
+    elif any(word in content for word in ["call next", "serve next", "next customer", "next in"]):
+        return "call_next"
     elif any(word in content for word in ["join", "register", "add"]):
         return "join_queue"
     elif any(word in content for word in ["service", "what", "offer", "available", "price"]):
@@ -270,6 +274,122 @@ def handle_close_queue(state: AgentState) -> dict:
     }
 
 
+def handle_call_next(state: AgentState) -> dict:
+    """Call the next waiting customer in the queue."""
+    shop_id = state["tenant_id"]
+    result = booking_tools.call_next(shop_id)
+
+    if result.get("error"):
+        response = AIMessage(content=f"Couldn't call the next customer: {result['error']}")
+        return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+    response = AIMessage(
+        content=_generate_receptionist_response(
+            state,
+            "call_next",
+            result,
+            extra_instructions=(
+                "Announce that the next customer has been called. "
+                "Include their name, position number, and service if available. "
+                "Keep it very brief — one or two sentences."
+            ),
+        )
+    )
+    return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+
+def _extract_booking_entities_from_message(message: str, shop_id: int) -> Dict[str, Any]:
+    """
+    Parse a natural-language booking request into structured fields.
+
+    Returns a dict with keys: customer_name, service_id, scheduled_start (ISO str),
+    customer_phone, customer_email.  Any field that cannot be reliably extracted is None.
+    """
+    from datetime import datetime, timedelta
+
+    result: Dict[str, Any] = {
+        "customer_name": None,
+        "service_id": None,
+        "scheduled_start": None,
+        "customer_phone": None,
+        "customer_email": None,
+    }
+
+    # ── Customer name ────────────────────────────────────────────────
+    # Match "for customer <Name>" or "for <Name>"
+    name_m = re.search(
+        r"(?:for customer|for client|for)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+        message,
+    )
+    if name_m:
+        result["customer_name"] = name_m.group(1).strip()
+
+    # ── Date/time ────────────────────────────────────────────────────
+    now = datetime.utcnow()
+    date_part: datetime | None = None
+
+    if re.search(r"\btomorrow\b", message, re.I):
+        date_part = now + timedelta(days=1)
+    elif re.search(r"\btoday\b", message, re.I):
+        date_part = now
+    else:
+        # Try "YYYY-MM-DD"
+        date_str_m = re.search(r"(\d{4}-\d{2}-\d{2})", message)
+        if date_str_m:
+            try:
+                date_part = datetime.strptime(date_str_m.group(1), "%Y-%m-%d")
+            except ValueError:
+                pass
+        if not date_part:
+            # "next monday" etc. — skip complex parsing for now
+            date_part = now + timedelta(days=1)  # default tomorrow
+
+    time_m = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", message, re.I)
+    if time_m and date_part:
+        hour = int(time_m.group(1))
+        minute = int(time_m.group(2) or "0")
+        period = time_m.group(3).lower()
+        if period == "pm" and hour < 12:
+            hour += 12
+        elif period == "am" and hour == 12:
+            hour = 0
+        scheduled = date_part.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        result["scheduled_start"] = scheduled.isoformat()
+    elif date_part:
+        scheduled = date_part.replace(hour=10, minute=0, second=0, microsecond=0)
+        result["scheduled_start"] = scheduled.isoformat()
+
+    # ── Service lookup ───────────────────────────────────────────────
+    # Fetch all active services for this shop and fuzzy-match against message
+    try:
+        import difflib
+        from db_interface import db_interface as _dbi
+        services = _dbi.get_shop_services(shop_id)  # returns list of dicts
+        if services:
+            msg_lower = message.lower()
+            best_ratio = 0.0
+            best_id = None
+            for svc in services:
+                svc_name = (svc.get("name") if isinstance(svc, dict) else getattr(svc, "name", None) or "").lower()
+                if not svc_name:
+                    continue
+                # Exact substring match first
+                if svc_name in msg_lower:
+                    best_id = svc.get("id") if isinstance(svc, dict) else getattr(svc, "id", None)
+                    best_ratio = 1.0
+                    break
+                ratio = difflib.SequenceMatcher(None, svc_name, msg_lower).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_id = svc.get("id") if isinstance(svc, dict) else getattr(svc, "id", None)
+            if best_id and best_ratio >= 0.4:
+                result["service_id"] = best_id
+    except Exception:
+        pass
+
+    return result
+
+
 def handle_book_appointment(state: AgentState) -> dict:
     """Book a new appointment from owner/customer request."""
     shop_id = state["tenant_id"]
@@ -282,6 +402,21 @@ def handle_book_appointment(state: AgentState) -> dict:
     customer_phone = metadata.get("customer_phone")
     customer_email = metadata.get("customer_email")
     employee_id = metadata.get("employee_id")
+
+    # If critical fields are missing, attempt to extract from the latest message
+    if not service_id or not scheduled_start:
+        user_text = _latest_user_text(state)
+        extracted = _extract_booking_entities_from_message(user_text, shop_id)
+        if not service_id and extracted.get("service_id"):
+            service_id = extracted["service_id"]
+        if not scheduled_start and extracted.get("scheduled_start"):
+            scheduled_start = extracted["scheduled_start"]
+        if customer_name == "Walk-in" and extracted.get("customer_name"):
+            customer_name = extracted["customer_name"]
+        if not customer_phone and extracted.get("customer_phone"):
+            customer_phone = extracted["customer_phone"]
+        if not customer_email and extracted.get("customer_email"):
+            customer_email = extracted["customer_email"]
 
     if not service_id or not scheduled_start:
         response = AIMessage(
@@ -466,6 +601,7 @@ def build_receptionist_graph():
     graph.add_node("join_queue", handle_join_queue)
     graph.add_node("services", handle_services_inquiry)
     graph.add_node("close_queue", handle_close_queue)
+    graph.add_node("call_next", handle_call_next)
     graph.add_node("book_appointment", handle_book_appointment)
     graph.add_node("list_appointments", handle_list_appointments)
     graph.add_node("cancel_appointment", handle_cancel_appointment)
@@ -481,6 +617,7 @@ def build_receptionist_graph():
             "join_queue": "join_queue",
             "services": "services",
             "close_queue": "close_queue",
+            "call_next": "call_next",
             "book_appointment": "book_appointment",
             "list_appointments": "list_appointments",
             "cancel_appointment": "cancel_appointment",
@@ -494,6 +631,7 @@ def build_receptionist_graph():
     graph.add_edge("join_queue", END)
     graph.add_edge("services", END)
     graph.add_edge("close_queue", END)
+    graph.add_edge("call_next", END)
     graph.add_edge("book_appointment", END)
     graph.add_edge("list_appointments", END)
     graph.add_edge("cancel_appointment", END)

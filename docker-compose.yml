@@ -47,9 +47,6 @@ services:
       - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
       - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
       - TTS_SERVICE_URL=${TTS_SERVICE_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30880}
-      - TWENTY_GRAPHQL_URL=${TWENTY_GRAPHQL_URL:-http://twenty:3000/graphql}
-      - TWENTY_API_KEY=${TWENTY_API_KEY:-}
-      - ODOO_ENABLED=${ODOO_ENABLED:-true}
       - ODOO_URL=${ODOO_URL:-http://odoo:8069}
       - ODOO_DB=${ODOO_DB:-odoo}
       - ODOO_USER=${ODOO_USER:-admin}
@@ -74,26 +71,6 @@ services:
       - "${FRONTEND_HOST_PORT:-3000}:80"
     depends_on:
       - backend
-    restart: unless-stopped
-
-  # Twenty CRM
-  twenty:
-    image: twentycrm/twenty:latest
-    ports:
-      - "${TWENTY_HOST_PORT:-3001}:3000"
-    environment:
-      - SERVER_URL=http://localhost:3001
-      - FRONT_BASE_URL=http://localhost:3001
-      - PG_DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-zeroqwait_dev}@db:5432/twenty
-      - STORAGE_TYPE=local
-      - MESSAGE_QUEUE_TYPE=pg-boss
-      - REDIS_URL=redis://redis:6379
-      - APP_SECRET=${TWENTY_APP_SECRET:-change_me_twenty_secret}
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     restart: unless-stopped
 
   # Odoo 17 Community ERP

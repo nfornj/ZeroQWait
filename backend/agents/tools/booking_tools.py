@@ -75,7 +75,7 @@ def call_next(shop_id: int, employee_id: Optional[int] = None) -> Dict[str, Any]
             if not next_item:
                 return {"message": "No customers waiting in queue", "shop_id": shop_id}
 
-            next_item.status = QueueStatus.SERVING
+            next_item.status = QueueStatus.BEING_SERVED
             next_item.service_started_at = datetime.utcnow()
             if employee_id:
                 next_item.assigned_employee_id = employee_id

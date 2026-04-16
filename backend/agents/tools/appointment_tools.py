@@ -1,8 +1,19 @@
 """Appointment agent tools — plain async functions called by Receptionist sub-agent."""
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from modules.appointments.service import appointment_service
+
+
+def _parse_scheduled_start(scheduled_start: str) -> datetime:
+    """Parse an ISO-8601 datetime string into a datetime object."""
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(scheduled_start, fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"Cannot parse scheduled_start: {scheduled_start!r}")
 
 
 def book_appointment(
@@ -28,10 +39,11 @@ def book_appointment(
         notes: Optional booking notes.
     """
     try:
+        parsed_start = _parse_scheduled_start(scheduled_start) if isinstance(scheduled_start, str) else scheduled_start
         result = appointment_service.book_appointment(
             shop_id=shop_id,
             service_id=service_id,
-            scheduled_start=scheduled_start,
+            scheduled_start=parsed_start,
             customer_name=customer_name,
             customer_phone=customer_phone,
             customer_email=customer_email,

@@ -138,6 +138,31 @@ def _extract_client_id(text: str) -> Optional[int]:
     return None
 
 
+def _extract_invoice_request(text: str) -> tuple[str, float]:
+    """Extract service description and amount from invoice creation requests."""
+    raw = (text or "").strip()
+    lower = raw.lower()
+
+    amount_match = re.search(r"\$\s*([\d,]+(?:\.\d+)?)", raw)
+    if amount_match:
+        amount = float(amount_match.group(1).replace(",", ""))
+    else:
+        number_match = re.search(r"\b([\d,]+(?:\.\d+)?)\b", raw)
+        amount = float(number_match.group(1).replace(",", "")) if number_match else 0.0
+
+    service_name = "Service"
+    service_match = re.search(
+        r"invoice\s+for\s+(?:an?\s+)?(.+?)(?:\s+service)?(?:\s*,|\s+cost|\s+for\s+\$|\s*\$|$)",
+        lower,
+    )
+    if service_match:
+        candidate = service_match.group(1).strip(" .,")
+        if candidate:
+            service_name = candidate.title()
+
+    return service_name, amount
+
+
 def _format_client_list(items: List[Dict[str, Any]], intro: str, include_contact: bool = False, include_last_service: bool = False) -> str:
     if not items:
         return intro + " None found."
@@ -312,7 +337,7 @@ def _llm_plan_finance_intent(query: str, today_str: str) -> dict:
         f"You are a finance query analyzer for a shop management system. Today is {today_str}.\n"
         "Analyze the user message and return ONLY this JSON (no explanation, no markdown):\n"
         '{\n'
-        '  "intent": "<daily_revenue|weekly_summary|trend_summary|services_breakdown|customer_metrics|export|other>",\n'
+        '  "intent": "<daily_revenue|weekly_summary|trend_summary|services_breakdown|customer_metrics|export|create_invoice|other>",\n'
         '  "time_window": "<today|yesterday|this_week|last_week|this_month|last_month|this_year|last_year|custom|null>",\n'
         '  "date": "<YYYY-MM-DD for a specific single-day query, otherwise null>",\n'
         '  "week_start": "<YYYY-MM-DD Monday of the target week for weekly queries, otherwise null>",\n'
@@ -325,6 +350,7 @@ def _llm_plan_finance_intent(query: str, today_str: str) -> dict:
         "- services_breakdown: which services generate the most revenue\n"
         "- customer_metrics: customer counts, repeat visits, lifetime value\n"
         "- export: export/download/CSV/PDF/report file\n"
+        "- create_invoice: create/make/add/generate an invoice\n"
         "- other: unclear or general\n\n"
         f"Date computation rules (today = {today_str}):\n"
         "- 'yesterday' → date = yesterday in YYYY-MM-DD\n"
@@ -557,10 +583,11 @@ def _generate_finance_response(
     *,
     extra_instructions: str = "",
 ) -> str:
-    # Deterministic bypass disabled during stabilization — always use LLM.
-    # deterministic = _deterministic_finance_response(state, response_type, result)
-    # if deterministic:
-    #     return deterministic
+    # Use deterministic templates for known response types.
+    # Falls through to LLM only when the template returns None (unknown type).
+    deterministic = _deterministic_finance_response(state, response_type, result)
+    if deterministic:
+        return deterministic
 
     query = _latest_user_text(state)
     llm = _get_finance_writer_llm()
@@ -665,6 +692,18 @@ def _heuristic_intent_classifier(state: AgentState) -> str:
     if _is_followup_transform_request(content):
         return "export"
 
+    if all(token in content for token in ["create", "invoice"]):
+        return "create_invoice"
+
+    if any(word in content for word in ["record", "cash", "paid", "pay"]) and any(word in content for word in ["payment", "invoice"]):
+        return "record_payment"
+
+    if any(word in content for word in ["pos", "point of sale", "transaction"]):
+        return "pos_summary"
+
+    if any(word in content for word in ["list", "show", "all"]) and any(word in content for word in ["invoice", "invoices"]):
+        return "list_invoices"
+
     requested_date = finance_tools.extract_requested_date(content_raw)
 
     # Date-specific asks are usually a single-day revenue question.
@@ -689,6 +728,14 @@ def _heuristic_intent_classifier(state: AgentState) -> str:
         return "customer_metrics"
     elif any(word in content for word in ["export", "download", "report", "pdf", "csv"]):
         return "export"
+    elif "invoice" in content and any(word in content for word in ["create", "make", "add", "new", "generate"]):
+        return "create_invoice"
+    elif any(word in content for word in ["record", "cash", "paid", "pay"]) and any(word in content for word in ["payment", "invoice"]):
+        return "record_payment"
+    elif any(word in content for word in ["pos", "point of sale", "transaction"]):
+        return "pos_summary"
+    elif any(word in content for word in ["list", "show", "all"]) and any(word in content for word in ["invoice", "invoices"]):
+        return "list_invoices"
     elif any(word in content for word in ["revenue", "sales", "income", "profit", "finance", "financial", "analytics"]):
         return "trend_summary"
     else:
@@ -708,7 +755,8 @@ def finance_route(state: AgentState) -> str:
 
     valid_intents = {
         "daily_revenue", "weekly_summary", "trend_summary",
-        "services_breakdown", "customer_metrics", "export", "other",
+        "services_breakdown", "customer_metrics", "export",
+        "create_invoice", "record_payment", "list_invoices", "pos_summary", "other",
     }
 
     if intent in valid_intents and confidence >= 0.5:
@@ -716,6 +764,32 @@ def finance_route(state: AgentState) -> str:
 
     # LLM was unavailable, returned garbage, or was not confident — fall back.
     return _heuristic_intent_classifier(state)
+
+
+def handle_create_invoice(state: AgentState) -> dict:
+    """Create an invoice in the local payments module for finance workflows."""
+    shop_id = state["tenant_id"]
+    query = _latest_user_text(state)
+    service_name, amount = _extract_invoice_request(query)
+
+    result = finance_tools.create_invoice(
+        shop_id=shop_id,
+        service_name=service_name,
+        unit_price=amount,
+        quantity=1,
+        notes=f"Created by finance agent from request: {query[:160]}",
+    )
+    if result.get("error"):
+        response = AIMessage(content=f"I couldn't create the invoice: {result['error']}")
+        return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+    invoice_number = result.get("invoice_number") or f"#{result.get('id')}"
+    total = result.get("total", amount)
+    response = AIMessage(content=f"Invoice {invoice_number} created for {service_name} at {_format_currency(total)}.")
+    return {
+        "messages": list(state["messages"]) + [response],
+        "tool_results": result,
+    }
 
 
 def handle_trend_summary(state: AgentState) -> dict:
@@ -894,7 +968,14 @@ def handle_customer_metrics(state: AgentState) -> dict:
     query = _resolve_finance_query(state)
     original_query = _latest_user_text(state)
 
-    if _is_client_specific_query(original_query):
+    # Aggregate count questions ("how many customers served today") should use
+    # daily_analytics, not the client insights path which checks individual profiles.
+    is_aggregate_count = bool(re.search(
+        r"how many\s+(customer|client|people)",
+        original_query.lower(),
+    )) or any(w in original_query.lower() for w in ["served", "total customer", "customer count"])
+
+    if not is_aggregate_count and _is_client_specific_query(original_query):
         try:
             lower_query = original_query.lower()
             result: Dict[str, Any]
@@ -1079,6 +1160,88 @@ def handle_other(state: AgentState) -> dict:
     return handle_trend_summary(state)
 
 
+def handle_record_payment(state: AgentState) -> dict:
+    """Record a payment for a shop invoice."""
+    shop_id = state["tenant_id"]
+    query = _latest_user_text(state)
+
+    # Extract amount from user text
+    amount_match = re.search(r"\$\s*([\d,]+(?:\.\d+)?)", query)
+    if amount_match:
+        amount = float(amount_match.group(1).replace(",", ""))
+    else:
+        number_match = re.search(r"\b([\d,]+(?:\.\d+)?)\b", query)
+        amount = float(number_match.group(1).replace(",", "")) if number_match else 0.0
+
+    # Detect payment method
+    method = "cash"
+    lower = query.lower()
+    if any(w in lower for w in ["card", "credit", "debit"]):
+        method = "card"
+    elif "transfer" in lower or "bank" in lower:
+        method = "bank_transfer"
+
+    result = finance_tools.record_payment(
+        shop_id=shop_id,
+        amount=amount,
+        method=method,
+        notes=f"Recorded by finance agent: {query[:160]}",
+    )
+    if result.get("error"):
+        response = AIMessage(content=f"I couldn't record the payment: {result['error']}")
+        return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+    payment_id = result.get("id", "?")
+    response = AIMessage(content=f"Payment of ${amount:.2f} ({method}) recorded successfully (ID: {payment_id}).")
+    return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+
+def handle_list_invoices(state: AgentState) -> dict:
+    """List invoices for the shop."""
+    shop_id = state["tenant_id"]
+    result = finance_tools.list_invoices(shop_id=shop_id)
+    if result.get("error"):
+        response = AIMessage(content=f"I couldn't load invoices: {result['error']}")
+        return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+    invoices = result.get("invoices", [])
+    count = result.get("count", 0)
+    if count == 0:
+        response = AIMessage(content="No invoices found for your shop.")
+    else:
+        lines = [f"Found {count} invoice(s):"]
+        for inv in invoices[:10]:
+            lines.append(f"- {inv.get('invoice_number', '?')} | ${inv.get('total', 0):.2f} | {inv.get('status', '?')}")
+        if count > 10:
+            lines.append(f"...and {count - 10} more.")
+        response = AIMessage(content="\n".join(lines))
+    return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+
+def handle_pos_summary(state: AgentState) -> dict:
+    """Show POS / transaction summary for a date."""
+    shop_id = state["tenant_id"]
+    query = _latest_user_text(state)
+    requested_date = finance_tools.extract_requested_date(query)
+    result = finance_tools.get_pos_summary(shop_id=shop_id, date=requested_date)
+    if result.get("error"):
+        response = AIMessage(content=f"I couldn't load the POS summary: {result['error']}")
+        return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+    total = result.get("total_amount", 0)
+    count = result.get("total_transactions", 0)
+    date_str = result.get("date", "today")
+    if count == 0:
+        response = AIMessage(content=f"No POS transactions recorded for {date_str}.")
+    else:
+        by_method = result.get("by_method", {})
+        method_lines = [f"  {m}: {d['count']} txn(s), ${d['total']:.2f}" for m, d in by_method.items()]
+        response = AIMessage(
+            content=f"POS summary for {date_str}: {count} transaction(s) totaling ${total:.2f}.\n" + "\n".join(method_lines)
+        )
+    return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+
 def build_finance_graph():
     """
     Build the LangGraph StateGraph for the Finance sub-agent.
@@ -1099,6 +1262,10 @@ def build_finance_graph():
     graph.add_node("services_breakdown", handle_services_breakdown)
     graph.add_node("customer_metrics", handle_customer_metrics)
     graph.add_node("export", handle_export_report)
+    graph.add_node("create_invoice", handle_create_invoice)
+    graph.add_node("record_payment", handle_record_payment)
+    graph.add_node("list_invoices", handle_list_invoices)
+    graph.add_node("pos_summary", handle_pos_summary)
     graph.add_node("other", handle_other)
     
     # Edges — conditional routing uses finance_route() which reads from the LLM plan
@@ -1112,12 +1279,18 @@ def build_finance_graph():
             "services_breakdown": "services_breakdown",
             "customer_metrics": "customer_metrics",
             "export": "export",
+            "create_invoice": "create_invoice",
+            "record_payment": "record_payment",
+            "list_invoices": "list_invoices",
+            "pos_summary": "pos_summary",
             "other": "other"
         }
     )
     
     # All handlers end
-    for node in ["daily_revenue", "weekly_summary", "trend_summary", "services_breakdown", "customer_metrics", "export", "other"]:
+    for node in ["daily_revenue", "weekly_summary", "trend_summary", "services_breakdown",
+                  "customer_metrics", "export", "create_invoice", "record_payment",
+                  "list_invoices", "pos_summary", "other"]:
         graph.add_edge(node, END)
     
     # Entry point

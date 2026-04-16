@@ -174,7 +174,9 @@ def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
     granularity = "day"
     label = "last_30_days"
 
-    requested_date = extract_requested_date(q, now)
+    # Use the original query for date extraction — normalization strips hyphens
+    # from ISO dates like "2026-04-14" making them unrecognizable.
+    requested_date = extract_requested_date(query or "", now)
     if requested_date:
         dt = datetime.strptime(requested_date, "%Y-%m-%d")
         start_dt = dt.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -548,5 +550,128 @@ def export_report(shop_id: int, format: str = "csv") -> Dict[str, Any]:
             "row_count": 0,
             "shop_id": shop_id
         }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def create_invoice(
+    shop_id: int,
+    service_name: str,
+    unit_price: float,
+    quantity: int = 1,
+    customer_id: Optional[int] = None,
+    tax_rate: float = 0.0,
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create an invoice for a service rendered at the shop."""
+    try:
+        from modules.payments.service import PaymentService
+
+        svc = PaymentService()
+        line_items = [{"description": service_name, "unit_price": unit_price, "quantity": quantity}]
+        result = svc.create_invoice(
+            shop_id=shop_id,
+            line_items=line_items,
+            customer_id=customer_id,
+            tax_rate=tax_rate,
+            notes=notes,
+        )
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def record_payment(
+    shop_id: int,
+    amount: float,
+    method: str = "cash",
+    invoice_id: Optional[int] = None,
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Record a payment against an invoice or as a standalone transaction."""
+    try:
+        from modules.payments.service import PaymentService
+
+        svc = PaymentService()
+        # If no invoice_id provided, try to find the latest draft/sent invoice
+        if invoice_id is None:
+            from modules.payments.models import Invoice
+            session = db_interface.get_session()
+            try:
+                latest = session.query(Invoice).filter(
+                    Invoice.shop_id == shop_id,
+                    Invoice.status.in_(["DRAFT", "SENT"]),
+                ).order_by(Invoice.created_at.desc()).first()
+                if latest:
+                    invoice_id = latest.id
+            finally:
+                session.close()
+
+        result = svc.record_payment(
+            shop_id=shop_id,
+            amount=amount,
+            method=method,
+            invoice_id=invoice_id,
+            notes=notes,
+        )
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def list_invoices(
+    shop_id: int,
+    status: Optional[str] = None,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    """List invoices for a shop."""
+    try:
+        from modules.payments.service import PaymentService
+
+        svc = PaymentService()
+        result = svc.list_invoices(shop_id=shop_id, status=status, limit=limit)
+        return {"invoices": result, "count": len(result), "shop_id": shop_id}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
+    """Get POS (point of sale) summary for a given day."""
+    try:
+        from modules.payments.models import Payment, PaymentStatus
+        from sqlalchemy import func
+
+        target_date = date or datetime.now().strftime("%Y-%m-%d")
+        session = db_interface.get_session()
+        try:
+            from sqlalchemy import cast, Date
+            rows = session.query(
+                func.count(Payment.id).label("count"),
+                func.coalesce(func.sum(Payment.amount), 0.0).label("total"),
+                Payment.method,
+            ).filter(
+                Payment.shop_id == shop_id,
+                Payment.status == PaymentStatus.COMPLETED,
+                cast(Payment.processed_at, Date) == target_date,
+            ).group_by(Payment.method).all()
+
+            methods = {}
+            total_count = 0
+            total_amount = 0.0
+            for row in rows:
+                m = str(row.method.value) if hasattr(row.method, 'value') else str(row.method)
+                methods[m] = {"count": int(row.count), "total": float(row.total)}
+                total_count += int(row.count)
+                total_amount += float(row.total)
+
+            return {
+                "shop_id": shop_id,
+                "date": target_date,
+                "total_transactions": total_count,
+                "total_amount": total_amount,
+                "by_method": methods,
+            }
+        finally:
+            session.close()
     except Exception as e:
         return {"error": str(e)}
