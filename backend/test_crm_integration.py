@@ -108,36 +108,38 @@ def test_crm_chat_stream(message: str, label: str = ""):
 
 
 def test_crm_tools_directly():
-    """Test CRM tools directly (not through agent pipeline)."""
-    print("=== Test: CRM Tools (direct import) ===")
+    """Test CRM tools directly via Odoo (not through agent pipeline)."""
+    print("=== Test: CRM Tools (Odoo direct import) ===")
     try:
         sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
-        from agents.tools import crm_tools
+        from agents.tools import odoo_tools
         import asyncio
 
-        print("  Testing crm_get_people...")
-        people = asyncio.run(crm_tools.crm_get_people(limit=5))
-        print(f"    Got {len(people)} people")
-        if people:
-            print(f"    First: {people[0].get('display_name')} ({people[0].get('email')})")
+        shop_id = TEST_SHOP_ID
 
-        print("  Testing crm_get_companies...")
-        companies = asyncio.run(crm_tools.crm_get_companies(limit=5))
-        print(f"    Got {len(companies)} companies")
+        print("  Testing odoo_get_contacts...")
+        contacts = asyncio.run(odoo_tools.odoo_get_contacts(shop_id=shop_id, limit=5))
+        print(f"    Got {contacts.get('count', 0)} contacts")
+        if contacts.get("contacts"):
+            print(f"    First: {contacts['contacts'][0].get('name')}")
 
-        print("  Testing crm_get_pipeline_summary...")
-        pipeline = asyncio.run(crm_tools.crm_get_pipeline_summary())
-        print(f"    Total deals: {pipeline.get('total_count')}, Total value: ${pipeline.get('total_value', 0):,.2f}")
-        for stage, info in pipeline.get("by_stage", {}).items():
-            print(f"      {stage}: {info['count']} deals, ${info['value']:,.2f}")
+        print("  Testing odoo_get_companies...")
+        companies = asyncio.run(odoo_tools.odoo_get_companies(shop_id=shop_id, limit=5))
+        print(f"    Got {companies.get('count', 0)} companies")
 
-        print("  Testing crm_get_notes...")
-        notes = asyncio.run(crm_tools.crm_get_notes(limit=5))
-        print(f"    Got {len(notes)} notes")
+        print("  Testing odoo_get_pipeline_summary...")
+        pipeline = asyncio.run(odoo_tools.odoo_get_pipeline_summary(shop_id=shop_id))
+        print(f"    Total leads: {pipeline.get('total_leads', 0)}")
+        for stage in pipeline.get("pipeline", []):
+            print(f"      {stage['stage']}: {stage['count']} leads, ${stage['total_revenue']:,.2f}")
 
-        print("  Testing crm_get_tasks...")
-        tasks = asyncio.run(crm_tools.crm_get_tasks(limit=5))
-        print(f"    Got {len(tasks)} tasks")
+        print("  Testing odoo_get_leads...")
+        leads = asyncio.run(odoo_tools.odoo_get_leads(shop_id=shop_id, limit=5))
+        print(f"    Got {leads.get('count', 0)} leads")
+
+        print("  Testing odoo_get_products...")
+        products = asyncio.run(odoo_tools.odoo_get_products(shop_id=shop_id, limit=5))
+        print(f"    Got {products.get('count', 0)} products")
 
         print("  PASS\n")
     except Exception as e:

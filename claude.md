@@ -967,31 +967,55 @@ Use a **local Docker registry only** (no cloud image registry), persist image bl
 
 ---
 
-## CRM Integration (Twenty CRM)
+## CRM Integration (Odoo ERP)
 
 ### Architecture
-- Twenty CRM runs as a separate Docker service (`twenty`) on port 3000
-- FastCuts communicates with it via GraphQL at `http://twenty:3000/graphql`
-- Auth: Bearer token via env var `TWENTY_API_KEY`
-- CRM tools live in: `backend/agents/tools/crm_tools.py`
+- Odoo 17 runs as a Docker service (`odoo`) on port 8069
+- FastCuts communicates via XML-RPC at `http://odoo:8069/xmlrpc/2/object`
+- Auth: Single service credential (admin/admin) — users never log into Odoo directly
+- CRM tools live in: `backend/agents/tools/odoo_tools.py`
+- XML-RPC client: `backend/integrations/odoo_client.py`
+- Multi-tenancy: Each shop maps to a unique `res.company` in Odoo via `shops.odoo_company_id`
+
+### CRM Capabilities
+**Read operations:**
+- Contacts (list, search)
+- Companies/organizations
+- Leads/opportunities (list, filter by stage)
+- Pipeline summary (grouped by stage with revenue)
+- Invoices, payments, products, revenue summary
+- Account balances, journal entries
+- Pipeline stages list
+
+**Write operations:**
+- Create contact (with optional company, email, phone)
+- Update contact (email, phone, city, name)
+- Create lead/opportunity (with revenue, description)
+- Move lead to different pipeline stage
+- Add notes to leads
+- Create/confirm invoices
+- Register payments
 
 ### Routing
 - Owner messages with CRM intent are classified as `"crm"` by `classify_intent()`
-- CRM keywords: leads, contacts, clients, companies, pipeline, deals, opportunities, notes, tasks
+- CRM keywords: leads, contacts, clients, companies, pipeline, deals, opportunities, notes, tasks, accounting, journal, ledger, product, catalog, odoo
 - The `execute_plan()` node calls `_run_crm_agent()` for CRM-classified intent
 - CRM responses go through the same `synthesize_response()` passthrough as other specialists
 
 ### Environment variables required
-- `TWENTY_API_KEY` — API token from Twenty settings
-- `TWENTY_APP_SECRET` — Used by the Twenty Docker service itself
-- `TWENTY_GRAPHQL_URL` — defaults to `http://twenty:3000/graphql`
+- `ODOO_URL` — defaults to `http://odoo:8069`
+- `ODOO_DB` — defaults to `odoo`
+- `ODOO_USER` — defaults to `admin`
+- `ODOO_PASSWORD` — defaults to `admin`
 
 ### Adding new CRM tool functions
-1. Add async function to `backend/agents/tools/crm_tools.py`
-2. Add keyword detection in `_run_crm_agent()` in `supervisor.py`
-3. No LangChain wrappers needed — plain async Python functions only
+1. Add method to `backend/integrations/odoo_client.py` (OdooClient class)
+2. Add async wrapper to `backend/agents/tools/odoo_tools.py`
+3. Add keyword detection in `_run_crm_agent()` in `supervisor.py`
+4. No LangChain wrappers needed — plain async Python functions only
 
 ### What is NOT in this project
 - No Supabase — database is plain SQLAlchemy + PostgreSQL
 - No OpenAI — LLM is local Ollama (qwen3:14b-q4_K_M)
+- No Twenty CRM — fully removed, Odoo handles all CRM
 - No LangChain Tool/StructuredTool wrappers anywhere in agents/tools/

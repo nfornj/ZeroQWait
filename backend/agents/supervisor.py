@@ -752,8 +752,69 @@ async def _run_crm_agent(state: AgentState) -> dict:
                 data = await odoo_tools.odoo_get_leads(shop_id=shop_id)
         elif any(w in lowered for w in ["compan", "companies"]):
             data = await odoo_tools.odoo_get_companies(shop_id=shop_id)
+        elif any(w in lowered for w in ["stage", "stages"]):
+            if any(w in lowered for w in ["list", "show", "what", "available"]):
+                data = await odoo_tools.odoo_get_lead_stages(shop_id=shop_id)
+            else:
+                # Move lead to stage: "move lead 5 to won"
+                move_m = _re.search(r'(?:move|change|update)\s+(?:lead|deal|opportunity)\s+#?(\d+)\s+(?:to|→)\s+(.+)', user_text, _re.IGNORECASE)
+                if move_m:
+                    data = await odoo_tools.odoo_update_lead_stage(int(move_m.group(1)), move_m.group(2).strip())
+                else:
+                    data = await odoo_tools.odoo_get_lead_stages(shop_id=shop_id)
         elif any(w in lowered for w in ["lead", "leads"]):
-            data = await odoo_tools.odoo_get_leads(shop_id=shop_id)
+            if any(w in lowered for w in ["create", "make", "add", "new"]):
+                # Extract lead name from quotes or after keyword
+                name_m = _re.search(r'["\']([^"\']+)["\']', user_text)
+                if not name_m:
+                    name_m = _re.search(r'(?:called|named|titled)\s+(.+?)(?:\s+(?:with|for|worth)|\s*$)', user_text, _re.IGNORECASE)
+                lead_name = name_m.group(1) if name_m else user_text[:80]
+                # Extract revenue if mentioned
+                rev_m = _re.search(r'\$?([\d,]+(?:\.\d+)?)', user_text)
+                revenue = float(rev_m.group(1).replace(",", "")) if rev_m else 0.0
+                data = await odoo_tools.odoo_create_lead(
+                    name=lead_name, shop_id=shop_id, expected_revenue=revenue
+                )
+            elif any(w in lowered for w in ["note", "comment"]):
+                # Add note to lead: "add note to lead 5: Great meeting"
+                note_m = _re.search(r'(?:lead|deal|opportunity)\s+#?(\d+)[:\s]+(.+)', user_text, _re.IGNORECASE)
+                if note_m:
+                    data = await odoo_tools.odoo_add_note_to_lead(int(note_m.group(1)), note_m.group(2).strip())
+                else:
+                    data = {"error": "Please specify lead ID and note text, e.g. 'add note to lead 5: Great meeting'"}
+            else:
+                data = await odoo_tools.odoo_get_leads(shop_id=shop_id)
+        elif any(w in lowered for w in ["contact", "contacts"]):
+            if any(w in lowered for w in ["create", "make", "add", "new"]):
+                name_m = _re.search(r'["\']([^"\']+)["\']', user_text)
+                if not name_m:
+                    name_m = _re.search(r'(?:called|named)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', user_text)
+                contact_name = name_m.group(1) if name_m else None
+                email_m = _re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', user_text)
+                phone_m = _re.search(r'(?:phone|tel|call)\s*[:#]?\s*([\d\s\-+()]+)', user_text, _re.IGNORECASE)
+                if contact_name:
+                    data = await odoo_tools.odoo_create_contact(
+                        name=contact_name, shop_id=shop_id,
+                        email=email_m.group(0) if email_m else None,
+                        phone=phone_m.group(1).strip() if phone_m else None,
+                    )
+                else:
+                    data = {"error": "Please specify the contact name, e.g. 'create contact called John Smith'"}
+            elif any(w in lowered for w in ["update", "edit", "change"]):
+                upd_m = _re.search(r'(?:contact|person)\s+#?(\d+)', user_text, _re.IGNORECASE)
+                if upd_m:
+                    cid = int(upd_m.group(1))
+                    email_m = _re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', user_text)
+                    phone_m = _re.search(r'(?:phone|tel)\s*[:#]?\s*([\d\s\-+()]+)', user_text, _re.IGNORECASE)
+                    data = await odoo_tools.odoo_update_contact(
+                        contact_id=cid,
+                        email=email_m.group(0) if email_m else None,
+                        phone=phone_m.group(1).strip() if phone_m else None,
+                    )
+                else:
+                    data = {"error": "Please specify the contact ID, e.g. 'update contact #12 email: new@email.com'"}
+            else:
+                data = await odoo_tools.odoo_get_contacts(shop_id=shop_id)
         elif any(w in lowered for w in ["invoice", "invoices", "bill", "bills"]):
             if any(w in lowered for w in ["create", "make", "add", "new", "generate"]):
                 import re as _re2
@@ -773,6 +834,13 @@ async def _run_crm_agent(state: AgentState) -> dict:
             data = await odoo_tools.odoo_get_revenue_summary(shop_id=shop_id)
         elif any(w in lowered for w in ["journal", "accounting", "balance", "trial balance"]):
             data = await odoo_tools.odoo_get_account_balance(shop_id=shop_id)
+        elif any(w in lowered for w in ["note", "notes"]):
+            # Add note to a specific lead
+            note_m = _re.search(r'(?:lead|deal|opportunity)\s+#?(\d+)[:\s]+(.+)', user_text, _re.IGNORECASE)
+            if note_m:
+                data = await odoo_tools.odoo_add_note_to_lead(int(note_m.group(1)), note_m.group(2).strip())
+            else:
+                data = {"message": "To add a note, say: 'add note to lead #5: Your note text'"}
         else:
             name_match = _re.search(
                 r'(?:about|details|show|find|search|who is|contact)\s+'

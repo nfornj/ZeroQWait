@@ -34,6 +34,27 @@ def _add_company_filter(domain: list, company_id: Optional[int]) -> list:
     return domain
 
 
+_M2O_FIELDS = {"country_id", "parent_id", "partner_id", "stage_id",
+               "user_id", "journal_id", "account_id", "categ_id",
+               "move_id", "company_id"}
+
+
+def _resolve_m2o(records: list) -> list:
+    """Convert Many2one [id, name] tuples to readable 'name' strings."""
+    if not records:
+        return records
+    out = []
+    for rec in records:
+        cleaned = {}
+        for key, val in rec.items():
+            if key in _M2O_FIELDS and isinstance(val, (list, tuple)) and len(val) == 2:
+                cleaned[key] = val[1]  # keep display name
+            else:
+                cleaned[key] = val
+        out.append(cleaned)
+    return out
+
+
 class OdooClient:
     """Full Odoo 17 XML-RPC client for ERP operations with multi-company isolation."""
 
@@ -150,7 +171,8 @@ class OdooClient:
                 "res.partner", "read", ids,
                 fields=["name", "email", "phone", "city", "country_id", "parent_id", "customer_rank", "create_date"]
             )
-            return {"contacts": records or [], "count": len(records or [])}
+            records = _resolve_m2o(records or [])
+            return {"contacts": records, "count": len(records)}
         except Exception as e:
             logger.error("Odoo get_contacts failed: %s", e)
             return {"error": str(e)}
@@ -168,7 +190,8 @@ class OdooClient:
                 "res.partner", "read", ids,
                 fields=["name", "email", "phone", "city", "parent_id", "customer_rank"]
             )
-            return {"contacts": records or [], "count": len(records or [])}
+            records = _resolve_m2o(records or [])
+            return {"contacts": records, "count": len(records)}
         except Exception as e:
             logger.error("Odoo search_contact failed: %s", e)
             return {"error": str(e)}
@@ -221,7 +244,8 @@ class OdooClient:
                 "res.partner", "read", ids,
                 fields=["name", "email", "phone", "city", "country_id", "website", "create_date"]
             )
-            return {"companies": records or [], "count": len(records or [])}
+            records = _resolve_m2o(records or [])
+            return {"companies": records, "count": len(records)}
         except Exception as e:
             logger.error("Odoo get_companies failed: %s", e)
             return {"error": str(e)}
@@ -244,7 +268,8 @@ class OdooClient:
                 fields=["name", "expected_revenue", "probability", "stage_id",
                          "partner_id", "user_id", "create_date", "date_deadline", "type"]
             )
-            return {"leads": records or [], "count": len(records or [])}
+            records = _resolve_m2o(records or [])
+            return {"leads": records, "count": len(records)}
         except Exception as e:
             logger.error("Odoo get_leads failed: %s", e)
             return {"error": str(e)}
@@ -291,7 +316,8 @@ class OdooClient:
                 fields=["name", "partner_id", "amount_total", "amount_residual",
                          "state", "invoice_date", "invoice_date_due", "payment_state"]
             )
-            return {"invoices": records or [], "count": len(records or [])}
+            records = _resolve_m2o(records or [])
+            return {"invoices": records, "count": len(records)}
         except Exception as e:
             logger.error("Odoo get_invoices failed: %s", e)
             return {"error": str(e)}
@@ -359,7 +385,8 @@ class OdooClient:
                 fields=["name", "amount", "payment_type", "partner_id",
                          "journal_id", "state", "date", "ref"]
             )
-            return {"payments": records or [], "count": len(records or [])}
+            records = _resolve_m2o(records or [])
+            return {"payments": records, "count": len(records)}
         except Exception as e:
             logger.error("Odoo get_payments failed: %s", e)
             return {"error": str(e)}
@@ -411,7 +438,8 @@ class OdooClient:
                 "account.move.line", "read", ids,
                 fields=["name", "debit", "credit", "date", "account_id", "move_id", "partner_id"]
             )
-            return {"entries": records or [], "count": len(records or [])}
+            records = _resolve_m2o(records or [])
+            return {"entries": records, "count": len(records)}
         except Exception as e:
             logger.error("Odoo journal entries failed: %s", e)
             return {"error": str(e)}
@@ -459,7 +487,8 @@ class OdooClient:
                 "product.product", "read", ids,
                 fields=["name", "list_price", "type", "categ_id", "qty_available", "default_code"]
             )
-            return {"products": records or [], "count": len(records or [])}
+            records = _resolve_m2o(records or [])
+            return {"products": records, "count": len(records)}
         except Exception as e:
             logger.error("Odoo get_products failed: %s", e)
             return {"error": str(e)}
@@ -498,6 +527,110 @@ class OdooClient:
             return {"daily": daily, "total_revenue": total, "period": {"from": date_from, "to": date_to}}
         except Exception as e:
             logger.error("Odoo revenue summary failed: %s", e)
+            return {"error": str(e)}
+
+    # ── CRM: Lead/Opportunity Management ──────────────────────────
+
+    def create_lead(self, name: str, partner_id: Optional[int] = None,
+                    expected_revenue: float = 0.0,
+                    description: Optional[str] = None,
+                    lead_type: str = "opportunity",
+                    company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Create a CRM lead or opportunity assigned to company_id."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            vals: Dict[str, Any] = {
+                "name": name,
+                "type": lead_type,
+                "expected_revenue": expected_revenue,
+            }
+            if partner_id:
+                vals["partner_id"] = partner_id
+            if description:
+                vals["description"] = description
+            if company_id is not None:
+                vals["company_id"] = company_id
+            new_id = self._execute("crm.lead", "create", vals)
+            return {"id": new_id, "name": name, "type": lead_type}
+        except Exception as e:
+            logger.error("Odoo create_lead failed: %s", e)
+            return {"error": str(e)}
+
+    def update_lead_stage(self, lead_id: int,
+                          stage_name: str) -> Dict[str, Any]:
+        """Move a CRM lead to a different stage by stage name."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            stage_ids = self._execute(
+                "crm.stage", "search",
+                [("name", "ilike", stage_name)], limit=1,
+            )
+            if not stage_ids:
+                return {"error": f"Stage '{stage_name}' not found"}
+            self._execute("crm.lead", "write", [lead_id], {"stage_id": stage_ids[0]})
+            return {"id": lead_id, "new_stage": stage_name, "stage_id": stage_ids[0]}
+        except Exception as e:
+            logger.error("Odoo update_lead_stage failed: %s", e)
+            return {"error": str(e)}
+
+    def update_contact(self, contact_id: int,
+                       name: Optional[str] = None,
+                       email: Optional[str] = None,
+                       phone: Optional[str] = None,
+                       city: Optional[str] = None) -> Dict[str, Any]:
+        """Update an existing contact's fields."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            vals: Dict[str, Any] = {}
+            if name:
+                vals["name"] = name
+            if email:
+                vals["email"] = email
+            if phone:
+                vals["phone"] = phone
+            if city:
+                vals["city"] = city
+            if not vals:
+                return {"error": "No fields to update"}
+            self._execute("res.partner", "write", [contact_id], vals)
+            return {"id": contact_id, "updated_fields": list(vals.keys())}
+        except Exception as e:
+            logger.error("Odoo update_contact failed: %s", e)
+            return {"error": str(e)}
+
+    def add_note_to_lead(self, lead_id: int, body: str) -> Dict[str, Any]:
+        """Add a log note to a CRM lead via mail.message."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            msg_id = self._execute("mail.message", "create", {
+                "model": "crm.lead",
+                "res_id": lead_id,
+                "body": body,
+                "message_type": "comment",
+                "subtype_xmlid": "mail.mt_note",
+            })
+            return {"message_id": msg_id, "lead_id": lead_id}
+        except Exception as e:
+            logger.error("Odoo add_note_to_lead failed: %s", e)
+            return {"error": str(e)}
+
+    def get_lead_stages(self, company_id: Optional[int] = None) -> Dict[str, Any]:
+        """List available CRM pipeline stages."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            ids = self._execute("crm.stage", "search", [], limit=50)
+            records = self._execute(
+                "crm.stage", "read", ids,
+                fields=["name", "sequence", "is_won"]
+            )
+            return {"stages": records or []}
+        except Exception as e:
+            logger.error("Odoo get_lead_stages failed: %s", e)
             return {"error": str(e)}
 
 

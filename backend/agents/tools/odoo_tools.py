@@ -195,3 +195,50 @@ async def odoo_get_products(shop_id: int = 0, limit: int = 50, product_type: Opt
     """List products/services from Odoo for this shop."""
     cid = _get_odoo_company_id(shop_id)
     return odoo_client.get_products(limit=limit, product_type=product_type, company_id=cid)
+
+
+# ── CRM: Lead Management ─────────────────────────────────────────
+
+async def odoo_create_lead(
+    name: str,
+    shop_id: int = 0,
+    partner_id: Optional[int] = None,
+    expected_revenue: float = 0.0,
+    description: Optional[str] = None,
+    lead_type: str = "opportunity",
+) -> Dict[str, Any]:
+    """Create a CRM lead/opportunity for this shop."""
+    cid = _get_odoo_company_id(shop_id)
+    return odoo_client.create_lead(
+        name=name, partner_id=partner_id, expected_revenue=expected_revenue,
+        description=description, lead_type=lead_type, company_id=cid,
+    )
+
+
+async def odoo_update_lead_stage(lead_id: int, stage_name: str) -> Dict[str, Any]:
+    """Move a CRM lead to a different pipeline stage."""
+    return odoo_client.update_lead_stage(lead_id, stage_name)
+
+
+async def odoo_add_note_to_lead(lead_id: int, body: str) -> Dict[str, Any]:
+    """Add a note to a CRM lead."""
+    return odoo_client.add_note_to_lead(lead_id, body)
+
+
+async def odoo_get_lead_stages(shop_id: int = 0) -> Dict[str, Any]:
+    """List available CRM pipeline stages."""
+    cid = _get_odoo_company_id(shop_id)
+    return odoo_client.get_lead_stages(company_id=cid)
+
+
+# ── CRM: Contact Management ──────────────────────────────────────
+
+async def odoo_update_contact(
+    contact_id: int,
+    name: Optional[str] = None,
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    city: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Update an existing contact's details."""
+    return odoo_client.update_contact(contact_id, name=name, email=email, phone=phone, city=city)
