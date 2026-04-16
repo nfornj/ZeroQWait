@@ -105,6 +105,11 @@ _FINANCE_KEYWORDS = [
     "daily", "day", "yearly", "year", "quarter", "income", "profit", "transaction", "customers", "visited", "visits",
 ]
 _HR_KEYWORDS = ["employee", "employees", "staff", "shift", "schedule", "hire", "availability", "clock in", "clock out"]
+_CRM_KEYWORDS = [
+    "crm", "lead", "leads", "contact", "contacts", "client", "clients",
+    "company", "companies", "opportunity", "opportunities", "pipeline",
+    "deal", "deals", "prospect", "prospects", "note", "notes", "task", "tasks",
+]
 
 
 def _detect_intent_domains(text: str) -> list[str]:
@@ -115,6 +120,8 @@ def _detect_intent_domains(text: str) -> list[str]:
         domains.append("finance")
     if _contains_any_fuzzy(text, _HR_KEYWORDS):
         domains.append("hr")
+    if _contains_any_fuzzy(text, _CRM_KEYWORDS):
+        domains.append("crm")
     return domains
 
 
@@ -125,6 +132,7 @@ def _select_primary_domain(text: str, domains: list[str]) -> str:
         "booking": _BOOKING_KEYWORDS,
         "finance": _FINANCE_KEYWORDS + _FINANCE_MONTH_TOKENS,
         "hr": _HR_KEYWORDS,
+        "crm": _CRM_KEYWORDS,
     }
     best_domain = domains[0] if domains else "general"
     best_index = 10**9
@@ -258,6 +266,8 @@ def _infer_previous_target_from_history(state: AgentState) -> Optional[str]:
             continue
 
         domains = _detect_intent_domains(content)
+        if "crm" in domains:
+            return "crm"
         if "hr" in domains:
             return "hr"
         if "finance" in domains:
@@ -383,11 +393,11 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
 
     metadata = state.get("metadata") or {}
     previous_target = (metadata.get("route") or {}).get("to")
-    if previous_target not in {"receptionist", "finance", "hr"}:
+    if previous_target not in {"receptionist", "finance", "hr", "crm"}:
         previous_target = metadata.get("last_specialist_target")
-    if previous_target not in {"receptionist", "finance", "hr"}:
-        previous_target = state.get("current_agent") if state.get("current_agent") in {"receptionist", "finance", "hr"} else None
-    if previous_target not in {"receptionist", "finance", "hr"}:
+    if previous_target not in {"receptionist", "finance", "hr", "crm"}:
+        previous_target = state.get("current_agent") if state.get("current_agent") in {"receptionist", "finance", "hr", "crm"} else None
+    if previous_target not in {"receptionist", "finance", "hr", "crm"}:
         previous_target = _infer_previous_target_from_history(state)
 
     domain_hits = _detect_intent_domains(heuristic_text)
@@ -396,6 +406,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
         "receptionist": "booking",
         "finance": "finance",
         "hr": "hr",
+        "crm": "crm",
     }
 
     # Follow-up continuity: short elliptical prompts should continue the last specialist context.
@@ -506,11 +517,12 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
 1. "booking" - Queue management, appointments, wait times, closing queue, customer service
 2. "finance" - Revenue, analytics, financial reports, invoices, daily/weekly summaries  
 3. "hr" - Employees, shifts, scheduling, availability, staffing
-4. "general" - Help, capabilities, greeting, general chat
+4. "crm" - Clients, leads, contacts, companies, CRM pipeline, notes, tasks
+5. "general" - Help, capabilities, greeting, general chat
 
 Owner's command: {user_input}
 
-Respond with ONLY the category name (one word): booking, finance, hr, or general"""
+Respond with ONLY the category name (one word): booking, finance, hr, crm, or general"""
     
     # Get classification
     try:
@@ -524,7 +536,7 @@ Respond with ONLY the category name (one word): booking, finance, hr, or general
         intent = "general"
     
     # Validate and default
-    valid_intents = ["booking", "finance", "hr", "general"]
+    valid_intents = ["booking", "finance", "hr", "crm", "general"]
     if intent not in valid_intents:
         intent = "general"
 
@@ -563,6 +575,7 @@ def plan_execution(state: AgentState) -> dict:
         "booking": "receptionist",
         "finance": "finance",
         "hr": "hr",
+        "crm": "crm",
         "general": "general",
     }
     execution_target = target_by_intent.get(intent, "general")
@@ -596,7 +609,7 @@ def route_to_agent(state: AgentState) -> dict:
     metadata = state.get("metadata") or {}
     execution_target = metadata.get("execution_target")
 
-    routed_target = execution_target if execution_target in {"receptionist", "finance", "hr", "general"} else "general"
+    routed_target = execution_target if execution_target in {"receptionist", "finance", "hr", "crm", "general"} else "general"
 
     return {
         "metadata": _merge_metadata(
@@ -609,6 +622,76 @@ def route_to_agent(state: AgentState) -> dict:
                 "execution_target": routed_target,
             },
         )
+    }
+
+
+async def _run_crm_agent(state: AgentState) -> dict:
+    """Dispatch CRM query to Twenty CRM and return LLM-formatted response."""
+    import re as _re
+    from .tools import crm_tools
+
+    user_text = _latest_user_text(state)
+    messages = list(state.get("messages", []) or [])
+    shop_id = state.get("tenant_id")
+    lowered = user_text.lower()
+
+    try:
+        if any(w in lowered for w in ["pipeline", "opportunity", "opportunities", "deal", "deals"]):
+            if any(w in lowered for w in ["summary", "overview", "how many", "total"]):
+                data = await crm_tools.crm_get_pipeline_summary()
+            else:
+                data = await crm_tools.crm_get_opportunities()
+        elif any(w in lowered for w in ["note", "notes"]):
+            data = await crm_tools.crm_get_notes()
+        elif any(w in lowered for w in ["task", "tasks", "todo"]):
+            data = await crm_tools.crm_get_tasks()
+        elif any(w in lowered for w in ["compan", "companies"]):
+            data = await crm_tools.crm_get_companies()
+        else:
+            name_match = _re.search(
+                r'(?:about|details|show|find|search|who is|contact)\s+'
+                r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
+                user_text,
+            )
+            if name_match:
+                data = await crm_tools.crm_search_person(name_match.group(1))
+            else:
+                data = await crm_tools.crm_get_people()
+    except Exception as e:
+        data = {"error": str(e)}
+
+    llm = get_llm()
+    history_messages = _conversation_history_messages(state)
+
+    crm_system_prompt = f"""You are the CRM assistant for shop (shop_id={shop_id}).
+You have the owner's Twenty CRM data below. Answer naturally and concisely.
+
+Formatting rules:
+- People: "Name (email) — Company"
+- Opportunities: "Deal Name — $X,XXX (Stage)"
+- Pipeline summary: table by stage
+- Empty results: "Your CRM doesn't have any [type] yet"
+- Always state the total count when listing items
+- NEVER invent data — only use what is provided
+
+CRM data:
+{data}
+
+Owner asked: {user_text}"""
+
+    try:
+        response = llm.invoke(
+            history_messages + messages + [SystemMessage(content=crm_system_prompt)]
+        )
+    except Exception as e:
+        response = AIMessage(
+            content=f"I retrieved your CRM data but had trouble formatting it: {e}"
+        )
+
+    return {
+        "messages": messages + [response],
+        "current_agent": "crm",
+        "tool_results": {"crm_data": data},
     }
 
 
@@ -640,6 +723,17 @@ def execute_plan(state: AgentState) -> dict:
         merged_metadata = dict(metadata)
         merged_metadata.update(result.get("metadata") or {})
         merged_metadata["last_specialist_target"] = "hr"
+        return {**result, "metadata": merged_metadata}
+    if target == "crm":
+        import asyncio
+        import concurrent.futures
+        loop = asyncio.new_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(asyncio.run, _run_crm_agent(state))
+            result = future.result()
+        merged_metadata = dict(metadata)
+        merged_metadata.update(result.get("metadata") or {})
+        merged_metadata["last_specialist_target"] = "crm"
         return {**result, "metadata": merged_metadata}
 
     return {
@@ -680,7 +774,7 @@ def synthesize_response(state: AgentState) -> dict:
 
     # Deterministic specialist synthesis: keep tool-grounded specialist answer
     # intact (without forced boilerplate suffix).
-    if current_agent in {"receptionist", "finance", "hr"} and messages:
+    if current_agent in {"receptionist", "finance", "hr", "crm"} and messages:
         last_message = messages[-1]
         if isinstance(last_message, AIMessage):
             mixed_intents = list(metadata.get("mixed_intents") or [])
@@ -718,6 +812,7 @@ You have three specialized sub-agents available:
 1. Receptionist - handles bookings, queue management, customer service
 2. Finance Manager - handles revenue, analytics, financial reporting
 3. HR Assistant - handles employees, shifts, scheduling
+4. CRM Assistant - handles client contacts, leads, companies, pipeline, notes, tasks
 
 As the Supervisor, you:
 - Help the owner manage their business via natural chat

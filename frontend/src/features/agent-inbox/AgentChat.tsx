@@ -35,6 +35,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
     "Give me today's queue summary",
     "Show this week's revenue trend",
     "Who is on shift now?",
+    "Show my CRM pipeline summary",
   ];
 
   const submit = async (event?: React.FormEvent) => {
@@ -78,7 +79,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
         </Stack>
 
         <Typography variant="body2" color="text.secondary" mb={1.5}>
-          Your AI operating console for queue, team, finance, and approval workflows.
+          Your AI operating console for queue, team, finance, CRM, and approval workflows.
         </Typography>
 
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" mb={1.5}>

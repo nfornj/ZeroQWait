@@ -964,3 +964,34 @@ Use a **local Docker registry only** (no cloud image registry), persist image bl
 - **Single stack rule**: Use only one Docker Compose project for local/non-prod work: `zeroqwait`. Do not create `zeroqwait-test` (or any other parallel project) unless explicitly approved by the user.
 - **Strict localhost port rule**: Frontend must remain on `http://localhost:3000` for local/non-prod Compose deployment. Do not switch to random or ephemeral frontend host ports.
 - **Commit and push rule**: After completing code changes and verification, always create a commit and push to the active branch so test deployment workflows can run.
+
+---
+
+## CRM Integration (Twenty CRM)
+
+### Architecture
+- Twenty CRM runs as a separate Docker service (`twenty`) on port 3000
+- FastCuts communicates with it via GraphQL at `http://twenty:3000/graphql`
+- Auth: Bearer token via env var `TWENTY_API_KEY`
+- CRM tools live in: `backend/agents/tools/crm_tools.py`
+
+### Routing
+- Owner messages with CRM intent are classified as `"crm"` by `classify_intent()`
+- CRM keywords: leads, contacts, clients, companies, pipeline, deals, opportunities, notes, tasks
+- The `execute_plan()` node calls `_run_crm_agent()` for CRM-classified intent
+- CRM responses go through the same `synthesize_response()` passthrough as other specialists
+
+### Environment variables required
+- `TWENTY_API_KEY` — API token from Twenty settings
+- `TWENTY_APP_SECRET` — Used by the Twenty Docker service itself
+- `TWENTY_GRAPHQL_URL` — defaults to `http://twenty:3000/graphql`
+
+### Adding new CRM tool functions
+1. Add async function to `backend/agents/tools/crm_tools.py`
+2. Add keyword detection in `_run_crm_agent()` in `supervisor.py`
+3. No LangChain wrappers needed — plain async Python functions only
+
+### What is NOT in this project
+- No Supabase — database is plain SQLAlchemy + PostgreSQL
+- No OpenAI — LLM is local Ollama (qwen3:14b-q4_K_M)
+- No LangChain Tool/StructuredTool wrappers anywhere in agents/tools/

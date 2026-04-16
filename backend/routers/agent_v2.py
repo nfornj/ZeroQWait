@@ -61,6 +61,7 @@ _AGENT_DISPLAY_LABELS: Dict[str, str] = {
     "finance": "Finance Manager",
     "hr": "HR Assistant",
     "booking": "Receptionist",
+    "crm": "CRM Assistant",
 }
 
 
