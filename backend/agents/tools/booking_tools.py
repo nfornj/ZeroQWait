@@ -44,27 +44,52 @@ def list_queue(shop_id: int) -> Dict[str, Any]:
 
 
 def join_queue(shop_id: int, customer_name: str, phone: Optional[str] = None) -> Dict[str, Any]:
-    """Join a queue (Phase 2 placeholder)."""
+    """Join a queue — calls db_interface.join_queue_for_shop with row locking."""
     try:
-        # For now, return a confirmation message
-        return {
-            "message": f"Added {customer_name} to queue",
-            "shop_id": shop_id,
-            "status": "added"
-        }
+        result = db_interface.join_queue_for_shop(shop_id, customer_name, phone)
+        return result
     except Exception as e:
         return {"error": str(e)}
 
 
 def call_next(shop_id: int, employee_id: Optional[int] = None) -> Dict[str, Any]:
-    """Call next customer from queue (Phase 2 placeholder)."""
+    """Call next customer from queue — marks current waiting item as serving."""
     try:
-        # For now, return placeholder response
-        return {
-            "message": "Next customer called",
-            "shop_id": shop_id,
-            "status": "called"
-        }
+        from modules.queues.models import Queue, QueueItem, QueueStatus
+        from datetime import datetime
+
+        session = db_interface.get_session()
+        try:
+            queue = session.query(Queue).filter(
+                Queue.shop_id == shop_id,
+                Queue.is_active == True
+            ).first()
+            if not queue:
+                return {"error": "No active queue found", "shop_id": shop_id}
+
+            next_item = session.query(QueueItem).filter(
+                QueueItem.queue_id == queue.id,
+                QueueItem.status == QueueStatus.WAITING,
+            ).order_by(QueueItem.position).first()
+
+            if not next_item:
+                return {"message": "No customers waiting in queue", "shop_id": shop_id}
+
+            next_item.status = QueueStatus.SERVING
+            next_item.service_started_at = datetime.utcnow()
+            if employee_id:
+                next_item.assigned_employee_id = employee_id
+            session.commit()
+            session.refresh(next_item)
+
+            return {
+                "message": f"Now serving {next_item.customer_name or 'customer'}",
+                "queue_item": db_interface._model_to_dict(next_item),
+                "shop_id": shop_id,
+                "status": "serving",
+            }
+        finally:
+            session.close()
     except Exception as e:
         return {"error": str(e)}
 
@@ -83,14 +108,30 @@ def get_wait_time(shop_id: int, queue_item_id: Optional[int] = None) -> Dict[str
 
 
 def close_queue(shop_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
-    """Close the queue (Phase 2 placeholder with HITL approval)."""
+    """Close the active queue for a shop. This is a high-impact action requiring HITL approval."""
     try:
-        return {
-            "message": f"Queue closed. Reason: {reason or 'Not specified'}",
-            "shop_id": shop_id,
-            "status": "closed",
-            "requires_approval": True
-        }
+        from modules.queues.models import Queue
+
+        session = db_interface.get_session()
+        try:
+            queue = session.query(Queue).filter(
+                Queue.shop_id == shop_id,
+                Queue.is_active == True
+            ).first()
+            if not queue:
+                return {"error": "No active queue to close", "shop_id": shop_id}
+
+            queue.is_active = False
+            session.commit()
+
+            return {
+                "message": f"Queue closed. Reason: {reason or 'Not specified'}",
+                "shop_id": shop_id,
+                "status": "closed",
+                "requires_approval": True,
+            }
+        finally:
+            session.close()
     except Exception as e:
         return {"error": str(e)}
 

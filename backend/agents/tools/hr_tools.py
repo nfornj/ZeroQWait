@@ -32,28 +32,41 @@ def add_employee(
     role: str = "employee",
     employee_code: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Add an employee (Phase 2 placeholder)."""
+    """Add an employee via db_interface. High-impact — requires HITL approval."""
     try:
+        result = db_interface.create_shop_employee({
+            "shop_id": shop_id,
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "role": role,
+            "employee_code": employee_code,
+            "is_active": True,
+        })
         return {
             "message": f"Employee {name} added successfully",
+            "employee": result,
             "shop_id": shop_id,
             "status": "added",
-            "requires_approval": True
+            "requires_approval": True,
         }
     except Exception as e:
         return {"error": str(e)}
 
 
 def remove_employee(shop_id: int, user_id: int) -> Dict[str, Any]:
-    """Remove an employee (Phase 2 placeholder)."""
+    """Deactivate an employee. High-impact — requires HITL approval."""
     try:
-        return {
-            "message": f"Employee removed from shop",
-            "shop_id": shop_id,
-            "user_id": user_id,
-            "status": "removed",
-            "requires_approval": True
-        }
+        result = db_interface.update_shop_employee(shop_id, user_id, {"is_active": False})
+        if result:
+            return {
+                "message": "Employee deactivated from shop",
+                "shop_id": shop_id,
+                "user_id": user_id,
+                "status": "removed",
+                "requires_approval": True,
+            }
+        return {"error": "Employee not found", "shop_id": shop_id, "user_id": user_id}
     except Exception as e:
         return {"error": str(e)}
 
@@ -87,28 +100,71 @@ def get_shifts(shop_id: int, date: Optional[str] = None, user_id: Optional[int] 
 
 
 def assign_shift(shop_id: int, user_id: int, start_time: str, end_time: str, date: str) -> Dict[str, Any]:
-    """Assign a shift to an employee (Phase 2 placeholder)."""
+    """Assign a shift to an employee via db_interface. Requires HITL approval."""
     try:
+        shift_data = {
+            "shop_id": shop_id,
+            "user_id": user_id,
+            "clock_in": datetime.fromisoformat(f"{date}T{start_time}"),
+            "clock_out": datetime.fromisoformat(f"{date}T{end_time}"),
+        }
+        result = db_interface.create_employee_shift(shift_data)
         return {
-            "message": f"Shift assigned to employee",
+            "message": "Shift assigned to employee",
+            "shift": result,
             "shop_id": shop_id,
             "user_id": user_id,
             "status": "assigned",
-            "requires_approval": True
+            "requires_approval": True,
         }
     except Exception as e:
         return {"error": str(e)}
 
 
 def clock_in_out(shop_id: int, user_id: int, action: str) -> Dict[str, Any]:
-    """Clock in or out (Phase 2 placeholder)."""
+    """Clock in or out an employee via db_interface."""
     try:
-        return {
-            "message": f"Employee {action} recorded",
-            "shop_id": shop_id,
-            "user_id": user_id,
-            "action": action,
-            "status": "recorded"
-        }
+        if action == "clock_in":
+            shift_data = {
+                "shop_id": shop_id,
+                "user_id": user_id,
+                "clock_in": datetime.now(),
+            }
+            result = db_interface.create_employee_shift(shift_data)
+            return {
+                "message": f"Employee clocked in",
+                "shift": result,
+                "shop_id": shop_id,
+                "user_id": user_id,
+                "action": action,
+                "status": "recorded",
+            }
+        elif action == "clock_out":
+            # Find the active (open) shift and close it
+            from modules.employees.models import EmployeeShift
+            session = db_interface.get_session()
+            try:
+                shift = session.query(EmployeeShift).filter(
+                    EmployeeShift.shop_id == shop_id,
+                    EmployeeShift.user_id == user_id,
+                    EmployeeShift.clock_out == None,
+                ).order_by(EmployeeShift.clock_in.desc()).first()
+                if not shift:
+                    return {"error": "No active shift found to clock out", "shop_id": shop_id}
+                shift.clock_out = datetime.now()
+                session.commit()
+                session.refresh(shift)
+                return {
+                    "message": "Employee clocked out",
+                    "shift": db_interface._model_to_dict(shift),
+                    "shop_id": shop_id,
+                    "user_id": user_id,
+                    "action": action,
+                    "status": "recorded",
+                }
+            finally:
+                session.close()
+        else:
+            return {"error": f"Unknown action: {action}. Use 'clock_in' or 'clock_out'."}
     except Exception as e:
         return {"error": str(e)}

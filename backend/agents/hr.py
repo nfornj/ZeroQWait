@@ -135,9 +135,9 @@ def hr_intent_classifier(state: AgentState) -> str:
         return "list_employees"
     elif any(word in content for word in ["shift", "schedule", "assign", "time"]):
         return "shift_schedule"
-    elif any(word in content for word in ["clock", "in", "out", "arrived", "left"]):
+    elif any(phrase in content for phrase in ["clock in", "clock out", "clocked in", "clocked out", "arrived", "left early"]):
         return "clock_in_out"
-    elif any(word in content for word in ["available", "available", "availability", "who"]):
+    elif any(word in content for word in ["available", "availability", "who", "working", "on duty", "roster"]):
         return "availability"
     else:
         return "other"

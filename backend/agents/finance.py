@@ -36,7 +36,7 @@ from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 
 from .state import AgentState
-from .tools import finance_tools
+from .tools import client_insights_tools, finance_tools
 
 
 TIMEFRAME_HINTS = [
@@ -65,6 +65,19 @@ NORMALIZATION_KEYWORDS = sorted(
     key=len,
     reverse=True,
 )
+
+CLIENT_HINTS = [
+    "client", "clients", "customer", "customers", "who hasn't",
+    "inactive", "lapsed", "top client", "top clients", "frequent", "loyalty",
+    "hasn't visited", "not been in", "profile", "visit history", "at risk",
+    "regulars", "loyal", "inactive clients",
+]
+
+CLIENT_PHRASES = [
+    "who hasn't", "hasn't visited", "not been in", "top client", "top clients",
+    "visit frequency", "visit history", "client profile", "customer profile",
+    "at risk", "inactive clients", "inactive customers",
+]
 
 
 def _tokenize_text(text: str) -> List[str]:
@@ -96,6 +109,73 @@ def _normalize_for_matching(text: str) -> str:
     tokens = _tokenize_text(text)
     normalized = [_best_fuzzy_keyword(token) for token in tokens]
     return " ".join(normalized)
+
+
+def _is_client_specific_query(text: str) -> bool:
+    lowered = (text or "").lower()
+    if any(phrase in lowered for phrase in CLIENT_PHRASES):
+        return True
+    normalized = _normalize_for_matching(text)
+    return any(token in normalized for token in CLIENT_HINTS)
+
+
+def _extract_client_search_name(text: str) -> Optional[str]:
+    patterns = [
+        r"(?:profile|history|details|search|find|show)\s+(?:for\s+|of\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})",
+        r"(?:client|customer)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def _extract_client_id(text: str) -> Optional[int]:
+    match = re.search(r"(?:client|customer)\s+#?(\d+)", text.lower())
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _format_client_list(items: List[Dict[str, Any]], intro: str, include_contact: bool = False, include_last_service: bool = False) -> str:
+    if not items:
+        return intro + " None found."
+
+    lines = [intro]
+    for item in items:
+        parts = [item.get("name") or "Unknown"]
+        if item.get("visit_count") is not None:
+            parts.append(f"{int(item['visit_count'])} visits")
+        if item.get("days_inactive") is not None:
+            parts.append(f"inactive {int(item['days_inactive'])} days")
+        if item.get("days_since_last_visit") is not None:
+            parts.append(f"last seen {int(item['days_since_last_visit'])} days ago")
+        if item.get("last_visit"):
+            parts.append(f"last visit {item['last_visit']}")
+        if include_contact and item.get("contact"):
+            parts.append(str(item["contact"]))
+        if include_last_service and item.get("last_service"):
+            parts.append(f"last service: {item['last_service']}")
+        lines.append("- " + " | ".join(parts))
+    return "\n".join(lines)
+
+
+def _format_visit_frequency_summary(result: Dict[str, Any]) -> str:
+    total = int(result.get("total_clients") or 0)
+    if total == 0:
+        return "No client records were found for this shop yet."
+    regulars = result.get("regulars", {})
+    at_risk = result.get("at_risk", {})
+    lapsed = result.get("lapsed", {})
+    new = result.get("new", {})
+    return (
+        f"Client visit frequency summary across {total} clients:\n"
+        f"- Regulars: {regulars.get('count', 0)} ({regulars.get('percentage', 0)}%)\n"
+        f"- At risk: {at_risk.get('count', 0)} ({at_risk.get('percentage', 0)}%)\n"
+        f"- Lapsed: {lapsed.get('count', 0)} ({lapsed.get('percentage', 0)}%)\n"
+        f"- New: {new.get('count', 0)} ({new.get('percentage', 0)}%)"
+    )
 
 
 def _latest_user_text(state: AgentState) -> str:
@@ -594,6 +674,9 @@ def _heuristic_intent_classifier(state: AgentState) -> str:
     if requested_date and any(word in content for word in ["revenue", "sales", "income", "profit", "finance", "financial", "analytics"]):
         return "daily_revenue"
 
+    if _is_client_specific_query(content_raw):
+        return "customer_metrics"
+
     # Keyword matching for Phase 2
     if any(word in content for word in ["today", "today's", "daily"]):
         return "daily_revenue"
@@ -809,9 +892,78 @@ def handle_services_breakdown(state: AgentState) -> dict:
 
 def handle_customer_metrics(state: AgentState) -> dict:
     """Get customer analytics."""
-    
+
     shop_id = state["tenant_id"]
     query = _resolve_finance_query(state)
+    original_query = _latest_user_text(state)
+
+    if _is_client_specific_query(original_query):
+        try:
+            lower_query = original_query.lower()
+            result: Dict[str, Any]
+
+            if any(token in lower_query for token in ["who hasn't", "inactive", "hasn't visited", "not been in", "lapsed"]):
+                result = {
+                    "client_insight_type": "inactive_clients",
+                    "items": client_insights_tools.get_inactive_clients(shop_id),
+                }
+                response_text = _format_client_list(
+                    result["items"],
+                    "Inactive clients:",
+                    include_contact=True,
+                )
+            elif any(token in lower_query for token in ["top client", "top clients", "frequent", "loyal"]):
+                result = {
+                    "client_insight_type": "top_clients",
+                    "items": client_insights_tools.get_top_clients(shop_id),
+                }
+                response_text = _format_client_list(result["items"], "Top clients:")
+            elif any(token in lower_query for token in ["regulars", "at risk", "lapsed", "visit frequency", "loyalty"]):
+                result = client_insights_tools.get_visit_frequency_summary(shop_id)
+                result["client_insight_type"] = "visit_frequency_summary"
+                response_text = _format_visit_frequency_summary(result)
+            else:
+                client_id = _extract_client_id(original_query)
+                if client_id is not None:
+                    result = client_insights_tools.get_client_profile(shop_id, client_id)
+                    result["client_insight_type"] = "client_profile"
+                    if result.get("error"):
+                        response_text = result["error"]
+                    else:
+                        response_text = result.get("summary") or "Client profile loaded."
+                else:
+                    search_name = _extract_client_search_name(original_query)
+                    if search_name:
+                        matches = client_insights_tools.get_client_search(shop_id, search_name)
+                        if len(matches) == 1:
+                            result = client_insights_tools.get_client_profile(shop_id, int(matches[0]["id"]))
+                            result["client_insight_type"] = "client_profile"
+                            response_text = result.get("summary") or "Client profile loaded."
+                        else:
+                            result = {
+                                "client_insight_type": "client_search",
+                                "name": search_name,
+                                "items": matches,
+                            }
+                            response_text = _format_client_list(
+                                matches,
+                                f"Client search results for {search_name}:",
+                                include_last_service=True,
+                            )
+                    else:
+                        result = client_insights_tools.get_visit_frequency_summary(shop_id)
+                        result["client_insight_type"] = "visit_frequency_summary"
+                        response_text = _format_visit_frequency_summary(result)
+
+            response = AIMessage(content=response_text)
+            return {
+                "messages": list(state["messages"]) + [response],
+                "tool_results": result,
+            }
+        except Exception as e:
+            response = AIMessage(content=f"I couldn't load client insights: {e}")
+            return {"messages": list(state["messages"]) + [response], "tool_results": {"error": str(e)}}
+
     result = finance_tools.customer_metrics(shop_id, query=query)
     if result.get("error"):
         response = AIMessage(content=f"I couldn't load customer metrics: {result['error']}")

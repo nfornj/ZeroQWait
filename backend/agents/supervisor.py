@@ -99,12 +99,18 @@ _FINANCE_MONTH_TOKENS = [
     "oct", "october", "nov", "november", "dec", "december",
 ]
 
-_BOOKING_KEYWORDS = ["queue", "booking", "appointment", "wait", "service", "services", "customer"]
+_BOOKING_KEYWORDS = ["queue", "booking", "appointment", "wait", "service", "services", "customer", "schedule", "slot", "reschedule", "book"]
 _FINANCE_KEYWORDS = [
     "revenue", "finance", "analytics", "report", "sales", "trend", "monthly", "month", "weekly", "week",
     "daily", "day", "yearly", "year", "quarter", "income", "profit", "transaction", "customers", "visited", "visits",
+    "invoice", "payment", "refund", "pos", "billing", "receipt", "tip",
 ]
-_HR_KEYWORDS = ["employee", "employees", "staff", "shift", "schedule", "hire", "availability", "clock in", "clock out"]
+_CLIENT_KEYWORDS = [
+    "client", "clients", "customer", "customers", "who hasn't",
+    "inactive", "lapsed", "top client", "frequent", "loyalty",
+    "hasn't visited", "not been in", "profile", "visit history",
+]
+_HR_KEYWORDS = ["employee", "employees", "staff", "shift", "schedule", "hire", "availability", "clock in", "clock out", "working", "on duty", "roster"]
 _CRM_KEYWORDS = [
     "crm", "lead", "leads", "contact", "contacts", "client", "clients",
     "company", "companies", "opportunity", "opportunities", "pipeline",
@@ -116,7 +122,7 @@ def _detect_intent_domains(text: str) -> list[str]:
     domains = []
     if _contains_any_fuzzy(text, _BOOKING_KEYWORDS):
         domains.append("booking")
-    if _contains_any_fuzzy(text, _FINANCE_KEYWORDS) or _contains_any_fuzzy(text, _FINANCE_MONTH_TOKENS):
+    if _contains_any_fuzzy(text, _FINANCE_KEYWORDS) or _contains_any_fuzzy(text, _FINANCE_MONTH_TOKENS) or _contains_any_fuzzy(text, _CLIENT_KEYWORDS):
         domains.append("finance")
     if _contains_any_fuzzy(text, _HR_KEYWORDS):
         domains.append("hr")
@@ -130,7 +136,7 @@ def _select_primary_domain(text: str, domains: list[str]) -> str:
     lowered = (text or "").lower()
     keyword_map = {
         "booking": _BOOKING_KEYWORDS,
-        "finance": _FINANCE_KEYWORDS + _FINANCE_MONTH_TOKENS,
+        "finance": _FINANCE_KEYWORDS + _FINANCE_MONTH_TOKENS + _CLIENT_KEYWORDS,
         "hr": _HR_KEYWORDS,
         "crm": _CRM_KEYWORDS,
     }
@@ -370,7 +376,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
     
     Categories:
     - "booking": Queue, appointments, wait times, close queue
-    - "finance": Revenue, analytics, reports, invoices
+    - "finance": Revenue, analytics, reports, invoices, client retention, visit history, inactive customers
     - "hr": Employees, shifts, scheduling, availability
     - "general": Help, capabilities, general chat
     """
@@ -390,6 +396,23 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
     
     # Fast local heuristic first for reliability when LLM is unavailable.
     heuristic_text = str(user_input).lower()
+
+    if _contains_any_fuzzy(heuristic_text, _CLIENT_KEYWORDS):
+        return Command(
+            goto="plan_execution",
+            update={
+                "current_agent": "finance",
+                "metadata": _merge_metadata(
+                    state,
+                    {
+                        "classified_intent": "finance",
+                        "classification_source": "client_heuristic",
+                        "mixed_intents": [],
+                        "requires_clarification": False,
+                    },
+                ),
+            },
+        )
 
     metadata = state.get("metadata") or {}
     previous_target = (metadata.get("route") or {}).get("to")
@@ -514,9 +537,9 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
     # Classification prompt
     classification_prompt = f"""Classify the following shop owner command into one of these categories:
     
-1. "booking" - Queue management, appointments, wait times, closing queue, customer service
-2. "finance" - Revenue, analytics, financial reports, invoices, daily/weekly summaries  
-3. "hr" - Employees, shifts, scheduling, availability, staffing
+1. "booking" - Queue management, appointments, booking, wait times, closing queue, available slots, rescheduling
+2. "finance" - Revenue, analytics, financial reports, invoices, payments, POS, billing, refunds, daily/weekly summaries, client retention, inactive customers, visit history  
+3. "hr" - Employees, shifts, scheduling, availability, staffing, clock in/out
 4. "crm" - Clients, leads, contacts, companies, CRM pipeline, notes, tasks
 5. "general" - Help, capabilities, greeting, general chat
 
@@ -804,13 +827,26 @@ def synthesize_response(state: AgentState) -> dict:
             }
 
     llm = get_llm()
+
+    # ── Shop-type adaptive prompt ────────────────────────────────
+    shop_type_hint = ""
+    try:
+        from db_interface import db_interface
+        from .vertical_profiles import build_vertical_system_prompt
+        shop_data = db_interface.get_shop_by_id(state.get("tenant_id"))
+        if shop_data:
+            shop_type_hint = "\n" + build_vertical_system_prompt(
+                shop_data.get("shop_type", ""), agent_role="supervisor"
+            )
+    except Exception:
+        pass
     
     # Build response prompt
     system_prompt = f"""You are ZeroQwait Supervisor Agent, managing the AI operations team for shop owner (shop_id={state.get('tenant_id')}).
-
-You have three specialized sub-agents available:
-1. Receptionist - handles bookings, queue management, customer service
-2. Finance Manager - handles revenue, analytics, financial reporting
+{shop_type_hint}
+You have specialized sub-agents available:
+1. Receptionist - handles bookings, queue management, appointments, customer service
+2. Finance Manager - handles revenue, analytics, POS/payments, invoicing, financial reporting
 3. HR Assistant - handles employees, shifts, scheduling
 4. CRM Assistant - handles client contacts, leads, companies, pipeline, notes, tasks
 
