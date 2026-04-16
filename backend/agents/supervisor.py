@@ -122,7 +122,12 @@ def _detect_intent_domains(text: str) -> list[str]:
     domains = []
     if _contains_any_fuzzy(text, _BOOKING_KEYWORDS):
         domains.append("booking")
-    if _contains_any_fuzzy(text, _FINANCE_KEYWORDS) or _contains_any_fuzzy(text, _FINANCE_MONTH_TOKENS) or _contains_any_fuzzy(text, _CLIENT_KEYWORDS):
+    has_booking_signals = _contains_any_fuzzy(text, ["book", "appointment", "slot", "reschedule", "wait time"])
+    if not has_booking_signals and (
+        _contains_any_fuzzy(text, _FINANCE_KEYWORDS)
+        or _contains_any_fuzzy(text, _FINANCE_MONTH_TOKENS)
+        or _contains_any_fuzzy(text, _CLIENT_KEYWORDS)
+    ):
         domains.append("finance")
     if _contains_any_fuzzy(text, _HR_KEYWORDS):
         domains.append("hr")
@@ -397,7 +402,12 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
     # Fast local heuristic first for reliability when LLM is unavailable.
     heuristic_text = str(user_input).lower()
 
-    if _contains_any_fuzzy(heuristic_text, _CLIENT_KEYWORDS):
+    # Client-keyword shortcut to finance — but only when the message does
+    # NOT also carry strong booking signals (e.g. "book appointment for
+    # customer Jane Doe" should route to booking, not finance).
+    if _contains_any_fuzzy(heuristic_text, _CLIENT_KEYWORDS) and not _contains_any_fuzzy(
+        heuristic_text, ["book", "appointment", "queue", "slot", "reschedule", "wait time"]
+    ):
         return Command(
             goto="plan_execution",
             update={
