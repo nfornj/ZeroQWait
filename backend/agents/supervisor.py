@@ -688,23 +688,23 @@ async def _run_crm_agent(state: AgentState) -> dict:
         try:
             if any(w in lowered for w in ["pipeline", "opportunity", "opportunities", "deal", "deals"]):
                 if any(w in lowered for w in ["summary", "overview", "how many", "total"]):
-                    data = await odoo_tools.odoo_get_pipeline_summary()
+                    data = await odoo_tools.odoo_get_pipeline_summary(shop_id=shop_id)
                 else:
-                    data = await odoo_tools.odoo_get_leads()
+                    data = await odoo_tools.odoo_get_leads(shop_id=shop_id)
             elif any(w in lowered for w in ["compan", "companies"]):
-                data = await odoo_tools.odoo_get_companies()
+                data = await odoo_tools.odoo_get_companies(shop_id=shop_id)
             elif any(w in lowered for w in ["lead", "leads"]):
-                data = await odoo_tools.odoo_get_leads()
+                data = await odoo_tools.odoo_get_leads(shop_id=shop_id)
             elif any(w in lowered for w in ["invoice", "invoices", "bill", "bills"]):
-                data = await odoo_tools.odoo_get_invoices()
+                data = await odoo_tools.odoo_get_invoices(shop_id=shop_id)
             elif any(w in lowered for w in ["payment", "payments", "paid"]):
-                data = await odoo_tools.odoo_get_payments()
+                data = await odoo_tools.odoo_get_payments(shop_id=shop_id)
             elif any(w in lowered for w in ["product", "products", "service", "services", "catalog"]):
-                data = await odoo_tools.odoo_get_products()
+                data = await odoo_tools.odoo_get_products(shop_id=shop_id)
             elif any(w in lowered for w in ["revenue", "sales", "income", "earnings"]):
-                data = await odoo_tools.odoo_get_revenue_summary()
+                data = await odoo_tools.odoo_get_revenue_summary(shop_id=shop_id)
             elif any(w in lowered for w in ["journal", "accounting", "balance", "trial balance"]):
-                data = await odoo_tools.odoo_get_account_balance()
+                data = await odoo_tools.odoo_get_account_balance(shop_id=shop_id)
             else:
                 name_match = _re.search(
                     r'(?:about|details|show|find|search|who is|contact)\s+'
@@ -712,9 +712,9 @@ async def _run_crm_agent(state: AgentState) -> dict:
                     user_text,
                 )
                 if name_match:
-                    data = await odoo_tools.odoo_search_contact(name_match.group(1))
+                    data = await odoo_tools.odoo_search_contact(name_match.group(1), shop_id=shop_id)
                 else:
-                    data = await odoo_tools.odoo_get_contacts()
+                    data = await odoo_tools.odoo_get_contacts(shop_id=shop_id)
         except Exception as e:
             data = {"error": str(e)}
     else:

@@ -4,11 +4,14 @@ Covers: CRM, Invoicing, Payments, Accounting, Products, and basic HR.
 When ODOO_ENABLED=true, all queries route through Odoo's XML-RPC API.
 When ODOO_ENABLED=false, returns disabled-status dicts so callers can
 fall back to local data gracefully.
+
+Multi-tenancy: Every shop maps to a unique ``res.company`` in Odoo.
+All record creation and searches accept an optional ``company_id``
+parameter so that data is strictly isolated per shop.
 """
 
 import os
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 import xmlrpc.client
 
@@ -23,8 +26,15 @@ ODOO_PASSWORD = os.getenv("ODOO_PASSWORD", "admin")
 _DISABLED = {"enabled": False, "message": "Odoo integration is disabled"}
 
 
+def _add_company_filter(domain: list, company_id: Optional[int]) -> list:
+    """Append company_id filter to an Odoo domain if provided."""
+    if company_id is not None:
+        return domain + [("company_id", "=", company_id)]
+    return domain
+
+
 class OdooClient:
-    """Full Odoo 17 XML-RPC client for ERP operations."""
+    """Full Odoo 17 XML-RPC client for ERP operations with multi-company isolation."""
 
     def __init__(self):
         self.enabled = ODOO_ENABLED
@@ -70,16 +80,70 @@ class OdooClient:
         except Exception as e:
             return {"enabled": True, "status": "error", "error": str(e)}
 
+    # ── Company Management (Multi-Tenancy) ────────────────────────
+
+    def create_company(self, name: str, phone: Optional[str] = None,
+                       email: Optional[str] = None,
+                       street: Optional[str] = None,
+                       city: Optional[str] = None) -> Dict[str, Any]:
+        """Create a new res.company in Odoo for tenant isolation.
+
+        Each ZeroQwait shop gets its own Odoo company so that CRM contacts,
+        invoices, payments, and accounting entries are fully isolated.
+        If a company with the same name already exists, returns the existing one.
+        """
+        if not self.enabled:
+            return _DISABLED
+        try:
+            # Check if company already exists (handles duplicate shop names)
+            existing = self._execute("res.company", "search", [("name", "=", name)], limit=1)
+            if existing:
+                logger.info("Odoo company '%s' already exists (id=%s), reusing", name, existing[0])
+                return {"id": existing[0], "name": name, "reused": True}
+            vals: Dict[str, Any] = {"name": name}
+            if phone:
+                vals["phone"] = phone
+            if email:
+                vals["email"] = email
+            if street:
+                vals["street"] = street
+            if city:
+                vals["city"] = city
+            new_id = self._execute("res.company", "create", vals)
+            logger.info("Created Odoo company id=%s for shop '%s'", new_id, name)
+            return {"id": new_id, "name": name}
+        except Exception as e:
+            logger.error("Odoo create_company failed: %s", e)
+            return {"error": str(e)}
+
+    def get_odoo_company(self, company_id: int) -> Dict[str, Any]:
+        """Get an Odoo company by ID."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            records = self._execute(
+                "res.company", "read", [company_id],
+                fields=["name", "phone", "email", "street", "city"],
+            )
+            if records:
+                return {"company": records[0]}
+            return {"error": f"Company {company_id} not found"}
+        except Exception as e:
+            logger.error("Odoo get_odoo_company failed: %s", e)
+            return {"error": str(e)}
+
     # ── CRM: Contacts / Partners ──────────────────────────────────
 
-    def get_contacts(self, limit: int = 50, customer_only: bool = True) -> Dict[str, Any]:
-        """List CRM contacts (res.partner)."""
+    def get_contacts(self, limit: int = 50, customer_only: bool = True,
+                     company_id: Optional[int] = None) -> Dict[str, Any]:
+        """List CRM contacts (res.partner) scoped to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
             domain = [("is_company", "=", False)]
             if customer_only:
                 domain.append(("customer_rank", ">", 0))
+            domain = _add_company_filter(domain, company_id)
             ids = self._execute("res.partner", "search", domain, limit=limit)
             records = self._execute(
                 "res.partner", "read", ids,
@@ -90,12 +154,14 @@ class OdooClient:
             logger.error("Odoo get_contacts failed: %s", e)
             return {"error": str(e)}
 
-    def search_contact(self, name: str) -> Dict[str, Any]:
-        """Search contacts by name."""
+    def search_contact(self, name: str,
+                       company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Search contacts by name, scoped to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
             domain = [("name", "ilike", name), ("is_company", "=", False)]
+            domain = _add_company_filter(domain, company_id)
             ids = self._execute("res.partner", "search", domain, limit=20)
             records = self._execute(
                 "res.partner", "read", ids,
@@ -107,38 +173,48 @@ class OdooClient:
             return {"error": str(e)}
 
     def create_contact(self, name: str, email: Optional[str] = None,
-                       phone: Optional[str] = None, company_name: Optional[str] = None) -> Dict[str, Any]:
-        """Create a new contact in Odoo."""
+                       phone: Optional[str] = None, company_name: Optional[str] = None,
+                       company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Create a new contact in Odoo, assigned to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
             vals: Dict[str, Any] = {"name": name, "customer_rank": 1}
+            if company_id is not None:
+                vals["company_id"] = company_id
             if email:
                 vals["email"] = email
             if phone:
                 vals["phone"] = phone
             if company_name:
-                # Find or create company
-                company_ids = self._execute("res.partner", "search", [("name", "=", company_name), ("is_company", "=", True)], limit=1)
-                if company_ids:
-                    vals["parent_id"] = company_ids[0]
+                # Find or create partner-company (CRM organization) within the same Odoo company
+                org_domain = [("name", "=", company_name), ("is_company", "=", True)]
+                org_domain = _add_company_filter(org_domain, company_id)
+                org_ids = self._execute("res.partner", "search", org_domain, limit=1)
+                if org_ids:
+                    vals["parent_id"] = org_ids[0]
                 else:
-                    cid = self._execute("res.partner", "create", [{"name": company_name, "is_company": True}])
+                    org_vals: Dict[str, Any] = {"name": company_name, "is_company": True}
+                    if company_id is not None:
+                        org_vals["company_id"] = company_id
+                    cid = self._execute("res.partner", "create", org_vals)
                     vals["parent_id"] = cid
-            new_id = self._execute("res.partner", "create", [vals])
+            new_id = self._execute("res.partner", "create", vals)
             return {"id": new_id, "name": name}
         except Exception as e:
             logger.error("Odoo create_contact failed: %s", e)
             return {"error": str(e)}
 
-    # ── CRM: Companies ────────────────────────────────────────────
+    # ── CRM: Companies (Partner Organizations) ────────────────────
 
-    def get_companies(self, limit: int = 50) -> Dict[str, Any]:
-        """List companies / organizations."""
+    def get_companies(self, limit: int = 50,
+                      company_id: Optional[int] = None) -> Dict[str, Any]:
+        """List partner-companies / organizations scoped to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
             domain = [("is_company", "=", True)]
+            domain = _add_company_filter(domain, company_id)
             ids = self._execute("res.partner", "search", domain, limit=limit)
             records = self._execute(
                 "res.partner", "read", ids,
@@ -151,14 +227,16 @@ class OdooClient:
 
     # ── CRM: Leads / Opportunities ────────────────────────────────
 
-    def get_leads(self, limit: int = 50, stage: Optional[str] = None) -> Dict[str, Any]:
-        """List CRM leads/opportunities (crm.lead)."""
+    def get_leads(self, limit: int = 50, stage: Optional[str] = None,
+                  company_id: Optional[int] = None) -> Dict[str, Any]:
+        """List CRM leads/opportunities scoped to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
             domain: list = []
             if stage:
                 domain.append(("stage_id.name", "ilike", stage))
+            domain = _add_company_filter(domain, company_id)
             ids = self._execute("crm.lead", "search", domain, limit=limit)
             records = self._execute(
                 "crm.lead", "read", ids,
@@ -170,14 +248,15 @@ class OdooClient:
             logger.error("Odoo get_leads failed: %s", e)
             return {"error": str(e)}
 
-    def get_pipeline_summary(self) -> Dict[str, Any]:
-        """Get CRM pipeline summary grouped by stage."""
+    def get_pipeline_summary(self, company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Get CRM pipeline summary grouped by stage, scoped to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
+            domain: list = _add_company_filter([], company_id)
             result = self._execute(
                 "crm.lead", "read_group",
-                [],
+                domain,
                 fields=["stage_id", "expected_revenue"],
                 groupby=["stage_id"],
             )
@@ -195,14 +274,16 @@ class OdooClient:
 
     # ── Invoicing ─────────────────────────────────────────────────
 
-    def get_invoices(self, limit: int = 50, state: Optional[str] = None) -> Dict[str, Any]:
-        """List customer invoices (account.move, move_type=out_invoice)."""
+    def get_invoices(self, limit: int = 50, state: Optional[str] = None,
+                     company_id: Optional[int] = None) -> Dict[str, Any]:
+        """List customer invoices scoped to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
             domain: list = [("move_type", "=", "out_invoice")]
             if state:
                 domain.append(("state", "=", state))
+            domain = _add_company_filter(domain, company_id)
             ids = self._execute("account.move", "search", domain, limit=limit)
             records = self._execute(
                 "account.move", "read", ids,
@@ -215,14 +296,9 @@ class OdooClient:
             return {"error": str(e)}
 
     def create_invoice(self, partner_id: int, lines: List[Dict[str, Any]],
-                       invoice_date: Optional[str] = None) -> Dict[str, Any]:
-        """Create a customer invoice in Odoo.
-
-        Args:
-            partner_id: Odoo partner (customer) ID.
-            lines: List of dicts with keys: name, quantity, price_unit, and optional product_id, account_id.
-            invoice_date: ISO date string (defaults to today).
-        """
+                       invoice_date: Optional[str] = None,
+                       company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Create a customer invoice assigned to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
@@ -244,10 +320,12 @@ class OdooClient:
                 "partner_id": partner_id,
                 "invoice_line_ids": invoice_lines,
             }
+            if company_id is not None:
+                invoice_vals["company_id"] = company_id
             if invoice_date:
                 invoice_vals["invoice_date"] = invoice_date
 
-            new_id = self._execute("account.move", "create", [invoice_vals])
+            new_id = self._execute("account.move", "create", invoice_vals)
             return {"id": new_id, "status": "draft"}
         except Exception as e:
             logger.error("Odoo create_invoice failed: %s", e)
@@ -266,12 +344,14 @@ class OdooClient:
 
     # ── Payments ──────────────────────────────────────────────────
 
-    def get_payments(self, limit: int = 50) -> Dict[str, Any]:
-        """List customer payments."""
+    def get_payments(self, limit: int = 50,
+                     company_id: Optional[int] = None) -> Dict[str, Any]:
+        """List customer payments scoped to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
             domain = [("partner_type", "=", "customer")]
+            domain = _add_company_filter(domain, company_id)
             ids = self._execute("account.payment", "search", domain, limit=limit)
             records = self._execute(
                 "account.payment", "read", ids,
@@ -285,8 +365,9 @@ class OdooClient:
 
     def register_payment(self, amount: float, partner_id: int,
                          journal_id: int = 1, payment_method: str = "manual",
-                         ref: Optional[str] = None) -> Dict[str, Any]:
-        """Register a customer payment in Odoo."""
+                         ref: Optional[str] = None,
+                         company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Register a customer payment assigned to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
@@ -297,9 +378,11 @@ class OdooClient:
                 "partner_id": partner_id,
                 "journal_id": journal_id,
             }
+            if company_id is not None:
+                vals["company_id"] = company_id
             if ref:
                 vals["ref"] = ref
-            new_id = self._execute("account.payment", "create", [vals])
+            new_id = self._execute("account.payment", "create", vals)
             # Confirm the payment
             self._execute("account.payment", "action_post", [new_id])
             return {"id": new_id, "status": "posted", "amount": amount}
@@ -310,8 +393,9 @@ class OdooClient:
     # ── Accounting / Journal Entries ──────────────────────────────
 
     def get_journal_entries(self, date_from: Optional[str] = None,
-                           date_to: Optional[str] = None, limit: int = 100) -> Dict[str, Any]:
-        """Fetch journal entries (account.move.line)."""
+                           date_to: Optional[str] = None, limit: int = 100,
+                           company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Fetch journal entries scoped to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
@@ -320,6 +404,7 @@ class OdooClient:
                 domain.append(("date", ">=", date_from))
             if date_to:
                 domain.append(("date", "<=", date_to))
+            domain = _add_company_filter(domain, company_id)
             ids = self._execute("account.move.line", "search", domain, limit=limit)
             records = self._execute(
                 "account.move.line", "read", ids,
@@ -330,14 +415,15 @@ class OdooClient:
             logger.error("Odoo journal entries failed: %s", e)
             return {"error": str(e)}
 
-    def get_account_balance(self) -> Dict[str, Any]:
-        """Get account balances grouped by account type (trial balance)."""
+    def get_account_balance(self, company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Get account balances grouped by account type, scoped to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
+            domain: list = _add_company_filter([], company_id)
             result = self._execute(
                 "account.move.line", "read_group",
-                [],
+                domain,
                 fields=["account_id", "debit", "credit"],
                 groupby=["account_id"],
             )
@@ -357,14 +443,16 @@ class OdooClient:
 
     # ── Products / Services ───────────────────────────────────────
 
-    def get_products(self, limit: int = 50, product_type: Optional[str] = None) -> Dict[str, Any]:
-        """List products/services (product.product)."""
+    def get_products(self, limit: int = 50, product_type: Optional[str] = None,
+                     company_id: Optional[int] = None) -> Dict[str, Any]:
+        """List products/services scoped to company_id (or shared if company_id is None)."""
         if not self.enabled:
             return _DISABLED
         try:
             domain: list = []
             if product_type:
                 domain.append(("type", "=", product_type))
+            domain = _add_company_filter(domain, company_id)
             ids = self._execute("product.product", "search", domain, limit=limit)
             records = self._execute(
                 "product.product", "read", ids,
@@ -378,8 +466,9 @@ class OdooClient:
     # ── Revenue Summary (aggregated from invoices) ────────────────
 
     def get_revenue_summary(self, date_from: Optional[str] = None,
-                            date_to: Optional[str] = None) -> Dict[str, Any]:
-        """Revenue summary from posted invoices in a date range."""
+                            date_to: Optional[str] = None,
+                            company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Revenue summary from posted invoices, scoped to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
@@ -388,6 +477,7 @@ class OdooClient:
                 domain.append(("invoice_date", ">=", date_from))
             if date_to:
                 domain.append(("invoice_date", "<=", date_to))
+            domain = _add_company_filter(domain, company_id)
             result = self._execute(
                 "account.move", "read_group",
                 domain,

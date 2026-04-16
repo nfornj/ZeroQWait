@@ -7,11 +7,13 @@ from modules.queues.service import queue_service as qs
 from modules.queues import schemas as queue_schemas
 from shared.auth_utils import get_current_user, get_current_user_optional
 from permissions import sanitize_queue_data_for_public
+import logging
 import random
 from pathlib import Path
 from datetime import datetime
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Ensure upload directory exists
 UPLOAD_DIR = Path("static/uploads/shop-logos")
@@ -72,6 +74,33 @@ def create_shop(
         if not db_shop:
             raise HTTPException(status_code=500, detail="Failed to create shop")
         
+        # Auto-provision an Odoo company for tenant isolation
+        try:
+            from integrations.odoo_client import odoo_client, ODOO_ENABLED
+            if ODOO_ENABLED:
+                result = odoo_client.create_company(
+                    name=db_shop.name,
+                    phone=getattr(db_shop, "phone", None),
+                    email=getattr(db_shop, "email", None),
+                    city=getattr(db_shop, "city", None),
+                )
+                if "id" in result:
+                    from database import SessionLocal
+                    from modules.shops.models import Shop as ShopModel
+                    db = SessionLocal()
+                    try:
+                        shop_row = db.query(ShopModel).filter(ShopModel.id == db_shop.id).first()
+                        if shop_row:
+                            shop_row.odoo_company_id = result["id"]
+                            db.commit()
+                            logger.info("Shop %s provisioned Odoo company %s", db_shop.id, result["id"])
+                    finally:
+                        db.close()
+                else:
+                    logger.warning("Odoo company creation failed for shop %s: %s", db_shop.id, result)
+        except Exception as e:
+            logger.warning("Odoo auto-provision failed for shop %s (non-blocking): %s", db_shop.id, e)
+
         # Create an active queue for today
         queue_create = queue_schemas.QueueCreate(
             name="Main Queue",

@@ -31,6 +31,7 @@ class Shop(Base):
     longitude = Column(Float)
     is_active = Column(Boolean, default=True, index=True)
     tenant_schema = Column(String, nullable=True, index=True)  # NULL = shared/free, 'tenant_<id>' = premium
+    odoo_company_id = Column(Integer, nullable=True, index=True)  # Odoo res.company ID for multi-tenant ERP isolation
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships

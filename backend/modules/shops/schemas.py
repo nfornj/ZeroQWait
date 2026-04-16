@@ -58,6 +58,7 @@ class Shop(ShopBase):
     owner_id: int
     is_active: bool
     created_at: datetime
+    odoo_company_id: Optional[int] = None
 
     class Config:
         from_attributes = True
