@@ -101,5 +101,13 @@ class QueueService:
         finally:
             db.close()
 
+    def get_all_queues(self, shop_id: int) -> List[schemas.Queue]:
+        db = self.get_db()
+        try:
+            queues = db.query(Queue).filter(Queue.shop_id == shop_id).all()
+            return [schemas.Queue.model_validate(q) for q in queues]
+        finally:
+            db.close()
+
 
 queue_service = QueueService()
