@@ -27,6 +27,9 @@ class QueueItemBase(DictModel):
 class QueueItemCreate(QueueItemBase):
     pass
 
+class ReassignRequest(DictModel):
+    employee_id: int
+
 class QueueItem(QueueItemBase):
     id: int
     queue_id: int
