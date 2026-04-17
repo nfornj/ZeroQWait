@@ -2,6 +2,8 @@ import React from 'react';
 import { DataGrid, GridColDef, GridActionsCellItem, GridRenderCellParams, GridToolbar } from '@mui/x-data-grid';
 import { Chip } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 
 interface Queue {
     id: number;
@@ -14,10 +16,11 @@ interface QueueDataGridProps {
     rows: Queue[];
     onEdit: (queue: Queue) => void;
     onDelete?: (id: number) => void;
+    onReset?: (id: number) => void;
     onRowClick?: (queue: Queue) => void;
 }
 
-export default function QueueDataGrid({ rows, onEdit, onDelete, onRowClick }: QueueDataGridProps) {
+export default function QueueDataGrid({ rows, onEdit, onDelete, onReset, onRowClick }: QueueDataGridProps) {
     const columns: GridColDef<Queue>[] = [
         {
             field: 'name',
@@ -47,16 +50,38 @@ export default function QueueDataGrid({ rows, onEdit, onDelete, onRowClick }: Qu
             field: 'actions',
             headerName: 'Actions',
             type: 'actions',
-            width: 150,
-            getActions: (params) => [
-                <GridActionsCellItem
-                    icon={<EditIcon />}
-                    label="Edit"
-                    onClick={() => onEdit(params.row)}
-                    showInMenu={false}
-                />,
-                // Add more actions if needed, e.g., Delete
-            ],
+            width: 180,
+            getActions: (params) => {
+                const actions = [
+                    <GridActionsCellItem
+                        icon={<EditIcon />}
+                        label="Edit"
+                        onClick={() => onEdit(params.row)}
+                        showInMenu={false}
+                    />,
+                ];
+                if (onReset) {
+                    actions.push(
+                        <GridActionsCellItem
+                            icon={<RestartAltIcon />}
+                            label="Reset data"
+                            onClick={() => onReset(params.row.id)}
+                            showInMenu={false}
+                        />
+                    );
+                }
+                if (onDelete) {
+                    actions.push(
+                        <GridActionsCellItem
+                            icon={<DeleteIcon />}
+                            label="Delete queue"
+                            onClick={() => onDelete(params.row.id)}
+                            showInMenu={false}
+                        />
+                    );
+                }
+                return actions;
+            },
         },
     ];
 

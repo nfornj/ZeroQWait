@@ -9,6 +9,7 @@ from websocket_manager import manager
 from shared.auth_utils import get_current_user, get_current_user_optional
 from permissions import check_shop_access
 from redis_client import redis_client
+from database import SessionLocal
 from datetime import datetime, timedelta
 import random
 
@@ -616,6 +617,61 @@ async def leave_queue(item_id: int):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to leave queue: {str(e)}")
+
+
+@router.delete("/{queue_id}")
+async def delete_queue(
+    queue_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a queue and all its items (owner only)."""
+    try:
+        queue = queue_service.get_queue(queue_id)
+        if not queue:
+            raise HTTPException(status_code=404, detail="Queue not found")
+        check_shop_access(queue.shop_id, current_user, require_owner=True)
+        # Delete all items first (cascade)
+        db = SessionLocal()
+        try:
+            from modules.queues.models import Queue as QueueModel, QueueItem as QueueItemModel
+            db.query(QueueItemModel).filter(QueueItemModel.queue_id == queue_id).delete()
+            db.query(QueueModel).filter(QueueModel.id == queue_id).delete()
+            db.commit()
+        finally:
+            db.close()
+        redis_client.invalidate_queue_cache(queue.shop_id)
+        return {"message": "Queue deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete queue: {str(e)}")
+
+
+@router.post("/{queue_id}/reset")
+async def reset_queue(
+    queue_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Remove all items from a queue without deleting the queue itself (owner only)."""
+    try:
+        queue = queue_service.get_queue(queue_id)
+        if not queue:
+            raise HTTPException(status_code=404, detail="Queue not found")
+        check_shop_access(queue.shop_id, current_user, require_owner=True)
+        db = SessionLocal()
+        try:
+            from modules.queues.models import QueueItem as QueueItemModel
+            deleted = db.query(QueueItemModel).filter(QueueItemModel.queue_id == queue_id).delete()
+            db.commit()
+        finally:
+            db.close()
+        redis_client.invalidate_queue_cache(queue.shop_id)
+        await _broadcast_shop_live_snapshot(queue.shop_id)
+        return {"message": f"Queue reset: {deleted} items removed"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset queue: {str(e)}")
 
 
 @router.delete("/items/{item_id}")
