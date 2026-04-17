@@ -1881,10 +1881,52 @@ class MasterAgent:
         full_context = "\n".join(context_parts)
         full_msg = f"{full_context}\n\nUser message: {user_msg}" if full_context else user_msg
         
-        # --- PRE-ANALYZER SHOP QUEUE OVERRIDE ---
-        # Check for shop context + queue join signals BEFORE calling expensive analyzer
+        # --- PRE-ANALYZER PAYMENT OVERRIDE ---
+        # Check for shop context + payment signals BEFORE calling expensive analyzer
         shop_id = (context or {}).get("shop_id")
         shop_name = (context or {}).get("shop_name", "this shop")
+        _pay_lower = user_msg.lower()
+        _PAY_SIGNALS = ["pay", "payment", "checkout", "pay for", "make a payment", "pay online", "card payment", "pay now", "pay bill"]
+        _has_pay_signal = shop_id and any(sig in _pay_lower for sig in _PAY_SIGNALS)
+
+        if _has_pay_signal:
+            # Extract amount if mentioned (e.g. "pay $50" or "pay 25 dollars")
+            import re as _pay_re
+            _amt_match = _pay_re.search(r'\$\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:dollars?|usd)', _pay_lower)
+            _pay_amount = float(_amt_match.group(1) or _amt_match.group(2)) if _amt_match else None
+
+            try:
+                from integrations.stripe_client import is_configured as _stripe_ok, create_payment_intent as _create_pi
+                if _stripe_ok():
+                    if _pay_amount and _pay_amount > 0:
+                        _pi = _create_pi(
+                            amount_cents=int(round(_pay_amount * 100)),
+                            currency="usd",
+                            description=f"Payment at {shop_name}",
+                            metadata={"shop_id": str(shop_id)},
+                        )
+                        intro = f"Great! Here's your payment form for **${_pay_amount:.2f}** at **{shop_name}**. Please enter your card details below:"
+                        async for event in _yield_sentences_with_tts(intro):
+                            yield event
+                        yield f"data: {json.dumps({'type': 'payment_form', 'client_secret': _pi['client_secret'], 'payment_intent_id': _pi['id'], 'amount': _pay_amount, 'currency': 'usd', 'shop_name': shop_name, 'shop_id': shop_id})}\n\n"
+                        yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+                    else:
+                        # No amount specified — ask for it
+                        ask_text = f"I can process your payment at **{shop_name}**. How much would you like to pay? (e.g. \"$50\" or \"25 dollars\")"
+                        async for event in _yield_sentences_with_tts(ask_text):
+                            yield event
+                        yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+                else:
+                    logger.warning("Stripe not configured, falling through to normal chat")
+            except Exception as pay_err:
+                logger.error("Payment intent creation failed: %s", pay_err)
+
+        # --- PRE-ANALYZER SHOP QUEUE OVERRIDE ---
+        # Check for shop context + queue join signals BEFORE calling expensive analyzer
         has_join_signal = _is_shop_queue_join_request(user_msg)
         has_wait_signal = _is_shop_wait_request(user_msg)
         extracted_name, extracted_phone = _extract_customer_details_for_join(user_msg)
