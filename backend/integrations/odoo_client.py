@@ -75,7 +75,7 @@ class OdooClient:
         self._uid = common.authenticate(ODOO_DB, ODOO_USER, ODOO_PASSWORD, {})
         if not self._uid:
             raise ConnectionError("Odoo authentication failed — check ODOO_DB, ODOO_USER, ODOO_PASSWORD")
-        self._models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
+        self._models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object", allow_none=True)
         logger.info("Connected to Odoo (uid=%s, db=%s)", self._uid, ODOO_DB)
 
     def _ensure_connected(self):
@@ -392,13 +392,28 @@ class OdooClient:
             return {"error": str(e)}
 
     def register_payment(self, amount: float, partner_id: int,
-                         journal_id: int = 1, payment_method: str = "manual",
+                         journal_id: int = 0, payment_method: str = "manual",
                          ref: Optional[str] = None,
                          company_id: Optional[int] = None) -> Dict[str, Any]:
         """Register a customer payment assigned to company_id."""
         if not self.enabled:
             return _DISABLED
         try:
+            # Auto-resolve journal for the target company if none specified
+            if not journal_id and company_id is not None:
+                domain = [("type", "=", "bank"), ("company_id", "=", company_id)]
+                j_ids = self._execute("account.journal", "search", domain, limit=1)
+                if not j_ids:
+                    # Fall back to any cash/bank journal for this company
+                    domain = [("type", "in", ["bank", "cash"]), ("company_id", "=", company_id)]
+                    j_ids = self._execute("account.journal", "search", domain, limit=1)
+                if j_ids:
+                    journal_id = j_ids[0]
+                else:
+                    return {"error": f"No bank/cash journal found for company_id={company_id}"}
+            elif not journal_id:
+                journal_id = 1  # Default fallback when no company specified
+
             vals: Dict[str, Any] = {
                 "payment_type": "inbound",
                 "partner_type": "customer",
@@ -411,9 +426,13 @@ class OdooClient:
             if ref:
                 vals["ref"] = ref
             new_id = self._execute("account.payment", "create", vals)
-            # Confirm the payment
-            self._execute("account.payment", "action_post", [new_id])
-            return {"id": new_id, "status": "posted", "amount": amount}
+            # Try to confirm the payment; skip if chart of accounts is incomplete
+            try:
+                self._execute("account.payment", "action_post", [new_id])
+                return {"id": new_id, "status": "posted", "amount": amount}
+            except Exception as post_err:
+                logger.warning("Odoo payment created but confirm failed (chart of accounts incomplete?): %s", post_err)
+                return {"id": new_id, "status": "draft", "amount": amount}
         except Exception as e:
             logger.error("Odoo register_payment failed: %s", e)
             return {"error": str(e)}

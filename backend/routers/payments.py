@@ -52,6 +52,15 @@ class PaymentStatusResponse(BaseModel):
 
 # ── Endpoints ───────────────────────────────────────────────────────
 
+@router.get("/shop/{shop_id}/recent")
+def get_shop_payments(
+    shop_id: int,
+    limit: int = 20,
+    _user=Depends(get_current_user),
+):
+    """Return recent payments for a shop (dashboard view)."""
+    return _payment_service.list_payments(shop_id=shop_id, limit=limit)
+
 @router.get("/config")
 def get_stripe_config():
     """Return the Stripe publishable key for frontend initialization."""
@@ -152,7 +161,7 @@ async def stripe_webhook(request: Request):
 # ── Webhook Handlers ────────────────────────────────────────────────
 
 def _handle_payment_succeeded(intent_data: dict):
-    """Record a successful Stripe payment in the local database."""
+    """Record a successful Stripe payment in the local database and sync to Odoo."""
     metadata = intent_data.get("metadata", {})
     shop_id = metadata.get("shop_id")
     invoice_id = metadata.get("invoice_id")
@@ -164,6 +173,7 @@ def _handle_payment_succeeded(intent_data: dict):
     shop_id = int(shop_id)
     amount = intent_data.get("amount", 0) / 100.0
     currency = intent_data.get("currency", "usd")
+    stripe_ref = intent_data.get("id", "")
 
     try:
         _payment_service.record_payment(
@@ -171,12 +181,57 @@ def _handle_payment_succeeded(intent_data: dict):
             amount=amount,
             method="online",
             invoice_id=int(invoice_id) if invoice_id else None,
-            external_ref=intent_data.get("id"),
+            external_ref=stripe_ref,
             notes=f"Stripe payment - {currency.upper()} {amount:.2f}",
         )
         logger.info("Recorded Stripe payment for shop %d: $%.2f", shop_id, amount)
     except Exception as e:
         logger.error("Failed to record Stripe payment: %s", e)
+
+    # Sync payment to Odoo accounting
+    _sync_payment_to_odoo(shop_id, amount, stripe_ref)
+
+
+def _sync_payment_to_odoo(shop_id: int, amount: float, stripe_ref: str):
+    """Push a completed Stripe payment to Odoo as an account.payment record."""
+    try:
+        from integrations.odoo_client import odoo_client
+        from agents.tools.odoo_tools import _get_odoo_company_id
+
+        if not odoo_client.enabled:
+            logger.info("Odoo disabled — skipping payment sync")
+            return
+
+        company_id = _get_odoo_company_id(shop_id)
+        if not company_id:
+            logger.info("Shop %d has no Odoo company — skipping Odoo payment sync", shop_id)
+            return
+
+        # Find or create a generic "Stripe Customer" partner for this company
+        partner = odoo_client.search_contact("Stripe Customer", company_id=company_id)
+        if partner.get("contacts"):
+            partner_id = partner["contacts"][0]["id"]
+        else:
+            created = odoo_client.create_contact(
+                "Stripe Customer", email="stripe@zeroqwait.com", company_id=company_id
+            )
+            if created.get("error"):
+                logger.error("Failed to create Stripe partner in Odoo: %s", created["error"])
+                return
+            partner_id = created["id"]
+
+        result = odoo_client.register_payment(
+            amount=amount,
+            partner_id=partner_id,
+            ref=stripe_ref,
+            company_id=company_id,
+        )
+        if result.get("error"):
+            logger.error("Odoo payment sync failed: %s", result["error"])
+        else:
+            logger.info("Synced Stripe payment to Odoo: payment_id=%s", result.get("id"))
+    except Exception as e:
+        logger.error("Odoo payment sync error: %s", e)
 
 
 def _handle_payment_failed(intent_data: dict):

@@ -46,7 +46,7 @@ def create_payment_intent(
         currency=currency,
         description=description,
         metadata=metadata or {},
-        automatic_payment_methods={"enabled": True},
+        automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
     )
 
     logger.info("Created PaymentIntent %s for %d %s", intent.id, amount_cents, currency)
