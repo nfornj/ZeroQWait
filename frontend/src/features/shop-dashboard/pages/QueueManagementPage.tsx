@@ -23,12 +23,14 @@ import QueueRoundedIcon from '@mui/icons-material/QueueRounded';
 import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import QueueDataGrid from '../components/QueueDataGrid';
 import { useShop } from '../../../contexts/ShopContext';
 
 const QueueManagementPage: React.FC = () => {
   const theme = useTheme();
+  const navigate = useNavigate();
   const { shop: contextShop } = useShop();
 
   const [queues, setQueues] = useState<any[]>([]);
@@ -214,6 +216,7 @@ const QueueManagementPage: React.FC = () => {
           onEdit={(queue) => {
             console.log('Edit queue', queue);
           }}
+          onRowClick={(queue) => navigate(`/queues/${queue.id}`)}
         />
       </Paper>
 

@@ -26,6 +26,7 @@ import ShopSettingsPage from "./pages/ShopSettingsPage";
 import EmployeeManagementPage from "./pages/EmployeeManagementPage";
 import EmployeeQueuePage from "./pages/EmployeeQueuePage";
 import QueueManagementPage from "./pages/QueueManagementPage";
+import QueueDetailPage from "./pages/QueueDetailPage";
 import InShopDisplayPage from "./pages/InShopDisplayPage";
 import WidgetPage from "./pages/WidgetPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -103,6 +104,7 @@ function App() {
             <Route path="/employees" element={<EmployeeManagementPage />} />
             <Route path="/settings" element={<ShopSettingsPage />} />
             <Route path="/queues" element={<QueueManagementPage />} />
+            <Route path="/queues/:queueId" element={<QueueDetailPage />} />
             <Route path="/agent-inbox" element={<AgentInbox />} />
           </Route>
 

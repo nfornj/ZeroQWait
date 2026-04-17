@@ -13,10 +13,11 @@ interface Queue {
 interface QueueDataGridProps {
     rows: Queue[];
     onEdit: (queue: Queue) => void;
-    onDelete?: (id: number) => void; // Optional if you implement delete later
+    onDelete?: (id: number) => void;
+    onRowClick?: (queue: Queue) => void;
 }
 
-export default function QueueDataGrid({ rows, onEdit, onDelete }: QueueDataGridProps) {
+export default function QueueDataGrid({ rows, onEdit, onDelete, onRowClick }: QueueDataGridProps) {
     const columns: GridColDef<Queue>[] = [
         {
             field: 'name',
@@ -64,6 +65,7 @@ export default function QueueDataGrid({ rows, onEdit, onDelete }: QueueDataGridP
             autoHeight
             rows={rows}
             columns={columns}
+            onRowClick={(params) => onRowClick?.(params.row as Queue)}
             slots={{ toolbar: GridToolbar }}
             slotProps={{
                 toolbar: {
@@ -94,6 +96,7 @@ export default function QueueDataGrid({ rows, onEdit, onDelete }: QueueDataGridP
                     borderBottom: '1px solid',
                     borderColor: 'divider',
                 },
+                cursor: onRowClick ? 'pointer' : 'default',
             }}
         />
     );
