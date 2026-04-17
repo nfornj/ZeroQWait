@@ -52,7 +52,7 @@ async function getStripePromise(): Promise<Stripe | null> {
 
   stripePromise = (async () => {
     try {
-      const resp = await axios.get("/api/payments/config");
+      const resp = await axios.get("/payments/config");
       const { publishable_key, configured } = resp.data;
       if (!configured || !publishable_key) {
         console.warn("Stripe not configured on backend");
