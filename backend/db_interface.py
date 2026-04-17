@@ -1015,19 +1015,32 @@ class DatabaseInterface:
             # Get shop for service time
             shop = db.query(Shop).filter(Shop.id == queue.shop_id).first()
             avg_service_time = shop.average_service_time if shop else 15
-            
-            # Count customers ahead
-            ahead_count = db.query(QueueItem).filter(
-                QueueItem.queue_id == item.queue_id,
-                QueueItem.status == 'waiting',
-                QueueItem.position < item.position
-            ).count()
+
+            active_statuses = ['waiting', 'being_served', 'WAITING', 'BEING_SERVED']
+            active_items = (
+                db.query(QueueItem)
+                .filter(
+                    QueueItem.queue_id == item.queue_id,
+                    QueueItem.status.in_(active_statuses),
+                )
+                .order_by(QueueItem.position)
+                .all()
+            )
+
+            live_position = item.position
+            ahead_count = 0
+            if item.status in active_statuses:
+                for idx, active_item in enumerate(active_items, start=1):
+                    if active_item.id == item.id:
+                        live_position = idx
+                        ahead_count = idx - 1
+                        break
             
             return {
                 "queue_item_id": queue_item_id,
                 "customer_name": item.customer_name,
                 "status": item.status,
-                "position": item.position,
+                "position": live_position,
                 "people_ahead": ahead_count,
                 "estimated_wait_minutes": ahead_count * avg_service_time,
                 "shop_name": shop.name if shop else "Unknown"
