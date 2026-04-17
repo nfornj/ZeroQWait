@@ -45,6 +45,7 @@ import InlineRegistrationForm, {
   FormDoneData,
 } from "./InlineRegistrationForm";
 import InlineQueueJoinForm from "./InlineQueueJoinForm";
+import InlinePaymentForm, { PaymentFormData } from "./InlinePaymentForm";
 import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
 
 import type { AgentChart, AgentFile } from "../../features/agent-inbox/types";
@@ -66,6 +67,8 @@ type ChatHistoryEntry = {
   formCompleted?: boolean;
   queueJoinFormData?: any | null;
   queueJoinFormSubmitted?: boolean;
+  paymentFormData?: PaymentFormData | null;
+  paymentComplete?: boolean;
   relatedViewer?: "shops" | "pricing" | "features" | "faq" | "register" | null;
   quickActions?: ActionCommand[];
   suggestedFollowups?: string[];
@@ -1176,6 +1179,16 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 }
                 return next;
               });
+            } else if (data.type === "payment_form") {
+              // --- Inline Stripe payment form ---
+              console.log(`[SSE] payment_form received: $${data.amount} for ${data.shop_name}`);
+              setChatHistory((prev) => {
+                const next = [...prev];
+                if (next[aiMessageIndex]) {
+                  next[aiMessageIndex].paymentFormData = data as PaymentFormData;
+                }
+                return next;
+              });
             } else if (data.type === "suggestions") {
               // --- Follow-up question suggestions ---
               const suggestions: string[] = Array.isArray(data.suggestions) ? data.suggestions : [];
@@ -2147,6 +2160,51 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                           onFormSubmit={(result) =>
                             handleQueueJoinFormSubmit(result, index)
                           }
+                        />
+                      </Box>
+                    )}
+                    {/* Inline Stripe payment form */}
+                    {chat.paymentFormData && !chat.paymentComplete && (
+                      <Box
+                        sx={{
+                          width: "100%",
+                          maxWidth: { xs: "96%", sm: "90%", md: "85%" },
+                          mt: 1,
+                        }}
+                      >
+                        <InlinePaymentForm
+                          data={chat.paymentFormData}
+                          submitted={!!chat.paymentComplete}
+                          onPaymentComplete={(result) => {
+                            setChatHistory((prev) => {
+                              const next = [...prev];
+                              if (next[index]) {
+                                next[index].paymentComplete = true;
+                                if (result.success) {
+                                  next[index].text +=
+                                    "\n\n✅ **Payment successful!** Thank you for your payment.";
+                                } else {
+                                  next[index].text +=
+                                    `\n\n❌ **Payment failed:** ${result.error || "Please try again."}`;
+                                }
+                              }
+                              return next;
+                            });
+                          }}
+                        />
+                      </Box>
+                    )}
+                    {chat.paymentFormData && chat.paymentComplete && (
+                      <Box
+                        sx={{
+                          width: "100%",
+                          maxWidth: { xs: "96%", sm: "90%", md: "85%" },
+                          mt: 1,
+                        }}
+                      >
+                        <InlinePaymentForm
+                          data={chat.paymentFormData}
+                          submitted={true}
                         />
                       </Box>
                     )}

@@ -171,6 +171,7 @@ class PaymentService:
         tip_amount: float = 0.0,
         processed_by: Optional[int] = None,
         notes: Optional[str] = None,
+        external_ref: Optional[str] = None,
     ) -> Dict:
         session = self.get_session()
         try:
@@ -191,6 +192,7 @@ class PaymentService:
                 processed_by=processed_by,
                 processed_at=datetime.utcnow(),
                 notes=notes,
+                external_ref=external_ref,
             )
             session.add(pmt)
 
