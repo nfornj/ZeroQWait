@@ -46,6 +46,7 @@ import InlineRegistrationForm, {
 } from "./InlineRegistrationForm";
 import InlineQueueJoinForm from "./InlineQueueJoinForm";
 import InlinePaymentForm, { PaymentFormData } from "./InlinePaymentForm";
+import InlineCheckoutCard, { CheckoutCardData } from "./InlineCheckoutCard";
 import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
 
 import type { AgentChart, AgentFile } from "../../features/agent-inbox/types";
@@ -69,6 +70,9 @@ type ChatHistoryEntry = {
   queueJoinFormSubmitted?: boolean;
   paymentFormData?: PaymentFormData | null;
   paymentComplete?: boolean;
+  checkoutCardData?: CheckoutCardData | null;
+  checkoutPaid?: boolean;
+  checkoutPickerItems?: CheckoutCardData[];
   relatedViewer?: "shops" | "pricing" | "features" | "faq" | "register" | null;
   quickActions?: ActionCommand[];
   suggestedFollowups?: string[];
@@ -136,6 +140,10 @@ const getShopQuickActions = (shopName: string): ActionCommand[] => [
   {
     label: "Queue Status",
     payload: "How can I check my queue status?",
+  },
+  {
+    label: "Pay for Service",
+    payload: "__pay_for_service__",
   },
 ];
 
@@ -320,6 +328,61 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
     "customer" | "shop_owner" | null
   >(null);
   const [activeShops, setActiveShops] = useState<any[]>([]);
+
+  // --- "Pay for Service" handler: fetch completed items and show name selector ---
+  const handlePayForService = async () => {
+    if (!shopContext) return;
+    setChatHistory((prev) => [
+      ...prev,
+      { role: "user" as const, text: "Pay for Service" },
+      { role: "ai" as const, text: "Looking up recently completed services…", status: "streaming" as const },
+    ]);
+    try {
+      const resp = await axios.get(`/queues/shop/${shopContext.id}/recently-completed`);
+      const items: Array<{ id: number; customer_name: string; service_cost: number; service_name: string | null }> = resp.data;
+      if (!items || items.length === 0) {
+        setChatHistory((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last && last.status === "streaming") {
+            last.text = "No recently completed services found. If your service was just finished, please ask the staff to mark it as complete.";
+            last.status = "done";
+          }
+          return next;
+        });
+        return;
+      }
+      // Build name-selection chips so customer picks their own name
+      const checkoutOptions: CheckoutCardData[] = items.map((item) => ({
+        queueItemId: item.id,
+        customerName: item.customer_name || "Customer",
+        serviceName: item.service_name,
+        serviceCost: item.service_cost || 0,
+        shopId: shopContext.id,
+        shopName: shopContext.name,
+      }));
+      setChatHistory((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last && last.status === "streaming") {
+          last.text = "Select your name to proceed with payment:";
+          last.status = "done";
+          last.checkoutPickerItems = checkoutOptions;
+        }
+        return next;
+      });
+    } catch {
+      setChatHistory((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last && last.status === "streaming") {
+          last.text = "Could not load completed services right now. Please try again.";
+          last.status = "done";
+        }
+        return next;
+      });
+    }
+  };
 
   // --- Restore active registration on page load/refresh ---
   useEffect(() => {
@@ -1285,6 +1348,12 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   };
 
   const handleActionCommand = (action: ActionCommand) => {
+    // Special handling for "Pay for Service" — don't send to AI
+    if (action.payload === "__pay_for_service__") {
+      void handlePayForService();
+      return;
+    }
+
     if (action.relatedViewer) {
       setActiveViewer(action.relatedViewer);
       if (action.relatedViewer !== "shops") {
@@ -2163,6 +2232,66 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                         />
                       </Box>
                     )}
+                    {/* Checkout name picker (customer selects their name) */}
+                    {chat.checkoutPickerItems && chat.checkoutPickerItems.length > 0 && !chat.checkoutCardData && (
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75, mt: 1 }}>
+                        {chat.checkoutPickerItems.map((item) => (
+                          <Chip
+                            key={item.queueItemId}
+                            label={item.customerName}
+                            onClick={() => {
+                              setChatHistory((prev) => {
+                                const next = [...prev];
+                                if (next[index]) {
+                                  next[index].checkoutCardData = item;
+                                  next[index].checkoutPickerItems = undefined;
+                                }
+                                return next;
+                              });
+                            }}
+                            size="small"
+                            sx={{
+                              cursor: "pointer",
+                              fontWeight: 600,
+                              fontSize: "0.8rem",
+                              borderRadius: "20px",
+                              border: `1px solid ${theme.accent}`,
+                              color: theme.accent,
+                              bgcolor: "transparent",
+                              "&:hover": { bgcolor: theme.accent, color: isDarkMode ? "#000" : "#fff" },
+                            }}
+                          />
+                        ))}
+                      </Box>
+                    )}
+                    {/* Inline checkout card (service complete → pay) */}
+                    {chat.checkoutCardData && !chat.checkoutPaid && !chat.paymentFormData && (
+                      <Box sx={{ mt: 1, maxWidth: 280 }}>
+                        <InlineCheckoutCard
+                          data={chat.checkoutCardData}
+                          paid={!!chat.checkoutPaid}
+                          compact
+                          onPayNow={(paymentData) => {
+                            setChatHistory((prev) => {
+                              const next = [...prev];
+                              if (next[index]) {
+                                next[index].paymentFormData = paymentData;
+                              }
+                              return next;
+                            });
+                          }}
+                        />
+                      </Box>
+                    )}
+                    {chat.checkoutCardData && chat.checkoutPaid && (
+                      <Box sx={{ mt: 1, maxWidth: 280 }}>
+                        <InlineCheckoutCard
+                          data={chat.checkoutCardData}
+                          paid={true}
+                          compact
+                        />
+                      </Box>
+                    )}
                     {/* Inline Stripe payment form */}
                     {chat.paymentFormData && !chat.paymentComplete && (
                       <Box
@@ -2176,13 +2305,23 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                           data={chat.paymentFormData}
                           submitted={!!chat.paymentComplete}
                           onPaymentComplete={(result) => {
+                            if (result.success && chat.checkoutCardData?.queueItemId) {
+                              void axios.post(
+                                `/queues/items/${chat.checkoutCardData.queueItemId}/checkout`,
+                              ).catch(() => {
+                                // Preserve successful payment UX even if checkout flagging retries later.
+                              });
+                            }
                             setChatHistory((prev) => {
                               const next = [...prev];
                               if (next[index]) {
                                 next[index].paymentComplete = true;
+                                if (next[index].checkoutCardData) {
+                                  next[index].checkoutPaid = true;
+                                }
                                 if (result.success) {
                                   next[index].text +=
-                                    "\n\n✅ **Payment successful!** Thank you for your payment.";
+                                    "\n\n✅ **Payment successful!** You are now checked out. Thank you for your payment.";
                                 } else {
                                   next[index].text +=
                                     `\n\n❌ **Payment failed:** ${result.error || "Please try again."}`;
