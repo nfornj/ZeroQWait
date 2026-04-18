@@ -435,6 +435,37 @@ RULES:
         r'auto\s*shop|mechanic|car\s*wash|gym|fitness|restaurant|cafe|pharmacy)\b',
         re.IGNORECASE,
     )
+    # Fast SEARCH detection — (service|shops) near/in (city), or service near me
+    _FAST_SEARCH_CITY_RE = re.compile(
+        r'\b(?:shops?|businesses?|places?|barbers?|barbershops?|salons?|spas?|clinics?|hospital|'
+        r'dentist|dental|auto\s*shops?|mechanic|car\s*wash|gym|fitness|restaurant|cafe|'
+        r'pharmacy|service|services|queue|queues)\s+(?:near|in|at|around)\s+'
+        r'([A-Za-z][A-Za-z\s\-]{1,40})\b',
+        re.IGNORECASE,
+    )
+    _FAST_SEARCH_FIND_RE = re.compile(
+        r'\b(?:find|search|look\s*for|looking\s*for|show\s*me|list|get\s*me|any)\s+'
+        r'(?:me\s+)?(?:for\s+)?(?:a\s+|an\s+|the\s+|some\s+)?'
+        r'(?:nearby\s+|local\s+|near\s+(?:me\s+)?)?'
+        r'(?:barbers?|barbershops?|salons?|spas?|clinics?|hospital|dentist|auto\s*shops?|mechanic|'
+        r'car\s*wash|gym|fitness|restaurant|cafe|pharmacy|shops?|service|businesses?)',
+        re.IGNORECASE,
+    )
+    _NON_CITY_PHRASES = frozenset({
+        'my area', 'my city', 'my location', 'my neighborhood', 'my neighbourhood',
+        'the area', 'this area', 'an area', 'my region', 'my town', 'my place',
+        'my home', 'around here', 'here', 'me',
+    })
+    _FAST_SEARCH_NEAR_ME_RE = re.compile(
+        r'\b(?:barbers?|barbershops?|salons?|spas?|clinics?|hospital|dentist|dental|'
+        r'auto\s*shops?|mechanic|car\s*wash|gym|fitness|restaurant|cafe|pharmacy|'
+        r'shops?|services?|businesses?|places?)\s+(?:near\s*me|nearby)\b'
+        r'|'
+        r'\b(?:near\s*me|nearby)\s+(?:barbers?|barbershops?|salons?|spas?|clinics?|hospital|'
+        r'dentist|dental|auto\s*shops?|mechanic|car\s*wash|gym|services?|shops?|places?)\b',
+        re.IGNORECASE,
+    )
+
     def _fast_intent_check(self, user_msg: str) -> Optional[IntentAnalysis]:
         """Regex-based fast path for obvious intents. Returns None if unsure (falls through to LLM)."""
         msg = user_msg.strip()
@@ -471,6 +502,54 @@ RULES:
                                  search_terms="", city=None, near_me=False, specificity="SPECIFIC",
                                  platform_target=None,
                                  context_updates=ContextUpdates(last_category=None, last_city=None))
+
+        # SEARCH — "shops/service near/in CITY" pattern (most common query, skips LLM entirely)
+        city_search_match = self._FAST_SEARCH_CITY_RE.search(msg)
+        if city_search_match:
+            city = city_search_match.group(1).strip()
+            # Treat non-city phrases ("my area", "my city", etc.) as near_me instead
+            if city.lower() in self._NON_CITY_PHRASES:
+                svc_match = self._SERVICE_FALLBACK_RE.search(msg)
+                search_terms = svc_match.group(1).strip().lower() if svc_match else ""
+                return IntentAnalysis(
+                    intent='SEARCH', search_terms=search_terms, city=None, near_me=True,
+                    specificity="SPECIFIC", platform_target=None, registration_type=None,
+                    context_updates=ContextUpdates(last_category=search_terms or None, last_city=None),
+                )
+            # Extract service type if present
+            svc_match = self._SERVICE_FALLBACK_RE.search(msg)
+            search_terms = svc_match.group(1).strip().lower() if svc_match else ""
+            return IntentAnalysis(
+                intent='SEARCH', search_terms=search_terms, city=city, near_me=False,
+                specificity="SPECIFIC", platform_target=None, registration_type=None,
+                context_updates=ContextUpdates(last_category=search_terms or None, last_city=city),
+            )
+
+        # SEARCH — "near me" / "nearby" with a service keyword
+        if self._FAST_SEARCH_NEAR_ME_RE.search(msg):
+            svc_match = self._SERVICE_FALLBACK_RE.search(msg)
+            search_terms = svc_match.group(1).strip().lower() if svc_match else ""
+            return IntentAnalysis(
+                intent='SEARCH', search_terms=search_terms, city=None, near_me=True,
+                specificity="SPECIFIC", platform_target=None, registration_type=None,
+                context_updates=ContextUpdates(last_category=search_terms or None, last_city=None),
+            )
+
+        # SEARCH — "find/search for (service)" with optional city
+        if self._FAST_SEARCH_FIND_RE.search(msg):
+            city_match = self._CITY_HINT_RE.search(msg)
+            city = city_match.group(1).strip() if city_match else None
+            if city and city.lower() in self._NON_CITY_PHRASES:
+                city = None
+            svc_match = self._SERVICE_FALLBACK_RE.search(msg)
+            search_terms = svc_match.group(1).strip().lower() if svc_match else ""
+            near_me = bool(re.search(r'\b(near\s*me|nearby)\b', msg, re.IGNORECASE))
+            specificity = "SPECIFIC" if (city or search_terms or near_me) else "VAGUE"
+            return IntentAnalysis(
+                intent='SEARCH', search_terms=search_terms, city=city, near_me=near_me,
+                specificity=specificity, platform_target=None, registration_type=None,
+                context_updates=ContextUpdates(last_category=search_terms or None, last_city=city),
+            )
 
         return None  # Not obvious — fall through to LLM
 
