@@ -49,6 +49,10 @@ _QUEUE_JOIN_REQUEST_RE = re.compile(
     r'\b(join\s+(the\s+)?queue|check\s*in|enqueue|book\s+me|add\s+me)\b',
     re.IGNORECASE,
 )
+_APPOINTMENT_REQUEST_RE = re.compile(
+    r'\b(appointment|schedule|book\s+(an?\s+)?appointment|reserve|make\s+a\s+booking|schedule\s+a\s+visit)\b',
+    re.IGNORECASE,
+)
 _WAIT_TIME_REQUEST_RE = re.compile(
     r'\b(wait\s*time|how\s+long|eta|queue\s+status|position)\b',
     re.IGNORECASE,
@@ -98,6 +102,10 @@ def _is_shop_queue_join_request(user_msg: str) -> bool:
     return bool(_QUEUE_JOIN_REQUEST_RE.search(user_msg))
 
 
+def _is_appointment_request(user_msg: str) -> bool:
+    return bool(_APPOINTMENT_REQUEST_RE.search(user_msg))
+
+
 def _is_shop_wait_request(user_msg: str) -> bool:
     return bool(_WAIT_TIME_REQUEST_RE.search(user_msg))
 
@@ -124,6 +132,33 @@ def _build_queue_join_form_event(shop_id: int, shop_name: str, city: Optional[st
         "services": services,
         "status": "collecting",
     }
+
+
+def _build_appointment_form_event(shop_id: int, shop_name: str) -> Dict[str, Any]:
+    """Generate an appointment_form SSE event for inline appointment booking in frontend."""
+    services = []
+    try:
+        raw = db_interface.get_shop_services(shop_id)
+        services = [
+            {
+                "id": s.get("id"),
+                "name": s.get("name"),
+                "cost": s.get("cost", 0),
+                "duration_minutes": s.get("duration_minutes", 30),
+            }
+            for s in raw if s.get("name")
+        ]
+    except Exception:
+        pass
+
+    return {
+        "type": "appointment_form",
+        "shop_id": shop_id,
+        "shop_name": shop_name,
+        "services": services,
+        "status": "collecting",
+    }
+
 
 # Shared httpx client for TTS (connection pooling)
 _tts_client: Optional[httpx.AsyncClient] = None
@@ -1447,11 +1482,24 @@ class MasterAgent:
             shop_name = (context or {}).get("shop_name", "this shop")
             has_join_signal = _is_shop_queue_join_request(user_msg)
             has_wait_signal = _is_shop_wait_request(user_msg)
+            has_appointment_signal = _is_appointment_request(user_msg)
             extracted_name, extracted_phone, extracted_service = _extract_customer_details_for_join(user_msg)
 
             # Shop landing override: avoid generic location/category search when shop is already known.
-            if shop_id and (has_join_signal or has_wait_signal or extracted_name):
-                if has_wait_signal:
+            if shop_id and (has_join_signal or has_wait_signal or has_appointment_signal or extracted_name):
+                if has_appointment_signal:
+                    # Emit inline appointment booking form
+                    final_text = f"Let's schedule an appointment at **{shop_name}**. Pick a date and time below:"
+                    form_event = _build_appointment_form_event(
+                        shop_id=int(shop_id),
+                        shop_name=shop_name,
+                    )
+                    deps.actions.append({
+                        "tool": "appointment_form",
+                        "form_event": form_event,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                elif has_wait_signal:
                     final_text = await get_wait_time(
                         RunContext(deps=deps, model=model, usage=None, prompt=""),
                         shop_id=int(shop_id),

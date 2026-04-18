@@ -38,6 +38,7 @@ import PublicLayout from "./layouts/PublicLayout";
 import QueueCounterPage from "./pages/QueueCounterPage";
 import AgentInbox from "./features/agent-inbox/AgentInbox";
 import ServicesManagementPage from "./features/shop-dashboard/pages/ServicesManagementPage";
+import AppointmentsPage from "./features/shop-dashboard/pages/AppointmentsPage";
 import { useAuth } from "./contexts/AuthContext";
 
 import SignInSide from "./auth-sign-in/SignInSide";
@@ -121,6 +122,7 @@ function App() {
             <Route path="/queues" element={<OwnerOnly><QueueManagementPage /></OwnerOnly>} />
             <Route path="/queues/:queueId" element={<OwnerOnly><QueueDetailPage /></OwnerOnly>} />
             <Route path="/services" element={<OwnerOnly><ServicesManagementPage /></OwnerOnly>} />
+            <Route path="/appointments" element={<OwnerOnly><AppointmentsPage /></OwnerOnly>} />
             <Route path="/agent-inbox" element={<OwnerOnly><AgentInbox /></OwnerOnly>} />
           </Route>
 

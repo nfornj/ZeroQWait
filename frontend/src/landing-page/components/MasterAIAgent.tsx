@@ -45,6 +45,7 @@ import InlineRegistrationForm, {
   FormDoneData,
 } from "./InlineRegistrationForm";
 import InlineQueueJoinForm from "./InlineQueueJoinForm";
+import InlineAppointmentForm from "./InlineAppointmentForm";
 import InlinePaymentForm, { PaymentFormData } from "./InlinePaymentForm";
 import InlineCheckoutCard, { CheckoutCardData } from "./InlineCheckoutCard";
 import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
@@ -68,6 +69,8 @@ type ChatHistoryEntry = {
   formCompleted?: boolean;
   queueJoinFormData?: any | null;
   queueJoinFormSubmitted?: boolean;
+  appointmentFormData?: any | null;
+  appointmentFormSubmitted?: boolean;
   paymentFormData?: PaymentFormData | null;
   paymentComplete?: boolean;
   checkoutCardData?: CheckoutCardData | null;
@@ -1282,6 +1285,16 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 }
                 return next;
               });
+            } else if (data.type === "appointment_form") {
+              // --- Inline appointment booking form ---
+              console.log(`[SSE] appointment_form received for shop: ${data.shop_id}`);
+              setChatHistory((prev) => {
+                const next = [...prev];
+                if (next[aiMessageIndex]) {
+                  next[aiMessageIndex].appointmentFormData = data;
+                }
+                return next;
+              });
             } else if (data.type === "payment_form") {
               // --- Inline Stripe payment form ---
               console.log(`[SSE] payment_form received: $${data.amount} for ${data.shop_name}`);
@@ -1379,6 +1392,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
           const hasInteractiveContent = Boolean(
             next[idx].text?.trim() ||
               next[idx].queueJoinFormData ||
+              next[idx].appointmentFormData ||
               next[idx].paymentFormData ||
               next[idx].formStep ||
               (next[idx].quickActions && next[idx].quickActions.length > 0) ||
@@ -2284,6 +2298,52 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                           onFormSubmit={(result) =>
                             handleQueueJoinFormSubmit(result, index)
                           }
+                        />
+                      </Box>
+                    )}
+                    {/* Inline appointment booking form */}
+                    {chat.appointmentFormData && !chat.appointmentFormSubmitted && (
+                      <Box
+                        sx={{
+                          width: "100%",
+                          maxWidth: { xs: "96%", sm: "90%", md: "85%" },
+                          mt: 1,
+                        }}
+                      >
+                        <InlineAppointmentForm
+                          shopId={chat.appointmentFormData.shop_id}
+                          shopName={chat.appointmentFormData.shop_name}
+                          services={chat.appointmentFormData.services}
+                          theme={theme}
+                          isDarkMode={isDarkMode}
+                          disabled={!!chat.appointmentFormSubmitted}
+                          onFormSubmit={(result) => {
+                            setChatHistory((prev) => {
+                              const next = [...prev];
+                              if (next[index]) {
+                                next[index].appointmentFormSubmitted = true;
+                              }
+                              return next;
+                            });
+                            if (result.success) {
+                              const time = result.scheduledStart
+                                ? new Date(result.scheduledStart).toLocaleString([], {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })
+                                : "";
+                              setChatHistory((prev) => [
+                                ...prev,
+                                {
+                                  role: "ai" as const,
+                                  text: `Your appointment has been booked for ${time}. Appointment #${result.appointmentId}. We look forward to seeing you!`,
+                                  status: "done" as const,
+                                },
+                              ]);
+                            }
+                          }}
                         />
                       </Box>
                     )}

@@ -11,6 +11,7 @@ import QueueRoundedIcon from '@mui/icons-material/QueueRounded';
 import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded';
+import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded';
 import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
 import HelpRoundedIcon from '@mui/icons-material/HelpRounded';
 import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded';
@@ -21,6 +22,7 @@ const mainListItems = [
   { text: 'Dashboard', icon: <DashboardRoundedIcon />, path: '/dashboard' },
   { text: 'Overview', icon: <InsightsRoundedIcon />, path: '/overview' },
   { text: 'Services', icon: <ContentCutRoundedIcon />, path: '/services' },
+  { text: 'Appointments', icon: <EventNoteRoundedIcon />, path: '/appointments' },
   { text: 'Queues', icon: <QueueRoundedIcon />, path: '/queues' },
   { text: 'Shop Setup', icon: <SettingsRoundedIcon />, path: '/settings' },
   { text: 'Team', icon: <PeopleRoundedIcon />, path: '/employees' },

@@ -11,6 +11,7 @@ from modules.users.router import router as users_router
 from modules.shops.router import router as shops_router
 from modules.employees.router import router as employees_router
 from modules.queues.router import router as queues_router
+from modules.appointments.router import router as appointments_router
 from modules.admin.router import router as admin_router
 from scheduler import start_scheduler, stop_scheduler
 import logging
@@ -117,6 +118,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
         _re.compile(r'/api/employees/shops/(\d+)'),
         _re.compile(r'/api/analytics/(?:daily/|peak-hours/|archive/stats/|services/|revenue/monthly-by-service/)?(\d+)'),
         _re.compile(r'/api/services/shops/(\d+)'),
+        _re.compile(r'/api/appointments/shop/(\d+)'),
     ]
 
     async def dispatch(self, request: Request, call_next):
@@ -165,6 +167,7 @@ app.include_router(users_router, prefix="/api", tags=["Users"])
 app.include_router(shops_router, prefix="/api/shops", tags=["Shops"])
 app.include_router(employees_router, prefix="/api", tags=["Employees"])
 app.include_router(queues_router, prefix="/api/queues", tags=["Queues"])
+app.include_router(appointments_router, prefix="/api/appointments", tags=["Appointments"])
 app.include_router(admin_router, prefix="/api", tags=["Admin"])
 
 # Legacy/Shared routers (to be refactored)
