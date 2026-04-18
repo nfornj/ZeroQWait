@@ -512,6 +512,41 @@ class OdooClient:
             logger.error("Odoo get_products failed: %s", e)
             return {"error": str(e)}
 
+    def create_product(self, name: str, list_price: float,
+                       product_type: str = "service",
+                       company_id: Optional[int] = None,
+                       description: Optional[str] = None) -> Dict[str, Any]:
+        """Create a product/service in Odoo, scoped to company_id."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            vals: Dict[str, Any] = {
+                "name": name,
+                "list_price": list_price,
+                "type": product_type,
+                "sale_ok": True,
+            }
+            if company_id is not None:
+                vals["company_id"] = company_id
+            if description:
+                vals["description_sale"] = description
+            product_id = self._execute("product.product", "create", vals)
+            return {"product_id": product_id, "name": name, "list_price": list_price}
+        except Exception as e:
+            logger.error("Odoo create_product failed: %s", e)
+            return {"error": str(e)}
+
+    def update_product(self, product_id: int, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Update a product/service in Odoo."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            self._execute("product.product", "write", [product_id], updates)
+            return {"product_id": product_id, "updated": True}
+        except Exception as e:
+            logger.error("Odoo update_product failed: %s", e)
+            return {"error": str(e)}
+
     # ── Revenue Summary (aggregated from invoices) ────────────────
 
     def get_revenue_summary(self, date_from: Optional[str] = None,

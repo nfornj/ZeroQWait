@@ -1,5 +1,6 @@
 import React from "react";
 import { Routes, Route } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 // ThemeProvider is now imported from our context which handles dynamic theming
 import { ThemeProvider } from "./contexts/ThemeContext";
 
@@ -36,6 +37,8 @@ import ShopLayout from "./layouts/ShopLayout";
 import PublicLayout from "./layouts/PublicLayout";
 import QueueCounterPage from "./pages/QueueCounterPage";
 import AgentInbox from "./features/agent-inbox/AgentInbox";
+import ServicesManagementPage from "./features/shop-dashboard/pages/ServicesManagementPage";
+import { useAuth } from "./contexts/AuthContext";
 
 import SignInSide from "./auth-sign-in/SignInSide";
 import ShopOwnerSignUp from "./auth-sign-up/ShopOwnerSignUp";
@@ -44,6 +47,22 @@ import SubdomainHandler from "./components/SubdomainHandler";
 import AIShopPublicPage from "./features/public-booking/pages/AIShopPublicPage";
 
 function App() {
+  const { user } = useAuth();
+
+  const OwnerOnly = ({ children }: { children: React.ReactNode }) => {
+    if (user?.role === "employee") {
+      return <Navigate to="/employee-dashboard" replace />;
+    }
+    return <>{children}</>;
+  };
+
+  const DashboardEntry = () => {
+    if (user?.role === "employee") {
+      return <Navigate to="/employee-dashboard" replace />;
+    }
+    return <AgentInbox />;
+  };
+
   return (
     <ShopProvider>
       <ThemeProvider>
@@ -84,11 +103,6 @@ function App() {
           {/* Shop Registration (Standalone or Public?) - Let's keep it Public for now */}
           <Route path="/register-shop" element={<ShopOwnerSignUp />} />
 
-          {/* Employee Queue Management (Public Layout) */}
-          <Route element={<PublicLayout />}>
-            <Route path="/employee-dashboard" element={<EmployeeQueuePage />} />
-          </Route>
-
           {/* Shop Owner Portal Routes (No Global Navbar) */}
           <Route
             element={
@@ -99,13 +113,15 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route path="/dashboard" element={<AgentInbox />} />
-            <Route path="/overview" element={<ShopDashboardPage />} />
-            <Route path="/employees" element={<EmployeeManagementPage />} />
-            <Route path="/settings" element={<ShopSettingsPage />} />
-            <Route path="/queues" element={<QueueManagementPage />} />
-            <Route path="/queues/:queueId" element={<QueueDetailPage />} />
-            <Route path="/agent-inbox" element={<AgentInbox />} />
+            <Route path="/dashboard" element={<DashboardEntry />} />
+            <Route path="/employee-dashboard" element={<EmployeeQueuePage />} />
+            <Route path="/overview" element={<OwnerOnly><ShopDashboardPage /></OwnerOnly>} />
+            <Route path="/employees" element={<OwnerOnly><EmployeeManagementPage /></OwnerOnly>} />
+            <Route path="/settings" element={<OwnerOnly><ShopSettingsPage /></OwnerOnly>} />
+            <Route path="/queues" element={<OwnerOnly><QueueManagementPage /></OwnerOnly>} />
+            <Route path="/queues/:queueId" element={<OwnerOnly><QueueDetailPage /></OwnerOnly>} />
+            <Route path="/services" element={<OwnerOnly><ServicesManagementPage /></OwnerOnly>} />
+            <Route path="/agent-inbox" element={<OwnerOnly><AgentInbox /></OwnerOnly>} />
           </Route>
 
           <Route path="*" element={<NotFoundPage />} />

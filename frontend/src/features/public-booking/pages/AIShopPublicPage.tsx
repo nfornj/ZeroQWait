@@ -65,7 +65,6 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
   const [secondsSinceUpdate, setSecondsSinceUpdate] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
   const applyLiveMetrics = (incoming: LiveMetrics) => {
     let trend: 'up' | 'down' | 'flat' = 'flat';
     setLiveMetrics((prev) => {
@@ -98,21 +97,11 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
       return;
     }
 
-    try {
-      const checkRes = await axios.get(`/queues/items/${numericId}/estimate`);
-      if (checkRes.data && checkRes.data.status !== 'completed' && checkRes.data.status !== 'cancelled') {
-        setMyQueueItem({
-          id: numericId,
-          customer_name: 'You',
-          position: checkRes.data.position,
-          status: checkRes.data.status,
-          checked_in_at: new Date().toISOString(),
-        });
-      } else {
-        setMyQueueItem(null);
-      }
-    } catch {
-      setMyQueueItem(null);
+    // Do not revive stale queue IDs that are not present in the shop's active queue.
+    setMyQueueItem(null);
+    localStorage.removeItem(`queue_item_${resolvedShopId}`);
+    if (shopId) {
+      localStorage.removeItem(`queue_item_${shopId}`);
     }
   };
 
@@ -123,6 +112,12 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
         .sort((a, b) => (a.position || 0) - (b.position || 0)),
     [queueItems],
   );
+
+  const getDisplayFirstName = (fullName?: string) => {
+    const trimmed = (fullName || '').trim();
+    if (!trimmed) return 'Customer';
+    return trimmed.split(/\s+/)[0];
+  };
 
   useEffect(() => {
     const fetchShopData = async () => {
@@ -162,6 +157,7 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
         } catch {
           // keep previous metrics if temporary failure
         }
+
         await reconcileMyQueueItem(items, shop.id);
       } catch {
         // keep previous state; polling will retry
@@ -365,15 +361,25 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
                     </Box>
                   ) : (
                     <Box sx={{ mt: 1.5 }}>
-                      <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                        Not Enrolled Yet
+                      <Typography variant="h4" sx={{ fontWeight: 900, lineHeight: 1 }}>
+                        {liveMetrics?.people_waiting ?? waitingCustomers.length ?? 0}
                       </Typography>
-                      <Typography color="text.secondary">
+                      <Typography variant="body1" sx={{ fontWeight: 700, mt: 0.5 }}>
+                        People currently waiting
+                      </Typography>
+                      <Typography color="text.secondary" sx={{ mt: 0.5 }}>
                         Use the AI panel to the right to join the queue instantly.
                       </Typography>
                       <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
-                        <Chip color="primary" label={`Live ETA: ${liveMetrics?.estimated_wait_minutes ?? '-'} min`} />
-                        <Chip variant="outlined" label={`Waiting: ${liveMetrics?.people_waiting ?? waitingCustomers.length}`} />
+                        <Chip
+                          color="primary"
+                          label={`ETA: ${liveMetrics?.estimated_wait_minutes ?? 0} min`}
+                          sx={{ fontWeight: 800 }}
+                        />
+                        <Chip
+                          variant="outlined"
+                          label={`Waiting: ${liveMetrics?.people_waiting ?? waitingCustomers.length ?? 0}`}
+                        />
                       </Stack>
                       <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                         AI model factors: active staff, parallel queues, historical service analytics, and real-time throughput.
@@ -418,7 +424,7 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
                               <Box>
                                 <Typography sx={{ fontWeight: 700 }}>#{item.position}</Typography>
                                 <Typography variant="caption" color="text.secondary">
-                                  {isMe ? 'You' : 'Customer'}
+                                  {isMe ? 'You' : getDisplayFirstName(item.customer_name)}
                                 </Typography>
                               </Box>
                             </Stack>

@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from integrations.stripe_client import (
     is_configured as stripe_configured,
@@ -33,6 +33,13 @@ class CreatePaymentIntentRequest(BaseModel):
     description: str = Field(default="")
     shop_id: Optional[int] = None
     invoice_id: Optional[int] = None
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
 
 
 class PaymentIntentResponse(BaseModel):

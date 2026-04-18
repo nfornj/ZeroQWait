@@ -122,26 +122,33 @@ def extract_requested_date(query: str, now: Optional[datetime] = None) -> Option
 
 
 def daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
-    """Get daily revenue via db_interface."""
+    """Get daily revenue via db_interface.
+    
+    For today's date, queries queue_items in real-time (daily_analytics
+    is batch-populated nightly and may not have today's row yet).
+    """
     try:
         session = db_interface.get_session()
-        from models import DailyAnalytics
+        from models import DailyAnalytics, QueueItem, Queue, QueueStatus
+        from sqlalchemy import func
         
         if not date:
             date = datetime.now().strftime("%Y-%m-%d")
         
-        # Query ALL DailyAnalytics for this date (sum if multiple records)
+        target_date = datetime.strptime(date, "%Y-%m-%d").date()
+        is_today = (target_date == datetime.now().date())
+
+        # Query batch analytics first
         analytics_list = session.query(DailyAnalytics).filter(
             DailyAnalytics.shop_id == shop_id,
             DailyAnalytics.date == date
         ).all()
-        session.close()
         
-        if analytics_list:
+        if analytics_list and not is_today:
             total_revenue = sum(getattr(a, 'total_revenue', 0.0) for a in analytics_list)
             total_completed = sum(getattr(a, 'completed_services', 0) for a in analytics_list)
             average_transaction = total_revenue / total_completed if total_completed > 0 else 0.0
-            
+            session.close()
             return {
                 "total_revenue": total_revenue,
                 "transaction_count": total_completed,
@@ -151,11 +158,39 @@ def daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
                 "date": date
             }
         
+        # Real-time fallback: query queue_items directly
+        completed_items = (
+            session.query(QueueItem)
+            .join(Queue)
+            .filter(
+                Queue.shop_id == shop_id,
+                func.date(QueueItem.checked_in_at) == target_date,
+                QueueItem.status == QueueStatus.COMPLETED,
+            )
+            .all()
+        )
+        total_completed = len(completed_items)
+        total_revenue = sum(float(item.service_cost or 0.0) for item in completed_items)
+        average_transaction = total_revenue / total_completed if total_completed > 0 else 0.0
+
+        # Also count all customers (any status) for "total customers"
+        all_count = (
+            session.query(func.count(QueueItem.id))
+            .join(Queue)
+            .filter(
+                Queue.shop_id == shop_id,
+                func.date(QueueItem.checked_in_at) == target_date,
+            )
+            .scalar() or 0
+        )
+
+        session.close()
         return {
-            "total_revenue": 0.0,
-            "transaction_count": 0,
-            "completed_services": 0,
-            "average_transaction": 0.0,
+            "total_revenue": total_revenue,
+            "transaction_count": total_completed,
+            "completed_services": total_completed,
+            "total_customers": all_count,
+            "average_transaction": average_transaction,
             "shop_id": shop_id,
             "date": date
         }
@@ -331,18 +366,38 @@ def _bucket_key(dt_value: datetime, granularity: str) -> str:
 
 
 def trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
-    """Dynamic finance trend query backed by DailyAnalytics aggregation."""
+    """Dynamic finance trend query backed by DailyAnalytics aggregation.
+    
+    For windows that include today, supplements batch daily_analytics
+    with real-time queue_items data so recently-completed services are visible.
+    """
     try:
         session = db_interface.get_session()
-        from models import DailyAnalytics
+        from models import DailyAnalytics, QueueItem, Queue, QueueStatus
+        from sqlalchemy import func
 
         start_dt, end_dt, granularity, window = _parse_time_window(query)
 
-        rows = session.query(DailyAnalytics).filter(
-            DailyAnalytics.shop_id == shop_id,
-            DailyAnalytics.date >= start_dt,
-            DailyAnalytics.date <= end_dt,
-        ).all()
+        today = datetime.now().date()
+        window_includes_today = (start_dt.date() <= today <= end_dt.date())
+
+        # Query daily_analytics (exclude today if window includes it — we'll add real-time below)
+        if window_includes_today and start_dt.date() < today:
+            hist_end = datetime.combine(today - timedelta(days=1), datetime.max.time())
+            rows = session.query(DailyAnalytics).filter(
+                DailyAnalytics.shop_id == shop_id,
+                DailyAnalytics.date >= start_dt,
+                DailyAnalytics.date <= hist_end,
+            ).all()
+        elif not window_includes_today:
+            rows = session.query(DailyAnalytics).filter(
+                DailyAnalytics.shop_id == shop_id,
+                DailyAnalytics.date >= start_dt,
+                DailyAnalytics.date <= end_dt,
+            ).all()
+        else:
+            # Window is today-only — no historical rows needed
+            rows = []
 
         buckets: Dict[str, Dict[str, float]] = {}
         total_revenue = 0.0
@@ -372,6 +427,35 @@ def trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
             total_revenue += revenue
             total_customers += customers
             total_completed += completed
+
+        # Real-time today supplement from queue_items
+        if window_includes_today:
+            today_start = datetime.combine(today, datetime.min.time())
+            today_items = (
+                session.query(QueueItem)
+                .join(Queue)
+                .filter(
+                    Queue.shop_id == shop_id,
+                    QueueItem.checked_in_at >= today_start,
+                    QueueItem.checked_in_at <= end_dt,
+                )
+                .all()
+            )
+            today_all = len(today_items)
+            today_completed_items = [i for i in today_items if i.status == QueueStatus.COMPLETED]
+            today_completed_count = len(today_completed_items)
+            today_revenue = sum(float(i.service_cost or 0.0) for i in today_completed_items)
+
+            key = _bucket_key(datetime.now(), granularity)
+            if key not in buckets:
+                buckets[key] = {"revenue": 0.0, "customers": 0, "completed": 0}
+            buckets[key]["revenue"] += today_revenue
+            buckets[key]["customers"] += today_all
+            buckets[key]["completed"] += today_completed_count
+
+            total_revenue += today_revenue
+            total_customers += today_all
+            total_completed += today_completed_count
 
         points = []
         best_period = None
@@ -413,38 +497,66 @@ def trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
 
 
 def weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, Any]:
-    """Get weekly revenue summary."""
+    """Get weekly revenue summary.
+    
+    Supplements batch daily_analytics with real-time queue_items
+    for today's date so recently-completed services are included.
+    """
     try:
         session = db_interface.get_session()
-        from models import DailyAnalytics
+        from models import DailyAnalytics, QueueItem, Queue, QueueStatus
+        from sqlalchemy import func as sqlfunc
         
         if week_start:
             start_date = datetime.fromisoformat(week_start)
         else:
-            today = datetime.now()
-            start_date = today - timedelta(days=today.weekday())
+            today_dt = datetime.now()
+            start_date = today_dt - timedelta(days=today_dt.weekday())
         
+        today = datetime.now().date()
         total_revenue = 0.0
         total_customers = 0
         total_completed = 0
         best_day = None
         best_day_revenue = 0.0
         
-        # Sum ALL records per date (use .all() not .first())
         for i in range(7):
-            date_str = (start_date + timedelta(days=i)).strftime("%Y-%m-%d")
-            day_records = session.query(DailyAnalytics).filter(
-                DailyAnalytics.shop_id == shop_id,
-                DailyAnalytics.date == date_str
-            ).all()
-            
-            day_revenue = 0.0
-            for record in day_records:
-                rev = getattr(record, 'total_revenue', 0.0)
-                day_revenue += rev
-                total_revenue += rev
-                total_customers += getattr(record, 'total_customers', 0)
-                total_completed += getattr(record, 'completed_services', 0)
+            loop_date = (start_date + timedelta(days=i)).date()
+            date_str = loop_date.strftime("%Y-%m-%d")
+
+            if loop_date == today:
+                # Real-time from queue_items
+                today_start = datetime.combine(today, datetime.min.time())
+                today_items = (
+                    session.query(QueueItem)
+                    .join(Queue)
+                    .filter(
+                        Queue.shop_id == shop_id,
+                        QueueItem.checked_in_at >= today_start,
+                    )
+                    .all()
+                )
+                day_completed = [i for i in today_items if i.status == QueueStatus.COMPLETED]
+                day_revenue = sum(float(i.service_cost or 0.0) for i in day_completed)
+                total_revenue += day_revenue
+                total_customers += len(today_items)
+                total_completed += len(day_completed)
+            elif loop_date > today:
+                continue  # Future dates — skip
+            else:
+                # Historical from daily_analytics
+                day_records = session.query(DailyAnalytics).filter(
+                    DailyAnalytics.shop_id == shop_id,
+                    DailyAnalytics.date == date_str
+                ).all()
+                
+                day_revenue = 0.0
+                for record in day_records:
+                    rev = getattr(record, 'total_revenue', 0.0)
+                    day_revenue += rev
+                    total_revenue += rev
+                    total_customers += getattr(record, 'total_customers', 0)
+                    total_completed += getattr(record, 'completed_services', 0)
             
             if day_revenue > best_day_revenue:
                 best_day_revenue = day_revenue
@@ -482,24 +594,69 @@ def top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
 
 
 def customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
-    """Get customer metrics for a parsed time window from daily analytics + customer profiles."""
+    """Get customer metrics for a parsed time window.
+    
+    Uses real-time queue_items data when the window includes today
+    (daily_analytics is batch-populated nightly and may lag).
+    Falls back to daily_analytics for historical ranges.
+    """
     session = None
     try:
         session = db_interface.get_session()
-        from models import DailyAnalytics
+        from models import DailyAnalytics, QueueItem, Queue, QueueStatus
         from modules.shops.models import ShopCustomer
+        from sqlalchemy import func
 
         start_dt, end_dt, granularity, window = _parse_time_window(query or "")
 
-        rows = session.query(DailyAnalytics).filter(
-            DailyAnalytics.shop_id == shop_id,
-            DailyAnalytics.date >= start_dt,
-            DailyAnalytics.date <= end_dt,
-        ).all()
+        today = datetime.now().date()
+        window_includes_today = (start_dt.date() <= today <= end_dt.date())
 
-        total_customers = sum(int(getattr(row, "total_customers", 0) or 0) for row in rows)
-        completed_services = sum(int(getattr(row, "completed_services", 0) or 0) for row in rows)
-        days_with_data = len(rows)
+        # --- Historical portion from daily_analytics ---
+        total_customers = 0
+        completed_services = 0
+        days_with_data = 0
+
+        if start_dt.date() < today:
+            # Query daily_analytics only for dates before today
+            hist_end = min(end_dt, datetime.combine(today - timedelta(days=1), datetime.max.time()))
+            rows = session.query(DailyAnalytics).filter(
+                DailyAnalytics.shop_id == shop_id,
+                DailyAnalytics.date >= start_dt,
+                DailyAnalytics.date <= hist_end,
+            ).all()
+            total_customers += sum(int(getattr(row, "total_customers", 0) or 0) for row in rows)
+            completed_services += sum(int(getattr(row, "completed_services", 0) or 0) for row in rows)
+            days_with_data += len(rows)
+
+        # --- Real-time portion from queue_items for today ---
+        if window_includes_today:
+            today_start = datetime.combine(today, datetime.min.time())
+            today_all = (
+                session.query(func.count(QueueItem.id))
+                .join(Queue)
+                .filter(
+                    Queue.shop_id == shop_id,
+                    QueueItem.checked_in_at >= today_start,
+                    QueueItem.checked_in_at <= end_dt,
+                )
+                .scalar() or 0
+            )
+            today_completed = (
+                session.query(func.count(QueueItem.id))
+                .join(Queue)
+                .filter(
+                    Queue.shop_id == shop_id,
+                    QueueItem.checked_in_at >= today_start,
+                    QueueItem.checked_in_at <= end_dt,
+                    QueueItem.status == QueueStatus.COMPLETED,
+                )
+                .scalar() or 0
+            )
+            total_customers += today_all
+            completed_services += today_completed
+            if today_all > 0:
+                days_with_data += 1
 
         new_customers = session.query(ShopCustomer).filter(
             ShopCustomer.shop_id == shop_id,

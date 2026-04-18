@@ -76,6 +76,12 @@ def _append_checked_out_marker(notes: Optional[str], timestamp_iso: str) -> str:
     return "\n".join([line for line in cleaned if line.strip()])
 
 
+def _is_checked_out(notes: Optional[str]) -> bool:
+    if not notes:
+        return False
+    return any(line.startswith(CHECKED_OUT_MARKER_PREFIX) for line in notes.splitlines())
+
+
 def get_least_busy_employee(shop_id: int) -> Optional[int]:
     """Find the clocked-in employee with the fewest active queue items."""
     active_shifts = db_interface.get_shop_active_shifts(shop_id)
@@ -120,7 +126,12 @@ def _build_shop_live_snapshot(shop_id: int) -> Dict:
         # Include recently completed items (last 10 min) for checkout notifications
         ten_minutes_ago = datetime.utcnow() - timedelta(minutes=10)
         for item in items:
-            if item.status == QUEUE_STATUS_COMPLETED and item.completed_at and item.completed_at >= ten_minutes_ago:
+            if (
+                item.status == QUEUE_STATUS_COMPLETED
+                and item.completed_at
+                and item.completed_at >= ten_minutes_ago
+                and not _is_checked_out(item.notes)
+            ):
                 completed_items.append({
                     "id": item.id,
                     "customer_name": item.customer_name,
@@ -155,7 +166,12 @@ def get_recently_completed(shop_id: int):
     ten_minutes_ago = datetime.utcnow() - timedelta(minutes=10)
     result = []
     for item in items:
-        if item.status == QUEUE_STATUS_COMPLETED and item.completed_at and item.completed_at >= ten_minutes_ago:
+        if (
+            item.status == QUEUE_STATUS_COMPLETED
+            and item.completed_at
+            and item.completed_at >= ten_minutes_ago
+            and not _is_checked_out(item.notes)
+        ):
             result.append({
                 "id": item.id,
                 "customer_name": item.customer_name,

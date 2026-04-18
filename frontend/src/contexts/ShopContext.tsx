@@ -17,9 +17,13 @@ interface ShopContextType {
   shop: Shop | null;
   shopSlug: string | null;
   loading: boolean;
+  shopsLoading: boolean;
   error: string | null;
+  ownedShops: Shop[];
   setShop: (shop: Shop | null) => void;
   fetchShopBySlug: (slug: string) => Promise<Shop | null>;
+  refreshOwnedShops: () => Promise<Shop[]>;
+  selectOwnedShop: (shopId: number) => void;
 }
 
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
@@ -28,7 +32,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [shop, setShop] = useState<Shop | null>(null);
   const [shopSlug, setShopSlug] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [shopsLoading, setShopsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ownedShops, setOwnedShops] = useState<Shop[]>([]);
 
   // Extract subdomain from current hostname
   const getSubdomainFromHost = (): string | null => {
@@ -104,8 +110,11 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      if (response.data.length > 0) {
-        const myShop = response.data[0];
+      const shops = Array.isArray(response.data) ? response.data : [];
+      setOwnedShops(shops);
+
+      if (shops.length > 0) {
+        const myShop = shops[0];
         console.log("[ShopContext] User's shop fetched:", myShop.name, "slug:", myShop.slug);
         setShop(myShop);
         setShopSlug(myShop.slug);
@@ -119,6 +128,44 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setLoading(false);
     }
+  };
+
+  const refreshOwnedShops = async (): Promise<Shop[]> => {
+    try {
+      setShopsLoading(true);
+      setError(null);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setOwnedShops([]);
+        return [];
+      }
+
+      const response = await axios.get(`/shops/my-shops`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const shops = Array.isArray(response.data) ? response.data : [];
+      setOwnedShops(shops);
+
+      if (!shop && shops.length > 0) {
+        setShop(shops[0]);
+        setShopSlug(shops[0].slug || null);
+      }
+
+      return shops;
+    } catch (err: any) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to load shops';
+      setError(errorMsg);
+      return [];
+    } finally {
+      setShopsLoading(false);
+    }
+  };
+
+  const selectOwnedShop = (shopId: number) => {
+    const selectedShop = ownedShops.find((ownedShop) => ownedShop.id === shopId);
+    if (!selectedShop) return;
+    setShop(selectedShop);
+    setShopSlug(selectedShop.slug || null);
   };
 
   useEffect(() => {
@@ -148,9 +195,13 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     shop,
     shopSlug,
     loading,
+    shopsLoading,
     error,
+    ownedShops,
     setShop,
     fetchShopBySlug,
+    refreshOwnedShops,
+    selectOwnedShop,
   };
 
   return (

@@ -1048,7 +1048,7 @@ class DatabaseInterface:
         finally:
             db.close()
     
-    def join_queue_for_shop(self, shop_id: int, customer_name: str, phone: str = None) -> Dict[str, Any]:
+    def join_queue_for_shop(self, shop_id: int, customer_name: str, phone: str = None, service_name: str = None) -> Dict[str, Any]:
         """Add a customer to a shop's active queue."""
         db = self.get_session()
         try:
@@ -1066,6 +1066,33 @@ class DatabaseInterface:
             if not queue:
                 return {"error": "No active queue for this shop"}
             
+            # Resolve service if provided
+            service_id = None
+            service_cost = 0.0
+            resolved_service_name = None
+            if service_name:
+                # Try exact match first (case-insensitive), then fuzzy
+                service = db.query(ShopService).filter(
+                    ShopService.shop_id == shop_id,
+                    ShopService.is_active == True,
+                    func.lower(ShopService.name) == service_name.lower()
+                ).first()
+                if not service:
+                    # Fuzzy: substring match
+                    services = db.query(ShopService).filter(
+                        ShopService.shop_id == shop_id,
+                        ShopService.is_active == True,
+                    ).all()
+                    svc_lower = service_name.lower()
+                    for s in services:
+                        if svc_lower in (s.name or "").lower() or (s.name or "").lower() in svc_lower:
+                            service = s
+                            break
+                if service:
+                    service_id = service.id
+                    service_cost = service.cost or 0.0
+                    resolved_service_name = service.name
+
             # Calculate position
             max_pos = db.query(func.max(QueueItem.position)).filter(
                 QueueItem.queue_id == queue.id
@@ -1078,7 +1105,9 @@ class DatabaseInterface:
                 customer_name=customer_name,
                 customer_phone=phone,
                 position=new_pos,
-                status='waiting'
+                status='waiting',
+                service_id=service_id,
+                service_cost=service_cost,
             )
             db.add(item)
             db.commit()
@@ -1088,14 +1117,18 @@ class DatabaseInterface:
             avg_service_time = shop.average_service_time or 15
             wait_minutes = (new_pos - 1) * avg_service_time
             
-            return {
+            result = {
                 "success": True,
                 "queue_item_id": item.id,
                 "position": new_pos,
                 "estimated_wait_minutes": wait_minutes,
                 "shop_name": shop.name,
-                "customer_name": customer_name
+                "customer_name": customer_name,
+                "service_cost": service_cost,
             }
+            if resolved_service_name:
+                result["service_name"] = resolved_service_name
+            return result
         except Exception as e:
             db.rollback()
             return {"error": str(e)}

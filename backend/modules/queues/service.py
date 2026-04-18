@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import SessionLocal
 from modules.queues.models import Queue, QueueItem
 from modules.queues import schemas
+from modules.shops.models import ShopService
 from typing import List, Optional, Dict
 from datetime import datetime
 
@@ -33,6 +33,14 @@ class QueueService:
             new_pos = (max_pos or 0) + 1
             
             item_data = item_create.model_dump(exclude_unset=True)
+
+            # Auto-populate service_cost from the linked service
+            service_id = item_data.get("service_id")
+            if service_id and not item_data.get("service_cost"):
+                svc = db.query(ShopService).filter(ShopService.id == service_id).first()
+                if svc and svc.cost:
+                    item_data["service_cost"] = svc.cost
+
             item = QueueItem(
                 **item_data,
                 queue_id=queue_id,

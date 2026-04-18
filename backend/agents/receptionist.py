@@ -108,51 +108,95 @@ def _generate_receptionist_response(
     return text
 
 
+def _prior_ai_text(state: AgentState) -> str:
+    """Return the content of the last AIMessage in the conversation (before the latest user message)."""
+    messages = state.get("messages", [])
+    # Walk backwards skipping the latest message (the user's), find the last AI message
+    for msg in reversed(messages[:-1] if len(messages) > 1 else []):
+        if isinstance(msg, AIMessage):
+            return str(msg.content).lower()
+    return ""
+
+
+def _get_recent_context(state: AgentState, max_turns: int = 4) -> str:
+    """Build a short conversation context string from recent messages for LLM classification."""
+    messages = state.get("messages", [])
+    recent = messages[-max_turns:] if len(messages) > max_turns else messages
+    parts = []
+    for msg in recent:
+        if isinstance(msg, AIMessage):
+            parts.append(f"ASSISTANT: {str(msg.content)[:300]}")
+        elif isinstance(msg, BaseMessage):
+            parts.append(f"USER: {str(msg.content)[:300]}")
+        else:
+            parts.append(f"USER: {str(msg)[:300]}")
+    return "\n".join(parts)
+
+
 def receptionist_intent_classifier(state: AgentState) -> str:
     """
-    Further classify the receptionist request type.
+    Use the LLM to classify the receptionist request type based on conversation context.
     
     Returns: "queue_status", "join_queue", "services", "close_queue",
              "book_appointment", "list_appointments", "cancel_appointment",
-             "available_slots", "other"
+             "available_slots", "create_service", "update_service",
+             "delete_service", "call_next", "other"
     """
-    
     messages = state.get("messages", [])
     if not messages:
         return "other"
-    
-    latest = messages[-1]
-    if isinstance(latest, BaseMessage):
-        content = str(latest.content).lower()
-    else:
-        content = str(latest).lower()
-    
-    # Appointment-related intents
-    if any(word in content for word in ["appointment", "schedule", "book", "booking", "slot"]):
-        if any(word in content for word in ["cancel", "remove", "delete"]):
-            return "cancel_appointment"
-        if any(word in content for word in ["available", "slot", "open", "free", "when can"]):
-            return "available_slots"
-        if any(word in content for word in ["list", "show", "today", "upcoming", "my appointment"]):
-            return "list_appointments"
-        if any(word in content for word in ["reschedule", "move", "change time"]):
-            return "cancel_appointment"  # reschedule handled via cancel flow
-        return "book_appointment"
-    
-    # Queue-related intents
-    if any(word in content for word in ["queue", "wait", "position", "line", "busy"]):
-        if "close" in content or "end" in content or "stop" in content:
-            return "close_queue"
-        if any(word in content for word in ["call", "next", "serve"]):
-            return "call_next"
-        return "queue_status"
-    elif any(word in content for word in ["call next", "serve next", "next customer", "next in"]):
-        return "call_next"
-    elif any(word in content for word in ["join", "register", "add"]):
-        return "join_queue"
-    elif any(word in content for word in ["service", "what", "offer", "available", "price"]):
-        return "services"
-    else:
+
+    context = _get_recent_context(state)
+    user_text = _latest_user_text(state)
+
+    llm = _get_receptionist_writer_llm()
+    prompt = (
+        "You are an intent classifier for a receptionist agent in a service business.\n"
+        "Given the conversation context and the latest user message, classify the intent into EXACTLY ONE of these categories:\n\n"
+        "- queue_status: checking queue length, wait times, who is in line\n"
+        "- join_queue: customer wants to join the queue\n"
+        "- call_next: serve next customer, call next in line\n"
+        "- close_queue: close or end the queue for the day\n"
+        "- services: asking about available services, prices, what the shop offers (read-only inquiry)\n"
+        "- create_service: adding a NEW service to the shop catalog (owner action)\n"
+        "- update_service: changing an existing service's price, duration, or details\n"
+        "- delete_service: removing or deactivating a service\n"
+        "- book_appointment: scheduling a new appointment or booking\n"
+        "- list_appointments: viewing existing appointments\n"
+        "- cancel_appointment: cancelling or rescheduling an appointment\n"
+        "- available_slots: checking open time slots\n"
+        "- other: general help, greetings, or anything that doesn't fit above\n\n"
+        "IMPORTANT: Consider the full conversation context. If the assistant previously asked for "
+        "service details (name, price) and the user is now providing them, classify as 'create_service'. "
+        "If the assistant asked what to change about a service, classify as 'update_service'.\n\n"
+        f"CONVERSATION:\n{context}\n\n"
+        f"LATEST USER MESSAGE: {user_text}\n\n"
+        "Respond with ONLY the intent label (one of the categories above), nothing else. No explanation."
+    )
+
+    try:
+        response = llm.invoke([{"role": "user", "content": prompt}])
+        raw = str(response.content).strip().lower()
+        # Clean up: remove any markdown, quotes, extra text
+        raw = re.sub(r"[`\"']", "", raw).strip()
+        # Extract just the first word/phrase that matches a valid intent
+        valid_intents = {
+            "queue_status", "join_queue", "call_next", "close_queue",
+            "services", "create_service", "update_service", "delete_service",
+            "book_appointment", "list_appointments", "cancel_appointment",
+            "available_slots", "other",
+        }
+        # Try exact match first
+        if raw in valid_intents:
+            return raw
+        # Try to find a valid intent within the response
+        for intent in valid_intents:
+            if intent in raw:
+                return intent
+        return "other"
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"LLM intent classification failed: {e}, falling back to 'other'")
         return "other"
 
 
@@ -555,6 +599,238 @@ def handle_available_slots(state: AgentState) -> dict:
     return {"messages": list(state["messages"]) + [response], "tool_results": result}
 
 
+# ── Service management handlers ────────────────────────────────────
+
+def _parse_service_fields(text: str) -> Dict[str, Any]:
+    """Use the LLM to extract service name, cost, duration, and currency from natural language."""
+    llm = _get_receptionist_writer_llm()
+    prompt = (
+        "Extract service details from the following text. Return ONLY a JSON object with these fields:\n"
+        '- "name": the service name (string or null)\n'
+        '- "cost": the price as a number (float or null)\n'
+        '- "duration_minutes": duration in minutes (integer or null)\n'
+        '- "currency": currency code like USD, CAD, EUR, GBP (string, default "USD")\n'
+        '- "description": brief description if mentioned (string or null)\n\n'
+        "Rules:\n"
+        "- If the user says 'Canadian dollars' or 'CAD', set currency to 'CAD'.\n"
+        "- If the user says 'euros' or 'EUR', set currency to 'EUR'.\n"
+        "- If no currency is mentioned, default to 'USD'.\n"
+        "- Return ONLY valid JSON, no explanation or markdown.\n\n"
+        f'Text: "{text}"\n\n'
+        "JSON:"
+    )
+
+    try:
+        response = llm.invoke([{"role": "user", "content": prompt}])
+        raw = str(response.content).strip()
+        # Strip markdown code fences if present
+        raw = re.sub(r"^```(?:json)?\s*", "", raw).rstrip("`").strip()
+        parsed = _json.loads(raw)
+        # Validate and clean types
+        fields: Dict[str, Any] = {}
+        if parsed.get("name") and isinstance(parsed["name"], str):
+            fields["name"] = parsed["name"].strip()
+        if parsed.get("cost") is not None:
+            try:
+                fields["cost"] = float(parsed["cost"])
+            except (ValueError, TypeError):
+                pass
+        if parsed.get("duration_minutes") is not None:
+            try:
+                fields["duration_minutes"] = int(parsed["duration_minutes"])
+            except (ValueError, TypeError):
+                pass
+        if parsed.get("currency") and isinstance(parsed["currency"], str):
+            fields["currency"] = parsed["currency"].upper().strip()
+        if parsed.get("description") and isinstance(parsed["description"], str):
+            fields["description"] = parsed["description"].strip()
+        return fields
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"LLM service field extraction failed: {e}")
+        return {}
+
+
+def handle_create_service(state: AgentState) -> dict:
+    """Create a new shop service from owner's message."""
+    shop_id = state["tenant_id"]
+    text = _latest_user_text(state)
+    fields = _parse_service_fields(text)
+
+    name = fields.get("name")
+    cost = fields.get("cost")
+
+    if not name or cost is None:
+        response = AIMessage(
+            content=_generate_receptionist_response(
+                state,
+                "create_service_missing",
+                {"parsed": fields},
+                extra_instructions=(
+                    "The owner wants to add a service but some details are missing. "
+                    "Ask for the service name and price. Mention duration is optional (default 30 min)."
+                ),
+            )
+        )
+        return {"messages": list(state["messages"]) + [response], "tool_results": None}
+
+    result = booking_tools.create_service(
+        shop_id=shop_id,
+        name=name,
+        cost=cost,
+        duration_minutes=fields.get("duration_minutes", 30),
+        description=fields.get("description"),
+        currency=fields.get("currency", "USD"),
+    )
+
+    if result.get("error"):
+        response = AIMessage(content=f"I couldn't create the service: {result['error']}")
+        return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+    response = AIMessage(
+        content=_generate_receptionist_response(
+            state,
+            "service_created",
+            result,
+            extra_instructions="Confirm the new service was created with its name, price, and duration.",
+        )
+    )
+    return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+
+def handle_update_service(state: AgentState) -> dict:
+    """Update an existing service (price, name, duration)."""
+    shop_id = state["tenant_id"]
+    text = _latest_user_text(state)
+    fields = _parse_service_fields(text)
+
+    # Try to resolve service by name from existing catalog
+    target_name = fields.get("name")
+    service_id = None
+
+    if target_name:
+        catalog = booking_tools.search_services(shop_id)
+        for svc in catalog.get("services", []):
+            if svc.get("name", "").lower() == target_name.lower():
+                service_id = svc["id"]
+                break
+
+    # If no name quoted, try fuzzy match against message
+    if not service_id:
+        catalog = booking_tools.search_services(shop_id)
+        import difflib
+        text_lower = text.lower()
+        best_ratio, best_id = 0.0, None
+        for svc in catalog.get("services", []):
+            svc_name = svc.get("name", "").lower()
+            if svc_name and svc_name in text_lower:
+                best_id = svc["id"]
+                best_ratio = 1.0
+                break
+            ratio = difflib.SequenceMatcher(None, svc_name, text_lower).ratio()
+            if ratio > best_ratio:
+                best_ratio, best_id = ratio, svc["id"]
+        if best_id and best_ratio >= 0.4:
+            service_id = best_id
+
+    if not service_id:
+        response = AIMessage(
+            content=_generate_receptionist_response(
+                state,
+                "update_service_not_found",
+                {"parsed": fields, "shop_id": shop_id},
+                extra_instructions=(
+                    "Could not identify which service the owner wants to update. "
+                    "List the current services and ask the owner to specify which one."
+                ),
+            )
+        )
+        return {"messages": list(state["messages"]) + [response], "tool_results": None}
+
+    updates = {}
+    if fields.get("cost") is not None:
+        updates["cost"] = fields["cost"]
+    if fields.get("duration_minutes") is not None:
+        updates["duration_minutes"] = fields["duration_minutes"]
+    # Don't update name to the matched name — only if a new name was explicitly given
+    # (future: handle "rename X to Y" patterns)
+
+    if not updates:
+        response = AIMessage(
+            content=_generate_receptionist_response(
+                state,
+                "update_service_no_changes",
+                {"service_id": service_id},
+                extra_instructions="Ask what the owner wants to change about this service (price, duration, etc.).",
+            )
+        )
+        return {"messages": list(state["messages"]) + [response], "tool_results": None}
+
+    result = booking_tools.update_service(shop_id=shop_id, service_id=service_id, **updates)
+
+    if result.get("error"):
+        response = AIMessage(content=f"Could not update the service: {result['error']}")
+        return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+    response = AIMessage(
+        content=_generate_receptionist_response(
+            state,
+            "service_updated",
+            result,
+            extra_instructions="Confirm what was changed with the new values.",
+        )
+    )
+    return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+
+def handle_delete_service(state: AgentState) -> dict:
+    """Deactivate a service."""
+    shop_id = state["tenant_id"]
+    text = _latest_user_text(state)
+
+    # Resolve service by name
+    catalog = booking_tools.search_services(shop_id)
+    import difflib
+    text_lower = text.lower()
+    best_ratio, best_id, best_name = 0.0, None, None
+    for svc in catalog.get("services", []):
+        svc_name = svc.get("name", "").lower()
+        if svc_name and svc_name in text_lower:
+            best_id, best_name = svc["id"], svc.get("name")
+            best_ratio = 1.0
+            break
+        ratio = difflib.SequenceMatcher(None, svc_name, text_lower).ratio()
+        if ratio > best_ratio:
+            best_ratio, best_id, best_name = ratio, svc["id"], svc.get("name")
+
+    if not best_id or best_ratio < 0.4:
+        response = AIMessage(
+            content=_generate_receptionist_response(
+                state,
+                "delete_service_not_found",
+                {"shop_id": shop_id},
+                extra_instructions="Could not identify the service to remove. List current services and ask which one.",
+            )
+        )
+        return {"messages": list(state["messages"]) + [response], "tool_results": None}
+
+    result = booking_tools.delete_service(shop_id=shop_id, service_id=best_id)
+
+    if result.get("error"):
+        response = AIMessage(content=f"Could not remove the service: {result['error']}")
+        return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+    response = AIMessage(
+        content=_generate_receptionist_response(
+            state,
+            "service_deleted",
+            {"name": best_name, **result},
+            extra_instructions="Confirm the service has been deactivated.",
+        )
+    )
+    return {"messages": list(state["messages"]) + [response], "tool_results": result}
+
+
 def handle_other(state: AgentState) -> dict:
     """Generic receptionist response."""
     
@@ -606,6 +882,9 @@ def build_receptionist_graph():
     graph.add_node("list_appointments", handle_list_appointments)
     graph.add_node("cancel_appointment", handle_cancel_appointment)
     graph.add_node("available_slots", handle_available_slots)
+    graph.add_node("create_service", handle_create_service)
+    graph.add_node("update_service", handle_update_service)
+    graph.add_node("delete_service", handle_delete_service)
     graph.add_node("other", handle_other)
     
     # Edges: classify -> route based on result
@@ -622,6 +901,9 @@ def build_receptionist_graph():
             "list_appointments": "list_appointments",
             "cancel_appointment": "cancel_appointment",
             "available_slots": "available_slots",
+            "create_service": "create_service",
+            "update_service": "update_service",
+            "delete_service": "delete_service",
             "other": "other"
         }
     )
@@ -636,6 +918,9 @@ def build_receptionist_graph():
     graph.add_edge("list_appointments", END)
     graph.add_edge("cancel_appointment", END)
     graph.add_edge("available_slots", END)
+    graph.add_edge("create_service", END)
+    graph.add_edge("update_service", END)
+    graph.add_edge("delete_service", END)
     graph.add_edge("other", END)
     
     # Entry point

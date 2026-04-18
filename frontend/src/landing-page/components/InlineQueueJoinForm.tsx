@@ -31,6 +31,7 @@ export interface QueueJoinFormData {
   shop_name: string;
   city?: string;
   shop_type?: string;
+  services?: { id: number; name: string; cost: number }[];
   status?: "collecting" | "joining" | "success" | "error";
   error?: string;
 }
@@ -43,10 +44,12 @@ interface InlineQueueJoinFormProps {
   theme: any;
   isDarkMode: boolean;
   disabled?: boolean;
+  services?: { id: number; name: string; cost: number }[];
   onFormSubmit: (result: {
     success: boolean;
     queueItemId?: number;
     position?: number;
+    serviceCost?: number;
     error?: string;
   }) => void;
 }
@@ -59,6 +62,7 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
   theme,
   isDarkMode,
   disabled = false,
+  services = [],
   onFormSubmit,
 }) => {
   const [name, setName] = useState("");
@@ -117,6 +121,7 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
           success: true,
           queueItemId: joinAction.result.queue_item_id,
           position: joinAction.result.position,
+          serviceCost: joinAction.result.service_cost,
         });
       } else {
         // Extract error message if available
@@ -232,30 +237,55 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
           }}
         />
 
-        {/* Optional Service Field */}
-        <TextField
-          label="Service (Optional)"
-          placeholder="e.g., Haircut, Fade, Style"
-          value={service}
-          onChange={(e) => setService(e.target.value)}
-          disabled={isLoading}
-          fullWidth
-          size="small"
-          variant="outlined"
-          autoComplete="off"
-          inputProps={{
-            enterKeyHint: "done",
-          }}
-          sx={{
-            "& .MuiOutlinedInput-root": {
-              borderRadius: "12px",
-              bgcolor: isDarkMode ? theme.inputBg : "#fff",
-              "& fieldset": { borderColor: theme.cardBorder },
-              "&:hover fieldset": { borderColor: theme.accent },
-              "&.Mui-focused fieldset": { borderColor: theme.accent },
-            },
-          }}
-        />
+        {/* Service Selection */}
+        {services.length > 0 ? (
+          <FormControl fullWidth size="small">
+            <InputLabel>Service</InputLabel>
+            <Select
+              value={service}
+              label="Service"
+              onChange={(e) => setService(e.target.value)}
+              disabled={isLoading}
+              sx={{
+                borderRadius: "12px",
+                bgcolor: isDarkMode ? theme.inputBg : "#fff",
+                "& .MuiOutlinedInput-notchedOutline": { borderColor: theme.cardBorder },
+                "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: theme.accent },
+                "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: theme.accent },
+              }}
+            >
+              {services.map((svc) => (
+                <MenuItem key={svc.id} value={svc.name}>
+                  {svc.name} — ${svc.cost.toFixed(2)}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        ) : (
+          <TextField
+            label="Service (Optional)"
+            placeholder="e.g., Haircut, Fade, Style"
+            value={service}
+            onChange={(e) => setService(e.target.value)}
+            disabled={isLoading}
+            fullWidth
+            size="small"
+            variant="outlined"
+            autoComplete="off"
+            inputProps={{
+              enterKeyHint: "done",
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: "12px",
+                bgcolor: isDarkMode ? theme.inputBg : "#fff",
+                "& fieldset": { borderColor: theme.cardBorder },
+                "&:hover fieldset": { borderColor: theme.accent },
+                "&.Mui-focused fieldset": { borderColor: theme.accent },
+              },
+            }}
+          />
+        )}
 
         {/* Submit Button */}
         <Button

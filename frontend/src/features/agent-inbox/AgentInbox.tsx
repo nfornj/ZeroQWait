@@ -4,25 +4,17 @@ import {
   Alert,
   alpha,
   Box,
-  Button,
   Card,
   CardContent,
   Chip,
   Collapse,
   Divider,
-  FormControl,
   Grid,
   IconButton,
-  InputLabel,
-  MenuItem,
-  Select,
-  SelectChangeEvent,
   Stack,
-  Tooltip,
   Typography,
   useTheme,
 } from "@mui/material";
-import AutorenewRoundedIcon from "@mui/icons-material/AutorenewRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import { useShop } from "../../contexts/ShopContext";
 import AgentFeed from "./AgentFeed";
@@ -33,24 +25,14 @@ import ThinkingSteps, { ThinkingStep } from "./ThinkingSteps";
 import MasterAIAgent from "../../landing-page/components/MasterAIAgent";
 import type { AgentFeedEvent, ChatMessage, InsightItem, PendingApproval } from "./types";
 
-type ShopSummary = {
-  id: number;
-  name: string;
-  slug?: string;
-  primary_color?: string;
-  secondary_color?: string;
-};
-
 const nowIso = () => new Date().toISOString();
 
 const toId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-const buildIntroMessage = (shopName?: string): ChatMessage => ({
+const buildIntroMessage = (): ChatMessage => ({
   id: toId("msg_intro"),
   role: "assistant",
-  content: shopName
-    ? `Welcome back to ${shopName}. I can help with queue status, team scheduling, approvals, and daily performance summaries. What would you like to handle first?`
-    : "Welcome to your Supervisor workspace. I can help with queue status, team scheduling, approvals, and daily performance summaries.",
+  content: "Welcome to your Supervisor workspace. I can help with queue status, team scheduling, approvals, and daily performance summaries. What would you like to handle first?",
   status: "done",
   timestamp: nowIso(),
 });
@@ -64,9 +46,7 @@ const buildWebSocketUrl = (shopId: number): string => {
 
 const AgentInbox: React.FC = () => {
   const muiTheme = useTheme();
-  const { shop, setShop } = useShop();
-  const [ownedShops, setOwnedShops] = useState<ShopSummary[]>([]);
-  const [shopsLoading, setShopsLoading] = useState(false);
+  const { shop } = useShop();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [feedEvents, setFeedEvents] = useState<AgentFeedEvent[]>([]);
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
@@ -77,6 +57,7 @@ const AgentInbox: React.FC = () => {
   const [insightItems, setInsightItems] = useState<InsightItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const previousShopIdRef = useRef<number | null>(null);
 
   const addFeedEvent = useCallback((event: Omit<AgentFeedEvent, "id" | "timestamp">) => {
     setFeedEvents((prev) => [
@@ -88,30 +69,6 @@ const AgentInbox: React.FC = () => {
       ...prev,
     ]);
   }, []);
-
-  const refreshOwnedShops = useCallback(async () => {
-    setShopsLoading(true);
-    try {
-      const response = await axios.get<ShopSummary[]>("/shops/my-shops");
-      const shops = response.data || [];
-      setOwnedShops(shops);
-
-      if (!shop?.id && shops.length > 0) {
-        const firstShop = shops[0];
-        setShop({
-          id: firstShop.id,
-          name: firstShop.name,
-          slug: firstShop.slug || "",
-          primary_color: firstShop.primary_color,
-          secondary_color: firstShop.secondary_color,
-        });
-      }
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Failed to load your shops");
-    } finally {
-      setShopsLoading(false);
-    }
-  }, [setShop, shop?.id]);
 
   const refreshPendingApprovals = useCallback(async () => {
     if (!shop?.id) return;
@@ -126,43 +83,31 @@ const AgentInbox: React.FC = () => {
   }, [shop?.id]);
 
   useEffect(() => {
-    refreshOwnedShops();
-  }, [refreshOwnedShops]);
-
-  useEffect(() => {
     if (!shop?.id) return;
     refreshPendingApprovals();
   }, [shop?.id, refreshPendingApprovals]);
 
-  const handleShopSelection = useCallback(
-    (event: SelectChangeEvent<string>) => {
-      const nextShopId = Number(event.target.value);
-      const selected = ownedShops.find((s) => s.id === nextShopId);
-      if (!selected) return;
+  useEffect(() => {
+    if (!shop?.id) return;
 
-      setShop({
-        id: selected.id,
-        name: selected.name,
-        slug: selected.slug || "",
-        primary_color: selected.primary_color,
-        secondary_color: selected.secondary_color,
-      });
-      setMessages([buildIntroMessage(selected.name)]);
+    const shopChanged = previousShopIdRef.current !== null && previousShopIdRef.current !== shop.id;
+    previousShopIdRef.current = shop.id;
+
+    if (shopChanged) {
+      setMessages([buildIntroMessage()]);
       setFeedEvents([]);
       setPendingApprovals([]);
       setInsightItems([]);
+      setThinkingSteps([]);
       setError(null);
-    },
-    [ownedShops, setShop]
-  );
+      return;
+    }
 
-  useEffect(() => {
-    if (!shop?.id) return;
     setMessages((prev) => {
       if (prev.length > 0) return prev;
-      return [buildIntroMessage(shop.name)];
+      return [buildIntroMessage()];
     });
-  }, [shop?.id, shop?.name]);
+  }, [shop?.id]);
 
   useEffect(() => {
     if (!shop?.id) return;
@@ -658,55 +603,9 @@ const AgentInbox: React.FC = () => {
 
         {error && <Alert severity="error">{error}</Alert>}
 
-        <Card variant="outlined" sx={{ borderRadius: 3, borderColor: panelCardBorder, bgcolor: panelCardBg, backdropFilter: 'blur(18px)' }}>
-          <CardContent sx={{ py: 1.5 }}>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ xs: "stretch", md: "center" }} justifyContent="space-between">
-              <Stack>
-                <Typography variant="subtitle2">Active Shop Context</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Pick which business the supervisor should operate on.
-                </Typography>
-              </Stack>
-
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: { xs: "100%", md: 420 } }}>
-                <FormControl size="small" fullWidth>
-                  <InputLabel id="agent-shop-select-label">Shop</InputLabel>
-                  <Select
-                    labelId="agent-shop-select-label"
-                    label="Shop"
-                    value={shop?.id ? String(shop.id) : ""}
-                    onChange={handleShopSelection}
-                    displayEmpty
-                  >
-                    {ownedShops.length === 0 && <MenuItem value="" disabled>No shops found</MenuItem>}
-                    {ownedShops.map((ownedShop) => (
-                      <MenuItem key={ownedShop.id} value={String(ownedShop.id)}>
-                        {ownedShop.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-
-                <Tooltip title="Reload shops">
-                  <span>
-                    <Button
-                      variant="outlined"
-                      onClick={refreshOwnedShops}
-                      disabled={shopsLoading}
-                      startIcon={<AutorenewRoundedIcon />}
-                    >
-                      Refresh
-                    </Button>
-                  </span>
-                </Tooltip>
-              </Stack>
-            </Stack>
-          </CardContent>
-        </Card>
-
         {!shop?.id && (
           <Alert severity="warning">
-            No active shop selected. Select a shop from the context card above to start the agent session.
+            No active shop selected. Choose a shop from the sidebar settings panel to start the agent session.
           </Alert>
         )}
 

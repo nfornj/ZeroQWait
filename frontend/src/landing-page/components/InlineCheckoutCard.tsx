@@ -45,13 +45,28 @@ const InlineCheckoutCard: React.FC<InlineCheckoutCardProps> = ({
 
   const handlePayNow = async () => {
     if (paid || loading) return;
+
+    // $0 services: skip Stripe, complete checkout directly
+    if (data.serviceCost <= 0) {
+      onPayNow?.({
+        type: "payment_form",
+        client_secret: "",
+        payment_intent_id: "free",
+        amount: 0,
+        currency: "usd",
+        shop_name: data.shopName,
+        shop_id: data.shopId,
+      });
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
       const resp = await axios.post("/payments/create-payment-intent", {
         amount: data.serviceCost,
-        currency: "USD",
+        currency: "usd",
         description: `Payment for ${data.serviceName || "service"} at ${data.shopName}`,
         shop_id: data.shopId,
       });
@@ -68,8 +83,14 @@ const InlineCheckoutCard: React.FC<InlineCheckoutCardProps> = ({
         shop_id: data.shopId,
       });
     } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      // FastAPI validation errors return detail as an array of objects
       const msg =
-        err?.response?.data?.detail || err?.message || "Payment setup failed";
+        typeof detail === "string"
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((d: any) => d.msg || String(d)).join("; ")
+            : err?.message || "Payment setup failed";
       setError(msg);
     } finally {
       setLoading(false);

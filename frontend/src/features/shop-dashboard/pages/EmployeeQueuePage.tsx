@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    Container,
     Box,
     Typography,
     Button,
@@ -9,8 +8,9 @@ import {
     CardContent,
     Alert,
     CircularProgress,
-    Avatar,
     Chip,
+    Grid,
+    Stack,
     List,
     ListItem,
     ListItemText,
@@ -19,14 +19,20 @@ import {
     DialogContent,
     DialogActions,
     TextField,
-    Paper
+    Paper,
+    Tooltip,
 } from '@mui/material';
+import { alpha, useTheme } from '@mui/material/styles';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
+import HourglassTopRoundedIcon from '@mui/icons-material/HourglassTopRounded';
+import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import IconButton from '@mui/material/IconButton';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
@@ -35,6 +41,7 @@ import MenuItem from '@mui/material/MenuItem';
 import axios from 'axios';
 import { useAuth } from '../../../contexts/AuthContext';
 import ProfilePhotoUploader from '../../../components/ProfilePhotoUploader';
+import { useShop } from '../../../contexts/ShopContext';
 
 
 interface Shop {
@@ -80,6 +87,8 @@ const EmployeeQueuePage: React.FC = () => {
 
     const { user } = useAuth();
     const navigate = useNavigate();
+    const theme = useTheme();
+    const { setShop } = useShop();
 
     useEffect(() => {
         fetchInitialData();
@@ -113,6 +122,13 @@ const EmployeeQueuePage: React.FC = () => {
                 const currentShop = shopsResponse.data.find((s: Shop) => s.id === shiftResponse.data.shop_id);
                 if (currentShop) {
                     setSelectedShop(currentShop);
+                    setShop({
+                        id: currentShop.id,
+                        name: currentShop.name,
+                        slug: '',
+                        city: '',
+                        shop_type: '',
+                    });
                     await fetchQueue(currentShop.id);
 
                     // Fetch services
@@ -173,6 +189,7 @@ const EmployeeQueuePage: React.FC = () => {
             setCurrentShift(null);
             setSelectedShop(null);
             setQueue([]);
+            setShop(null);
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to clock out');
         }
@@ -231,9 +248,23 @@ const EmployeeQueuePage: React.FC = () => {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setSuccess(`Now serving ${customer.customer_name}`);
-            await fetchQueue(); // Wait for queue to refresh
+            await fetchQueue();
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to serve customer');
+        }
+    };
+
+    const handleCompleteCustomer = async (customer: QueueItem) => {
+        try {
+            setError(null);
+            const token = localStorage.getItem('token');
+            await axios.patch(`/queues/items/${customer.id}/status?new_status=completed`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setSuccess(`Completed service for ${customer.customer_name}`);
+            await fetchQueue();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to complete customer');
         }
     };
 
@@ -292,10 +323,11 @@ const EmployeeQueuePage: React.FC = () => {
     }
 
     return (
-        <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Box sx={{ maxWidth: 1200, mx: 'auto', px: { xs: 2, md: 4 }, py: 4 }}>
+            {/* Header */}
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={2} sx={{ mb: 3 }}>
                 <Box>
-                    <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
+                    <Typography variant="h4" fontWeight={700}>
                         Welcome, {user?.username}!
                     </Typography>
                     <Typography variant="body1" color="text.secondary">
@@ -306,21 +338,23 @@ const EmployeeQueuePage: React.FC = () => {
                     variant="outlined"
                     startIcon={<PhotoCameraIcon />}
                     onClick={() => setPhotoDialogOpen(true)}
+                    sx={{ borderRadius: 3 }}
                 >
                     Update Photo
                 </Button>
-            </Box>
+            </Stack>
 
-            {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
-            {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
+            {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+            {success && <Alert severity="success" sx={{ mb: 2, borderRadius: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
 
             {!currentShift ? (
-                <Box display="flex" flexWrap="wrap" gap={3}>
+                /* ─── Not clocked in: show shop selection cards ─── */
+                <Grid container spacing={2}>
                     {shops.map((shop) => (
-                        <Box sx={{ flex: 1, minWidth: '250px' }} key={shop.id}>
-                            <Card>
+                        <Grid size={{ xs: 12, sm: 6, md: 4 }} key={shop.id}>
+                            <Card variant="outlined" sx={{ borderRadius: 3 }}>
                                 <CardContent>
-                                    <Typography variant="h6" sx={{ mb: 2 }}>
+                                    <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
                                         {shop.name}
                                     </Typography>
                                     <Button
@@ -328,51 +362,135 @@ const EmployeeQueuePage: React.FC = () => {
                                         variant="contained"
                                         startIcon={<AccessTimeIcon />}
                                         onClick={() => handleClockIn(shop.id)}
+                                        sx={{ borderRadius: 3 }}
                                     >
                                         Clock In
                                     </Button>
                                 </CardContent>
                             </Card>
-                        </Box>
+                        </Grid>
                     ))}
-                </Box>
+                </Grid>
             ) : (
-                <Box>
-                    <Paper sx={{ p: 3, mb: 3 }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Box>
-                                <Typography variant="h6">Current Shift</Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    Clocked in at {new Date(currentShift.clock_in).toLocaleTimeString()}
-                                </Typography>
-                            </Box>
-                            <Button
-                                variant="outlined"
-                                color="error"
-                                startIcon={<ExitToAppIcon />}
-                                onClick={handleClockOut}
-                            >
-                                Clock Out
-                            </Button>
-                        </Box>
-                    </Paper>
+                /* ─── Clocked in: show shift info + queue ─── */
+                <Stack spacing={2.5}>
+                    {/* Shift banner */}
+                    <Card variant="outlined" sx={{ borderRadius: 3 }}>
+                        <CardContent>
+                            <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                <Stack spacing={0.5}>
+                                    <Typography variant="h6" fontWeight={700}>Current Shift</Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Clocked in at {new Date(currentShift.clock_in).toLocaleTimeString()}
+                                    </Typography>
+                                </Stack>
+                                <Button
+                                    variant="outlined"
+                                    color="error"
+                                    startIcon={<ExitToAppIcon />}
+                                    onClick={handleClockOut}
+                                    sx={{ borderRadius: 3 }}
+                                >
+                                    Clock Out
+                                </Button>
+                            </Stack>
+                        </CardContent>
+                    </Card>
 
-                    <Box display="flex" flexWrap="wrap" gap={3}>
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <Card>
+                    {/* Summary stat chips */}
+                    <Grid container spacing={2}>
+                        <Grid size={{ xs: 6, sm: 4 }}>
+                            <Card variant="outlined" sx={{ borderRadius: 3 }}>
                                 <CardContent>
-                                    <Typography variant="h6" sx={{ mb: 2 }}>
+                                    <Stack spacing={0.5} alignItems="center">
+                                        <PeopleRoundedIcon color="primary" />
+                                        <Typography variant="h4" fontWeight={700}>{queue.length}</Typography>
+                                        <Typography variant="body2" color="text.secondary">Total in Queue</Typography>
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                        <Grid size={{ xs: 6, sm: 4 }}>
+                            <Card variant="outlined" sx={{ borderRadius: 3 }}>
+                                <CardContent>
+                                    <Stack spacing={0.5} alignItems="center">
+                                        <HourglassTopRoundedIcon color="warning" />
+                                        <Typography variant="h4" fontWeight={700}>{waitingCustomers.length}</Typography>
+                                        <Typography variant="body2" color="text.secondary">Waiting</Typography>
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 4 }}>
+                            <Card variant="outlined" sx={{ borderRadius: 3 }}>
+                                <CardContent>
+                                    <Stack spacing={0.5} alignItems="center">
+                                        <PlayArrowRoundedIcon color="info" />
+                                        <Typography variant="h4" fontWeight={700}>{servingCustomer ? 1 : 0}</Typography>
+                                        <Typography variant="body2" color="text.secondary">Being Served</Typography>
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    </Grid>
+
+                    <Grid container spacing={2.5}>
+                        {/* Now Serving */}
+                        <Grid size={{ xs: 12, md: 6 }}>
+                            <Card
+                                variant="outlined"
+                                sx={{
+                                    borderRadius: 3,
+                                    height: '100%',
+                                    borderColor: servingCustomer ? alpha(theme.palette.primary.main, 0.4) : undefined,
+                                    background: servingCustomer
+                                        ? `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.08)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`
+                                        : undefined,
+                                }}
+                            >
+                                <CardContent>
+                                    <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
                                         Now Serving
                                     </Typography>
                                     {servingCustomer ? (
-                                        <Box sx={{ textAlign: 'center', py: 4 }}>
-                                            <Typography variant="h2" sx={{ fontWeight: 700, mb: 2 }}>
+                                        <Stack spacing={2} alignItems="center" sx={{ py: 3 }}>
+                                            <Typography variant="h2" fontWeight={700} color="primary">
                                                 #{servingCustomer.position}
                                             </Typography>
-                                            <Typography variant="h5">
+                                            <Typography variant="h5" fontWeight={600}>
                                                 {servingCustomer.customer_name}
                                             </Typography>
-                                        </Box>
+                                            <Chip
+                                                label="Being Served"
+                                                color="info"
+                                                variant="outlined"
+                                                size="small"
+                                            />
+                                            <Stack direction="row" spacing={1.5} sx={{ mt: 1 }}>
+                                                <Button
+                                                    variant="contained"
+                                                    color="success"
+                                                    startIcon={<CheckCircleIcon />}
+                                                    onClick={() => handleCompleteCustomer(servingCustomer)}
+                                                    sx={{ borderRadius: 3, fontWeight: 700 }}
+                                                >
+                                                    Complete
+                                                </Button>
+                                                <Button
+                                                    variant="outlined"
+                                                    color="error"
+                                                    size="small"
+                                                    startIcon={<DeleteIcon />}
+                                                    onClick={() => {
+                                                        setSelectedCustomer(servingCustomer);
+                                                        setRemoveDialogOpen(true);
+                                                    }}
+                                                    sx={{ borderRadius: 3 }}
+                                                >
+                                                    Remove
+                                                </Button>
+                                            </Stack>
+                                        </Stack>
                                     ) : (
                                         <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
                                             No customer being served
@@ -385,23 +503,27 @@ const EmployeeQueuePage: React.FC = () => {
                                         startIcon={<PersonAddIcon />}
                                         onClick={handleCallNext}
                                         disabled={waitingCustomers.length === 0}
+                                        sx={{ borderRadius: 3, mt: 1 }}
                                     >
                                         Call Next Customer
                                     </Button>
                                 </CardContent>
                             </Card>
-                        </Box>
+                        </Grid>
 
-                        <Box sx={{ flex: 1, minWidth: '250px' }}>
-                            <Card>
+                        {/* Waiting Queue */}
+                        <Grid size={{ xs: 12, md: 6 }}>
+                            <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
                                 <CardContent>
-                                    <Typography variant="h6" sx={{ mb: 2 }}>
-                                        Waiting Queue ({waitingCustomers.length})
-                                    </Typography>
+                                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                                        <Typography variant="h6" fontWeight={700}>
+                                            Waiting Queue ({waitingCustomers.length})
+                                        </Typography>
+                                    </Stack>
                                     <Button
                                         variant="outlined"
                                         fullWidth
-                                        sx={{ mb: 2 }}
+                                        sx={{ mb: 2, borderRadius: 3 }}
                                         startIcon={<PersonAddIcon />}
                                         onClick={() => setAddDialogOpen(true)}
                                     >
@@ -412,39 +534,49 @@ const EmployeeQueuePage: React.FC = () => {
                                             No customers waiting
                                         </Typography>
                                     ) : (
-                                        <List>
+                                        <List disablePadding>
                                             {waitingCustomers.slice(0, 10).map((item) => (
                                                 <ListItem
                                                     key={item.id}
-                                                    sx={{ borderBottom: '1px solid #eee' }}
+                                                    sx={{
+                                                        borderBottom: '1px solid',
+                                                        borderColor: 'divider',
+                                                        py: 1.5,
+                                                        px: 1,
+                                                    }}
                                                     secondaryAction={
-                                                        <Box>
-                                                            <IconButton
-                                                                edge="end"
-                                                                aria-label="serve"
-                                                                onClick={() => handleServeSpecific(item)}
-                                                                sx={{ mr: 1 }}
-                                                                color="primary"
-                                                                title="Serve this customer now"
-                                                            >
-                                                                <SkipNextIcon />
-                                                            </IconButton>
-                                                            <IconButton
-                                                                edge="end"
-                                                                aria-label="remove"
-                                                                onClick={() => {
-                                                                    setSelectedCustomer(item);
-                                                                    setRemoveDialogOpen(true);
-                                                                }}
-                                                                color="error"
-                                                                title="Remove from queue"
-                                                            >
-                                                                <DeleteIcon />
-                                                            </IconButton>
-                                                        </Box>
+                                                        <Stack direction="row" spacing={0.5}>
+                                                            <Tooltip title="Serve now">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => handleServeSpecific(item)}
+                                                                    color="primary"
+                                                                >
+                                                                    <SkipNextIcon fontSize="small" />
+                                                                </IconButton>
+                                                            </Tooltip>
+                                                            <Tooltip title="Remove">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => {
+                                                                        setSelectedCustomer(item);
+                                                                        setRemoveDialogOpen(true);
+                                                                    }}
+                                                                    color="error"
+                                                                >
+                                                                    <DeleteIcon fontSize="small" />
+                                                                </IconButton>
+                                                            </Tooltip>
+                                                        </Stack>
                                                     }
                                                 >
-                                                    <Chip label={`#${item.position}`} sx={{ mr: 2 }} />
+                                                    <Chip
+                                                        label={`#${item.position}`}
+                                                        size="small"
+                                                        color="primary"
+                                                        variant="outlined"
+                                                        sx={{ mr: 2, minWidth: 40 }}
+                                                    />
                                                     <ListItemText
                                                         primary={item.customer_name}
                                                         secondary={new Date(item.checked_in_at).toLocaleTimeString()}
@@ -455,9 +587,9 @@ const EmployeeQueuePage: React.FC = () => {
                                     )}
                                 </CardContent>
                             </Card>
-                        </Box>
-                    </Box>
-                </Box>
+                        </Grid>
+                    </Grid>
+                </Stack>
             )}
 
             {/* Photo Upload Dialog */}
@@ -468,7 +600,7 @@ const EmployeeQueuePage: React.FC = () => {
             />
 
             {/* Add Walk-in Dialog */}
-            <Dialog open={addDialogOpen} onClose={() => setAddDialogOpen(false)}>
+            <Dialog open={addDialogOpen} onClose={() => setAddDialogOpen(false)} PaperProps={{ sx: { borderRadius: 3 } }}>
                 <DialogTitle>Add Walk-in Customer</DialogTitle>
                 <DialogContent>
                     <TextField
@@ -506,12 +638,12 @@ const EmployeeQueuePage: React.FC = () => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setAddDialogOpen(false)}>Cancel</Button>
-                    <Button onClick={handleAddWalkIn} variant="contained" disabled={!newCustomerName.trim()}>Add</Button>
+                    <Button onClick={handleAddWalkIn} variant="contained" disabled={!newCustomerName.trim()} sx={{ borderRadius: 3 }}>Add</Button>
                 </DialogActions>
             </Dialog>
 
             {/* Remove Customer Dialog */}
-            <Dialog open={removeDialogOpen} onClose={() => setRemoveDialogOpen(false)}>
+            <Dialog open={removeDialogOpen} onClose={() => setRemoveDialogOpen(false)} PaperProps={{ sx: { borderRadius: 3 } }}>
                 <DialogTitle>Remove Customer from Queue</DialogTitle>
                 <DialogContent>
                     <Typography variant="body1" sx={{ mb: 2 }}>
@@ -539,12 +671,13 @@ const EmployeeQueuePage: React.FC = () => {
                         variant="contained"
                         color="error"
                         disabled={!removeReason.trim()}
+                        sx={{ borderRadius: 3 }}
                     >
                         Remove
                     </Button>
                 </DialogActions>
             </Dialog>
-        </Container>
+        </Box>
     );
 };
 

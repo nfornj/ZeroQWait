@@ -328,6 +328,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
     "customer" | "shop_owner" | null
   >(null);
   const [activeShops, setActiveShops] = useState<any[]>([]);
+  const postPaymentResetTimerRef = useRef<number | null>(null);
 
   // --- "Pay for Service" handler: fetch completed items and show name selector ---
   const handlePayForService = async () => {
@@ -383,6 +384,40 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
       });
     }
   };
+
+  const schedulePostPaymentWelcomeReset = useCallback(() => {
+    if (postPaymentResetTimerRef.current) {
+      window.clearTimeout(postPaymentResetTimerRef.current);
+    }
+
+    postPaymentResetTimerRef.current = window.setTimeout(() => {
+      if (shopContext?.id) {
+        localStorage.removeItem(`queue_item_${shopContext.id}`);
+      }
+
+      setChatHistory((prev) => [
+        ...prev,
+        {
+          role: "ai",
+          text: shopContext
+            ? `Welcome to ${shopContext.name}. I'm ZeroQ, your AI concierge. Tell me your name, phone, and what service you need, and I'll add you to the queue.`
+            : "Welcome to ZeroQwait! I'm ZeroQ. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?",
+          quickActions: shopContext
+            ? getShopQuickActions(shopContext.name)
+            : DEFAULT_QUICK_ACTIONS,
+          status: "done",
+        },
+      ]);
+    }, 3500);
+  }, [shopContext]);
+
+  useEffect(() => {
+    return () => {
+      if (postPaymentResetTimerRef.current) {
+        window.clearTimeout(postPaymentResetTimerRef.current);
+      }
+    };
+  }, []);
 
   // --- Restore active registration on page load/refresh ---
   useEffect(() => {
@@ -867,15 +902,20 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
 
   // --- Queue Join Form Result Handler ---
   const handleQueueJoinFormSubmit = useCallback(
-    (result: { success: boolean; queueItemId?: number; position?: number; error?: string }, sourceIndex: number) => {
+    (result: { success: boolean; queueItemId?: number; position?: number; serviceCost?: number; error?: string }, sourceIndex: number) => {
       // Mark the current form as submitted
       setChatHistory((prev) => {
         const next = [...prev];
         if (next[sourceIndex]) {
           next[sourceIndex].queueJoinFormSubmitted = true;
+          next[sourceIndex].status = "done";
+          next[sourceIndex]._retryText = undefined;
           
           if (result.success) {
-            next[sourceIndex].text += `\n\n✅ **Great!** You've been added to the queue. Your position: #${result.position}`;
+            const costInfo = result.serviceCost && result.serviceCost > 0 
+              ? ` Service cost: $${result.serviceCost.toFixed(2)}.` 
+              : "";
+            next[sourceIndex].text += `\n\n✅ **Great!** You've been added to the queue. Your position: #${result.position}${costInfo}`;
             if (shopContext && result.queueItemId) {
               localStorage.setItem(
                 `queue_item_${shopContext.id}`,
@@ -1330,16 +1370,30 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
       setIsProcessing(false);
       setChatHistory((prev) => {
         const next = [...prev];
-        const idx = next.length - 1;
+        const idx = aiMessageIndex;
         if (
           idx >= 0 &&
           next[idx].role === "ai" &&
-          (!next[idx].text?.trim() || next[idx].status === "streaming")
+          next[idx].status === "streaming"
         ) {
+          const hasInteractiveContent = Boolean(
+            next[idx].text?.trim() ||
+              next[idx].queueJoinFormData ||
+              next[idx].paymentFormData ||
+              next[idx].formStep ||
+              (next[idx].quickActions && next[idx].quickActions.length > 0) ||
+              (next[idx].checkoutPickerItems && next[idx].checkoutPickerItems.length > 0) ||
+              next[idx].checkoutCardData ||
+              (next[idx].charts && next[idx].charts.length > 0) ||
+              (next[idx].files && next[idx].files.length > 0)
+          );
+
           next[idx] = {
             ...next[idx],
-            text: "Something went wrong — please try again.",
-            status: "error",
+            text: hasInteractiveContent
+              ? next[idx].text
+              : "Something went wrong — please try again.",
+            status: hasInteractiveContent ? "done" : "error",
           };
         }
         return next;
@@ -2222,6 +2276,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                           shopId={chat.queueJoinFormData.shop_id}
                           shopName={chat.queueJoinFormData.shop_name}
                           shopType={chat.queueJoinFormData.shop_type}
+                          services={chat.queueJoinFormData.services}
                           sessionId={sessionId}
                           theme={theme}
                           isDarkMode={isDarkMode}
@@ -2272,6 +2327,26 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                           paid={!!chat.checkoutPaid}
                           compact
                           onPayNow={(paymentData) => {
+                            // $0 services: skip Stripe form, complete checkout directly
+                            if (paymentData.payment_intent_id === "free") {
+                              if (chat.checkoutCardData?.queueItemId) {
+                                void axios.post(
+                                  `/queues/items/${chat.checkoutCardData.queueItemId}/checkout`,
+                                ).catch(() => {});
+                              }
+                              setChatHistory((prev) => {
+                                const next = [...prev];
+                                if (next[index]) {
+                                  next[index].paymentComplete = true;
+                                  next[index].checkoutPaid = true;
+                                  next[index].text +=
+                                    "\n\n✅ **Checkout complete!** No payment required — you're all set.";
+                                }
+                                return next;
+                              });
+                              schedulePostPaymentWelcomeReset();
+                              return;
+                            }
                             setChatHistory((prev) => {
                               const next = [...prev];
                               if (next[index]) {
@@ -2329,6 +2404,9 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                               }
                               return next;
                             });
+                            if (result.success) {
+                              schedulePostPaymentWelcomeReset();
+                            }
                           }}
                         />
                       </Box>

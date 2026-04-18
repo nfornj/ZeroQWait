@@ -94,7 +94,7 @@ const ShopLayout: React.FC = () => {
                     alignItems: 'center',
                     px: { xs: 1.5, md: 3 },
                     pb: 5,
-                    mt: { xs: 8, md: 0 }, // Top margin for mobile navbar
+                    mt: { xs: 8, md: 10 },
                     height: '100%',
                     width: '100%',
                 }}>

@@ -65,10 +65,14 @@ _PHONE_CAPTURE_RE = re.compile(
 _TTS_TIMEOUT_SECONDS = 60.0
 
 
-def _extract_customer_details_for_join(user_msg: str) -> Tuple[Optional[str], Optional[str]]:
-    """Best-effort extraction for queue join details from free text."""
+def _extract_customer_details_for_join(user_msg: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Best-effort extraction for queue join details from free text.
+    
+    Returns (name, phone, service_name).
+    """
     name: Optional[str] = None
     phone: Optional[str] = None
+    service_name: Optional[str] = None
 
     name_match = _NAME_CAPTURE_RE.search(user_msg)
     if name_match:
@@ -79,7 +83,15 @@ def _extract_customer_details_for_join(user_msg: str) -> Tuple[Optional[str], Op
         raw_phone = phone_match.group(1)
         phone = _WHITESPACE_MULTI_RE.sub(' ', raw_phone).strip()
 
-    return name, phone
+    # Extract service name: "service is Haircut", "service is Hair Cut & Wash", etc.
+    svc_match = re.search(
+        r'service\s+(?:is|:)\s+([A-Za-z][A-Za-z &\-]+)',
+        user_msg, re.IGNORECASE,
+    )
+    if svc_match:
+        service_name = svc_match.group(1).strip(" .,")
+
+    return name, phone, service_name
 
 
 def _is_shop_queue_join_request(user_msg: str) -> bool:
@@ -92,12 +104,24 @@ def _is_shop_wait_request(user_msg: str) -> bool:
 
 def _build_queue_join_form_event(shop_id: int, shop_name: str, city: Optional[str] = None, shop_type: Optional[str] = None) -> Dict[str, Any]:
     """Generate a queue_join_form SSE event for inline form rendering in frontend."""
+    # Fetch available services for this shop so frontend can show a dropdown
+    services = []
+    try:
+        raw = db_interface.get_shop_services(shop_id)
+        services = [
+            {"id": s.get("id"), "name": s.get("name"), "cost": s.get("cost", 0)}
+            for s in raw if s.get("name")
+        ]
+    except Exception:
+        pass
+
     return {
         "type": "queue_join_form",
         "shop_id": shop_id,
         "shop_name": shop_name,
         "city": city,
         "shop_type": shop_type,
+        "services": services,
         "status": "collecting",
     }
 
@@ -1113,25 +1137,30 @@ async def join_queue(
     ctx: RunContext[MasterAgentDeps],
     shop_id: int = Field(description="ID of the shop to join queue at"),
     customer_name: str = Field(description="Name of the customer joining"),
-    phone: Optional[str] = Field(default=None, description="Optional phone number for notifications")
+    phone: Optional[str] = Field(default=None, description="Optional phone number for notifications"),
+    service_name: Optional[str] = Field(default=None, description="Optional service name the customer wants")
 ) -> str:
     """Join a queue at a specific shop. Use when user wants to get in line."""
-    logger.info(f"join_queue called | shop_id={shop_id} | customer={customer_name}")
+    logger.info(f"join_queue called | shop_id={shop_id} | customer={customer_name} | service={service_name}")
     
-    result = await asyncio.to_thread(db_interface.join_queue_for_shop, shop_id, customer_name, phone)
+    result = await asyncio.to_thread(db_interface.join_queue_for_shop, shop_id, customer_name, phone, service_name)
     
     ctx.deps.actions.append({
         "tool": "join_queue",
         "result": result,
-        "params": {"shop_id": shop_id, "customer_name": customer_name},
+        "params": {"shop_id": shop_id, "customer_name": customer_name, "service_name": service_name},
         "timestamp": datetime.now().isoformat()
     })
     
     if result.get("error"):
         return f"Could not join queue: {result['error']}"
     
+    svc_info = ""
+    if result.get("service_name"):
+        svc_info = f" for {result['service_name']} (${result.get('service_cost', 0):.2f})"
+    
     return (
-        f"Successfully added {result['customer_name']} to {result['shop_name']}! "
+        f"Successfully added {result['customer_name']} to {result['shop_name']}{svc_info}! "
         f"Position #{result['position']}, estimated wait: {result['estimated_wait_minutes']} minutes. "
         f"Queue ticket ID: {result['queue_item_id']}."
     )
@@ -1418,7 +1447,7 @@ class MasterAgent:
             shop_name = (context or {}).get("shop_name", "this shop")
             has_join_signal = _is_shop_queue_join_request(user_msg)
             has_wait_signal = _is_shop_wait_request(user_msg)
-            extracted_name, extracted_phone = _extract_customer_details_for_join(user_msg)
+            extracted_name, extracted_phone, extracted_service = _extract_customer_details_for_join(user_msg)
 
             # Shop landing override: avoid generic location/category search when shop is already known.
             if shop_id and (has_join_signal or has_wait_signal or extracted_name):
@@ -1451,6 +1480,7 @@ class MasterAgent:
                         shop_id=int(shop_id),
                         customer_name=extracted_name,
                         phone=extracted_phone,
+                        service_name=extracted_service,
                     )
             
             elif intent == 'GREETING':
@@ -1470,7 +1500,7 @@ class MasterAgent:
                             shop_id=int(shop_id),
                         )
                     elif _is_shop_queue_join_request(user_msg):
-                        customer_name, customer_phone = _extract_customer_details_for_join(user_msg)
+                        customer_name, customer_phone, customer_service = _extract_customer_details_for_join(user_msg)
                         if not customer_name:
                             # Emit inline queue join form instead of text prompt
                             final_text = f"You're joining the queue for **{shop_name}**. Please provide your details below:"
@@ -1495,6 +1525,7 @@ class MasterAgent:
                                 shop_id=int(shop_id),
                                 customer_name=customer_name,
                                 phone=customer_phone,
+                                service_name=customer_service,
                             )
                     else:
                         final_text = (
@@ -1929,7 +1960,7 @@ class MasterAgent:
         # Check for shop context + queue join signals BEFORE calling expensive analyzer
         has_join_signal = _is_shop_queue_join_request(user_msg)
         has_wait_signal = _is_shop_wait_request(user_msg)
-        extracted_name, extracted_phone = _extract_customer_details_for_join(user_msg)
+        extracted_name, extracted_phone, extracted_service = _extract_customer_details_for_join(user_msg)
 
         if shop_id and (has_join_signal or has_wait_signal or extracted_name):
             if has_wait_signal:
@@ -1967,6 +1998,7 @@ class MasterAgent:
                     shop_id=int(shop_id),
                     customer_name=extracted_name,
                     phone=extracted_phone,
+                    service_name=extracted_service,
                 )
                 async for event in _yield_sentences_with_tts(final_text):
                     yield event
@@ -2014,7 +2046,7 @@ class MasterAgent:
                         shop_id=int(shop_id),
                     )
                 elif _is_shop_queue_join_request(user_msg):
-                    customer_name, customer_phone = _extract_customer_details_for_join(user_msg)
+                    customer_name, customer_phone, customer_service = _extract_customer_details_for_join(user_msg)
                     if not customer_name:
                         final_text = (
                             f"You're joining the queue for **{shop_name}**. "
@@ -2026,6 +2058,7 @@ class MasterAgent:
                             shop_id=int(shop_id),
                             customer_name=customer_name,
                             phone=customer_phone,
+                            service_name=customer_service,
                         )
                 else:
                     final_text = (
