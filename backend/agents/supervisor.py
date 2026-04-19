@@ -805,6 +805,12 @@ def _execute_approved_action(state: AgentState, pending: Dict[str, Any]) -> Dict
             role=details.get("role") or "employee",
         )
 
+    if action == "remove_employee":
+        user_id = details.get("user_id")
+        if not user_id:
+            return {"error": "remove_employee requires user_id in details"}
+        return hr_tools.remove_employee(shop_id=shop_id, user_id=user_id)
+
     return {"error": f"Unsupported approval action: {action}"}
 
 

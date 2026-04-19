@@ -77,13 +77,11 @@ def create_receptionist_runnable(shop_id: int | None = None):
         Tenant ID for scoping tools. When ``None`` the caller must
         supply ``tenant_id`` in the state at invocation time.
     """
+    if not shop_id:
+        raise ValueError("shop_id is required — cannot create tenant-scoped tools without it")
+
     llm = _get_llm()
-
-    # Resolve shop_id at build time if possible; otherwise fall back
-    # to a sentinel that will be overridden at invoke time.
-    effective_shop_id = shop_id or 0  # 0 = will need runtime override
-
-    tools = make_receptionist_tools(effective_shop_id)
+    tools = make_receptionist_tools(shop_id)
 
     agent = create_react_agent(
         model=llm,

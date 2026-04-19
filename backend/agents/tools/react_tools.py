@@ -142,8 +142,9 @@ def make_finance_tools(shop_id: int) -> list:
         return finance_tools.list_invoices(shop_id, status)
 
     @tool
-    def create_invoice(line_items: List[Dict[str, Any]], customer_id: Optional[int] = None, tax_rate: float = 0.0) -> Dict[str, Any]:
-        """Create an invoice. line_items: list of {description, quantity, unit_price}."""
+    def create_invoice(description: str, quantity: int, unit_price: float, customer_id: Optional[int] = None, tax_rate: float = 0.0) -> Dict[str, Any]:
+        """Create a single-line invoice. Example: create_invoice(description="Haircut", quantity=1, unit_price=35.00)."""
+        line_items = [{"description": description, "quantity": quantity, "unit_price": unit_price}]
         return payment_tools.create_invoice(shop_id, line_items, customer_id=customer_id, tax_rate=tax_rate)
 
     @tool
@@ -210,8 +211,13 @@ def make_hr_tools(shop_id: int) -> list:
 
     @tool
     def remove_employee(user_id: int) -> Dict[str, Any]:
-        """Deactivate an employee by user ID. Use list_employees to find the ID."""
-        return hr_tools.remove_employee(shop_id, user_id)
+        """Propose deactivating an employee by user ID. HIGH IMPACT — does NOT execute immediately; requires owner approval first. Use list_employees to find the ID."""
+        return {
+            "requires_approval": True,
+            "action": "remove_employee",
+            "details": {"user_id": user_id},
+            "message": f"Removing employee (user_id={user_id}) has been submitted for owner approval.",
+        }
 
     @tool
     def get_shifts(date: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
