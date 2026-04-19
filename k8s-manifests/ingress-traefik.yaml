@@ -27,7 +27,7 @@ spec:
             port:
               number: 8000
       - path: /docs
-        pathType: Exact
+        pathType: Prefix
         backend:
           service:
             name: backend
@@ -51,7 +51,7 @@ spec:
             port:
               number: 8000
       - path: /docs
-        pathType: Exact
+        pathType: Prefix
         backend:
           service:
             name: backend
@@ -76,7 +76,7 @@ spec:
             port:
               number: 8000
       - path: /docs
-        pathType: Exact
+        pathType: Prefix
         backend:
           service:
             name: backend
@@ -100,7 +100,7 @@ spec:
             port:
               number: 8000
       - path: /docs
-        pathType: Exact
+        pathType: Prefix
         backend:
           service:
             name: backend

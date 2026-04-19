@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ZeroQwait Docs</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+  <meta name="description" content="ZeroQwait platform documentation — how to find shops, join queues, and get started.">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+  <style>
+    :root {
+      --theme-color: #667eea;
+      --sidebar-width: 280px;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      background: #1a1a2e;
+    }
+    .sidebar .sidebar-nav a {
+      color: #b0b8cc;
+    }
+    .sidebar .sidebar-nav a:hover,
+    .sidebar .sidebar-nav a.active {
+      color: #a78bfa;
+      font-weight: 600;
+    }
+    .sidebar .sidebar-nav > ul > li > .section-title {
+      color: #667eea;
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 18px 0 4px 15px;
+      cursor: default;
+    }
+    .app-name-link {
+      font-size: 1.25rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #667eea, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .sidebar-toggle {
+      background-color: #1a1a2e;
+    }
+
+    /* ── Content ── */
+    .markdown-section h1 { color: #1e1b4b; }
+    .markdown-section h2 {
+      color: #2d3748;
+      border-bottom: 2px solid #e9d5ff;
+      padding-bottom: 6px;
+    }
+    .markdown-section h3 { color: #4a5568; }
+
+    /* ── Step blocks ── */
+    .step {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      margin: 18px 0;
+    }
+    .step-num {
+      min-width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      font-weight: 700;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+    .step-body { flex: 1; }
+    .step-body strong { color: #1e1b4b; }
+
+    /* ── Callout boxes ── */
+    .tip {
+      background: #f0f4ff;
+      border-left: 4px solid #667eea;
+      border-radius: 0 6px 6px 0;
+      padding: 12px 16px;
+      margin: 16px 0;
+    }
+    .warn {
+      background: #fffbeb;
+      border-left: 4px solid #f59e0b;
+      border-radius: 0 6px 6px 0;
+      padding: 12px 16px;
+      margin: 16px 0;
+    }
+    .cred-card {
+      background: #f8faff;
+      border: 1px solid #c7d2fe;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin: 12px 0;
+      font-family: monospace;
+      font-size: 0.95em;
+      line-height: 1.8;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .badge-owner  { background: #ddd6fe; color: #5b21b6; }
+    .badge-emp    { background: #d1fae5; color: #065f46; }
+    .badge-cust   { background: #fce7f3; color: #9d174d; }
+
+    /* ── Keyword chips ── */
+    .chip {
+      display: inline-block;
+      background: #ede9fe;
+      color: #5b21b6;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 13px;
+      font-family: monospace;
+      margin: 2px 0;
+    }
+
+    /* ── Tables ── */
+    .markdown-section table thead tr { background: #667eea; color: white; }
+    .markdown-section table tr:nth-child(even) { background: #f5f3ff; }
+    .markdown-section table td code { background: #ede9fe; color: #5b21b6; border: none; }
+
+    /* Search bar */
+    .search input { border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div id="app">Loading…</div>
+
+  <script>
+    window.$docsify = {
+      name: '⚡ ZeroQwait',
+      nameLink: '/docs/',
+      repo: '',
+      loadSidebar: '_sidebar.md',
+      subMaxLevel: 3,
+      auto2top: true,
+      homepage: 'README.md',
+      relativePath: true,
+      search: {
+        maxAge: 86400000,
+        paths: 'auto',
+        placeholder: 'Search docs…',
+        noData: 'No results found.',
+        depth: 4,
+        hideOtherSidebarContent: false,
+      },
+      themeColor: '#667eea',
+      plugins: [],
+    };
+  </script>
+
+  <!-- Docsify v4 core -->
+  <script src="//cdn.jsdelivr.net/npm/docsify@4/lib/docsify.min.js"></script>
+  <!-- Search plugin -->
+  <script src="//cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
+  <!-- Copy-to-clipboard for code blocks -->
+  <script src="//cdn.jsdelivr.net/npm/docsify-copy-code@2/dist/docsify-copy-code.min.js"></script>
+  <!-- Zoom images on click -->
+  <script src="//cdn.jsdelivr.net/npm/docsify@4/lib/plugins/zoom-image.min.js"></script>
+</body>
+</html>

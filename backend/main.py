@@ -5,7 +5,7 @@ from starlette.requests import Request
 import re as _re
 import uvicorn
 from contextlib import asynccontextmanager
-from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments, documentation
+from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments
 from modules.auth.router import router as auth_router
 from modules.users.router import router as users_router
 from modules.shops.router import router as shops_router
@@ -186,7 +186,11 @@ app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
 app.include_router(tenants.router, prefix="/api", tags=["Tenants"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(testing_router, tags=["Testing Feedback"])
-app.include_router(documentation.router, tags=["Documentation"])
+
+# Serve Docsify-based documentation site at /docs
+import os as _os
+_docs_site_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "docs_site")
+app.mount("/docs", StaticFiles(directory=_docs_site_dir, html=True), name="docs")
 
 @app.websocket("/ws/{shop_id}")
 async def websocket_endpoint(websocket: WebSocket, shop_id: str):
