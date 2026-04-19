@@ -5,7 +5,7 @@ from starlette.requests import Request
 import re as _re
 import uvicorn
 from contextlib import asynccontextmanager
-from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments
+from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments, documentation
 from modules.auth.router import router as auth_router
 from modules.users.router import router as users_router
 from modules.shops.router import router as shops_router
@@ -76,7 +76,9 @@ app = FastAPI(
     title="Universal Queue System API",
     description="API for managing queues for any service business",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/api/docs",  # Moved Swagger UI to /api/docs
+    openapi_url="/api/openapi.json"  # Moved OpenAPI schema
 )
 
 # Configure CORS
@@ -184,6 +186,7 @@ app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
 app.include_router(tenants.router, prefix="/api", tags=["Tenants"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(testing_router, tags=["Testing Feedback"])
+app.include_router(documentation.router, tags=["Documentation"])
 
 @app.websocket("/ws/{shop_id}")
 async def websocket_endpoint(websocket: WebSocket, shop_id: str):
