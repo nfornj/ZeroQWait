@@ -1,62 +1,5 @@
 """
 Supervisor Agent Graph - Central router for owner commands.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    unittest.main()if __name__ == "__main__":        self.assertEqual(granularity, "week")        self.assertEqual(label, "last_8_weeks")        )            "show customer traffic for last 8 weeks"        _, _, granularity, label = finance_tools._parse_time_window(    def test_parse_last_n_weeks_window_long_range_uses_week_granularity(self):        self.assertLessEqual(start_dt, end_dt)        self.assertEqual(granularity, "day")        self.assertEqual(label, "last_3_weeks")        )            "show customer traffic for last 3 weeks"        start_dt, end_dt, granularity, label = finance_tools._parse_time_window(    def test_parse_last_n_weeks_window(self):        self.assertEqual(end_dt.month, 2)        self.assertEqual(start_dt.day, 1)        self.assertEqual(start_dt.month, 2)        self.assertEqual(start_dt.year, expected_year)        self.assertEqual(label, f"month_{expected_year}_02")        self.assertEqual(granularity, "day")        )            "total customers in february"        start_dt, end_dt, granularity, label = finance_tools._parse_time_window(        expected_year = now.year if now.month >= 2 else now.year - 1        now = datetime.now()    def test_parse_named_month_window(self):        self.assertGreaterEqual((end_dt.date() - start_dt.date()).days, 9)        self.assertLessEqual(start_dt, end_dt)        self.assertEqual(granularity, "day")        self.assertEqual(label, "last_10_days")        )            "how many customers have visited last 10 days"        start_dt, end_dt, granularity, label = finance_tools._parse_time_window(    def test_parse_last_10_days_window(self):class TestFinanceCustomerWindows(unittest.TestCase):from agents.tools import finance_toolssys.path.append(os.path.dirname(os.path.abspath(__file__)))# Add backend directory to import path when executed directly.from datetime import datetimeimport unittest
 The Supervisor:
 1. Receives owner's natural-language command
 2. Classifies intent (booking/queue, finance/analytics, hr/employees, general)
@@ -80,8 +23,9 @@ Phase 2: Add conditional edges to real sub-agents
 """
 
 from typing import Literal, Dict, Any, List, Optional
-import difflib
+import logging
 import re
+from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
@@ -92,76 +36,32 @@ from .tools import booking_tools, hr_tools
 from .memory_context import get_conversation_history, save_conversation_turn
 from redis_client import redis_client
 
-
-_FINANCE_MONTH_TOKENS = [
-    "jan", "january", "feb", "february", "mar", "march", "apr", "april", "may",
-    "jun", "june", "jul", "july", "aug", "august", "sep", "sept", "september",
-    "oct", "october", "nov", "november", "dec", "december",
-]
-
-_BOOKING_KEYWORDS = ["queue", "booking", "appointment", "wait", "service", "services", "customer", "schedule", "slot", "reschedule", "book"]
-_FINANCE_KEYWORDS = [
-    "revenue", "finance", "analytics", "report", "sales", "trend", "monthly", "month", "weekly", "week",
-    "daily", "day", "yearly", "year", "quarter", "income", "profit", "transaction", "customers", "visited", "visits",
-    "invoice", "payment", "refund", "pos", "billing", "receipt", "tip",
-]
-_CLIENT_KEYWORDS = [
-    "client", "clients", "customer", "customers", "who hasn't",
-    "inactive", "lapsed", "top client", "frequent", "loyalty",
-    "hasn't visited", "not been in", "profile", "visit history",
-]
-_HR_KEYWORDS = ["employee", "employees", "staff", "shift", "schedule", "hire", "availability", "clock in", "clock out", "working", "on duty", "roster"]
-_CRM_KEYWORDS = [
-    "crm", "lead", "leads", "contact", "contacts",
-    "company", "companies", "opportunity", "opportunities", "pipeline",
-    "deal", "deals", "prospect", "prospects", "note", "notes", "task", "tasks",
-    # Odoo ERP-specific terms that only make sense in the CRM/ERP context
-    "accounting", "journal", "ledger", "trial balance", "chart of accounts",
-    "product", "catalog", "odoo",
-]
+logger = logging.getLogger(__name__)
 
 
-def _detect_intent_domains(text: str) -> list[str]:
-    domains = []
-    if _contains_any_fuzzy(text, _BOOKING_KEYWORDS):
-        domains.append("booking")
-    has_booking_signals = _contains_any_fuzzy(text, ["book", "appointment", "slot", "reschedule", "wait time"])
-    if not has_booking_signals and (
-        _contains_any_fuzzy(text, _FINANCE_KEYWORDS)
-        or _contains_any_fuzzy(text, _FINANCE_MONTH_TOKENS)
-        or _contains_any_fuzzy(text, _CLIENT_KEYWORDS)
-    ):
-        domains.append("finance")
-    if _contains_any_fuzzy(text, _HR_KEYWORDS):
-        domains.append("hr")
-    if _contains_any_fuzzy(text, _CRM_KEYWORDS):
-        domains.append("crm")
-    return domains
+# ---------------------------------------------------------------------------
+# Structured-output model for intent classification
+# ---------------------------------------------------------------------------
 
-
-def _select_primary_domain(text: str, domains: list[str]) -> str:
-    """Pick domain by earliest keyword occurrence to better handle mixed questions."""
-    lowered = (text or "").lower()
-    keyword_map = {
-        "booking": _BOOKING_KEYWORDS,
-        "finance": _FINANCE_KEYWORDS + _FINANCE_MONTH_TOKENS + _CLIENT_KEYWORDS,
-        "hr": _HR_KEYWORDS,
-        "crm": _CRM_KEYWORDS,
-    }
-    best_domain = domains[0] if domains else "general"
-    best_index = 10**9
-    for domain in domains:
-        for keyword in keyword_map.get(domain, []):
-            idx = lowered.find(keyword)
-            if idx != -1 and idx < best_index:
-                best_index = idx
-                best_domain = domain
-    return best_domain
-
-
-def _is_probably_greeting(text: str) -> bool:
-    lowered = (text or "").strip().lower()
-    return lowered in {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
+class RoutingDecision(BaseModel):
+    """LLM-produced routing decision for the supervisor."""
+    thought_process: str = Field(
+        description="Brief reasoning (1-2 sentences) explaining why this intent was chosen."
+    )
+    next_agent: Literal["booking", "finance", "hr", "crm", "general"] = Field(
+        description=(
+            "The specialist to route to. "
+            "booking = queue, appointments, wait times, services, bookings. "
+            "finance = revenue, analytics, reports, invoices, payments, POS, client retention, visit history, inactive customers. "
+            "hr = employees, shifts, scheduling, availability, clock in/out. "
+            "crm = CRM leads, contacts, companies, pipeline, deals, Odoo ERP operations. "
+            "general = greetings, help, capabilities, anything that doesn't fit above."
+        )
+    )
+    is_followup: bool = Field(
+        default=False,
+        description="True if the message is a follow-up that continues the previous specialist context."
+    )
 
 
 def _clarifying_prompt(user_text: str, mixed_intents: Optional[List[str]] = None) -> str:
@@ -183,112 +83,18 @@ def _clarifying_prompt(user_text: str, mixed_intents: Optional[List[str]] = None
     )
 
 
-def _is_followup_phrase(text: str) -> bool:
-    lowered = (text or "").lower()
-    return any(
-        phrase in lowered
-        for phrase in [
-            "what about",
-            "how about",
-            "and what about",
-            "same for",
-            "what if",
-            "and for",
-            "for feb",
-            "for march",
-            "for april",
-            "for may",
-            "for june",
-            "for july",
-            "for august",
-            "for september",
-            "for october",
-            "for november",
-            "for december",
-        ]
-    )
-
-
-def _is_contextual_followup(text: str) -> bool:
-    """Detect short referential follow-ups that rely on previous specialist context."""
-    lowered = (text or "").strip().lower()
-    tokens = _tokenize_text(lowered)
-    if not tokens:
-        return False
-
-    referential_tokens = {
-        "their", "them", "those", "these", "that", "it", "its", "they", "there", "ones",
-        "name", "names", "status", "details", "list",
-    }
-    question_starts = {
-        "what", "who", "which", "where", "when", "how", "show", "list", "give",
-    }
-
-    # Typical short follow-up pattern: "what are their names?"
-    if len(tokens) <= 8 and any(token in referential_tokens for token in tokens):
-        return True
-
-    # Compact question right after a specialist answer usually means continuation.
-    if len(tokens) <= 6 and tokens[0] in question_starts and lowered.endswith("?"):
-        return True
-
-    return False
-
-
-def _tokenize_text(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", (text or "").lower())
-
-
-def _matches_keyword_fuzzy(token: str, keyword: str) -> bool:
-    if token == keyword:
-        return True
-    # Short keywords (e.g., month abbreviations like "may") are too noisy for
-    # fuzzy matching and can create false mixed-intent classifications.
-    if len(keyword) <= 3 or len(token) <= 3:
-        return False
-    if abs(len(token) - len(keyword)) > 2:
-        return False
-    return difflib.SequenceMatcher(a=token, b=keyword).ratio() >= 0.82
-
-
-def _contains_any_fuzzy(text: str, keywords: list[str]) -> bool:
-    tokens = _tokenize_text(text)
-    if not tokens:
-        return False
-    for token in tokens:
-        for keyword in keywords:
-            if _matches_keyword_fuzzy(token, keyword):
-                return True
-    return False
-
-
-def _infer_previous_target_from_history(state: AgentState) -> Optional[str]:
-    """Infer prior specialist from recent conversation history when metadata is unavailable."""
-    messages = list(state.get("messages", []) or [])
-    if not messages:
-        return None
-
-    skipped_latest_user = False
-    for msg in reversed(messages):
-        if not isinstance(msg, HumanMessage):
-            continue
-        content = str(msg.content).strip().lower()
-        if not content:
-            continue
-        if not skipped_latest_user:
-            skipped_latest_user = True
-            continue
-
-        domains = _detect_intent_domains(content)
-        if "crm" in domains:
-            return "crm"
-        if "hr" in domains:
-            return "hr"
-        if "finance" in domains:
-            return "finance"
-        if "booking" in domains:
-            return "receptionist"
-
+def _get_previous_specialist(state: AgentState) -> Optional[str]:
+    """Get the last specialist that handled a message, for follow-up routing."""
+    metadata = state.get("metadata") or {}
+    previous = (metadata.get("route") or {}).get("to")
+    if previous in {"receptionist", "finance", "hr", "crm"}:
+        return previous
+    previous = metadata.get("last_specialist_target")
+    if previous in {"receptionist", "finance", "hr", "crm"}:
+        return previous
+    current = state.get("current_agent")
+    if current in {"receptionist", "finance", "hr", "crm"}:
+        return current
     return None
 
 
@@ -383,288 +189,100 @@ def _persist_conversation_turns(state: AgentState, assistant_text: str) -> None:
 
 def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
     """
-    Classify owner's intent from the latest message.
-    
-    Returns the intent category to determine routing.
-    
-    Categories:
-    - "booking": Queue, appointments, wait times, close queue
-    - "finance": Revenue, analytics, reports, invoices, client retention, visit history, inactive customers
-    - "hr": Employees, shifts, scheduling, availability
-    - "general": Help, capabilities, general chat
+    Classify owner's intent using LLM structured output.
+
+    A single ``llm.with_structured_output(RoutingDecision)`` call replaces
+    the previous 300+ lines of keyword arrays and fuzzy heuristics.
     """
-    
-    # Extract latest user message
+
     messages = state.get("messages", [])
     if not messages:
         return Command(
             goto="plan_execution",
             update={
                 "current_agent": "general",
-                "metadata": _merge_metadata(state, {"classified_intent": "general", "classification_source": "empty_messages"}),
+                "metadata": _merge_metadata(state, {
+                    "classified_intent": "general",
+                    "classification_source": "empty_messages",
+                }),
             },
         )
-    
+
     user_input = _latest_user_text(state)
-    
-    # Fast local heuristic first for reliability when LLM is unavailable.
-    heuristic_text = str(user_input).lower()
-
-    # "Call next / serve next" patterns are always booking — detect before mixed-intent analysis
-    # to prevent "customer" keyword from incorrectly bleeding into CRM/finance domains.
-    _CALL_NEXT_PATTERNS = [
-        "call next", "call the next", "next customer", "serve next",
-        "serve the next", "next in queue", "next in line",
-    ]
-    if any(p in heuristic_text for p in _CALL_NEXT_PATTERNS):
-        return Command(
-            goto="plan_execution",
-            update={
-                "current_agent": "booking",
-                "metadata": _merge_metadata(
-                    state,
-                    {
-                        "classified_intent": "booking",
-                        "classification_source": "call_next_heuristic",
-                        "mixed_intents": [],
-                        "requires_clarification": False,
-                    },
-                ),
-            },
-        )
-
-    # Creation commands for invoices should route to finance, where local
-    # payments module operations are handled.
-    if "invoice" in heuristic_text and any(w in heuristic_text for w in ["create", "make", "add", "new", "generate"]):
-        return Command(
-            goto="plan_execution",
-            update={
-                "current_agent": "finance",
-                "metadata": _merge_metadata(
-                    state,
-                    {
-                        "classified_intent": "finance",
-                        "classification_source": "invoice_creation_heuristic",
-                        "mixed_intents": [],
-                        "requires_clarification": False,
-                    },
-                ),
-            },
-        )
-
-    # All payment, invoice, POS, and billing queries route to local finance agent.
-    # Invoice/payment operations use the local PaymentService, not Odoo ERP.
-    _LOCAL_FINANCE_PATTERNS = [
-        "record", "cash payment", "paid for", "payment of",
-        "pos summary", "pos report", "point of sale",
-        "list invoice", "list all invoice", "show invoice", "all invoices",
-        "today's pos",
-    ]
-    if any(p in heuristic_text for p in _LOCAL_FINANCE_PATTERNS):
-        return Command(
-            goto="plan_execution",
-            update={
-                "current_agent": "finance",
-                "metadata": _merge_metadata(
-                    state,
-                    {
-                        "classified_intent": "finance",
-                        "classification_source": "local_finance_heuristic",
-                        "mixed_intents": [],
-                        "requires_clarification": False,
-                    },
-                ),
-            },
-        )
-
-    # Client-keyword shortcut to finance — but only when the message does
-    # NOT also carry strong booking signals (e.g. "book appointment for
-    # customer Jane Doe" should route to booking, not finance).
-    if _contains_any_fuzzy(heuristic_text, _CLIENT_KEYWORDS) and not _contains_any_fuzzy(
-        heuristic_text, ["book", "appointment", "queue", "slot", "reschedule", "wait time"]
-    ):
-        return Command(
-            goto="plan_execution",
-            update={
-                "current_agent": "finance",
-                "metadata": _merge_metadata(
-                    state,
-                    {
-                        "classified_intent": "finance",
-                        "classification_source": "client_heuristic",
-                        "mixed_intents": [],
-                        "requires_clarification": False,
-                    },
-                ),
-            },
-        )
-
-    metadata = state.get("metadata") or {}
-    previous_target = (metadata.get("route") or {}).get("to")
-    if previous_target not in {"receptionist", "finance", "hr", "crm"}:
-        previous_target = metadata.get("last_specialist_target")
-    if previous_target not in {"receptionist", "finance", "hr", "crm"}:
-        previous_target = state.get("current_agent") if state.get("current_agent") in {"receptionist", "finance", "hr", "crm"} else None
-    if previous_target not in {"receptionist", "finance", "hr", "crm"}:
-        previous_target = _infer_previous_target_from_history(state)
-
-    domain_hits = _detect_intent_domains(heuristic_text)
-
-    intent_by_target = {
-        "receptionist": "booking",
-        "finance": "finance",
-        "hr": "hr",
-        "crm": "crm",
-    }
-
-    # Follow-up continuity: short elliptical prompts should continue the last specialist context.
-    # Example: "what about february?" right after a finance question.
-    if previous_target and _is_followup_phrase(heuristic_text):
-        followup_intent = intent_by_target.get(previous_target, "general")
-        return Command(
-            goto="plan_execution",
-            update={
-                "current_agent": followup_intent,
-                "metadata": _merge_metadata(
-                    state,
-                    {
-                        "classified_intent": followup_intent,
-                        "classification_source": "followup_context",
-                        "followup_from": previous_target,
-                        "mixed_intents": [],
-                        "requires_clarification": False,
-                    },
-                ),
-            },
-        )
-
-    # Context-driven follow-up continuity for referential prompts that do not
-    # carry explicit domain keywords (e.g., "what are their names?").
-    if previous_target and not domain_hits and _is_contextual_followup(heuristic_text):
-        followup_intent = intent_by_target.get(previous_target, "general")
-        return Command(
-            goto="plan_execution",
-            update={
-                "current_agent": followup_intent,
-                "metadata": _merge_metadata(
-                    state,
-                    {
-                        "classified_intent": followup_intent,
-                        "classification_source": "followup_contextual",
-                        "followup_from": previous_target,
-                        "mixed_intents": [],
-                        "requires_clarification": False,
-                    },
-                ),
-            },
-        )
-
-    if len(domain_hits) > 1:
-        primary = _select_primary_domain(heuristic_text, domain_hits)
-        return Command(
-            goto="plan_execution",
-            update={
-                "current_agent": primary,
-                "metadata": _merge_metadata(
-                    state,
-                    {
-                        "classified_intent": primary,
-                        "classification_source": "mixed_heuristic",
-                        "mixed_intents": domain_hits,
-                        "requires_clarification": True,
-                    },
-                ),
-            },
-        )
-
-    if len(domain_hits) == 1:
-        intent = domain_hits[0]
-        return Command(
-            goto="plan_execution",
-            update={
-                "current_agent": intent,
-                "metadata": _merge_metadata(
-                    state,
-                    {
-                        "classified_intent": intent,
-                        "classification_source": "heuristic",
-                        "mixed_intents": [],
-                        "requires_clarification": False,
-                    },
-                ),
-            },
-        )
-    if _contains_any_fuzzy(heuristic_text, [
-        "csv", "export", "download", "xlsx", "excel", "file",
-        "dates", "date", "list", "only", "just",
-        "revenue",
-    ]):
-        intent = "finance"
-        return Command(
-            goto="plan_execution",
-            update={
-                "current_agent": intent,
-                "metadata": _merge_metadata(
-                    state,
-                    {
-                        "classified_intent": intent,
-                        "classification_source": "heuristic",
-                        "mixed_intents": [],
-                        "requires_clarification": False,
-                    },
-                ),
-            },
-        )
-
-    llm = get_llm()
+    previous_specialist = _get_previous_specialist(state)
     history_messages = _conversation_history_messages(state)
 
-    # Classification prompt
-    classification_prompt = f"""Classify the following shop owner command into one of these categories:
-    
-1. "booking" - Queue management, appointments, booking, wait times, closing queue, available slots, rescheduling
-2. "finance" - Revenue, analytics, financial reports, invoices, payments, POS, billing, refunds, daily/weekly summaries, client retention, inactive customers, visit history  
-3. "hr" - Employees, shifts, scheduling, availability, staffing, clock in/out
-4. "crm" - Clients, leads, contacts, companies, CRM pipeline, notes, tasks
-5. "general" - Help, capabilities, greeting, general chat
+    # Build context for the LLM
+    context_lines = []
+    if previous_specialist:
+        target_to_intent = {
+            "receptionist": "booking", "finance": "finance",
+            "hr": "hr", "crm": "crm",
+        }
+        prev_intent = target_to_intent.get(previous_specialist, previous_specialist)
+        context_lines.append(
+            f"The previous message was handled by the '{prev_intent}' specialist. "
+            "If the new message is a follow-up (e.g. 'what about february?', 'show their names'), "
+            "set is_followup=true and route to the same specialist."
+        )
 
-Owner's command: {user_input}
+    system_prompt = (
+        "You are a routing classifier for ZeroQwait, a shop management platform. "
+        "Classify the shop owner's message into exactly one specialist.\n\n"
+        "Specialists:\n"
+        "- booking: queue management, appointments, wait times, services, bookings, slots, close/open queue, call next customer\n"
+        "- finance: revenue, analytics, financial reports, invoices, payments, POS, billing, "
+        "refunds, daily/weekly/monthly summaries, client retention, inactive customers, visit history, top clients, export CSV\n"
+        "- hr: employees, shifts, scheduling, availability, staffing, clock in/out, roster\n"
+        "- crm: CRM leads, contacts, companies, pipeline, deals, Odoo ERP operations, "
+        "accounting, journal entries, products catalog\n"
+        "- general: greetings, help, capabilities, general chat\n\n"
+        + ("\n".join(context_lines) + "\n" if context_lines else "")
+        + "Respond with your classification."
+    )
 
-Respond with ONLY the category name (one word): booking, finance, hr, crm, or general"""
-    
-    # Get classification
+    llm = get_llm()
+
     try:
-        response = llm.invoke(history_messages + [HumanMessage(content=classification_prompt)])
-        raw_content = response.content
-        if isinstance(raw_content, str):
-            intent = raw_content.strip().lower()
-        else:
-            intent = str(raw_content).strip().lower()
-    except Exception:
-        intent = "general"
-    
-    # Validate and default
-    valid_intents = ["booking", "finance", "hr", "crm", "general"]
-    if intent not in valid_intents:
-        intent = "general"
+        structured_llm = llm.with_structured_output(RoutingDecision)
+        decision: RoutingDecision = structured_llm.invoke(
+            [SystemMessage(content=system_prompt)]
+            + history_messages
+            + [HumanMessage(content=user_input)]
+        )
+        intent = decision.next_agent
+        source = "llm_structured"
+        logger.info(
+            "classify_intent: %r → %s (followup=%s, reason=%s)",
+            user_input[:80], intent, decision.is_followup, decision.thought_process,
+        )
+    except Exception as e:
+        logger.warning("classify_intent structured output failed, falling back: %s", e)
+        # Single-shot fallback — bare LLM call with plain text
+        try:
+            fallback_prompt = (
+                "Classify this shop owner command into exactly one word: "
+                "booking, finance, hr, crm, or general.\n\n"
+                f"Command: {user_input}\n\nCategory:"
+            )
+            resp = llm.invoke([HumanMessage(content=fallback_prompt)])
+            raw = str(resp.content).strip().lower()
+            intent = raw if raw in {"booking", "finance", "hr", "crm", "general"} else "general"
+            source = "llm_fallback"
+        except Exception:
+            intent = "general"
+            source = "error_fallback"
 
-    needs_clarification = intent == "general" and not _is_probably_greeting(user_input)
-    
-    # Update state with classified intent
     return Command(
         goto="plan_execution",
         update={
             "current_agent": intent,
-            "metadata": _merge_metadata(
-                state,
-                {
-                    "classified_intent": intent,
-                    "classification_source": "llm",
-                    "requires_clarification": needs_clarification,
-                    "mixed_intents": [] if intent != "general" else (state.get("metadata") or {}).get("mixed_intents", []),
-                },
-            ),
-        }
+            "metadata": _merge_metadata(state, {
+                "classified_intent": intent,
+                "classification_source": source,
+                "requires_clarification": False,
+            }),
+        },
     )
 
 
@@ -1050,51 +668,122 @@ If a specialist agent already produced raw output, synthesize it into:
     }
 
 
+# ---------------------------------------------------------------------------
+# HITL bridging — scan ReAct agent output for approval proposals
+# ---------------------------------------------------------------------------
+
+def _extract_pending_from_messages(messages) -> Optional[Dict[str, Any]]:
+    """Scan tool messages (newest-first) for a ``requires_approval`` proposal.
+
+    When a ReAct agent calls a proposal-only tool (e.g. close_queue), the
+    ToolMessage content will contain a JSON dict with ``requires_approval: True``.
+    This helper extracts the first such proposal so the supervisor can set
+    ``pending_approval`` and let ``approval_gate`` handle the interrupt.
+    """
+    import json as _json
+
+    for msg in reversed(list(messages)):
+        # ToolMessages carry the tool return value
+        if not hasattr(msg, "type") or getattr(msg, "type", None) != "tool":
+            continue
+        content = getattr(msg, "content", None)
+        if content is None:
+            continue
+        # Content may be a JSON string or already a dict (depending on serialiser)
+        parsed = content
+        if isinstance(parsed, str):
+            try:
+                parsed = _json.loads(parsed)
+            except (ValueError, TypeError):
+                continue
+        if isinstance(parsed, dict) and parsed.get("requires_approval"):
+            return {
+                "action": parsed.get("action"),
+                "details": parsed.get("details", {}),
+            }
+    return None
+
+
 def placeholder_receptionist(state: AgentState) -> dict:
     """
-    Route to Receptionist sub-agent (Phase 2).
-    Invokes the receptionist graph.
+    Route to Receptionist ReAct agent.
+    Invokes the receptionist tool-calling loop with tenant-scoped tools.
+    After execution, checks for HITL proposal tools and bridges them
+    into ``pending_approval`` so ``approval_gate`` can interrupt.
     """
     from .receptionist import create_receptionist_runnable
-    
-    receptionist = create_receptionist_runnable()
-    result = receptionist.invoke(state)
-    
+
+    shop_id = state.get("tenant_id", 0)
+    receptionist = create_receptionist_runnable(shop_id=shop_id)
+
+    # Sub-agent uses its own built-in schema; pass only messages
+    result = receptionist.invoke({"messages": list(state.get("messages", []))})
+
+    # Bridge proposal-only tools into the HITL approval flow
+    pending = _extract_pending_from_messages(result.get("messages", []))
+    if pending:
+        pending["shop_id"] = shop_id
+        return {
+            "messages": result.get("messages", []),
+            "current_agent": "receptionist",
+            "pending_approval": pending,
+            "needs_human_input": True,
+        }
+
     return {
-        **result,
-        "current_agent": "receptionist"
+        "messages": result.get("messages", []),
+        "current_agent": "receptionist",
     }
 
 
 def placeholder_finance(state: AgentState) -> dict:
     """
-    Route to Finance sub-agent (Phase 2).
-    Invokes the finance graph.
+    Route to Finance ReAct agent.
+    Invokes the finance tool-calling loop with tenant-scoped tools.
     """
     from .finance import create_finance_runnable
-    
-    finance = create_finance_runnable()
-    result = finance.invoke(state)
-    
+
+    shop_id = state.get("tenant_id", 0)
+    finance = create_finance_runnable(shop_id=shop_id)
+
+    # Sub-agent uses its own built-in schema; pass only messages
+    result = finance.invoke({"messages": list(state.get("messages", []))})
+
     return {
-        **result,
-        "current_agent": "finance"
+        "messages": result.get("messages", []),
+        "current_agent": "finance",
     }
 
 
 def placeholder_hr(state: AgentState) -> dict:
     """
-    Route to HR sub-agent (Phase 2).
-    Invokes the HR graph.
+    Route to HR ReAct agent.
+    Invokes the HR tool-calling loop with tenant-scoped tools.
+    After execution, checks for HITL proposal tools and bridges them
+    into ``pending_approval`` so ``approval_gate`` can interrupt.
     """
     from .hr import create_hr_runnable
-    
-    hr = create_hr_runnable()
-    result = hr.invoke(state)
-    
+
+    shop_id = state.get("tenant_id", 0)
+    hr = create_hr_runnable(shop_id=shop_id)
+
+    # Sub-agent uses its own built-in schema; pass only messages
+    result = hr.invoke({"messages": list(state.get("messages", []))})
+
+    # Bridge proposal-only tools into the HITL approval flow
+    pending = _extract_pending_from_messages(result.get("messages", []))
+    if pending:
+        pending["shop_id"] = shop_id
+        return {
+            "messages": result.get("messages", []),
+            "current_agent": "hr",
+            "pending_approval": pending,
+            "needs_human_input": True,
+        }
+
     return {
-        **result,
-        "current_agent": "hr"
+        "messages": result.get("messages", []),
+        "current_agent": "hr",
     }
 
 

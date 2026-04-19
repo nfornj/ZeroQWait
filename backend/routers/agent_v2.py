@@ -33,6 +33,8 @@ import base64
 import json
 import logging
 from langchain_core.messages import HumanMessage, SystemMessage
+
+from redis_client import redis_client as _redis
 from langgraph.types import Command
 
 from agents.supervisor import create_supervisor_runnable
@@ -336,6 +338,10 @@ async def chat_sync(
         "metadata": {...}
     }
     """
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not _redis.check_rate_limit(client_ip, limit=20, window=60):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again in a minute.")
     
     try:
         body = await request.json()
@@ -455,6 +461,10 @@ async def chat_stream(
     
     Request body same as /chat endpoint.
     """
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not _redis.check_rate_limit(client_ip, limit=20, window=60):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again in a minute.")
     
     try:
         body = await request.json()
