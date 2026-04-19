@@ -156,8 +156,8 @@ export default function SignInCard() {
         console.log("[SignInCard] Redirecting to /employee-dashboard");
         navigate("/employee-dashboard");
       } else if (role === "SUPER_ADMIN") {
-        console.log("[SignInCard] Redirecting to /master-dashboard (HARD NAV)");
-        window.location.href = "/master-dashboard";
+        console.log("[SignInCard] Redirecting to /admin (HARD NAV)");
+        window.location.href = "/admin";
       } else {
         console.log("[SignInCard] Redirecting to home");
         navigate("/");

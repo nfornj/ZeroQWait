@@ -47,9 +47,9 @@ const LoginPage: React.FC = () => {
         console.log("[LoginPage] Redirecting to /employee-dashboard");
         navigate("/employee-dashboard");
       } else if (role === "SUPER_ADMIN") {
-        console.log("[LoginPage] Redirecting to /master-dashboard (HARD NAV)");
+        console.log("[LoginPage] Redirecting to /admin (HARD NAV)");
         // Force hard navigation to ensure fresh state and bypass router issues
-        window.location.href = "/master-dashboard";
+        window.location.href = "/admin";
       } else {
         console.log("[LoginPage] Redirecting to home (Role mismatch)");
         navigate("/");

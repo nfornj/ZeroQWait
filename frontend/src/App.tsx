@@ -136,6 +136,8 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/* Legacy redirect: /master-dashboard → /admin */}
+          <Route path="/master-dashboard" element={<Navigate to="/admin" replace />} />
 
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
