@@ -48,6 +48,7 @@ import InlineQueueJoinForm from "./InlineQueueJoinForm";
 import InlineAppointmentForm from "./InlineAppointmentForm";
 import InlinePaymentForm, { PaymentFormData } from "./InlinePaymentForm";
 import InlineCheckoutCard, { CheckoutCardData } from "./InlineCheckoutCard";
+import InlineFeedbackForm from "./InlineFeedbackForm";
 import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
 
 import type { AgentChart, AgentFile } from "../../features/agent-inbox/types";
@@ -83,6 +84,8 @@ type ChatHistoryEntry = {
   files?: AgentFile[];
   thinkingSteps?: ThinkingStep[];
   thinkingComplete?: boolean;
+  feedbackFormData?: { session_id: string } | null;
+  feedbackDismissed?: boolean;
 };
 
 type ShopContext = {
@@ -1274,6 +1277,16 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 }
                 return next;
               });
+            } else if (data.type === "feedback_form") {
+              // --- Inline feedback form ---
+              console.log(`[SSE] feedback_form received, session: ${data.session_id}`);
+              setChatHistory((prev) => {
+                const next = [...prev];
+                if (next[aiMessageIndex]) {
+                  next[aiMessageIndex].feedbackFormData = { session_id: data.session_id ?? sessionId };
+                }
+                return next;
+              });
             } else if (data.type === "queue_join_form") {
               // --- Inline queue join form ---
               // Attach queue join form data to the current AI message
@@ -2273,6 +2286,27 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                           disabled={!!chat.formCompleted}
                           onFormResult={(result) =>
                             handleFormResult(result, index)
+                          }
+                        />
+                      </Box>
+                    )}
+                    {/* Inline feedback form */}
+                    {chat.feedbackFormData && !chat.feedbackDismissed && (
+                      <Box
+                        sx={{
+                          width: "100%",
+                          maxWidth: { xs: "96%", sm: "90%", md: "85%" },
+                          mt: 0.5,
+                        }}
+                      >
+                        <InlineFeedbackForm
+                          sessionId={chat.feedbackFormData.session_id}
+                          onDismiss={() =>
+                            setChatHistory((prev) => {
+                              const next = [...prev];
+                              if (next[index]) next[index].feedbackDismissed = true;
+                              return next;
+                            })
                           }
                         />
                       </Box>

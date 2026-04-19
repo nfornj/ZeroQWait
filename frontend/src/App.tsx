@@ -37,6 +37,7 @@ import ShopLayout from "./layouts/ShopLayout";
 import PublicLayout from "./layouts/PublicLayout";
 import QueueCounterPage from "./pages/QueueCounterPage";
 import AgentInbox from "./features/agent-inbox/AgentInbox";
+import MasterDashboardPage from "./features/admin/pages/MasterDashboardPage";
 import ServicesManagementPage from "./features/shop-dashboard/pages/ServicesManagementPage";
 import AppointmentsPage from "./features/shop-dashboard/pages/AppointmentsPage";
 import { useAuth } from "./contexts/AuthContext";
@@ -123,8 +124,18 @@ function App() {
             <Route path="/queues/:queueId" element={<OwnerOnly><QueueDetailPage /></OwnerOnly>} />
             <Route path="/services" element={<OwnerOnly><ServicesManagementPage /></OwnerOnly>} />
             <Route path="/appointments" element={<OwnerOnly><AppointmentsPage /></OwnerOnly>} />
-            <Route path="/agent-inbox" element={<OwnerOnly><AgentInbox /></OwnerOnly>} />
+          <Route path="/agent-inbox" element={<OwnerOnly><AgentInbox /></OwnerOnly>} />
           </Route>
+
+          {/* Admin Portal — super_admin only, standalone (no ShopLayout) */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <MasterDashboardPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

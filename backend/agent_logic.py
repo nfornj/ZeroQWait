@@ -1943,7 +1943,29 @@ class MasterAgent:
         self.metrics["total_requests"] += 1
         if is_voice:
             self.metrics["voice_requests"] += 1
-            
+
+        # --- FEEDBACK COMMAND PREFILTER ---
+        # Intercept /feedback or natural feedback phrases before any other processing
+        _FEEDBACK_TRIGGER_RE = re.compile(
+            r'^/feedback\b'
+            r'|^(report\s+(a\s+)?(bug|issue|problem)|submit\s+(a\s+)?feedback|give\s+(a\s+)?feedback'
+            r'|i\s+have\s+(a\s+)?feedback|i\s+want\s+to\s+(give|report|submit)\s+(a\s+)?feedback'
+            r'|found\s+(a\s+)?(bug|issue))',
+            re.IGNORECASE,
+        )
+        if _FEEDBACK_TRIGGER_RE.match(user_msg.strip()):
+            intro = (
+                "Of course! I've opened a feedback form for you. "
+                "Please describe the issue and attach a screenshot if it helps — "
+                "we really appreciate your input!"
+            )
+            async for event in _yield_sentences_with_tts(intro):
+                yield event
+            yield f"data: {json.dumps({'type': 'feedback_form', 'session_id': session_id})}\n\n"
+            yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
         deps = MasterAgentDeps(
             session_id=session_id,
             latitude=latitude,

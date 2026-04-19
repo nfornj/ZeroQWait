@@ -14,6 +14,7 @@ from modules.queues.router import router as queues_router
 from modules.appointments.router import router as appointments_router
 from modules.admin.router import router as admin_router
 from modules.testing.routes import router as testing_router
+from modules.feedback.router import router as feedback_router
 from scheduler import start_scheduler, stop_scheduler
 import logging
 import models # Force model registration
@@ -36,6 +37,17 @@ async def lifespan(app: FastAPI):
     logger.info("Starting analytics scheduler...")
     await start_scheduler(run_at_hour=0, run_at_minute=30)  # Run at 00:30 daily
     
+    # Ensure chat_feedback table exists
+    try:
+        from database import engine
+        from modules.feedback.models import ChatFeedback
+        import os as _mkdir_os
+        _mkdir_os.makedirs("static/uploads/feedback", exist_ok=True)
+        ChatFeedback.__table__.create(bind=engine, checkfirst=True)
+        logger.info("chat_feedback table ready.")
+    except Exception as _fb_err:
+        logger.warning(f"chat_feedback table setup warning: {_fb_err}")
+
     # Setup LangGraph checkpoint tables (Phase 1)
     try:
         logger.info("Setting up LangGraph checkpoint tables...")
@@ -186,6 +198,7 @@ app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
 app.include_router(tenants.router, prefix="/api", tags=["Tenants"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(testing_router, tags=["Testing Feedback"])
+app.include_router(feedback_router, prefix="/api", tags=["Chat Feedback"])
 
 # Serve Docsify-based documentation site at /docs
 import os as _os
