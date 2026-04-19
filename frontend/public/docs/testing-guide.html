@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZeroQwait Testing Documentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px 0;
+            margin-bottom: 40px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        header h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            color: #666;
+        }
+        
+        nav {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        
+        nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            border: 2px solid #667eea;
+            transition: all 0.3s;
+        }
+        
+        nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .content {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 30px;
+            margin-bottom: 60px;
+        }
+        
+        .main {
+            background: white;
+            border-radius: 8px;
+            padding: 40px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .sidebar {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            height: fit-content;
+            position: sticky;
+            top: 100px;
+        }
+        
+        .sidebar h3 {
+            color: #667eea;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .sidebar ul {
+            list-style: none;
+        }
+        
+        .sidebar li {
+            margin-bottom: 12px;
+        }
+        
+        .sidebar a {
+            color: #667eea;
+            text-decoration: none;
+            transition: 0.3s;
+        }
+        
+        .sidebar a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+        
+        section {
+            margin-bottom: 50px;
+            scroll-margin-top: 120px;
+        }
+        
+        h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+        }
+        
+        h3 {
+            color: #764ba2;
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: #555;
+        }
+        
+        .credential-card {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .credential-card strong {
+            color: #667eea;
+        }
+        
+        .credential-card p {
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+        
+        .copy-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: 0.3s;
+            margin-left: 10px;
+        }
+        
+        .copy-btn:hover {
+            background: #764ba2;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        
+        table th {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+        }
+        
+        table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .badge.owner {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .badge.employee {
+            background: #cfe2ff;
+            color: #084298;
+        }
+        
+        .badge.test {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .test-flow {
+            background: #f0f4ff;
+            border: 2px dashed #667eea;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .test-flow ol {
+            margin-left: 25px;
+        }
+        
+        .test-flow li {
+            margin-bottom: 12px;
+        }
+        
+        .feedback-section {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            padding: 30px;
+            border-radius: 8px;
+            margin-top: 50px;
+        }
+        
+        .feedback-section h2 {
+            color: #856404;
+            border-bottom-color: #ffc107;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        input[type="text"],
+        input[type="email"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 14px;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+        
+        input[type="text"]:focus,
+        input[type="email"]:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .submit-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: 0.3s;
+            font-weight: 600;
+        }
+        
+        .submit-btn:hover {
+            background: #764ba2;
+        }
+        
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .info-box {
+            background: #d1ecf1;
+            border-left: 4px solid #0c5460;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            color: #0c5460;
+        }
+        
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        @media (max-width: 768px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+            
+            .sidebar {
+                position: static;
+                top: auto;
+            }
+            
+            header {
+                padding: 20px 0;
+            }
+            
+            nav {
+                flex-direction: column;
+            }
+            
+            nav a {
+                display: block;
+            }
+        }
+        
+        footer {
+            background: white;
+            padding: 30px 0;
+            text-align: center;
+            color: #666;
+            border-top: 1px solid #ddd;
+            margin-top: 60px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>🧪 ZeroQwait Testing Documentation</h1>
+            <p>Complete testing guide for Urban Trim — Oshawa barber shop queue system</p>
+            <nav>
+                <a href="#quick-start">Quick Start</a>
+                <a href="#credentials">Credentials</a>
+                <a href="#test-scenarios">Test Scenarios</a>
+                <a href="#feedback">Send Feedback</a>
+            </nav>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="content">
+            <div class="main">
+                <!-- Quick Start Section -->
+                <section id="quick-start">
+                    <h2>🚀 Quick Start Guide</h2>
+                    
+                    <h3>System Overview</h3>
+                    <p>ZeroQwait is an AI-powered queue management system for barbershops. It allows customers to join queues online, check wait times, and receive services while enabling staff to manage appointments efficiently.</p>
+                    
+                    <h3>Website URL</h3>
+                    <div class="info-box">
+                        <strong>Production:</strong> https://urban-trim-oshawa.zeroqwait.com<br>
+                        <strong>Test Environment:</strong> http://localhost:3000 (local)
+                    </div>
+                    
+                    <h3>Key Features to Test</h3>
+                    <ul style="margin-left: 20px; margin-bottom: 20px;">
+                        <li><strong>Queue Management:</strong> Join queue, check position, wait time estimation</li>
+                        <li><strong>AI Chat:</strong> Talk to the shop's AI receptionist</li>
+                        <li><strong>Voice Support:</strong> Use voice commands to interact with AI</li>
+                        <li><strong>Service Selection:</strong> Browse and book services with pricing</li>
+                        <li><strong>Payment:</strong> Make payments for services online</li>
+                        <li><strong>Employee Dashboard:</strong> View queues and manage customers</li>
+                        <li><strong>Owner Portal:</strong> Analytics, revenue tracking, staff management</li>
+                    </ul>
+                </section>
+
+                <!-- Credentials Section -->
+                <section id="credentials">
+                    <h2>🔐 Test Credentials</h2>
+                    
+                    <h3><span class="badge owner">OWNER</span>Shop Owner Account</h3>
+                    <div class="credential-card">
+                        <p><strong>Email:</strong> donna_sanchez_421@zeroqwait.com</p>
+                        <p><strong>Username:</strong> donna_sanchez_421</p>
+                        <p><strong>Password:</strong> TempPassword!0fed01f36</p>
+                        <p><strong>Role:</strong> Shop Owner (Full Access)</p>
+                        <p><strong>URL:</strong> https://urban-trim-oshawa.zeroqwait.com/dashboard</p>
+                    </div>
+                    <p style="color: #666; font-size: 13px;">✓ Access: Analytics, Revenue Reports, Staff Management, AI Inbox, Settings</p>
+                    
+                    <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+                    
+                    <h3><span class="badge employee">EMPLOYEE</span>Employee Accounts</h3>
+                    <p>4 employee accounts are available for testing staff-side functionality:</p>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Employee Name</th>
+                                <th>Username</th>
+                                <th>Password</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Samuel James</td>
+                                <td><code>emp_samuel_james_421_0</code></td>
+                                <td><code>EmpPassword!9e969c7a7b</code></td>
+                            </tr>
+                            <tr>
+                                <td>Alexander Ruiz</td>
+                                <td><code>emp_alexander_ruiz_421_1</code></td>
+                                <td><code>EmpPassword!463fa91ddc</code></td>
+                            </tr>
+                            <tr>
+                                <td>Robert Castillo</td>
+                                <td><code>emp_robert_castillo_421_2</code></td>
+                                <td><code>EmpPassword!ee79a90807</code></td>
+                            </tr>
+                            <tr>
+                                <td>William Long</td>
+                                <td><code>emp_william_long_421_3</code></td>
+                                <td><code>EmpPassword!81f62de4f4</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="color: #666; font-size: 13px;">✓ Access: Employee Dashboard, Queue Management, Call Next Customer, Service Tracking</p>
+                    
+                    <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+                    
+                    <h3><span class="badge test">TEST</span>Customer/Walk-in Test Data</h3>
+                    <p>No login required for customers. You can:</p>
+                    <ul style="margin-left: 20px; margin-bottom: 20px;">
+                        <li>Visit the public shop page without authentication</li>
+                        <li>Join the queue with any name</li>
+                        <li>View available services and pricing</li>
+                        <li>Check real-time wait times</li>
+                        <li>Use the AI chat to ask questions</li>
+                    </ul>
+                    
+                    <h3>Sample Service Details</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Service</th>
+                                <th>Price</th>
+                                <th>Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Haircut</td>
+                                <td>$25.00</td>
+                                <td>30 min</td>
+                            </tr>
+                            <tr>
+                                <td>Scalp Treatment</td>
+                                <td>$25.48</td>
+                                <td>30 min</td>
+                            </tr>
+                            <tr>
+                                <td>Hair Styling</td>
+                                <td>$30.00</td>
+                                <td>45 min</td>
+                            </tr>
+                            <tr>
+                                <td>Color Treatment</td>
+                                <td>$45.00</td>
+                                <td>60 min</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <!-- Test Scenarios -->
+                <section id="test-scenarios">
+                    <h2>📋 Testing Scenarios</h2>
+                    
+                    <h3>Scenario 1: Customer Queue Join & Payment</h3>
+                    <div class="test-flow">
+                        <ol>
+                            <li>Go to https://urban-trim-oshawa.zeroqwait.com</li>
+                            <li>Click "Join Queue" button</li>
+                            <li>Enter your name and select a service</li>
+                            <li>Receive a queue position (You are #XX in queue)</li>
+                            <li>Click "Pay for Service" button</li>
+                            <li>Use Stripe test card: <code>4242 4242 4242 4242</code></li>
+                            <li>Any future expiry date (e.g., 12/25)</li>
+                            <li>Any CVC (e.g., 123)</li>
+                            <li>Verify payment success notification</li>
+                        </ol>
+                    </div>
+                    
+                    <h3>Scenario 2: Employee Dashboard Access</h3>
+                    <div class="test-flow">
+                        <ol>
+                            <li>Go to https://urban-trim-oshawa.zeroqwait.com/login</li>
+                            <li>Use employee credentials: <code>emp_samuel_james_421_0</code></li>
+                            <li>View active queue</li>
+                            <li>Click "Call Next Customer" to move to next queue item</li>
+                            <li>Verify queue updates in real-time</li>
+                            <li>Check employee shift status</li>
+                        </ol>
+                    </div>
+                    
+                    <h3>Scenario 3: Owner Dashboard & Analytics</h3>
+                    <div class="test-flow">
+                        <ol>
+                            <li>Go to https://urban-trim-oshawa.zeroqwait.com/dashboard</li>
+                            <li>Login with owner credentials: <code>donna_sanchez_421@zeroqwait.com</code></li>
+                            <li>View live queue status (#32 displayed)</li>
+                            <li>Check analytics and revenue metrics</li>
+                            <li>Review employee list and shifts</li>
+                            <li>Test AI Inbox (ask AI questions about business)</li>
+                        </ol>
+                    </div>
+                    
+                    <h3>Scenario 4: AI Chat Interaction</h3>
+                    <div class="test-flow">
+                        <ol>
+                            <li>On the public page, look for "NOW CHATTING WITH" box</li>
+                            <li>Click the chat interface</li>
+                            <li>Type: "What services do you offer?"</li>
+                            <li>Verify AI responds with service list</li>
+                            <li>Type: "How long is the wait?"</li>
+                            <li>Verify AI provides real wait time</li>
+                            <li>Click microphone icon to test voice input (if available)</li>
+                        </ol>
+                    </div>
+                    
+                    <h3>Scenario 5: Voice Mode Testing</h3>
+                    <div class="test-flow">
+                        <ol>
+                            <li>In top-right controls, click "VOICE" button</li>
+                            <li>Speak: "Join the queue for a haircut"</li>
+                            <li>Verify AI understands and responds with voice</li>
+                            <li>Ask: "What's the wait time?"</li>
+                            <li>Hear AI response with audio output</li>
+                            <li>Test switching between Voice and Chat modes</li>
+                        </ol>
+                    </div>
+                    
+                    <h3>Expected Results Checklist</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Feature</th>
+                                <th>Expected Result</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Queue Join</td>
+                                <td>✓ Position displays immediately</td>
+                            </tr>
+                            <tr>
+                                <td>Wait Time Display</td>
+                                <td>✓ Shows "0 min" (new queue)</td>
+                            </tr>
+                            <tr>
+                                <td>Payment Processing</td>
+                                <td>✓ Stripe payment succeeds with test card</td>
+                            </tr>
+                            <tr>
+                                <td>Employee Login</td>
+                                <td>✓ Employee dashboard loads</td>
+                            </tr>
+                            <tr>
+                                <td>Owner Login</td>
+                                <td>✓ Analytics dashboard displays data</td>
+                            </tr>
+                            <tr>
+                                <td>AI Chat Response</td>
+                                <td>✓ AI responds within 3 seconds</td>
+                            </tr>
+                            <tr>
+                                <td>Voice Mode</td>
+                                <td>✓ Audio recording & playback work</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <!-- Feedback Section -->
+                <section id="feedback" class="feedback-section">
+                    <h2>📝 Testing Feedback Form</h2>
+                    <p>Please share your testing experience. Your feedback helps us improve the system.</p>
+                    
+                    <form id="feedbackForm">
+                        <div id="successMessage" class="success-message">✓ Thank you! Your feedback has been recorded.</div>
+                        <div id="errorMessage" class="error-message">✗ Error submitting feedback. Please try again.</div>
+                        
+                        <div class="form-group">
+                            <label for="testerName">Your Name *</label>
+                            <input type="text" id="testerName" name="testerName" required placeholder="John Doe">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="testerEmail">Email Address *</label>
+                            <input type="email" id="testerEmail" name="testerEmail" required placeholder="john@example.com">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="testScenario">Which scenario did you test? *</label>
+                            <select id="testScenario" name="testScenario" required>
+                                <option value="">-- Select a scenario --</option>
+                                <option value="customer_queue">Scenario 1: Customer Queue Join & Payment</option>
+                                <option value="employee_dashboard">Scenario 2: Employee Dashboard</option>
+                                <option value="owner_dashboard">Scenario 3: Owner Dashboard</option>
+                                <option value="ai_chat">Scenario 4: AI Chat</option>
+                                <option value="voice_mode">Scenario 5: Voice Mode</option>
+                                <option value="all">I tested all scenarios</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="overallRating">Overall Rating (1-5) *</label>
+                            <select id="overallRating" name="overallRating" required>
+                                <option value="">-- Select rating --</option>
+                                <option value="5">5 - Excellent</option>
+                                <option value="4">4 - Good</option>
+                                <option value="3">3 - Average</option>
+                                <option value="2">2 - Poor</option>
+                                <option value="1">1 - Very Poor</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="feedback">Detailed Feedback *</label>
+                            <textarea id="feedback" name="feedback" required placeholder="Share your experience, bugs found, suggestions for improvement..."></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="issuesFound">Issues/Bugs Found</label>
+                            <textarea id="issuesFound" name="issuesFound" placeholder="List any bugs or issues you encountered..."></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="suggestions">Suggestions for Improvement</label>
+                            <textarea id="suggestions" name="suggestions" placeholder="Any features or improvements you'd like to see?"></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="followUp" name="followUp">
+                                Allow us to follow up with you about this feedback
+                            </label>
+                        </div>
+                        
+                        <button type="submit" class="submit-btn">Submit Feedback</button>
+                    </form>
+                </section>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <h3>📌 Quick Links</h3>
+                <ul>
+                    <li><a href="#quick-start">Quick Start</a></li>
+                    <li><a href="#credentials">Credentials</a></li>
+                    <li><a href="#test-scenarios">Test Scenarios</a></li>
+                    <li><a href="#feedback">Send Feedback</a></li>
+                </ul>
+                
+                <h3 style="margin-top: 30px;">🔗 URLs</h3>
+                <ul style="font-size: 13px;">
+                    <li><a href="https://urban-trim-oshawa.zeroqwait.com" target="_blank">Production Site</a></li>
+                    <li><a href="https://urban-trim-oshawa.zeroqwait.com/dashboard" target="_blank">Owner Dashboard</a></li>
+                    <li><a href="https://urban-trim-oshawa.zeroqwait.com/login" target="_blank">Login Page</a></li>
+                </ul>
+                
+                <h3 style="margin-top: 30px;">⏱️ Testing Timeline</h3>
+                <p style="font-size: 13px; color: #666;">
+                    <strong>Test Date:</strong> April 19, 2026<br>
+                    <strong>Environment:</strong> Production<br>
+                    <strong>Duration:</strong> ~30-45 minutes per scenario
+                </p>
+                
+                <h3 style="margin-top: 30px;">📞 Support</h3>
+                <p style="font-size: 13px; color: #666;">
+                    For technical issues, contact:<br>
+                    Email: support@zeroqwait.com<br>
+                    Status: <span style="color: #28a745;">✓ All Systems Operational</span>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 ZeroQwait. Testing Documentation v1.0 | Last Updated: April 19, 2026</p>
+        </div>
+    </footer>
+
+    <script>
+        // Form submission handler
+        document.getElementById('feedbackForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = this.querySelector('.submit-btn');
+            const successMsg = document.getElementById('successMessage');
+            const errorMsg = document.getElementById('errorMessage');
+            
+            // Hide messages
+            successMsg.style.display = 'none';
+            errorMsg.style.display = 'none';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+            
+            try {
+                const formData = {
+                    tester_name: document.getElementById('testerName').value,
+                    tester_email: document.getElementById('testerEmail').value,
+                    test_scenario: document.getElementById('testScenario').value,
+                    overall_rating: parseInt(document.getElementById('overallRating').value),
+                    feedback_text: document.getElementById('feedback').value,
+                    issues_found: document.getElementById('issuesFound').value,
+                    suggestions: document.getElementById('suggestions').value,
+                    allow_follow_up: document.getElementById('followUp').checked,
+                    submitted_at: new Date().toISOString()
+                };
+                
+                const response = await fetch('/api/feedback/submit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                if (response.ok) {
+                    successMsg.style.display = 'block';
+                    this.reset();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } else {
+                    errorMsg.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                errorMsg.style.display = 'block';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Feedback';
+            }
+        });
+        
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth' });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

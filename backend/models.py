@@ -5,6 +5,7 @@ from modules.employees.models import ShopEmployee, EmployeeShift
 from modules.agent.models import ConversationHistory, CategoryAlias, LearnedSynonym, AgentKnowledge, AgentMemory
 from modules.appointments.models import Appointment, AppointmentStatus
 from modules.payments.models import Invoice, InvoiceLineItem, Payment, PaymentMethod, PaymentStatus, InvoiceStatus
+from modules.testing.models import TestingFeedback
 
 # Re-export Base for migration scripts
 from database import Base

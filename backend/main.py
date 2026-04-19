@@ -13,6 +13,7 @@ from modules.employees.router import router as employees_router
 from modules.queues.router import router as queues_router
 from modules.appointments.router import router as appointments_router
 from modules.admin.router import router as admin_router
+from modules.testing.routes import router as testing_router
 from scheduler import start_scheduler, stop_scheduler
 import logging
 import models # Force model registration
@@ -182,6 +183,7 @@ app.include_router(registration.router, prefix="/api/agent/registration", tags=[
 app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
 app.include_router(tenants.router, prefix="/api", tags=["Tenants"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
+app.include_router(testing_router, tags=["Testing Feedback"])
 
 @app.websocket("/ws/{shop_id}")
 async def websocket_endpoint(websocket: WebSocket, shop_id: str):
