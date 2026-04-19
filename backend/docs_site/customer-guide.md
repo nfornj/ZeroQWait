@@ -10,14 +10,22 @@ This guide walks you through the complete customer experience — from landing o
   <div class="step-num">1</div>
   <div class="step-body">
     <strong>Go to <a href="https://zeroqwait.com">zeroqwait.com</a></strong><br>
-    You'll see the ZeroQwait landing page. In the <strong>bottom-right corner</strong> of the screen you'll find
-    a glowing orb — this is the <strong>AI Chat Agent</strong>. Click it to open the chat panel.
+    In the <strong>centre of the hero section</strong> you’ll see a large, glowing <strong>violet–purple orb</strong>
+    with a particle animation, softly floating up and down. This is the <strong>ZeroQ AI Agent</strong>.
+    Hover over it to reveal the <strong>“MEET ZEROQ”</strong> label, then <strong>click it</strong> to open
+    the full-screen chat overlay.
   </div>
 </div>
 
 <div class="tip">
 
-**Don't see the orb?** Scroll down slightly — the orb may be partially below the fold on smaller screens. It has a subtle animation and a microphone icon.
+**What the orb looks like:**
+
+- A glowing **violet / purple** particle sphere (≈ 180 px)
+- Floats up and down with a gentle 6-second animation
+- Radiates a soft **purple pulse glow** around it
+- Hovering reveals the *"MEET ZEROQ"* label above it
+- Clicking opens the full-screen AI chat interface
 
 </div>
 
@@ -157,9 +165,28 @@ Every shop has its own AI Receptionist that can answer questions about the shop 
 
 The shop agent has access to real-time queue data, service prices, and availability.
 
----
+## Submitting Feedback
 
-## Voice Mode
+Spotted a bug, or want to share a suggestion? You can submit feedback **directly inside the chat**.
+
+### In the AI chat
+
+Type any of these in the chat:
+
+<span class="chip">/feedback</span>  
+<span class="chip">report a bug</span>  
+<span class="chip">I have feedback</span>  
+<span class="chip">submit feedback</span>
+
+The agent will open an **inline feedback form** — no need to leave the chat. You can:
+
+- Describe the issue (required)
+- Add your name and email (optional)
+- Attach a **screenshot** (optional, up to 10 MB — PNG, JPG, GIF, or WebP)
+
+After submitting you receive a **ticket ID** like `ZQ-20260419-0001`. Keep it as a reference.
+
+---
 
 Prefer to speak instead of type? ZeroQwait supports full voice interaction.
 

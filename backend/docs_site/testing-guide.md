@@ -63,7 +63,8 @@ Login URL: `https://urban-trim-oshawa.zeroqwait.com/login`
 
 **Goal:** Verify a customer can find a shop, join the queue, and pay for a service.
 
-1. Go to [zeroqwait.com](https://zeroqwait.com) and open the AI chat agent (bottom-right orb)
+1. Go to [zeroqwait.com](https://zeroqwait.com) and locate the large **violet/purple floating orb** at the centre of the hero section
+2. Click the orb to open the full-screen AI chat overlay
 2. Type: `find a barber shop in Oshawa`
 3. The agent should return Urban Trim Oshawa in the results
 4. Click the shop name or navigate to [https://urban-trim-oshawa.zeroqwait.com](https://urban-trim-oshawa.zeroqwait.com)
@@ -156,6 +157,61 @@ Login URL: `https://urban-trim-oshawa.zeroqwait.com/login`
 
 ---
 
+## Scenario 6 — In-Chat Feedback
+
+**Goal:** Verify the `/feedback` command opens an inline feedback form and generates a ticket.
+
+1. Go to [zeroqwait.com](https://zeroqwait.com) and click the violet orb to open the chat
+2. Type: `/feedback`
+3. The AI should respond with a voice intro and render an **inline feedback form** below its message bubble
+4. Fill in a test issue description (e.g., *"Button colour looks off on mobile"*)
+5. Optionally attach a screenshot (take a browser screenshot and drag it in)
+6. Click **Submit feedback**
+7. Verify a green **Ticket ID** card appears (format: `ZQ-YYYYMMDD-NNNN`)
+
+**Alternative trigger phrases — verify all open the form:**
+
+| Phrase | Expected |
+|---|---|
+| `/feedback` | ✓ Form opens |
+| `report a bug` | ✓ Form opens |
+| `I have feedback` | ✓ Form opens |
+| `submit my feedback` | ✓ Form opens |
+| `found a bug` | ✓ Form opens |
+
+**Expected results:**
+- ✓ Inline form renders inside the chat (no new page)
+- ✓ Screenshot thumbnail preview shown before submit
+- ✓ Unique ticket ID returned on success (e.g., `ZQ-20260419-0001`)
+- ✓ Ticket visible in admin portal at [zeroqwait.com/admin](https://zeroqwait.com/admin)
+
+---
+
+## Scenario 7 — Admin Feedback Portal
+
+**Goal:** Verify the admin portal shows submitted feedback with full detail.
+
+1. Go to `https://zeroqwait.com/admin` (or `http://localhost:3000/admin` on local)
+2. Log in with:
+   - **Username:** `zeroqwait_admin`
+   - **Password:** `Admin@ZQ2026!`
+3. The **Overview** tab shows live shop counts and queue stats
+4. Click the **Feedback** tab
+5. Verify the feedback ticket submitted in Scenario 6 appears in the table
+6. Click the ticket row to open the **detail dialog**
+7. Verify the full description and screenshot (if attached) are visible
+8. Change the **Status** dropdown from *open* → *reviewed*
+9. Add an admin note and click **Save**
+10. Verify the row in the table now shows the *reviewed* chip
+
+**Expected results:**
+- ✓ All feedback submissions visible with ticket IDs
+- ✓ Screenshot displayed in detail dialog
+- ✓ Status can be updated (open / reviewed / closed)
+- ✓ Admin notes saved and persisted
+
+---
+
 ## Expected Results Checklist
 
 | Feature | Expected |
@@ -169,31 +225,66 @@ Login URL: `https://urban-trim-oshawa.zeroqwait.com/login`
 | AI Inbox (owner) | ✓ Finance/queue questions answered |
 | Voice ASR | ✓ Speech recognized via Whisper |
 | Voice TTS | ✓ Audio plays with Vivian voice |
+| /feedback command (in-chat) | ✓ Inline form opens, ticket ID returned (ZQ-YYYYMMDD-NNNN) |
+| Admin feedback portal | ✓ Tickets listed, detail dialog opens, status updatable |
 
 ---
 
 ## Submit Feedback
 
-After testing, please submit your findings through the feedback form:
+Feedback can be submitted in two ways: **directly inside the AI chat** (recommended) or via the **REST API**.
 
-**API endpoint:**
+### In-Chat Feedback (Recommended)
+
+While chatting with ZeroQ on [zeroqwait.com](https://zeroqwait.com), type any of the following:
+
+| Trigger phrase | What it does |
+|---|---|
+| `/feedback` | Opens the inline feedback form immediately |
+| `report a bug` | Opens the inline feedback form |
+| `I have feedback` | Opens the inline feedback form |
+| `something isn't working` | Opens the inline feedback form |
+
+The inline form will appear **inside the chat window** and lets you:
+- Select a rating (1–5 stars)
+- Write a message describing the issue or suggestion
+- Optionally attach a screenshot
+
+On submit, ZeroQ replies with a **ticket ID** (format: `ZQ-YYYYMMDD-NNNN`) for reference.
+
+### REST API
+
+For automated or headless testing:
 
 ```bash
-curl -X POST https://zeroqwait.com/api/feedback/submit \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tester_name": "Your Name",
-    "scenario": "Customer Queue Join",
-    "rating": 5,
-    "feedback": "Worked perfectly — queue joined instantly.",
-    "issues": ""
-  }'
+curl -X POST https://zeroqwait.com/api/chat-feedback/submit \
+  -F "tester_name=Your Name" \
+  -F "message=Queue join worked perfectly" \
+  -F "rating=5"
 ```
+
+Optional field: `-F "screenshot=@/path/to/screenshot.png"`
 
 **Rating scale:** 1 (broken) → 5 (perfect)
 
-**View submitted feedback:**
+---
 
-```bash
-curl https://zeroqwait.com/api/feedback/stats
-```
+## Admin Review
+
+Feedback tickets are reviewed in the **Admin Portal** at [zeroqwait.com/admin](https://zeroqwait.com/admin).
+
+**Admin credentials:**
+
+| Field | Value |
+|---|---|
+| Username | `zeroqwait_admin` |
+| Password | `Admin@ZQ2026!` |
+
+**Workflow:**
+
+1. Log in at `/admin`
+2. Click the **Feedback** tab
+3. Each ticket shows: ID, rating, message, timestamp
+4. Click a ticket to open the detail dialog — includes screenshot (if attached) and admin notes field
+5. Update the status: **open → reviewed → closed**
+6. Save admin notes for internal tracking

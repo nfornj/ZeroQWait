@@ -20,7 +20,9 @@ Choose your role to jump to the right guide:
 
 ## How It Works
 
-When you land on [zeroqwait.com](https://zeroqwait.com), you'll see an AI chat bubble in the bottom-right corner of the screen. This is the **Master AI Agent** — your starting point for everything.
+When you land on [zeroqwait.com](https://zeroqwait.com), you'll see the **ZeroQwait hero section** with a large, glowing **violet orb** floating at the centre of the page. This is the **Master AI Agent** entry point — your starting point for everything.
+
+The orb slowly floats up and down with a purple glow animation. Hover over it to reveal the **"MEET ZEROQ"** label, then **click it** to open the full-screen AI chat overlay.
 
 The agent understands natural language and can help you with three things:
 

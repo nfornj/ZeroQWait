@@ -11,7 +11,7 @@ The fastest way to get started is through the AI chat on [zeroqwait.com](https:/
 <div class="step">
   <div class="step-num">1</div>
   <div class="step-body">
-    Open the chat agent at <a href="https://zeroqwait.com">zeroqwait.com</a> and type:
+    Visit <a href="https://zeroqwait.com">zeroqwait.com</a>. At the centre of the hero section you'll see a large, glowing <strong>violet–purple orb</strong> with a particle animation, softly floating up and down. Hover over it to reveal the <em>"MEET ZEROQ"</em> label, then click it to open the full-screen AI chat overlay. Type:
     <br><br>
     <span class="chip">I want to register my shop</span>
     <br>or<br>
