@@ -28,37 +28,22 @@ spec:
               - key: zeroqwait.io/node-pool
                 operator: In
                 values: ["core-cpu"]
+      # Run as UID 1000 (appuser) — matches the user baked into the Docker image.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      imagePullSecrets:
+      - name: ghcr-pull-secret
       initContainers:
       - name: wait-for-postgres
         image: busybox:1.28
         command: ['sh', '-c', 'until nc -z postgres.zeroqwait.svc.cluster.local 5432; do echo waiting for postgres; sleep 2; done;']
-      - name: init-database
-        image: python:3.11-slim
-        workingDir: /app
-        command: ["/bin/bash", "-c"]
-        args:
-          - |
-            pip install uv
-            uv pip install --system sqlalchemy psycopg2-binary python-dotenv
-            python init_database.py
-        envFrom:
-        - configMapRef:
-            name: backend-config
-        - secretRef:
-            name: backend-secret
-        volumeMounts:
-        - name: app-code
-          mountPath: /app
       containers:
       - name: backend
-        image: python:3.11-slim
-        workingDir: /app
-        command: ["/bin/bash", "-c"]
-        args:
-          - |
-            pip install uv
-            uv sync
-            uv run uvicorn main:app --host 0.0.0.0 --port 8000
+        # Image built by CI and pushed to GHCR.
+        # The run-local-pipeline.sh sed step replaces the tag on every prod deploy.
+        image: ghcr.io/nfornj/prod/backend:latest
         ports:
         - containerPort: 8000
         envFrom:
@@ -67,8 +52,6 @@ spec:
         - secretRef:
             name: backend-secret
         volumeMounts:
-        - name: app-code
-          mountPath: /app
         - name: static-uploads
           mountPath: /app/static/uploads
         resources:
@@ -78,6 +61,10 @@ spec:
           limits:
             memory: "4Gi"
             cpu: "2000m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
         startupProbe:
           httpGet:
             path: /api/agent/health
@@ -85,7 +72,8 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 15
           timeoutSeconds: 5
-          failureThreshold: 80
+          # Pre-built image: startup is ~2 min (model load). 20 * 15s = 5 min ceiling.
+          failureThreshold: 20
         livenessProbe:
           httpGet:
             path: /api/agent/health
@@ -101,14 +89,9 @@ spec:
           timeoutSeconds: 5
           failureThreshold: 6
       volumes:
-      - name: app-code
-        hostPath:
-          # Code lives in the git repo on this machine — no sync needed
-          path: /home/neekrishrichu/projects/FastCuts/backend
-          type: Directory
       - name: static-uploads
         hostPath:
-          # Persist uploads across pod restarts
+          # Persist user-uploaded files across pod restarts on this single-node host.
           path: /home/neekrishrichu/apps/zeroqwait/uploads
           type: DirectoryOrCreate
 ---
