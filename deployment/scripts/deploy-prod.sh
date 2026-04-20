@@ -195,16 +195,9 @@ kctl rollout status deployment/frontend -n zeroqwait --timeout=300s
 # Pre-built image startup: ~2 min (model warm-up). 5 min ceiling is sufficient.
 kctl rollout status deployment/backend -n zeroqwait --timeout=300s
 
-# NOTE: Cloudflare tunnel (cloudflared.service) routes zeroqwait.com traffic to
-# localhost:3000 (frontend) and localhost:8000 (backend), which are the Docker
-# Compose services — NOT the K3s NodePorts. Rebuild and restart those containers
-# here so that Cloudflare users always see the latest prod code.
-echo "==> Rebuilding Docker Compose services (Cloudflare origin: localhost:3000 / :8000)"
-cd "${PROJECT_ROOT}"
-docker compose build frontend backend
-docker compose up -d frontend backend
-echo "    Docker Compose frontend: $(docker inspect zeroqwait-frontend-1 --format '{{.Config.Image}}' 2>/dev/null || echo 'unknown')"
-echo "    Docker Compose backend:  $(docker inspect zeroqwait-backend-1  --format '{{.Config.Image}}' 2>/dev/null || echo 'unknown')"
-
 echo "==> Production deployment successful"
 echo "    Site: https://zeroqwait.com"
+echo ""
+echo "NOTE: Cloudflare tunnel (cloudflared.service) routes zeroqwait.com to"
+echo "      K3s NodePorts: localhost:30001 (frontend) and localhost:30000 (backend)."
+echo "      Docker Compose (localhost:3000/8000) is for local dev ONLY."
