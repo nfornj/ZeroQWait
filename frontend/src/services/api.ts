@@ -18,7 +18,18 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
-      window.location.href = '/login';
+      // Only redirect to /login from protected pages — never from public pages
+      // like the landing page (/) which would cause the root-URL jitter.
+      const publicPaths = ['/', '/login', '/signin', '/signup', '/register', '/ai'];
+      const isPublic = publicPaths.some(
+        (p) =>
+          window.location.pathname === p ||
+          window.location.pathname.startsWith('/shop-ai') ||
+          window.location.pathname.startsWith('/queue/')
+      );
+      if (!isPublic) {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
