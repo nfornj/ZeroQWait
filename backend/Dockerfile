@@ -9,8 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv dependency manager
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# Install uv via pip — avoids a COPY --from=ghcr.io/astral-sh/uv which fails
+# when the runner's ghcr.io token only covers the project's own namespace.
+RUN pip install --no-cache-dir uv
 
 # Install venv at /opt/venv so that the bind-mounted volume at /app does NOT
 # shadow the virtual environment at container runtime.
