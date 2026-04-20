@@ -23,10 +23,8 @@ const LoginPage: React.FC = () => {
     username?: string;
     password?: string;
   }>({});
-  const { login, loading, error, isAuthenticated } = useAuth();
+  const { login, loading, error, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
-
-  const { user } = useAuth();
 
   // Navigate based on user role after successful login
   React.useEffect(() => {
