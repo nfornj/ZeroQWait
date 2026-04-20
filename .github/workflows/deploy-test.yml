@@ -23,7 +23,12 @@ jobs:
           clean: false
           path: ${{ env.CHECKOUT_PATH }}
 
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Deploy to test (localhost:3000)
+        env:
+          REGISTRY: ghcr.io/nfornj
         run: |
           cd "${CHECKOUT_PATH}"
           chmod +x deployment/scripts/deploy-test.sh
