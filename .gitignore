@@ -47,4 +47,15 @@ env/
 
 # GitHub Actions self-hosted runner files (runtime, binaries, diagnostics)
 actions-runner/
+
+# Sensitive credential / login-info exports — never commit these
+*login_info*.txt
+*login_info*.csv
+*shop_login*.txt
+*shop_login*.csv
+*_credentials*.txt
+*_credentials*.json
+backend/test_accounts.txt
+backend/scripts/shop_login_info_prod.txt
+backend/scripts/shop_login_info_test.txt
 postgres_data/ 

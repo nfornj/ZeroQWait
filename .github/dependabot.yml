@@ -1,0 +1,134 @@
+version: 2
+updates:
+  # ── Frontend (npm) ────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: America/Toronto
+    open-pull-requests-limit: 10
+    labels: [dependencies, frontend]
+    groups:
+      mui:
+        patterns: ["@mui/*", "@emotion/*"]
+      react:
+        patterns: ["react", "react-dom", "react-router*", "@types/react*"]
+
+  # ── Root package.json ─────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+
+  # ── Backend (pip via pyproject.toml) ──────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: America/Toronto
+    open-pull-requests-limit: 10
+    labels: [dependencies, backend]
+    groups:
+      langchain:
+        patterns: ["langchain*", "langgraph*"]
+      fastapi:
+        patterns: ["fastapi", "uvicorn", "starlette*", "httpx"]
+      sqlalchemy:
+        patterns: ["sqlalchemy", "alembic", "psycopg*"]
+
+  # ── ASR service ───────────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /asr_service
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    labels: [dependencies, asr]
+
+  # ── TTS service ───────────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /tts_service
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    labels: [dependencies, tts]
+
+  # ── Voice MCP ─────────────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /voice_mcp
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    labels: [dependencies, voice]
+
+  # ── Booking MCP ───────────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /mcps/booking
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    labels: [dependencies, mcp]
+
+  # ── Finance MCP ───────────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /mcps/finance
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    labels: [dependencies, mcp]
+
+  # ── HR MCP ────────────────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /mcps/hr
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    labels: [dependencies, mcp]
+
+  # ── Voice MCP (mcps/) ─────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /mcps/voice
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    labels: [dependencies, mcp]
+
+  # ── GitHub Actions ────────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    labels: [dependencies, ci]
