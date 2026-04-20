@@ -21,9 +21,11 @@ spec:
     spec:
       priorityClassName: voice-critical
       runtimeClassName: nvidia
+      imagePullSecrets:
+      - name: ghcr-pull-secret
       containers:
         - name: tts-service
-          image: localhost:5000/test/tts-service:v20260411223946-c5f88d4
+          image: ghcr.io/nfornj/prod/tts-service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8880

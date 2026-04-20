@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 import secrets
@@ -8,17 +8,26 @@ from modules.auth import schemas
 from modules.auth.service import auth_service
 from shared.auth_utils import create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from shared.email_utils import send_password_reset_email
+from audit_logger import audit
 
 router = APIRouter()
 
 @router.post("/auth/token", response_model=schemas.Token)
 async def login_for_access_token(
     response: Response,
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends()
 ):
+    client_ip = request.client.host if request.client else None
     # Use service for authentication
     user = auth_service.authenticate_user(form_data.username, form_data.password)
     if not user:
+        await audit(
+            action="AUTH",
+            detail="login_failure",
+            ip_address=client_ip,
+            metadata={"username": form_data.username},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -47,6 +56,14 @@ async def login_for_access_token(
         samesite="lax",
         secure=secure_cookie,
         domain=cookie_domain
+    )
+
+    await audit(
+        action="AUTH",
+        detail="login_success",
+        user_id=user.id,
+        ip_address=client_ip,
+        metadata={"username": user.username},
     )
     
     return {"access_token": access_token, "token_type": "bearer"}

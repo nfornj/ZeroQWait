@@ -65,20 +65,41 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 _tenant_schema: ContextVar[Optional[str]] = ContextVar('_tenant_schema', default=None)
 _TENANT_RE = _re.compile(r'^tenant_\d+$')
 
+# ── RLS user context ────────────────────────────────────────────────
+# Tracks the authenticated user_id for the current request so PostgreSQL
+# Row Level Security policies can use current_setting('app.current_user_id').
+_current_user_id: ContextVar[Optional[int]] = ContextVar('_current_user_id', default=None)
+
 
 def set_tenant_for_request(schema: Optional[str]) -> None:
     """Set (or clear) the tenant schema for the current request context."""
     _tenant_schema.set(schema)
 
 
+def set_current_user_for_request(user_id: Optional[int]) -> None:
+    """Set the authenticated user_id for PostgreSQL RLS in the current request context."""
+    _current_user_id.set(user_id)
+
+
 @event.listens_for(SessionLocal, "after_begin")
 def _on_session_begin(session, transaction, connection):
-    """Set search_path when a session begins a transaction."""
+    """Set search_path + RLS user when a session begins a transaction."""
     schema = _tenant_schema.get()
     if schema and _TENANT_RE.match(schema):
         connection.execute(text(f"SET search_path TO {schema}, public"))
     else:
         connection.execute(text("SET search_path TO public"))
+    # Propagate current user_id into PostgreSQL session for RLS policies.
+    uid = _current_user_id.get()
+    if uid is not None:
+        connection.execute(
+            text("SELECT set_config('app.current_user_id', :uid, true)"),
+            {"uid": str(uid)},
+        )
+    else:
+        connection.execute(
+            text("SELECT set_config('app.current_user_id', '', true)")
+        )
 
 
 def get_db() -> Session:

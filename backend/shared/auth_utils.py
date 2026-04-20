@@ -67,10 +67,14 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     
     try:
+        from database import set_current_user_for_request
         user = auth_service.get_user_by_username(token_data.username)
         if not user:
             raise credentials_exception
+        set_current_user_for_request(user.id)
         return user
+    except HTTPException:
+        raise
     except Exception:
         raise credentials_exception
 

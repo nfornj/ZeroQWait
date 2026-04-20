@@ -6,6 +6,7 @@ from modules.agent.models import ConversationHistory, CategoryAlias, LearnedSyno
 from modules.appointments.models import Appointment, AppointmentStatus
 from modules.payments.models import Invoice, InvoiceLineItem, Payment, PaymentMethod, PaymentStatus, InvoiceStatus
 from modules.testing.models import TestingFeedback
+from modules.audit.models import AuditLog
 
 # Re-export Base for migration scripts
 from database import Base

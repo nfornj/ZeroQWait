@@ -1,6 +1,26 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, JSON
+from sqlalchemy.types import UserDefinedType
 from datetime import datetime
 from database import Base
+
+
+class _Vector(UserDefinedType):
+    """Minimal SQLAlchemy type that maps to PostgreSQL vector(n)."""
+
+    def __init__(self, dim: int = 384):
+        self.dim = dim
+
+    def get_col_spec(self, **kw):
+        return f"vector({self.dim})"
+
+    def bind_expression(self, bindvalue):
+        return bindvalue
+
+    class comparator_factory(UserDefinedType.Comparator):
+        def cosine_distance(self, other):
+            from sqlalchemy import literal_column
+            return literal_column(f"({self.expr} <=> {other})")
+
 
 class ConversationHistory(Base):
     __tablename__ = "conversation_history"
@@ -11,6 +31,8 @@ class ConversationHistory(Base):
     content = Column(Text, nullable=False)
     tool_call_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Semantic embedding (populated by background indexer or at write time)
+    embedding = Column(_Vector(384), nullable=True)
 
 class CategoryAlias(Base):
     __tablename__ = "category_aliases"

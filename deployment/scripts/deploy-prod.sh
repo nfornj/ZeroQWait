@@ -186,6 +186,7 @@ kctl rollout restart deployment/backend -n zeroqwait
 echo "==> Pruning production image tags (retain last 10 per service)"
 sudo env \
   KEEP_VERSIONS="10" \
+  REGISTRY="ghcr.io/nfornj" \
   REPOSITORIES="prod/backend prod/frontend prod/asr-service prod/tts-service prod/voice-mcp" \
   bash "${PROJECT_ROOT}/deployment/scripts/prune-registry-tags.sh"
 

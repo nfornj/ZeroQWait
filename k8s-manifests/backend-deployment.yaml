@@ -33,15 +33,17 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+      imagePullSecrets:
+      - name: ghcr-pull-secret
       initContainers:
       - name: wait-for-postgres
         image: busybox:1.28
         command: ['sh', '-c', 'until nc -z postgres.zeroqwait.svc.cluster.local 5432; do echo waiting for postgres; sleep 2; done;']
       containers:
       - name: backend
-        # Image built by CI and pushed to local registry.
+        # Image built by CI and pushed to GHCR.
         # The run-local-pipeline.sh sed step replaces the tag on every prod deploy.
-        image: localhost:5000/backend:latest
+        image: ghcr.io/nfornj/prod/backend:latest
         ports:
         - containerPort: 8000
         envFrom:

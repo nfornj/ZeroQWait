@@ -10,7 +10,6 @@ jobs:
   deploy-prod:
     runs-on: self-hosted
     env:
-      REGISTRY_DATA_PATH: /media/neekrishrichu/One Touch/projects/zeroqwait
       SKIP_TESTS: "true"
       # Fixed path prevents run-<id> directory buildup across prod deploys.
       CHECKOUT_PATH: zeroqwait-prod-deploy
@@ -21,14 +20,25 @@ jobs:
           clean: false
           path: ${{ env.CHECKOUT_PATH }}
 
-      - name: Ensure local registry
-        env:
-          REGISTRY_DATA_PATH: /media/neekrishrichu/One Touch/projects/zeroqwait
+      - name: Login to GHCR
         run: |
-          cd "${CHECKOUT_PATH}"
-          chmod +x deployment/scripts/setup-local-registry.sh
-          # sudo -E preserves REGISTRY_DATA_PATH when escalating.
-          sudo -E deployment/scripts/setup-local-registry.sh
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Create / refresh GHCR pull secret in K8s
+        run: |
+          if sudo sh -c 'command -v kubectl >/dev/null 2>&1 || command -v k3s >/dev/null 2>&1'; then
+            KCTL_CMD="$(sudo sh -c 'command -v kubectl || (command -v k3s && echo k3s kubectl)' | head -n1)"
+            sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+              ${KCTL_CMD} create secret docker-registry ghcr-pull-secret \
+                --docker-server=ghcr.io \
+                --docker-username="${{ github.actor }}" \
+                --docker-password="${{ secrets.GITHUB_TOKEN }}" \
+                -n zeroqwait \
+                --dry-run=client -o yaml | \
+              sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml ${KCTL_CMD} apply -f -
+          else
+            echo "Kubernetes CLI not found — skipping pull secret creation"
+          fi
 
       - name: Ensure Kubernetes CLI
         run: |

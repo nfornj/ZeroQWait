@@ -16,6 +16,7 @@ from modules.admin.router import router as admin_router
 from modules.testing.routes import router as testing_router
 from modules.feedback.router import router as feedback_router
 from scheduler import start_scheduler, stop_scheduler
+from audit_logger import start_worker as _audit_start, stop_worker as _audit_stop
 import logging
 import models # Force model registration
 from websocket_manager import manager
@@ -84,11 +85,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Semantic cache pre-warm failed (non-fatal): {e}")
     
+    # Start async audit writer
+    _audit_start()
+    logger.info("Audit logger started")
+
     logger.info("Application started")
     
     yield
     
     # Shutdown
+    logger.info("Stopping audit logger...")
+    await _audit_stop()
     logger.info("Stopping analytics scheduler...")
     await stop_scheduler()
     logger.info("Application shutdown complete")
