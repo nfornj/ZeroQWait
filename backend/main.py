@@ -34,6 +34,17 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Handle application startup and shutdown"""
     # Startup
+
+    # Ensure all SQLAlchemy model tables exist (idempotent — safe on every restart).
+    # This replaces the init-database K8s initContainer so the image is self-contained.
+    try:
+        from database import engine, Base
+        import models  # noqa: F401 — registers all mapped classes with Base
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database schema ready.")
+    except Exception as _db_err:
+        logger.warning(f"Database schema initialization warning: {_db_err}")
+
     logger.info("Starting analytics scheduler...")
     await start_scheduler(run_at_hour=0, run_at_minute=30)  # Run at 00:30 daily
     

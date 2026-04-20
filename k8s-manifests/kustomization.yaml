@@ -19,3 +19,5 @@ resources:
   - tts-deployment.yaml
   - voice-mcp-deployment.yaml
   - ingress-traefik.yaml
+  - network-policy.yaml
+  - backend-pdb.yaml

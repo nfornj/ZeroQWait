@@ -25,12 +25,21 @@ RUN uv sync --no-dev
 # Copy the application code
 COPY . .
 
-# Pre-warm the sentence-transformer model so first requests don't block on download
+# Create a non-root user (UID 1000) and own the venv + app dirs before switching to it.
+# This fixes 'getpwuid(): uid not found' from sentence-transformers and satisfies
+# the K8s securityContext runAsNonRoot: true / runAsUser: 1000 requirement.
+RUN groupadd --gid 1000 appuser \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash appuser \
+    && chown -R appuser:appuser /app /opt/venv
+USER appuser
+ENV HOME=/home/appuser
+
+# Pre-warm the sentence-transformer model as appuser so the HuggingFace cache
+# lands in /home/appuser/.cache and is readable at runtime under UID 1000.
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" || true
 
 # Expose port
 EXPOSE 8000
 
-# Run uvicorn directly from the venv — no uv runtime overhead, and
-# works correctly even when /app is overridden by a bind mount volume.
+# Run uvicorn directly from the venv — no uv runtime overhead.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -402,9 +402,10 @@ async def chat_sync(
     # Run supervisor graph
     try:
         runnable = _SUPERVISOR_RUNNABLE
-        
-        # Sync invoke (Phase 1 - simple version)
-        result = cast(Dict[str, Any], runnable.invoke(initial_state, checkpoint_config))
+
+        # Run in thread pool to avoid blocking the asyncio event loop.
+        # runnable.invoke() is synchronous (uses sync Postgres checkpointer + sync LLM calls).
+        result = cast(Dict[str, Any], await asyncio.to_thread(runnable.invoke, initial_state, checkpoint_config))
         pending_action = _extract_pending_action(result)
         approval_required = bool((result.get("__interrupt__") or []) or result.get("needs_human_input", False))
         
