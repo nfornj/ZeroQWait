@@ -50,6 +50,21 @@ jobs:
           chmod +x deployment/scripts/deploy-prod.sh deployment/scripts/run-local-pipeline.sh deployment/scripts/prune-registry-tags.sh
           deployment/scripts/deploy-prod.sh
 
+      - name: Purge Cloudflare cache
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ZONE_ID != '' }}
+        run: |
+          echo "Purging Cloudflare cache for zeroqwait.com..."
+          curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/purge_cache" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}' | tee /tmp/cf_purge_result.json
+          if grep -q '"success":true' /tmp/cf_purge_result.json; then
+            echo "Cloudflare cache purged successfully"
+          else
+            echo "WARNING: Cloudflare cache purge may have failed:"
+            cat /tmp/cf_purge_result.json
+          fi
+
       - name: Clean stale checkout directories
         if: always()
         run: |

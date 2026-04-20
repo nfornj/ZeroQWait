@@ -178,3 +178,7 @@ kctl rollout status deployment/backend -n zeroqwait --timeout=1800s
 
 echo "==> Production deployment successful"
 echo "    Site: https://zeroqwait.com"
+echo ""
+echo "NOTE: Cloudflare tunnel (cloudflared.service) routes zeroqwait.com to"
+echo "      K3s NodePorts: localhost:30001 (frontend) and localhost:30000 (backend)."
+echo "      Docker Compose (localhost:3000/8000) is local dev ONLY — never prod."
