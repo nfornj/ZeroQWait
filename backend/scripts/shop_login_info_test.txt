@@ -1,0 +1,45 @@
+# ZeroQwait Test Shop Login Export (live DB)
+# Generated at: 2026-04-13T03:50:09.044181+00:00
+# Format: shop_id | shop_name | city | owner_username | owner_email | owner_password | slug
+
+1 | Classic Cuts | New York | alex_smith_0 | alex_smith_0@zeroqwait-seed.com | password123 | classic-cuts-new-york
+2 | Sharp Edge Barbers | Hamilton | jordan_johnson_1 | jordan_johnson_1@zeroqwait-seed.com | password123 | sharp-edge-barbers-hamilton
+3 | The Gentlemen's Den | Toronto | sam_williams_2 | sam_williams_2@zeroqwait-seed.com | password123 | the-gentlemen-s-den-toronto
+4 | FreshFade Studio | Brampton | morgan_brown_3 | morgan_brown_3@zeroqwait-seed.com | password123 | freshfade-studio-brampton
+5 | Blade & Brush Barbers | New York | taylor_jones_4 | taylor_jones_4@zeroqwait-seed.com | password123 | blade-brush-barbers-new-york
+6 | Glow Up Salon | Ottawa | casey_garcia_5 | casey_garcia_5@zeroqwait-seed.com | password123 | glow-up-salon-ottawa
+7 | Strand & Style | Chicago | riley_miller_6 | riley_miller_6@zeroqwait-seed.com | password123 | strand-style-chicago
+8 | Velvet Locks | Miami | quinn_davis_7 | quinn_davis_7@zeroqwait-seed.com | password123 | velvet-locks-miami
+9 | Crown Beauty Salon | Hamilton | avery_martinez_8 | avery_martinez_8@zeroqwait-seed.com | password123 | crown-beauty-salon-hamilton
+10 | Luxe Hair Studio | Brampton | blake_wilson_9 | blake_wilson_9@zeroqwait-seed.com | password123 | luxe-hair-studio-brampton
+11 | Zen Garden Spa | New York | cameron_anderson_10 | cameron_anderson_10@zeroqwait-seed.com | password123 | zen-garden-spa-new-york
+12 | Tranquil Waters Spa | New York | dana_thomas_11 | dana_thomas_11@zeroqwait-seed.com | password123 | tranquil-waters-spa-new-york
+13 | Serenity Day Spa | Hamilton | elliot_jackson_12 | elliot_jackson_12@zeroqwait-seed.com | password123 | serenity-day-spa-hamilton
+14 | Pure Bliss Wellness | Brampton | finley_white_13 | finley_white_13@zeroqwait-seed.com | password123 | pure-bliss-wellness-brampton
+15 | Oasis Retreat Spa | Ottawa | gray_harris_14 | gray_harris_14@zeroqwait-seed.com | password123 | oasis-retreat-spa-ottawa
+16 | QuickCare Walk-In | Chicago | harper_clark_15 | harper_clark_15@zeroqwait-seed.com | password123 | quickcare-walk-in-chicago
+17 | HealthFirst Clinic | Mississauga | indigo_lewis_16 | indigo_lewis_16@zeroqwait-seed.com | password123 | healthfirst-clinic-mississauga
+18 | MedPoint Urgent Care | Toronto | jamie_lee_17 | jamie_lee_17@zeroqwait-seed.com | password123 | medpoint-urgent-care-toronto
+19 | CityHealth Medical | Ottawa | kai_walker_18 | kai_walker_18@zeroqwait-seed.com | password123 | cityhealth-medical-ottawa
+20 | Wellness MD Clinic | Miami | logan_hall_19 | logan_hall_19@zeroqwait-seed.com | password123 | wellness-md-clinic-miami
+21 | SpeedWrench Auto | Toronto | milan_smith_20 | milan_smith_20@zeroqwait-seed.com | password123 | speedwrench-auto-toronto
+22 | TurboFix Garage | Mississauga | noah_johnson_21 | noah_johnson_21@zeroqwait-seed.com | password123 | turbofix-garage-mississauga
+23 | Pit Stop Auto Care | Los Angeles | oakley_williams_22 | oakley_williams_22@zeroqwait-seed.com | password123 | pit-stop-auto-care-los-angeles
+24 | DriveRight Mechanics | Ottawa | parker_brown_23 | parker_brown_23@zeroqwait-seed.com | password123 | driveright-mechanics-ottawa
+25 | AutoPro Service | Los Angeles | reese_jones_24 | reese_jones_24@zeroqwait-seed.com | password123 | autopro-service-los-angeles
+26 | Polish & Shine | Toronto | sage_garcia_25 | sage_garcia_25@zeroqwait-seed.com | password123 | polish-shine-toronto
+27 | Nail Artistry Studio | Chicago | tatum_miller_26 | tatum_miller_26@zeroqwait-seed.com | password123 | nail-artistry-studio-chicago
+28 | Tips & Toes Lounge | Los Angeles | uma_davis_27 | uma_davis_27@zeroqwait-seed.com | password123 | tips-toes-lounge-los-angeles
+29 | Color Pop Nails | Oshawa | val_martinez_28 | val_martinez_28@zeroqwait-seed.com | password123 | color-pop-nails-oshawa
+30 | Lacquer Lane | Hamilton | wren_wilson_29 | wren_wilson_29@zeroqwait-seed.com | password123 | lacquer-lane-hamilton
+31 | Paws & Claws Grooming | Los Angeles | alex_anderson_30 | alex_anderson_30@zeroqwait-seed.com | password123 | paws-claws-grooming-los-angeles
+32 | Happy Tails Pet Spa | Oshawa | jordan_thomas_31 | jordan_thomas_31@zeroqwait-seed.com | password123 | happy-tails-pet-spa-oshawa
+33 | Fur Baby Studio | Brampton | sam_jackson_32 | sam_jackson_32@zeroqwait-seed.com | password123 | fur-baby-studio-brampton
+34 | The Pampered Pooch | Mississauga | morgan_white_33 | morgan_white_33@zeroqwait-seed.com | password123 | the-pampered-pooch-mississauga
+35 | Bark Avenue Grooming | Hamilton | taylor_harris_34 | taylor_harris_34@zeroqwait-seed.com | password123 | bark-avenue-grooming-hamilton
+36 | BrightSmile Dental | Brampton | casey_clark_35 | casey_clark_35@zeroqwait-seed.com | password123 | brightsmile-dental-brampton
+37 | Pearl Dental Care | Ottawa | riley_lewis_36 | riley_lewis_36@zeroqwait-seed.com | password123 | pearl-dental-care-ottawa
+38 | SmileCraft Dentistry | Mississauga | quinn_lee_37 | quinn_lee_37@zeroqwait-seed.com | password123 | smilecraft-dentistry-mississauga
+39 | Gentle Touch Dental | Mississauga | avery_walker_38 | avery_walker_38@zeroqwait-seed.com | password123 | gentle-touch-dental-mississauga
+40 | City Dental Clinic | Chicago | blake_hall_39 | blake_hall_39@zeroqwait-seed.com | password123 | city-dental-clinic-chicago
+41 | Bulk Owner Test Shop | Toronto | test_bulk_owner_0_3504 | test_bulk_owner_0_3504@zeroqwait.com | password123 | bulk-owner-test-shop-3504
