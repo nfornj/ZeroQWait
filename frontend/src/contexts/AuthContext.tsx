@@ -43,7 +43,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [token, setToken] = useState<string | null>(
     localStorage.getItem("token")
   );
-  const [loading, setLoading] = useState<boolean>(false);
+  // Start loading=true when a token exists so ProtectedRoute waits for
+  // /users/me validation before deciding to redirect. Without this, loading
+  // starts false → ProtectedRoute sees isAuthenticated=false → redirects to
+  // /login before the fetch completes, causing the root-URL jitter.
+  const [loading, setLoading] = useState<boolean>(!!localStorage.getItem("token"));
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!token);
 
@@ -145,8 +149,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         if (error.response?.status === 401) {
           // Token expired or invalid - auto logout
           logout();
-          // Redirect to login page
-          window.location.href = '/login';
+          // Only redirect to /login when the user is on a protected page.
+          // Never redirect if already on /login, / (landing), or /signin to
+          // avoid the redirect loop that causes root-URL jitter.
+          const publicPaths = ['/', '/login', '/signin', '/signup', '/register', '/ai'];
+          const isPublic = publicPaths.some(p => window.location.pathname === p || window.location.pathname.startsWith('/shop-ai') || window.location.pathname.startsWith('/queue/'));
+          if (!isPublic) {
+            window.location.href = '/login';
+          }
         }
         return Promise.reject(error);
       }
