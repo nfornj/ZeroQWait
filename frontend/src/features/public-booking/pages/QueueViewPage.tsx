@@ -20,7 +20,11 @@ import {
     alpha,
     styled,
     Stack,
-    Avatar
+    Avatar,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
 } from '@mui/material';
 import axios from 'axios';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -107,6 +111,7 @@ const QueueViewPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [leaveQueueDialogOpen, setLeaveQueueDialogOpen] = useState(false);
 
     useEffect(() => {
         if (shopId) {
@@ -207,10 +212,14 @@ const QueueViewPage: React.FC = () => {
         }
     };
 
-    const handleLeaveQueue = async () => {
+    const handleLeaveQueue = () => {
         if (!myQueueItem) return;
-        if (!window.confirm('Are you sure you want to leave the queue?')) return;
+        setLeaveQueueDialogOpen(true);
+    };
 
+    const confirmLeaveQueue = async () => {
+        if (!myQueueItem) return;
+        setLeaveQueueDialogOpen(false);
         try {
             await axios.delete(`/queues/items/${myQueueItem.id}/leave`);
             setSuccess('You have left the queue');
@@ -526,6 +535,17 @@ const QueueViewPage: React.FC = () => {
                 </Box>
             </Box>
         </Container>
+
+        <Dialog open={leaveQueueDialogOpen} onClose={() => setLeaveQueueDialogOpen(false)}>
+            <DialogTitle>Leave Queue</DialogTitle>
+            <DialogContent>
+                <Typography>Are you sure you want to leave the queue? You will lose your position.</Typography>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={() => setLeaveQueueDialogOpen(false)}>Cancel</Button>
+                <Button variant="contained" color="error" onClick={confirmLeaveQueue}>Leave Queue</Button>
+            </DialogActions>
+        </Dialog>
     );
 };
 

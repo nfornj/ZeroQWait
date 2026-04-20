@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, Typography, Box, CircularProgress } from '@mui/material';
 import { BarChart } from '@mui/x-charts/BarChart';
-import axios from 'axios';
+import api from '../../../services/api';
 import { useShop } from '../../../contexts/ShopContext';
 
 import { useTheme, alpha } from '@mui/material/styles';
@@ -17,10 +17,7 @@ export default function StackedRevenueChart() {
         const fetchData = async () => {
             if (!shop) return;
             try {
-                const token = localStorage.getItem('token');
-                const response = await axios.get(`/analytics/revenue/monthly-by-service/${shop.id}`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                const response = await api.get(`/analytics/revenue/monthly-by-service/${shop.id}`);
 
                 const data = response.data;
                 if (data.length > 0) {

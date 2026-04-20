@@ -34,7 +34,7 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EventBusyIcon from '@mui/icons-material/EventBusy';
-import axios from 'axios';
+import api from '../../../services/api';
 import { useThemeContext, ThemePreset } from '../../../contexts/ThemeContext';
 import { DataGrid, GridColDef, GridActionsCellItem } from '@mui/x-data-grid';
 
@@ -95,6 +95,8 @@ const ShopSettingsPage: React.FC = () => {
         id: undefined as number | undefined,
         name: '', description: '', duration_minutes: 30, cost: 0.0
     });
+    const [generateDataDialogOpen, setGenerateDataDialogOpen] = useState(false);
+    const [deleteServiceConfirmId, setDeleteServiceConfirmId] = useState<number | null>(null);
 
     // Close Days State
     const [closeDays, setCloseDays] = useState<any[]>([]);
@@ -108,10 +110,7 @@ const ShopSettingsPage: React.FC = () => {
 
     const fetchShop = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`/shops/my-shops`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/shops/my-shops`);
 
             if (response.data.length > 0) {
                 const shopData = response.data[0];
@@ -145,10 +144,7 @@ const ShopSettingsPage: React.FC = () => {
     const fetchServices = async (shopId: number) => {
         try {
             setServiceLoading(true);
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`/shops/${shopId}/services`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/shops/${shopId}/services`);
             setServices(response.data);
             setServiceLoading(false);
         } catch (err) {
@@ -160,10 +156,7 @@ const ShopSettingsPage: React.FC = () => {
     const fetchCloseDays = async (shopId: number) => {
         try {
             setCloseDaysLoading(true);
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`/shops/${shopId}/close-days`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/shops/${shopId}/close-days`);
             setCloseDays(response.data);
             setCloseDaysLoading(false);
         } catch (err) {
@@ -181,17 +174,12 @@ const ShopSettingsPage: React.FC = () => {
         setSuccess(null);
 
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(`/shops/${shop.id}`, formData, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.put(`/shops/${shop.id}`, formData);
 
             if (logoFile) {
                 const fd = new FormData();
                 fd.append('file', logoFile);
-                await axios.put(`/shops/${shop.id}/logo`, fd, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                await api.put(`/shops/${shop.id}/logo`, fd);
             }
             setSuccess('Settings saved successfully');
             setTimeout(() => window.location.reload(), 1000); // Reload to apply themes globally
@@ -203,12 +191,13 @@ const ShopSettingsPage: React.FC = () => {
     };
 
     const handleGenerateData = async () => {
-        if (!window.confirm('This will generate 30 days of sample data. Proceed?')) return;
+        setGenerateDataDialogOpen(true);
+    };
+
+    const confirmGenerateData = async () => {
+        setGenerateDataDialogOpen(false);
         try {
-            const token = localStorage.getItem('token');
-            await axios.post(`/shops/${shop.id}/generate-sample-data`, {}, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.post(`/shops/${shop.id}/generate-sample-data`, {});
             setSuccess('Sample data generated! Refreshing...');
             setTimeout(() => window.location.reload(), 1500);
         } catch (e) {
@@ -220,12 +209,10 @@ const ShopSettingsPage: React.FC = () => {
 
     const handleServiceSubmit = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const headers = { Authorization: `Bearer ${token}` };
             if (serviceFormData.id) {
-                await axios.put(`/shops/${shop.id}/services/${serviceFormData.id}`, serviceFormData, { headers });
+                await api.put(`/shops/${shop.id}/services/${serviceFormData.id}`, serviceFormData);
             } else {
-                await axios.post(`/shops/${shop.id}/services`, serviceFormData, { headers });
+                await api.post(`/shops/${shop.id}/services`, serviceFormData);
             }
             setOpenServiceDialog(false);
             fetchServices(shop.id);
@@ -235,26 +222,26 @@ const ShopSettingsPage: React.FC = () => {
         }
     };
 
-    const deleteService = async (id: number) => {
-        if (!window.confirm("Delete this service?")) return;
+    const deleteService = (id: number) => {
+        setDeleteServiceConfirmId(id);
+    };
+
+    const confirmDeleteService = async () => {
+        if (deleteServiceConfirmId === null) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`/shops/${shop.id}/services/${id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.delete(`/shops/${shop.id}/services/${deleteServiceConfirmId}`);
+            setDeleteServiceConfirmId(null);
             fetchServices(shop.id);
         } catch (e) { setError('Failed to delete service'); }
-    }
+    };
 
     // --- Close Days Handlers ---
 
     const addCloseDay = async () => {
         if (!newCloseDate) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.post(`/shops/${shop.id}/close-days`, null, {
+            await api.post(`/shops/${shop.id}/close-days`, null, {
                 params: { date_str: newCloseDate, reason: newCloseReason },
-                headers: { Authorization: `Bearer ${token}` }
             });
             setNewCloseDate('');
             setNewCloseReason('');
@@ -267,10 +254,7 @@ const ShopSettingsPage: React.FC = () => {
 
     const deleteCloseDay = async (id: number) => {
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`/shops/${shop.id}/close-days/${id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.delete(`/shops/${shop.id}/close-days/${id}`);
             fetchCloseDays(shop.id);
         } catch (e) {
             setError('Failed to remove close day');
@@ -514,6 +498,30 @@ const ShopSettingsPage: React.FC = () => {
                 <DialogActions>
                     <Button onClick={() => setOpenServiceDialog(false)}>Cancel</Button>
                     <Button variant="contained" onClick={handleServiceSubmit} disabled={!serviceFormData.name}>Save</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Generate Sample Data Confirmation */}
+            <Dialog open={generateDataDialogOpen} onClose={() => setGenerateDataDialogOpen(false)}>
+                <DialogTitle>Generate Sample Data</DialogTitle>
+                <DialogContent>
+                    <Typography>This will generate 30 days of sample data. Proceed?</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setGenerateDataDialogOpen(false)}>Cancel</Button>
+                    <Button variant="contained" onClick={confirmGenerateData}>Generate</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Delete Service Confirmation */}
+            <Dialog open={deleteServiceConfirmId !== null} onClose={() => setDeleteServiceConfirmId(null)}>
+                <DialogTitle>Delete Service</DialogTitle>
+                <DialogContent>
+                    <Typography>Delete this service? This cannot be undone.</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDeleteServiceConfirmId(null)}>Cancel</Button>
+                    <Button variant="contained" color="error" onClick={confirmDeleteService}>Delete</Button>
                 </DialogActions>
             </Dialog>
         </Box>

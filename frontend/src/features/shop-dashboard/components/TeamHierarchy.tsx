@@ -19,7 +19,7 @@ import { TreeItemIcon } from '@mui/x-tree-view/TreeItemIcon';
 import { TreeItemProvider } from '@mui/x-tree-view/TreeItemProvider';
 import { TreeViewBaseItem } from '@mui/x-tree-view/models';
 import { useTheme } from '@mui/material/styles';
-import axios from 'axios';
+import api from '../../../services/api';
 import { useShop } from '../../../contexts/ShopContext';
 
 type Color = 'blue' | 'green' | 'red';
@@ -145,11 +145,8 @@ export default function TeamHierarchy() {
         const fetchTeam = async () => {
             if (!shop) return;
             try {
-                const token = localStorage.getItem('token');
-                const headers = { Authorization: `Bearer ${token}` };
-
                 // Fetch employees
-                const empResponse = await axios.get(`/shops/${shop.id}/employees`, { headers });
+                const empResponse = await api.get(`/shops/${shop.id}/employees`);
                 const employees = empResponse.data;
 
                 // Separate by role

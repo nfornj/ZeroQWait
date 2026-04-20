@@ -5,28 +5,47 @@ import StatCard from '../components/StatCard';
 import { LineChart } from '@mui/x-charts/LineChart';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { PieChart } from '@mui/x-charts/PieChart';
-import axios from 'axios';
+import api from '../../../services/api';
 import { useShop } from '../../../contexts/ShopContext';
+
+interface DailyStat {
+    date: string;
+    count: number;
+}
+
+interface AnalyticsData {
+    total_customers: number;
+    avg_wait_minutes: number;
+    avg_service_minutes: number;
+    daily_stats: DailyStat[];
+}
+
+interface PeakHoursData {
+    peak_hour: number | null;
+    hourly_distribution: Record<string, number>;
+}
+
+interface ServiceStat {
+    name: string;
+    value: number;
+}
 
 export default function ShopAnalyticsPage() {
     const { shop } = useShop();
     const theme = useTheme();
     const [loading, setLoading] = useState(true);
-    const [analytics, setAnalytics] = useState<any>(null);
-    const [peakHours, setPeakHours] = useState<any>(null);
-    const [serviceStats, setServiceStats] = useState<any[]>([]);
+    const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+    const [peakHours, setPeakHours] = useState<PeakHoursData | null>(null);
+    const [serviceStats, setServiceStats] = useState<ServiceStat[]>([]);
 
     useEffect(() => {
         const fetchData = async () => {
             if (!shop?.id) return;
             try {
-                const token = localStorage.getItem('token');
-                const headers = { Authorization: `Bearer ${token}` };
-
                 const [analyticsRes, peakRes, servicesRes] = await Promise.all([
-                    axios.get(`/api/analytics/${shop.id}?days=30`, { headers }),
-                    axios.get(`/api/analytics/peak-hours/${shop.id}?days=30`, { headers }),
-                    axios.get(`/api/analytics/services/${shop.id}?days=30`, { headers })
+                    api.get(`/analytics/${shop.id}?days=30`),
+                    api.get(`/analytics/peak-hours/${shop.id}?days=30`),
+                    api.get(`/analytics/services/${shop.id}?days=30`)
                 ]);
 
                 setAnalytics(analyticsRes.data);
@@ -72,28 +91,28 @@ export default function ShopAnalyticsPage() {
             </Box>
 
             <Grid container spacing={3} mb={4}>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                     <StatCard
                         title="Total Customers"
                         value={analytics?.total_customers?.toString() || "0"}
                         trend="neutral"
                     />
                 </Grid>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                     <StatCard
                         title="Avg Wait Time"
                         value={`${analytics?.avg_wait_minutes || 0} min`}
                         trend={analytics?.avg_wait_minutes < 15 ? "up" : "down"}
                     />
                 </Grid>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                     <StatCard
                         title="Avg Service Time"
                         value={`${analytics?.avg_service_minutes || 0} min`}
                         trend="neutral"
                     />
                 </Grid>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                     <StatCard
                         title="Busiest Hour"
                         value={peakHours?.peak_hour ? `${peakHours.peak_hour}:00` : "N/A"}
@@ -104,7 +123,7 @@ export default function ShopAnalyticsPage() {
 
             <Grid container spacing={3}>
                 {/* Visits Over Time */}
-                <Grid item xs={12} lg={8}>
+                <Grid size={{ xs: 12, lg: 8 }}>
                     <Paper sx={{ p: 3, height: '100%' }}>
                         <Typography variant="h6" gutterBottom>Daily Visits</Typography>
                         <Box sx={{ height: 300, width: '100%' }}>
@@ -118,7 +137,7 @@ export default function ShopAnalyticsPage() {
                 </Grid>
 
                 {/* Service Popularity */}
-                <Grid item xs={12} lg={4}>
+                <Grid size={{ xs: 12, lg: 4 }}>
                     <Paper sx={{ p: 3, height: '100%' }}>
                         <Typography variant="h6" gutterBottom>Service Preferences</Typography>
                         <Box sx={{ height: 300, width: '100%' }}>
@@ -144,7 +163,7 @@ export default function ShopAnalyticsPage() {
                 </Grid>
 
                 {/* Peak Hours */}
-                <Grid item xs={12}>
+                <Grid size={{ xs: 12 }}>
                     <Paper sx={{ p: 3 }}>
                         <Typography variant="h6" gutterBottom>Peak Hours Distribution</Typography>
                         <Box sx={{ height: 300, width: '100%' }}>

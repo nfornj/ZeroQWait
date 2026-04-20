@@ -13,7 +13,7 @@ import {
 } from '@mui/material';
 import StorefrontIcon from '@mui/icons-material/Storefront';
 import QueueIcon from '@mui/icons-material/Queue';
-import axios from 'axios';
+import api from '../../../services/api';
 import { useAuth } from '../../../contexts/AuthContext';
 
 
@@ -42,10 +42,7 @@ const EmployeeDashboardPage: React.FC = () => {
     const fetchMyShops = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`/employees/my-shops`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/employees/my-shops`);
             setShops(response.data);
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to load shops');

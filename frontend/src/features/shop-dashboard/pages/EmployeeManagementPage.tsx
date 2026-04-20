@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../../services/api';
 import {
     Box,
     Typography,
@@ -66,12 +66,11 @@ const EmployeeManagementPage: React.FC = () => {
     const [shifts, setShifts] = useState<any[]>([]);
     const [shiftsLoading, setShiftsLoading] = useState(false);
     const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState<number | null>(null);
+    const [removeConfirmId, setRemoveConfirmId] = useState<number | null>(null);
 
-    const fetchEmployees = React.useCallback(async (id: number, token: string) => {
+    const fetchEmployees = React.useCallback(async (id: number) => {
         try {
-            const response = await axios.get(`/shops/${id}/employees`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/shops/${id}/employees`);
             setEmployees(response.data);
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to load employees');
@@ -80,17 +79,8 @@ const EmployeeManagementPage: React.FC = () => {
 
     const fetchShopAndEmployees = React.useCallback(async () => {
         try {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                setError('Not authenticated');
-                setLoading(false);
-                return;
-            }
-
             // Get shop ID first
-            const shopResponse = await axios.get(`/shops/my-shops`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const shopResponse = await api.get(`/shops/my-shops`);
 
             if (shopResponse.data.length === 0) {
                 setError('No shop found. Please create a shop first.');
@@ -102,7 +92,7 @@ const EmployeeManagementPage: React.FC = () => {
             setShopId(shop.id);
 
             // Fetch employees
-            await fetchEmployees(shop.id, token);
+            await fetchEmployees(shop.id);
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to load data');
         } finally {
@@ -110,16 +100,14 @@ const EmployeeManagementPage: React.FC = () => {
         }
     }, [fetchEmployees]);
 
-    const fetchShifts = React.useCallback(async (id: number, token: string, employeeId: number | null = null) => {
+    const fetchShifts = React.useCallback(async (id: number, employeeId: number | null = null) => {
         setShiftsLoading(true);
         try {
             let url = `/shops/${id}/employee-shifts?months=3`;
             if (employeeId) {
                 url += `&employee_id=${employeeId}`;
             }
-            const response = await axios.get(url, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(url);
             setShifts(response.data);
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to load attendance data');
@@ -135,10 +123,7 @@ const EmployeeManagementPage: React.FC = () => {
     useEffect(() => {
         // Fetch shifts when switching to attendance tab
         if (currentTab === 1 && shopId) {
-            const token = localStorage.getItem('token');
-            if (token) {
-                fetchShifts(shopId, token, selectedEmployeeFilter);
-            }
+            fetchShifts(shopId, selectedEmployeeFilter);
         }
     }, [currentTab, shopId, selectedEmployeeFilter, fetchShifts]);
 
@@ -151,7 +136,7 @@ const EmployeeManagementPage: React.FC = () => {
 
             setCheckingUsername(true);
             try {
-                const response = await axios.get(`/check-username/${formData.username}`);
+                const response = await api.get(`/check-username/${formData.username}`);
                 setUsernameAvailable(response.data.available);
             } catch (err) {
                 setUsernameAvailable(null);
@@ -175,7 +160,7 @@ const EmployeeManagementPage: React.FC = () => {
 
             setCheckingEmail(true);
             try {
-                const response = await axios.get(`/check-email/${encodeURIComponent(formData.email)}`);
+                const response = await api.get(`/check-email/${encodeURIComponent(formData.email)}`);
                 setEmailAvailable(response.data.available);
             } catch (err) {
                 setEmailAvailable(null);
@@ -198,19 +183,14 @@ const EmployeeManagementPage: React.FC = () => {
         setSuccess(null);
 
         try {
-            const token = localStorage.getItem('token');
-            await axios.post(
-                `/shops/${shopId}/employees`,
-                formData,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            await api.post(`/shops/${shopId}/employees`, formData);
 
             setSuccess('Employee added successfully!');
             setFormData({ username: '', email: '', password: '', role: 'employee' });
             setOpenDialog(false);
 
             // Refresh employee list
-            await fetchEmployees(shopId, token!);
+            await fetchEmployees(shopId);
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to add employee');
         } finally {
@@ -220,19 +200,19 @@ const EmployeeManagementPage: React.FC = () => {
 
     const handleRemoveEmployee = async (employeeId: number) => {
         if (!shopId) return;
-        if (!window.confirm('Are you sure you want to remove this employee?')) return;
+        setRemoveConfirmId(employeeId);
+    };
 
+    const confirmRemoveEmployee = async () => {
+        if (!shopId || removeConfirmId === null) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(
-                `/shops/${shopId}/employees/${employeeId}`,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-
+            await api.delete(`/shops/${shopId}/employees/${removeConfirmId}`);
             setSuccess('Employee removed successfully!');
-            await fetchEmployees(shopId, token!);
+            setRemoveConfirmId(null);
+            await fetchEmployees(shopId);
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to remove employee');
+            setRemoveConfirmId(null);
         }
     };
 
@@ -240,15 +220,9 @@ const EmployeeManagementPage: React.FC = () => {
         if (!shopId) return;
 
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(
-                `/shops/${shopId}/employees/${employeeId}/reactivate`,
-                {},
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-
+            await api.put(`/shops/${shopId}/employees/${employeeId}/reactivate`, {});
             setSuccess('Employee reactivated successfully!');
-            await fetchEmployees(shopId, token!);
+            await fetchEmployees(shopId);
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to reactivate employee');
         }
@@ -434,6 +408,18 @@ const EmployeeManagementPage: React.FC = () => {
                     >
                         {submitting ? <CircularProgress size={24} /> : 'Add Employee'}
                     </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Remove Employee Confirmation Dialog */}
+            <Dialog open={removeConfirmId !== null} onClose={() => setRemoveConfirmId(null)}>
+                <DialogTitle>Remove Employee</DialogTitle>
+                <DialogContent>
+                    <Typography>Are you sure you want to remove this employee? This action cannot be undone.</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setRemoveConfirmId(null)}>Cancel</Button>
+                    <Button variant="contained" color="error" onClick={confirmRemoveEmployee}>Remove</Button>
                 </DialogActions>
             </Dialog>
         </Box>

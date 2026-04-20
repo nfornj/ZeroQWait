@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 
 interface Shop {
   id: number;
@@ -71,7 +71,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       console.log("[ShopContext] Fetching shop by slug:", slug);
       // Use /shops/s/{slug} endpoint which returns shop with queues and is confirmed to work
-      const response = await axios.get(`/shops/s/${slug}`);
+      const response = await api.get(`/shops/s/${slug}`);
       const shopData = response.data;
       console.log("[ShopContext] Shop fetched by slug:", shopData.name, shopData.slug);
       setShop(shopData);
@@ -99,16 +99,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchMyShop = async (): Promise<Shop | null> => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
-      if (!token) {
-        console.log("[ShopContext] No token, skipping shop fetch");
-        return null;
-      }
 
       console.log("[ShopContext] Fetching user's shop");
-      const response = await axios.get(`/shops/my-shops`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get(`/shops/my-shops`);
 
       const shops = Array.isArray(response.data) ? response.data : [];
       setOwnedShops(shops);
@@ -134,15 +127,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setShopsLoading(true);
       setError(null);
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setOwnedShops([]);
-        return [];
-      }
 
-      const response = await axios.get(`/shops/my-shops`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get(`/shops/my-shops`);
       const shops = Array.isArray(response.data) ? response.data : [];
       setOwnedShops(shops);
 
