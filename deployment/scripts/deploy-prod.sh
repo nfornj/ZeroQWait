@@ -120,6 +120,7 @@ kctl create namespace llm --dry-run=client -o yaml | kctl apply -f -
 
 sudo env \
   SKIP_TESTS="${SKIP_TESTS:-true}" \
+  REGISTRY="localhost:5000" \
   IMAGE_NAMESPACE="prod" \
   RETAIN_VERSIONS="10" \
   SKIP_REGISTRY_PRUNE="true" \
