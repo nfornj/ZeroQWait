@@ -121,6 +121,20 @@ app.add_middleware(
 )
 
 
+# ── Docs no-cache middleware ─────────────────────────────────────────
+# Prevent browsers from caching .md files so docs updates are always fresh.
+class DocsNoCacheMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/docs/") and request.url.path.endswith(".md"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+app.add_middleware(DocsNoCacheMiddleware)
+
+
 # ── Tenant middleware ───────────────────────────────────────────────
 # Extracts shop_id from the request path, looks up the shop's tenant
 # schema, and sets a ContextVar so every SessionLocal() created during
