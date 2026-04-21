@@ -55,7 +55,7 @@ export default function FAQ({ embedded = false }: { embedded?: boolean }) {
             id="panel1d-header"
           >
             <Typography component="span" variant="subtitle2">
-              How does the free tier work?
+              What exactly is an AI agent team?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -64,8 +64,11 @@ export default function FAQ({ embedded = false }: { embedded?: boolean }) {
               gutterBottom
               sx={{ maxWidth: { sm: '100%', md: '70%' } }}
             >
-              Our free tier allows you to manage one shop with up to 50 concurrent customers in the queue.
-              It allows you to test out the core features of ZeroQwait without any time limit.
+              When you sign up, ZeroQwait creates a dedicated team of AI agents for your shop: a
+              Receptionist that manages your queue and customer interactions, a Finance agent that
+              answers revenue and analytics questions on demand, and an HR agent that handles
+              employee scheduling and shift management. A Supervisor agent coordinates them all and
+              routes your requests to the right specialist automatically.
             </Typography>
           </AccordionDetails>
         </Accordion>
@@ -88,8 +91,9 @@ export default function FAQ({ embedded = false }: { embedded?: boolean }) {
               gutterBottom
               sx={{ maxWidth: { sm: '100%', md: '70%' } }}
             >
-              No! ZeroQwait is entirely web-based. Customers can join the queue via a link or QR code
-              from their browser. However, they can choose to receive SMS notifications.
+              No. Customers interact with your AI Receptionist entirely through their browser — via
+              a shared link, QR code, or your shop&apos;s subdomain. No app download or account
+              needed. They can also join the queue by voice on the landing page.
             </Typography>
           </AccordionDetails>
         </Accordion>
@@ -103,7 +107,7 @@ export default function FAQ({ embedded = false }: { embedded?: boolean }) {
             id="panel3d-header"
           >
             <Typography component="span" variant="subtitle2">
-              Can I upgrade my plan later?
+              Can my agents take actions without my permission?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -112,8 +116,10 @@ export default function FAQ({ embedded = false }: { embedded?: boolean }) {
               gutterBottom
               sx={{ maxWidth: { sm: '100%', md: '70%' } }}
             >
-              Yes, you can upgrade to the Premium or Enterprise plan at any time from your dashboard settings.
-              Your data will be preserved seamlessly during the transition.
+              For high-impact actions — closing the queue, changing a schedule, processing a refund —
+              your agents always pause and ask for your explicit approval first. This Human-in-the-Loop
+              design means you stay in control, and agents never act unilaterally on anything consequential.
+              Routine tasks like answering customer questions run automatically.
             </Typography>
           </AccordionDetails>
         </Accordion>
@@ -127,7 +133,7 @@ export default function FAQ({ embedded = false }: { embedded?: boolean }) {
             id="panel4d-header"
           >
             <Typography component="span" variant="subtitle2">
-              Is technical support included?
+              Can I upgrade my plan as my business grows?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -136,8 +142,10 @@ export default function FAQ({ embedded = false }: { embedded?: boolean }) {
               gutterBottom
               sx={{ maxWidth: { sm: '100%', md: '70%' } }}
             >
-              Email support is included with all plans. Premium and Enterprise plans receive priority support
-              with faster response times and dedicated assistance for setup.
+              Yes. You can upgrade to Premium or Enterprise at any time from your dashboard settings.
+              Your agent history, conversation checkpoints, and business data carry over seamlessly.
+              Premium unlocks the full Finance and HR agents; Enterprise adds custom agent workflows
+              and dedicated model tuning.
             </Typography>
           </AccordionDetails>
         </Accordion>

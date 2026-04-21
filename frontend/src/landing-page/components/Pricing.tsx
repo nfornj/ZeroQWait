@@ -18,8 +18,8 @@ const tiers = [
     description: [
       'Up to 1 shop',
       '50 customers per queue',
+      'AI Receptionist agent',
       'Basic queue management',
-      'Shared database',
       'Email support',
     ],
     buttonText: 'Sign up for free',
@@ -32,9 +32,9 @@ const tiers = [
     price: '29',
     description: [
       'Up to 5 shops',
-      '200 customers per queue',
-      'Dedicated database (isolated data)',
-      'Advanced analytics & reports',
+      'Full AI agent team (Receptionist, Finance, HR)',
+      'Human-in-the-Loop approvals',
+      'Advanced analytics & revenue reports',
       'Priority support (24/7)',
       'Custom branding & colors',
     ],
@@ -47,8 +47,9 @@ const tiers = [
     price: 'Contact',
     description: [
       'Unlimited shops',
-      'Unlimited queues',
-      'Custom SLA & Support',
+      'Custom agent workflows',
+      'Dedicated AI model tuning',
+      'Custom SLA & support',
       'On-premise deployment options',
       'Dedicated account manager',
     ],
@@ -89,10 +90,8 @@ export default function Pricing({ embedded = false }: { embedded?: boolean }) {
           Pricing
         </Typography>
         <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-          Quickly build an effective pricing table for your potential customers with
-          this layout. <br />
-          It&apos;s built with default Material UI components with little
-          customization.
+          Every plan includes your own AI agent team. Pick the scale that matches your business
+          and upgrade any time as you grow.
         </Typography>
       </Box>
 

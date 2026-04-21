@@ -88,7 +88,7 @@ export default function Hero() {
               mt: 2
             }}
           >
-            Wait Less, Live More
+            Your Shop&apos;s AI Team, Ready Day One
           </Typography>
           <Typography
             sx={{
@@ -97,8 +97,9 @@ export default function Hero() {
               width: { sm: '100%', md: '80%' },
             }}
           >
-            The World&apos;s First AI-Powered Universal Queue Management System for Small Businesses.
-            Experience a smarter way to manage queues and delight your customers.
+            Every service business deserves its own AI operations team. ZeroQwait gives your shop
+            a Receptionist, Finance Manager, and HR agent — all working together through natural
+            conversation, so you can focus on what you do best.
           </Typography>
           <Stack
             direction={{ xs: 'column', sm: 'row' }}

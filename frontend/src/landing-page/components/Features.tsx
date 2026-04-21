@@ -14,25 +14,25 @@ import ViewQuiltRoundedIcon from '@mui/icons-material/ViewQuiltRounded';
 const items = [
   {
     icon: <ViewQuiltRoundedIcon />,
-    title: 'Smart Dashboard',
+    title: 'AI Supervisor',
     description:
-      'Manage multiple queues, staff members, and service times from a single intuitive dashboard.',
+      'Your Supervisor agent interprets your instructions and routes tasks to the right specialist — Receptionist, Finance, or HR — then asks for your approval before any high-impact action.',
     imageLight: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/dash-light.png")`,
     imageDark: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/dash-dark.png")`,
   },
   {
     icon: <EdgesensorHighRoundedIcon />,
-    title: 'Mobile Check-in',
+    title: 'Customer Receptionist',
     description:
-      'Customers can join the queue remotely and track their wait time from their own device.',
+      'Your AI Receptionist greets walk-ins, manages your live queue, and handles bookings — via link, QR code, or voice. No app required.',
     imageLight: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/mobile-light.png")`,
     imageDark: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/mobile-dark.png")`,
   },
   {
     icon: <DevicesRoundedIcon />,
-    title: 'Real-time Analytics',
+    title: 'Finance & HR Agents',
     description:
-      'Gain insights into peak hours, staff performance, and customer wait times to optimize operations.',
+      'Ask your Finance agent for yesterday\'s revenue or this week\'s report. Tell your HR agent to update a shift. Get answers and take action in plain language.',
     imageLight: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/devices-light.png")`,
     imageDark: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/devices-dark.png")`,
   },
@@ -151,15 +151,15 @@ export default function Features({ embedded = false }: { embedded?: boolean }) {
           gutterBottom
           sx={{ color: 'text.primary' }}
         >
-          Why ZeroQwait?
+          Your Dedicated AI Agent Team
         </Typography>
         <Typography
           variant="body1"
           sx={{ color: 'text.secondary', mb: { xs: 2, sm: 4 } }}
         >
-          Streamline your business operations and improve customer satisfaction with our
-          comprehensive queue management features. From mobile check-ins to detailed
-          analytics, we have everything you need.
+          Stop juggling apps and spreadsheets. ZeroQwait gives every shop a team of specialized
+          AI agents that handle queues, analytics, and staff — all operated through natural
+          conversation.
         </Typography>
       </Box>
       <Box

@@ -10,46 +10,46 @@ import { useColorScheme } from '@mui/material/styles';
 
 const userTestimonials = [
   {
-    avatar: <Avatar alt="Remy Sharp" src="/static/images/avatar/1.jpg" />,
+    avatar: <Avatar alt="Sarah Jenkins" src="/static/images/avatar/1.jpg" />,
     name: 'Sarah Jenkins',
     occupation: 'Salon Owner',
     testimonial:
-      "Since switching to ZeroQwait, our lobby is no longer crowded and chaotic. Clients love being able to wait from their cars or nearby coffee shops. It's transformed our atmosphere completely.",
+      "I just tell ZeroQ ‘what's the revenue this week’ and it answers instantly. I used to spend Sunday evenings doing this in spreadsheets. Now I spend that time with my family.",
   },
   {
-    avatar: <Avatar alt="Travis Howard" src="/static/images/avatar/2.jpg" />,
+    avatar: <Avatar alt="Mark Thompson" src="/static/images/avatar/2.jpg" />,
     name: 'Mark Thompson',
     occupation: 'Barber',
     testimonial:
-      "The mobile check-in feature is a game changer. I enter the shop and already have a lineup ready to go. The analytics help me schedule my staff better during busy hours.",
+      "The AI Receptionist handles walk-ins while I’m cutting hair. It tells customers their wait time and I get a notification when I need to approve anything important. It’s like having a front-desk person I never have to train.",
   },
   {
-    avatar: <Avatar alt="Cindy Baker" src="/static/images/avatar/3.jpg" />,
+    avatar: <Avatar alt="Dr. Emily Chen" src="/static/images/avatar/3.jpg" />,
     name: 'Dr. Emily Chen',
     occupation: 'Clinic Manager',
     testimonial:
-      "Managing patient flow has never been easier. We've reduced complaints about wait times by 80% since implementing this system. The notifications keep everyone informed.",
+      "The approval flow is brilliant. The HR agent proposed a new shift schedule and I just clicked approve. Takes 10 seconds. Patient throughput is up 40% since we stopped managing queues manually.",
   },
   {
-    avatar: <Avatar alt="Remy Sharp" src="/static/images/avatar/4.jpg" />,
+    avatar: <Avatar alt="Michael Ross" src="/static/images/avatar/4.jpg" />,
     name: 'Michael Ross',
     occupation: 'Repair Shop Owner',
     testimonial:
-      "Simple to set up and easy to use. My technicians can focus on repairs instead of managing the front desk. The free tier was perfect for us to get started.",
+      "My technicians focus on repairs. The AI Receptionist manages the front. When a customer asks how long the wait is, ZeroQ tells them. Simple, accurate, no fuss.",
   },
   {
-    avatar: <Avatar alt="Travis Howard" src="/static/images/avatar/5.jpg" />,
+    avatar: <Avatar alt="Lisa Wong" src="/static/images/avatar/5.jpg" />,
     name: 'Lisa Wong',
     occupation: 'Retail Manager',
     testimonial:
-      "We use ZeroQwait for our fitting rooms during peak sales. It eliminated the long lines blocking the aisles and improved our customers' shopping experience significantly.",
+      "I asked the Finance agent for our top-performing service last month and it responded in seconds with a full breakdown. The kind of insight that used to require a report from our analytics team.",
   },
   {
-    avatar: <Avatar alt="Cindy Baker" src="/static/images/avatar/6.jpg" />,
+    avatar: <Avatar alt="David Miller" src="/static/images/avatar/6.jpg" />,
     name: 'David Miller',
     occupation: 'Gov. Office Admin',
     testimonial:
-      "Efficiency is key for us. ZeroQwait gives us the data we need to justify staffing levels and serves the public much faster than our old paper ticket system.",
+      "We approved the queue setup in five minutes. The Supervisor routes citizen requests to the right service window automatically. Our staff no longer manage a ticketing desk — the agent does it.",
   },
 ];
 
@@ -122,8 +122,8 @@ export default function Testimonials({ embedded = false }: { embedded?: boolean 
           Testimonials
         </Typography>
         <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-          See what shop owners and customers love about ZeroQwait. Discover how we
-          eliminate waiting lines and improve customer satisfaction across industries.
+          Shop owners across Canada trust their ZeroQwait AI agent team to run smoother
+          operations and keep customers happy. Here&apos;s what they have to say.
         </Typography>
       </Box>
 
