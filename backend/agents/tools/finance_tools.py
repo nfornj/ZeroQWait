@@ -787,6 +787,43 @@ def _local_record_payment(
         return {"error": str(e)}
 
 
+def _local_process_refund(
+    shop_id: int,
+    payment_id: int,
+    refund_amount: Optional[float] = None,
+    reason: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Refund a completed payment for a shop."""
+    try:
+        from agents.tools import payment_tools
+
+        result = payment_tools.process_refund(
+            shop_id=shop_id,
+            payment_id=payment_id,
+            refund_amount=refund_amount,
+            reason=reason,
+        )
+        if result.get("error"):
+            return result
+
+        refunded_amount = result.get("refund_amount")
+        if refunded_amount in (None, ""):
+            refunded_amount = refund_amount
+
+        if refunded_amount not in (None, ""):
+            amount_text = f"${float(refunded_amount):.2f}"
+        else:
+            amount_text = "the requested amount"
+
+        payment_status = str(result.get("status") or "refunded").replace("_", " ")
+        return {
+            **result,
+            "message": f"Refunded payment {payment_id} for {amount_text}. Payment is now {payment_status}.",
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def _local_list_invoices(
     shop_id: int,
     status: Optional[str] = None,
@@ -902,6 +939,20 @@ def record_payment(
         method=method,
         invoice_id=invoice_id,
         notes=notes,
+    )
+
+
+def process_refund(
+    shop_id: int,
+    payment_id: int,
+    refund_amount: Optional[float] = None,
+    reason: Optional[str] = None,
+) -> Dict[str, Any]:
+    return _get_finance_client().process_refund(
+        shop_id,
+        payment_id,
+        refund_amount=refund_amount,
+        reason=reason,
     )
 
 

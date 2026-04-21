@@ -69,6 +69,12 @@ class RecordPaymentRequest(ShopRequest):
     notes: Optional[str] = None
 
 
+class RefundPaymentRequest(ShopRequest):
+    payment_id: int
+    refund_amount: Optional[float] = None
+    reason: Optional[str] = None
+
+
 class ListInvoicesRequest(ShopRequest):
     status: Optional[str] = None
     limit: int = 20
@@ -145,6 +151,16 @@ async def rest_record_payment(req: RecordPaymentRequest):
         method=req.method,
         invoice_id=req.invoice_id,
         notes=req.notes,
+    )
+
+
+@app.post("/payments/refund")
+async def rest_process_refund(req: RefundPaymentRequest):
+    return finance_tools._local_process_refund(
+        req.shop_id,
+        req.payment_id,
+        refund_amount=req.refund_amount,
+        reason=req.reason,
     )
 
 
@@ -257,6 +273,22 @@ try:
                 method=method,
                 invoice_id=invoice_id,
                 notes=notes,
+            )
+        )
+
+    @mcp.tool(description="Refund a completed payment for a shop.")
+    async def process_refund(
+        shop_id: int,
+        payment_id: int,
+        refund_amount: Optional[float] = None,
+        reason: Optional[str] = None,
+    ) -> dict:
+        return await rest_process_refund(
+            RefundPaymentRequest(
+                shop_id=shop_id,
+                payment_id=payment_id,
+                refund_amount=refund_amount,
+                reason=reason,
             )
         )
 

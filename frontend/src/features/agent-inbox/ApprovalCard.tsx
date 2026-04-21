@@ -30,6 +30,23 @@ const formatValue = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
+const formatPolicyMode = (mode?: string): string => {
+  switch (mode) {
+    case "require_approval":
+      return "Require approval";
+    case "allow":
+      return "Allow automatically";
+    case "notify_only":
+      return "Notify after auto-run";
+    case "silent":
+      return "Silent auto-run";
+    case "forbid":
+      return "Blocked by policy";
+    default:
+      return mode ? mode.replace(/_/g, " ") : "Policy controlled";
+  }
+};
+
 const ApprovalCard: React.FC<ApprovalCardProps> = ({ approval, isSubmitting, onDecision }) => {
   const muiTheme = useTheme();
   const { shop } = useShop();
@@ -84,6 +101,22 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({ approval, isSubmitting, onD
         <Typography variant="body2" color="text.secondary" mb={1.5}>
           {approval.summary || "This action is paused until you approve or reject it."}
         </Typography>
+
+        <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" mb={1.5}>
+          {approval.policy_mode && (
+            <Chip
+              size="small"
+              label={formatPolicyMode(approval.policy_mode)}
+              sx={{
+                bgcolor: alpha(brandPrimary, 0.12),
+                color: brandPrimary,
+                border: `1px solid ${alpha(brandPrimary, 0.2)}`,
+              }}
+            />
+          )}
+          {approval.category && <Chip size="small" variant="outlined" label={approval.category} />}
+          {approval.urgency && <Chip size="small" variant="outlined" label={`Urgency: ${approval.urgency}`} />}
+        </Stack>
 
         <Stack spacing={1.25} mb={1.5}>
           <Alert

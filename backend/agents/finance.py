@@ -19,6 +19,7 @@ SUPPORTED_OPERATIONS = [
     "export_report",
     "create_invoice",
     "record_payment",
+    "process_refund",
     "list_invoices",
     "get_pos_summary",
     "get_inactive_clients",
@@ -37,6 +38,7 @@ PLANNER_INSTRUCTIONS = """\
 - export_report: use when the owner asks for CSV or export; arguments: format(optional, usually csv).
 - create_invoice: use when the owner asks to create an invoice; arguments: service_name, unit_price, quantity(optional), customer_id(optional), tax_rate(optional).
 - record_payment: use when the owner asks to record a payment; arguments: amount, method(optional), invoice_id(optional).
+- process_refund: use when the owner asks to refund a payment; arguments: payment_id, refund_amount(optional), reason(optional).
 - list_invoices: use to list invoices; arguments: status(optional), limit(optional).
 - get_pos_summary: use for cash/card breakdowns by date.
 - get_inactive_clients: use for lapsed or inactive clients; arguments: days_threshold(optional).
@@ -132,6 +134,26 @@ def _build_finance_executor(shop_id: int):
                     "notes": notes,
                 },
                 "message": f"Recording a {method} payment of ${amount:.2f} has been submitted for owner approval.",
+            }
+        if operation == "process_refund":
+            payment_id = _to_int(arguments.get("payment_id"))
+            if payment_id is None:
+                return {"error": "process_refund requires payment_id"}
+            refund_amount = _to_float(arguments.get("refund_amount") or arguments.get("amount"))
+            reason = _optional_str(arguments.get("reason") or arguments.get("notes"))
+            message = f"Refunding payment {payment_id}"
+            if refund_amount is not None:
+                message += f" for ${refund_amount:.2f}"
+            message += " has been submitted for owner approval."
+            return {
+                "requires_approval": True,
+                "action": "process_refund",
+                "details": {
+                    "payment_id": payment_id,
+                    "refund_amount": refund_amount,
+                    "reason": reason,
+                },
+                "message": message,
             }
         if operation == "list_invoices":
             return finance_tools.list_invoices(

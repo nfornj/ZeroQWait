@@ -1,6 +1,8 @@
 import {
   buildApprovalOutcomeFeedEvent,
   buildApprovalOutcomeInsight,
+  buildStreamToolResultFeedEvent,
+  buildStreamToolResultInsight,
 } from "./approvalOutcome";
 import type { PendingApproval } from "./types";
 
@@ -85,5 +87,43 @@ describe("approvalOutcome helpers", () => {
     );
 
     expect(event).toBeNull();
+  });
+
+  it("builds a concrete stream tool-result feed event", () => {
+    const event = buildStreamToolResultFeedEvent(
+      {
+        tool: "list_employees",
+        result: {
+          status: "ok",
+          employees: [{ id: 1 }, { id: 2 }],
+        },
+      },
+      "2026-04-21T12:00:00Z"
+    );
+
+    expect(event).toEqual(
+      expect.objectContaining({
+        type: "tool_result",
+        title: "Employee list ready",
+        description: "Returned 2 employees.",
+      })
+    );
+  });
+
+  it("builds a stream tool-result insight with useful chips", () => {
+    const insight = buildStreamToolResultInsight(
+      {
+        tool: "add_employee",
+        result: {
+          message: "Employee Jordan added successfully. Username: jordan. Temporary password: secret123",
+          status: "added",
+          username: "jordan",
+        },
+      },
+      "2026-04-21T12:00:00Z"
+    );
+
+    expect(insight?.summary?.title).toBe("Employee added");
+    expect(insight?.summary?.chips).toEqual(expect.arrayContaining(["added", "jordan"]));
   });
 });

@@ -59,6 +59,14 @@ _ACTION_CATALOG: Dict[str, Dict[str, str]] = {
         "urgency": "normal",
         "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
     },
+    "process_refund": {
+        "policy_key": "approval.process_refund",
+        "category": "finance",
+        "title": "Process Refund",
+        "risk_level": "high",
+        "urgency": "normal",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
 }
 
 
@@ -93,6 +101,12 @@ def _summary_for_action(action: str, details: Dict[str, Any]) -> str:
     if action == "record_payment":
         amount = details.get("amount")
         return f"Record a payment of ${float(amount or 0.0):.2f}."
+    if action == "process_refund":
+        payment_id = details.get("payment_id")
+        refund_amount = details.get("refund_amount")
+        if refund_amount in (None, ""):
+            return f"Refund payment {payment_id}."
+        return f"Refund ${float(refund_amount or 0.0):.2f} for payment {payment_id}."
     return "A business action needs a policy decision before the agent can continue."
 
 
@@ -119,6 +133,13 @@ def _rationale_for_action(action: str, details: Dict[str, Any]) -> str:
         amount = float(details.get("amount") or 0.0)
         method = str(details.get("method") or "cash")
         return f"Record a {method} payment of ${amount:.2f}."
+    if action == "process_refund":
+        payment_id = details.get("payment_id")
+        refund_amount = details.get("refund_amount")
+        reason = str(details.get("reason") or "No explicit reason was provided.")
+        if refund_amount in (None, ""):
+            return f"Refund payment {payment_id}. Reason: {reason}"
+        return f"Refund ${float(refund_amount or 0.0):.2f} for payment {payment_id}. Reason: {reason}"
     return "The agent flagged this change as operationally significant."
 
 
@@ -135,6 +156,8 @@ def _impact_for_action(action: str, details: Dict[str, Any]) -> str:
         return "A new financial record will be created and become available for payment tracking."
     if action == "record_payment":
         return "The invoice and payment ledger will update immediately after execution."
+    if action == "process_refund":
+        return "The payment ledger will be adjusted immediately and the refund cannot be silently ignored by staff or customers."
     return "Shop operations will change immediately after execution."
 
 

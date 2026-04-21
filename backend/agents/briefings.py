@@ -260,6 +260,20 @@ def enrich_pending_approval_payload(
         expected_impact = "Payment records and invoice status will update immediately once approved."
         risk_level = "medium"
         recommended_decision = "Approve if that payment should be recorded now."
+    elif action == "process_refund":
+        payment_id = details.get("payment_id")
+        refund_amount = details.get("refund_amount")
+        reason_text = str(details.get("reason") or "No explicit reason was provided.")
+        title = "Process Refund"
+        if refund_amount in (None, ""):
+            summary = f"Refund payment {payment_id}."
+            reason = f"Refund payment {payment_id}. Reason: {reason_text}"
+        else:
+            summary = f"Refund ${float(refund_amount or 0.0):.2f} for payment {payment_id}."
+            reason = f"Refund ${float(refund_amount or 0.0):.2f} for payment {payment_id}. Reason: {reason_text}"
+        expected_impact = "The payment ledger and refund status will update immediately once approved."
+        risk_level = "high"
+        recommended_decision = "Approve only if the refund amount and reason are correct."
 
     return {
         **payload,

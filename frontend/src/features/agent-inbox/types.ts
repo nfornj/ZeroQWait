@@ -11,12 +11,29 @@ export interface PendingApproval {
   action: string;
   details: Record<string, unknown>;
   shop_id: number;
+  policy_key?: string;
+  policy_mode?: string;
+  category?: string;
   title?: string;
   summary?: string;
   reason?: string;
   expected_impact?: string;
   risk_level?: "low" | "medium" | "high" | string;
+  urgency?: string;
   recommended_decision?: string;
+}
+
+export interface ShopPolicy {
+  action: string;
+  policy_key: string;
+  category: string;
+  title: string;
+  risk_level?: "low" | "medium" | "high" | string;
+  urgency?: string;
+  default_mode: string;
+  mode: string;
+  explicit: boolean;
+  supported_modes: string[];
 }
 
 export interface ApprovalExecutionResult {

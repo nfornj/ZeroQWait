@@ -39,7 +39,7 @@ def _pending_policy_payload(action, details, mode="require_approval"):
         "shop_id": 9,
         "policy_key": f"approval.{action}",
         "policy_mode": mode,
-        "category": "finance" if action in {"create_invoice", "record_payment"} else ("staffing" if action != "close_queue" else "operations"),
+        "category": "finance" if action in {"create_invoice", "record_payment", "process_refund"} else ("staffing" if action != "close_queue" else "operations"),
         "title": action.replace("_", " ").title(),
         "risk_level": "medium",
         "urgency": "normal",
@@ -258,6 +258,31 @@ class TestApprovalActions(unittest.TestCase):
         self.assertEqual(result["pending_approval"]["action"], "create_invoice")
         self.assertEqual(result["pending_approval"]["details"]["service_name"], "Haircut")
 
+    @patch("agents.specialist_graph.approval_policy.build_pending_approval")
+    @patch("agents.specialist_graph.get_llm")
+    def test_finance_process_refund_request_proposes_approval(self, mock_get_llm, mock_build_pending):
+        mock_get_llm.return_value = _FakeLLM(
+            {
+                "operation": "process_refund",
+                "arguments": {"payment_id": 77, "refund_amount": 12.5, "reason": "Duplicate charge"},
+                "requires_clarification": False,
+                "clarification_question": "",
+                "rationale": "Refund request.",
+            }
+        )
+        mock_build_pending.return_value = _pending_policy_payload(
+            "process_refund",
+            {"payment_id": 77, "refund_amount": 12.5, "reason": "Duplicate charge"},
+        )
+
+        result = create_finance_runnable(shop_id=9).invoke(
+            {"messages": [HumanMessage(content="Refund payment 77 for 12.50 because it was a duplicate charge.")]}
+        )
+
+        self.assertTrue(result["needs_human_input"])
+        self.assertEqual(result["pending_approval"]["action"], "process_refund")
+        self.assertEqual(result["pending_approval"]["details"]["payment_id"], 77)
+
     @patch("agents.supervisor.finance_tools.create_invoice")
     def test_execute_approved_action_routes_create_invoice(self, mock_create_invoice):
         mock_create_invoice.return_value = {
@@ -292,6 +317,37 @@ class TestApprovalActions(unittest.TestCase):
             customer_id=5,
             tax_rate=0.0,
             notes="VIP customer",
+        )
+
+    @patch("agents.supervisor.finance_tools.process_refund")
+    def test_execute_approved_action_routes_process_refund(self, mock_process_refund):
+        mock_process_refund.return_value = {
+            "message": "Refunded payment 77 for $12.50. Payment is now partially refunded.",
+            "status": "partially_refunded",
+            "payment_id": 77,
+            "refund_amount": 12.5,
+        }
+        state = cast(AgentState, {"tenant_id": 9})
+
+        result = supervisor._execute_approved_action(
+            state,
+            {
+                "action": "process_refund",
+                "shop_id": 9,
+                "details": {
+                    "payment_id": 77,
+                    "refund_amount": 12.5,
+                    "reason": "Duplicate charge",
+                },
+            },
+        )
+
+        self.assertEqual(result["status"], "partially_refunded")
+        mock_process_refund.assert_called_once_with(
+            shop_id=9,
+            payment_id=77,
+            refund_amount=12.5,
+            reason="Duplicate charge",
         )
 
     @patch("agents.tools.hr_tools.SessionLocal")

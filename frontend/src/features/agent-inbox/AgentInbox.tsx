@@ -4,14 +4,18 @@ import {
   Alert,
   alpha,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
   Collapse,
+  CircularProgress,
   Divider,
   Grid,
   IconButton,
+  MenuItem,
   Stack,
+  TextField,
   Typography,
   useTheme,
 } from "@mui/material";
@@ -27,6 +31,8 @@ import MasterAIAgent from "../../landing-page/components/MasterAIAgent";
 import {
   buildApprovalOutcomeFeedEvent,
   buildApprovalOutcomeInsight,
+  buildStreamToolResultFeedEvent,
+  buildStreamToolResultInsight,
 } from "./approvalOutcome";
 import {
   createWorkspaceFeedSeed,
@@ -41,6 +47,7 @@ import type {
   InsightItem,
   OwnerBriefing as OwnerBriefingData,
   PendingApproval,
+  ShopPolicy,
 } from "./types";
 
 const nowIso = () => new Date().toISOString();
@@ -57,6 +64,43 @@ const buildIntroMessage = (): ChatMessage => ({
 
 const apiBaseUrl = process.env.REACT_APP_API_URL || "/api";
 
+const POLICY_MODE_LABELS: Record<string, string> = {
+  require_approval: "Require approval",
+  allow: "Allow automatically",
+  notify_only: "Auto-run and notify",
+  silent: "Auto-run silently",
+  forbid: "Block action",
+};
+
+const labelForPolicyMode = (mode?: string): string => {
+  if (!mode) return "Policy controlled";
+  return POLICY_MODE_LABELS[mode] || mode.replace(/_/g, " ");
+};
+
+const normalizePendingApproval = (raw: Record<string, any>, fallbackShopId: number): PendingApproval => {
+  const nested = raw && typeof raw === "object" ? raw : {};
+  const detailPayload = nested.details && typeof nested.details === "object" ? nested.details : nested;
+
+  return {
+    action_id: nested.action_id,
+    action: String(nested.action || detailPayload.action || "pending_action"),
+    details: (detailPayload.details && typeof detailPayload.details === "object"
+      ? detailPayload.details
+      : detailPayload) as Record<string, unknown>,
+    shop_id: Number(nested.shop_id || detailPayload.shop_id || fallbackShopId),
+    policy_key: nested.policy_key || detailPayload.policy_key,
+    policy_mode: nested.policy_mode || detailPayload.policy_mode,
+    category: nested.category || detailPayload.category,
+    title: nested.title || detailPayload.title,
+    summary: nested.summary || detailPayload.summary,
+    reason: nested.reason || detailPayload.reason || detailPayload.rationale,
+    expected_impact: nested.expected_impact || detailPayload.expected_impact,
+    risk_level: nested.risk_level || detailPayload.risk_level,
+    urgency: nested.urgency || detailPayload.urgency,
+    recommended_decision: nested.recommended_decision || detailPayload.recommended_decision,
+  };
+};
+
 const buildWebSocketUrl = (shopId: number): string => {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   return `${protocol}://${window.location.host}/api/ws/${shopId}`;
@@ -69,6 +113,7 @@ const AgentInbox: React.FC = () => {
   const [feedEvents, setFeedEvents] = useState<AgentFeedEvent[]>([]);
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
+  const [policies, setPolicies] = useState<ShopPolicy[]>([]);
   const [briefing, setBriefing] = useState<OwnerBriefingData | null>(null);
   const [externalActionRequest, setExternalActionRequest] = useState<(BriefingAction & { id: string }) | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -76,6 +121,7 @@ const AgentInbox: React.FC = () => {
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [streamedInsightItems, setStreamedInsightItems] = useState<InsightItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [savingPolicyKey, setSavingPolicyKey] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const previousShopIdRef = useRef<number | null>(null);
 
@@ -114,11 +160,24 @@ const AgentInbox: React.FC = () => {
     }
   }, [shop?.id]);
 
+  const refreshPolicies = useCallback(async () => {
+    if (!shop?.id) return;
+    try {
+      const response = await axios.get<{ policies: ShopPolicy[] }>(`/v2/agent/policies`, {
+        params: { shop_id: shop.id },
+      });
+      setPolicies(response.data.policies || []);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || "Failed to load approval policies");
+    }
+  }, [shop?.id]);
+
   useEffect(() => {
     if (!shop?.id) return;
     refreshPendingApprovals();
     refreshBriefing();
-  }, [shop?.id, refreshPendingApprovals, refreshBriefing]);
+    refreshPolicies();
+  }, [shop?.id, refreshPendingApprovals, refreshBriefing, refreshPolicies]);
 
   useEffect(() => {
     if (!shop?.id) return;
@@ -130,6 +189,7 @@ const AgentInbox: React.FC = () => {
       setMessages([buildIntroMessage()]);
       setFeedEvents([]);
       setPendingApprovals([]);
+      setPolicies([]);
       setBriefing(null);
       setStreamedInsightItems([]);
       setThinkingSteps([]);
@@ -142,6 +202,45 @@ const AgentInbox: React.FC = () => {
       return [buildIntroMessage()];
     });
   }, [shop?.id]);
+
+  const handlePolicyModeChange = useCallback(
+    async (policy: ShopPolicy, nextMode: string) => {
+      if (!shop?.id || !policy.policy_key || nextMode === policy.mode) return;
+
+      setError(null);
+      setSavingPolicyKey(policy.policy_key);
+      try {
+        const response = await axios.put<{ policy: ShopPolicy }>(
+          `/v2/agent/policies/${encodeURIComponent(policy.policy_key)}`,
+          {
+            shop_id: shop.id,
+            mode: nextMode,
+          },
+        );
+        const updatedPolicy = response.data.policy;
+        setPolicies((prev) =>
+          prev.map((item) => (item.policy_key === updatedPolicy.policy_key ? updatedPolicy : item))
+        );
+        addFeedEvent({
+          type: "system",
+          title: "Policy updated",
+          description: `${policy.title} is now set to ${labelForPolicyMode(updatedPolicy.mode)}.`,
+          payload: updatedPolicy,
+        });
+      } catch (err: any) {
+        const detail = err?.response?.data?.detail || err?.message || "Failed to update approval policy";
+        setError(detail);
+        addFeedEvent({
+          type: "error",
+          title: "Policy update failed",
+          description: detail,
+        });
+      } finally {
+        setSavingPolicyKey(null);
+      }
+    },
+    [addFeedEvent, shop?.id]
+  );
 
   useEffect(() => {
     if (!shop?.id) return;
@@ -308,12 +407,10 @@ const AgentInbox: React.FC = () => {
           }
 
           if (eventType === "approval_required") {
-            const approval: PendingApproval = {
-              action_id: eventJson.details?.action_id,
-              action: String(eventJson.action || eventJson.details?.action || "pending_action"),
-              details: (eventJson.details?.details || eventJson.details || {}) as Record<string, unknown>,
-              shop_id: Number(eventJson.details?.shop_id || shop.id),
-            };
+            const approval = normalizePendingApproval(
+              (eventJson.details || eventJson) as Record<string, any>,
+              shop.id,
+            );
 
             setPendingApprovals((prev) => {
               const exists = prev.some((item) => item.action_id && item.action_id === approval.action_id);
@@ -580,11 +677,17 @@ const AgentInbox: React.FC = () => {
       const eventType = String(event.type || "");
 
       if (eventType === "approval_required") {
+        const approval = normalizePendingApproval((event.details || event) as Record<string, any>, shop?.id || 0);
+        setPendingApprovals((prev) => {
+          const exists = prev.some((item) => item.action_id && item.action_id === approval.action_id);
+          if (exists) return prev;
+          return [approval, ...prev];
+        });
         addFeedEvent({
           type: "approval_required",
           title: "Approval required",
-          description: `Action '${String(event.action || event.details?.action || "pending_action")}' is waiting for your decision.`,
-          payload: event,
+          description: `Action '${approval.action}' is waiting for your decision.`,
+          payload: approval,
         });
         void refreshPendingApprovals();
         return;
@@ -624,12 +727,42 @@ const AgentInbox: React.FC = () => {
       }
 
       if (eventType === "tool_result") {
-        addFeedEvent({
-          type: "tool_result",
-          title: `Tool result: ${String(event.tool || "unknown")}`,
-          description: "Tool execution completed.",
-          payload: event,
-        });
+        const eventTimestamp = String(event.timestamp || nowIso());
+        const outcomeEvent = buildStreamToolResultFeedEvent(
+          {
+            tool: event.tool,
+            result: event.result,
+            agent: event.agent,
+          },
+          eventTimestamp,
+        );
+        if (outcomeEvent) {
+          addFeedEvent({
+            type: outcomeEvent.type,
+            title: outcomeEvent.title,
+            description: outcomeEvent.description,
+            payload: outcomeEvent.payload,
+          });
+        } else {
+          addFeedEvent({
+            type: "tool_result",
+            title: `Tool result: ${String(event.tool || "unknown")}`,
+            description: "Tool execution completed.",
+            payload: event,
+          });
+        }
+
+        const outcomeInsight = buildStreamToolResultInsight(
+          {
+            tool: event.tool,
+            result: event.result,
+            agent: event.agent,
+          },
+          eventTimestamp,
+        );
+        if (outcomeInsight) {
+          setStreamedInsightItems((prev) => [outcomeInsight, ...prev]);
+        }
         setThinkingSteps((prev) =>
           prev.map((s) =>
             s.label === `Calling ${String(event.tool || "unknown")}...`
@@ -659,7 +792,7 @@ const AgentInbox: React.FC = () => {
         return;
       }
     },
-    [addFeedEvent, refreshPendingApprovals]
+    [addFeedEvent, refreshPendingApprovals, shop?.id]
   );
 
   const handleChatHistoryChange = useCallback((history: any[]) => {
@@ -773,6 +906,112 @@ const AgentInbox: React.FC = () => {
           <Grid size={{ xs: 12, xl: 4.5 }}>
             <Stack spacing={1.5}>
               <OwnerBriefing briefing={briefing} onAction={handleBriefingAction} />
+              {shop?.id && (
+                <Card
+                  variant="outlined"
+                  sx={{
+                    borderRadius: 3,
+                    borderColor: panelCardBorder,
+                    bgcolor: panelCardBg,
+                    backdropFilter: "blur(20px)",
+                  }}
+                >
+                  <CardContent sx={{ py: 1.5 }}>
+                    <Stack spacing={1.25}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                        <Box>
+                          <Typography variant="h6">Approval Policies</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Choose what the agent team can run automatically for this shop.
+                          </Typography>
+                        </Box>
+                        {savingPolicyKey ? (
+                          <CircularProgress size={18} />
+                        ) : (
+                          <Chip
+                            size="small"
+                            label={`${policies.length} actions`}
+                            sx={{
+                              bgcolor: alpha(brandPrimary, 0.14),
+                              color: brandPrimary,
+                              border: `1px solid ${alpha(brandPrimary, 0.22)}`,
+                              fontWeight: 700,
+                            }}
+                          />
+                        )}
+                      </Stack>
+                      <Divider sx={{ borderColor: alpha(brandPrimary, 0.12) }} />
+                      {policies.length === 0 ? (
+                        <Stack spacing={1}>
+                          <Typography variant="body2" color="text.secondary">
+                            No approval policies are available for this shop yet.
+                          </Typography>
+                          <Button size="small" onClick={() => void refreshPolicies()} sx={{ alignSelf: "flex-start" }}>
+                            Retry
+                          </Button>
+                        </Stack>
+                      ) : (
+                        policies.map((policy) => {
+                          const isSaving = savingPolicyKey === policy.policy_key;
+                          return (
+                            <Box
+                              key={policy.policy_key}
+                              sx={{
+                                p: 1.25,
+                                borderRadius: 2.5,
+                                border: `1px solid ${alpha(brandPrimary, 0.12)}`,
+                                bgcolor: alpha(brandPrimary, 0.04),
+                              }}
+                            >
+                              <Stack spacing={1}>
+                                <Stack
+                                  direction={{ xs: "column", md: "row" }}
+                                  justifyContent="space-between"
+                                  spacing={1}
+                                >
+                                  <Box sx={{ minWidth: 0 }}>
+                                    <Typography variant="subtitle2" sx={{ color: brandPrimary }}>
+                                      {policy.title}
+                                    </Typography>
+                                    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" mt={0.5}>
+                                      <Chip size="small" variant="outlined" label={policy.category} />
+                                      <Chip size="small" variant="outlined" label={`${policy.risk_level || "medium"} risk`} />
+                                      <Chip
+                                        size="small"
+                                        variant="outlined"
+                                        label={policy.explicit ? "Custom mode" : `Default: ${labelForPolicyMode(policy.default_mode)}`}
+                                      />
+                                    </Stack>
+                                  </Box>
+                                  <TextField
+                                    select
+                                    size="small"
+                                    label="Mode"
+                                    value={policy.mode}
+                                    disabled={isSaving}
+                                    onChange={(event) => void handlePolicyModeChange(policy, event.target.value)}
+                                    sx={{ minWidth: { xs: "100%", md: 220 } }}
+                                  >
+                                    {(policy.supported_modes || []).map((mode) => (
+                                      <MenuItem key={mode} value={mode}>
+                                        {labelForPolicyMode(mode)}
+                                      </MenuItem>
+                                    ))}
+                                  </TextField>
+                                </Stack>
+                                <Typography variant="caption" color="text.secondary">
+                                  Current mode: {labelForPolicyMode(policy.mode)}
+                                  {isSaving ? " · Saving..." : ""}
+                                </Typography>
+                              </Stack>
+                            </Box>
+                          );
+                        })
+                      )}
+                    </Stack>
+                  </CardContent>
+                </Card>
+              )}
               <InsightsPanel items={insightItems} />
               {latestPending.length > 0 && (
                 <Card

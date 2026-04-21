@@ -63,7 +63,7 @@ def _pending_policy_payload(action, details, *, shop_id=41, mode="require_approv
         "shop_id": shop_id,
         "policy_key": f"approval.{action}",
         "policy_mode": mode,
-        "category": "finance" if action in {"create_invoice", "record_payment"} else "operations",
+        "category": "finance" if action in {"create_invoice", "record_payment", "process_refund"} else "operations",
         "title": action.replace("_", " ").title(),
         "risk_level": "high" if action == "close_queue" else "medium",
         "urgency": "high" if action == "close_queue" else "normal",
@@ -576,6 +576,161 @@ def test_approve_route_executes_finance_invoice_action():
     assert payload["agent"] == "finance"
     assert payload["tool_results"]["status"] == "created"
     assert payload["tool_results"]["invoice_id"] == 100
+
+
+def test_chat_route_requires_approval_for_finance_refund():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2,
+            "_create_chat_work_context",
+            return_value={
+                "goal_id": 981,
+                "run_id": 982,
+                "execution_mode": "interactive",
+                "trigger_source": "chat",
+                "event_context": {"trigger_source": "chat", "goal_id": 981, "run_id": 982},
+            },
+        ),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_finalize_chat_work_context", side_effect=lambda **kwargs: kwargs["pending_action"]),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch.object(agent_v2.db_interface, "get_shop_live_wait_metrics", return_value={}),
+        patch("agents.supervisor.get_conversation_history", return_value=[]),
+        patch("agents.supervisor.save_conversation_turn", return_value=None),
+        patch(
+            "agents.supervisor.get_llm",
+            return_value=_FakeLLM(
+                RoutingDecision(
+                    thought_process="Refunds route to finance.",
+                    next_agent="finance",
+                    is_followup=False,
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.get_llm",
+            return_value=_FakeLLM(
+                SpecialistPlan(
+                    operation="process_refund",
+                    arguments={"payment_id": 77, "refund_amount": 12.5, "reason": "Duplicate charge"},
+                    requires_clarification=False,
+                    clarification_question="",
+                    rationale="Owner wants to issue a refund.",
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.approval_policy.build_pending_approval",
+            return_value=_pending_policy_payload(
+                "process_refund",
+                {"payment_id": 77, "refund_amount": 12.5, "reason": "Duplicate charge"},
+            ),
+        ),
+    ):
+        response = client.post(
+            "/api/v2/agent/chat",
+            json={"message": "Refund payment 77 for 12.50 because it was a duplicate charge", "shop_id": 41},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["agent"] == "finance"
+    assert payload["approval_required"] is True
+    assert payload["pending_action"]["action"] == "process_refund"
+    assert payload["pending_action"]["policy_key"] == "approval.process_refund"
+
+
+def test_approve_route_executes_finance_refund_action():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    def _passthrough_finalize(**kwargs):
+        return kwargs["pending_action"]
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2,
+            "_create_chat_work_context",
+            return_value={
+                "goal_id": 991,
+                "run_id": 992,
+                "execution_mode": "interactive",
+                "trigger_source": "chat",
+                "event_context": {"trigger_source": "chat", "goal_id": 991, "run_id": 992},
+            },
+        ),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_finalize_chat_work_context", side_effect=_passthrough_finalize),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch.object(agent_v2.db_interface, "get_shop_live_wait_metrics", return_value={}),
+        patch.object(agent_v2, "_record_approval_decision", return_value=None),
+        patch("agents.supervisor.get_conversation_history", return_value=[]),
+        patch("agents.supervisor.save_conversation_turn", return_value=None),
+        patch(
+            "agents.supervisor.get_llm",
+            return_value=_FakeLLM(
+                RoutingDecision(
+                    thought_process="Refunds route to finance.",
+                    next_agent="finance",
+                    is_followup=False,
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.get_llm",
+            return_value=_FakeLLM(
+                SpecialistPlan(
+                    operation="process_refund",
+                    arguments={"payment_id": 77, "refund_amount": 12.5, "reason": "Duplicate charge"},
+                    requires_clarification=False,
+                    clarification_question="",
+                    rationale="Owner wants to issue a refund.",
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.approval_policy.build_pending_approval",
+            return_value=_pending_policy_payload(
+                "process_refund",
+                {"payment_id": 77, "refund_amount": 12.5, "reason": "Duplicate charge"},
+            ),
+        ),
+        patch(
+            "agents.supervisor.finance_tools.process_refund",
+            return_value={
+                "message": "Refunded payment 77 for $12.50. Payment is now partially refunded.",
+                "status": "partially_refunded",
+                "payment_id": 77,
+                "refund_amount": 12.5,
+            },
+        ),
+    ):
+        create_response = client.post(
+            "/api/v2/agent/chat",
+            json={"message": "Refund payment 77 for 12.50 because it was a duplicate charge", "shop_id": 41},
+        )
+        assert create_response.status_code == 200
+
+        pending_action = create_response.json()["pending_action"]
+        approve_response = client.post(
+            "/api/v2/agent/approve",
+            json={
+                "shop_id": 41,
+                "action_id": pending_action["action_id"],
+                "approved": True,
+                "reason": "Approved",
+            },
+        )
+
+    assert approve_response.status_code == 200
+    payload = approve_response.json()
+    assert payload["status"] == "approved"
+    assert payload["agent"] == "finance"
+    assert payload["tool_results"]["status"] == "partially_refunded"
+    assert payload["tool_results"]["payment_id"] == 77
 
 
 def test_history_route_returns_checkpoint_messages_after_chat():

@@ -99,6 +99,23 @@ class FinanceMCPClient:
             },
         )
 
+    def process_refund(
+        self,
+        shop_id: int,
+        payment_id: int,
+        refund_amount: Optional[float] = None,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return self._post(
+            "/payments/refund",
+            {
+                "shop_id": shop_id,
+                "payment_id": payment_id,
+                "refund_amount": refund_amount,
+                "reason": reason,
+            },
+        )
+
     def list_invoices(self, shop_id: int, status: Optional[str] = None, limit: int = 20) -> Dict[str, Any]:
         return self._post("/invoices/list", {"shop_id": shop_id, "status": status, "limit": limit})
 

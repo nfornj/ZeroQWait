@@ -871,6 +871,17 @@ def _execute_approved_action(state: AgentState, pending: Dict[str, Any]) -> Dict
             notes=str(details.get("notes")) if details.get("notes") not in (None, "") else None,
         )
 
+    if action == "process_refund":
+        payment_id = details.get("payment_id")
+        if payment_id in (None, ""):
+            return {"error": "process_refund requires payment_id in details"}
+        return finance_tools.process_refund(
+            shop_id=shop_id,
+            payment_id=int(payment_id),
+            refund_amount=float(details["refund_amount"]) if details.get("refund_amount") not in (None, "") else None,
+            reason=str(details.get("reason")) if details.get("reason") not in (None, "") else None,
+        )
+
     return {"error": f"Unsupported approval action: {action}"}
 
 

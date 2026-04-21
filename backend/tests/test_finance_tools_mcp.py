@@ -45,6 +45,17 @@ def test_customer_search_delegates_to_finance_mcp():
     client.search_clients.assert_called_once_with(41, "Jordan")
 
 
+def test_process_refund_delegates_to_finance_mcp():
+    client = Mock()
+    client.process_refund.return_value = {"status": "refunded", "payment_id": 77, "shop_id": 41}
+
+    with patch("agents.tools.finance_tools._get_finance_client", return_value=client):
+        result = finance_tools.process_refund(41, 77, refund_amount=12.5, reason="Duplicate charge")
+
+    assert result["payment_id"] == 77
+    client.process_refund.assert_called_once_with(41, 77, refund_amount=12.5, reason="Duplicate charge")
+
+
 def test_top_clients_delegates_to_finance_mcp():
     client = Mock()
     client.get_top_clients.return_value = {
