@@ -234,20 +234,24 @@ echo "==> Deployment successful"
 echo "    Frontend: http://localhost:${FRONTEND_PUBLISHED_PORT}"
 echo "    Backend : http://localhost:${BACKEND_PUBLISHED_PORT}"
 
-ARCHIVE_SERVICES="${TEST_ARCHIVE_SERVICES:-backend,frontend}"
+ARCHIVE_SERVICES="${TEST_ARCHIVE_SERVICES:-}"
 TEST_ARCHIVE_REGISTRY="${TEST_ARCHIVE_REGISTRY:-localhost:5000}"
-echo "==> Archiving test images to local registry (retain last 3 tags)"
-echo "==> Archive services: ${ARCHIVE_SERVICES}"
-sudo env \
-	REGISTRY="${TEST_ARCHIVE_REGISTRY}" \
-	SKIP_TESTS="true" \
-	IMAGE_NAMESPACE="test" \
-	RETAIN_VERSIONS="3" \
-	SKIP_REGISTRY_PRUNE="false" \
-	SERVICES="${ARCHIVE_SERVICES}" \
-	AUTO_COMMIT="false" \
-	ARGOCD_SYNC="false" \
-	bash "${PROJECT_ROOT}/deployment/scripts/run-local-pipeline.sh"
+if [[ -n "${ARCHIVE_SERVICES// /}" ]]; then
+	echo "==> Archiving test images to local registry (retain last 3 tags)"
+	echo "==> Archive services: ${ARCHIVE_SERVICES}"
+	sudo env \
+		REGISTRY="${TEST_ARCHIVE_REGISTRY}" \
+		SKIP_TESTS="true" \
+		IMAGE_NAMESPACE="test" \
+		RETAIN_VERSIONS="3" \
+		SKIP_REGISTRY_PRUNE="false" \
+		SERVICES="${ARCHIVE_SERVICES}" \
+		AUTO_COMMIT="false" \
+		ARGOCD_SYNC="false" \
+		bash "${PROJECT_ROOT}/deployment/scripts/run-local-pipeline.sh"
+else
+	echo "==> Skipping test image archive (set TEST_ARCHIVE_SERVICES to enable)"
+fi
 
 # Some container steps can leave root-owned files in the checkout workspace
 # (for example backend/.venv). Restore ownership so actions/checkout can clean
