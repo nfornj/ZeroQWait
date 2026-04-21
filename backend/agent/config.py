@@ -16,7 +16,7 @@ import hashlib
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, ModelRetry
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from db_interface import db_interface
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # --- Configuration ---
 ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
 model_name = os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M")
-model = OpenAIModel(
+model = OpenAIChatModel(
     model_name,
     provider=OpenAIProvider(base_url=ollama_url, api_key='ollama'),
 )
