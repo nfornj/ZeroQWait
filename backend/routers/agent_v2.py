@@ -419,9 +419,12 @@ def _persist_approval_request(
                 requested_by_user_id=user_id,
                 requested_by_agent=routed_agent or "supervisor",
                 action_type=str(pending_action.get("action") or "approval_required"),
-                title=_build_work_title(str(details.get("title") or pending_action.get("action") or "Approval required"), fallback="Approval required"),
-                rationale=str(details.get("reason") or details.get("rationale") or "") or None,
-                expected_impact=str(details.get("impact") or details.get("expected_impact") or "") or None,
+                title=_build_work_title(
+                    str(pending_action.get("title") or details.get("title") or pending_action.get("action") or "Approval required"),
+                    fallback="Approval required",
+                ),
+                rationale=str(pending_action.get("rationale") or details.get("reason") or details.get("rationale") or "") or None,
+                expected_impact=str(pending_action.get("expected_impact") or details.get("impact") or details.get("expected_impact") or "") or None,
                 urgency=str(details.get("urgency") or pending_action.get("urgency") or "normal"),
                 request_payload=pending_action,
             )

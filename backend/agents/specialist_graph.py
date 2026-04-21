@@ -9,6 +9,8 @@ from langchain_ollama import ChatOllama
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
+from . import approval_policy
+
 
 class SpecialistPlan(BaseModel):
     operation: str = Field(description="Exact operation name chosen from the supported specialist operations.")
@@ -123,11 +125,11 @@ def build_specialist_runnable(
         if result.get("requires_approval"):
             return {
                 "current_agent": agent_name,
-                "pending_approval": {
-                    "action": result.get("action"),
-                    "details": result.get("details", {}),
-                    "shop_id": shop_id,
-                },
+                "pending_approval": approval_policy.build_pending_approval(
+                    shop_id=shop_id,
+                    action=str(result.get("action") or "approval_required"),
+                    details=dict(result.get("details") or {}),
+                ),
                 "proposal_message": result.get("message"),
                 "needs_human_input": True,
                 "tool_results": None,

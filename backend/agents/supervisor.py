@@ -30,12 +30,39 @@ from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 from langgraph.types import Command, interrupt
 
+from database import SessionLocal
+from modules.agent.models import PolicyMode
+from modules.agent.work_repository import AgentWorkRepository
+
+from . import approval_policy
 from .state import AgentState
 from .tools import booking_tools, hr_tools
 from .memory_context import get_conversation_history, save_conversation_turn
 from redis_client import redis_client
 
 logger = logging.getLogger(__name__)
+
+
+def _create_policy_notification(state: AgentState, pending: Dict[str, Any], message: str) -> None:
+    shop_id = int(pending.get("shop_id") or state.get("tenant_id") or 0)
+    if shop_id <= 0:
+        return
+    event_context = dict(state.get("event_context") or {})
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        repo.create_notification(
+            shop_id=shop_id,
+            goal_id=event_context.get("goal_id"),
+            run_id=event_context.get("run_id"),
+            notification_type="policy_action_executed",
+            title=str(pending.get("title") or pending.get("action") or "Policy action executed"),
+            message=message,
+            severity=str(pending.get("risk_level") or "info"),
+            payload=pending,
+        )
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +849,46 @@ def approval_gate(state: AgentState) -> dict:
         return {
             "needs_human_input": False,
             "pending_approval": None,
+        }
+
+    policy_mode = str(pending.get("policy_mode") or PolicyMode.REQUIRE_APPROVAL.value)
+
+    if policy_mode == PolicyMode.FORBID.value:
+        action_title = str(pending.get("title") or pending.get("action") or "This action")
+        rejection_msg = AIMessage(
+            content=f"{action_title} is blocked by the current shop policy, so no changes were made."
+        )
+        return {
+            "messages": list(state.get("messages", [])) + [rejection_msg],
+            "needs_human_input": False,
+            "pending_approval": None,
+            "tool_results": {
+                "status": "forbidden",
+                "action": pending.get("action"),
+                "reason": "blocked_by_policy",
+                "policy_mode": policy_mode,
+            },
+        }
+
+    if policy_mode in {PolicyMode.ALLOW.value, PolicyMode.NOTIFY_ONLY.value, PolicyMode.SILENT.value}:
+        execution_result = _execute_approved_action(state, pending)
+        result_message = execution_result.get("message") or f"Action '{pending.get('action')}' was executed successfully."
+        if policy_mode == PolicyMode.NOTIFY_ONLY.value:
+            _create_policy_notification(state, pending, result_message)
+            content = f"I executed this automatically under your current policy and logged a notification. {result_message}"
+        elif policy_mode == PolicyMode.ALLOW.value:
+            content = f"I executed this automatically because your current policy allows it. {result_message}"
+        else:
+            content = str(result_message)
+
+        return {
+            "messages": list(state.get("messages", [])) + [AIMessage(content=content)],
+            "needs_human_input": False,
+            "pending_approval": None,
+            "tool_results": {
+                **execution_result,
+                "policy_mode": policy_mode,
+            },
         }
 
     # Pause execution and emit the action payload for owner confirmation.

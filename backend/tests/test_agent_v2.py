@@ -56,6 +56,23 @@ def _build_test_app_with_real_graph():
     return agent_v2, client
 
 
+def _pending_policy_payload(action, details, *, shop_id=41, mode="require_approval"):
+    return {
+        "action": action,
+        "details": details,
+        "shop_id": shop_id,
+        "policy_key": f"approval.{action}",
+        "policy_mode": mode,
+        "category": "operations",
+        "title": action.replace("_", " ").title(),
+        "risk_level": "high" if action == "close_queue" else "medium",
+        "urgency": "high" if action == "close_queue" else "normal",
+        "summary": "A policy-controlled action is pending.",
+        "rationale": "The agent proposed a high-impact operation.",
+        "expected_impact": "Shop operations will change after execution.",
+    }
+
+
 def test_chat_route_runs_supervisor_graph_through_finance_specialist():
     agent_v2, client = _build_test_app_with_real_graph()
 
@@ -243,6 +260,13 @@ def test_approve_route_resumes_pending_action_from_real_interrupt():
                 )
             ),
         ),
+        patch(
+            "agents.specialist_graph.approval_policy.build_pending_approval",
+            return_value=_pending_policy_payload(
+                "close_queue",
+                {"reason": "Owner requested closure"},
+            ),
+        ),
     ):
         create_response = client.post(
             "/api/v2/agent/chat",
@@ -270,6 +294,75 @@ def test_approve_route_resumes_pending_action_from_real_interrupt():
     assert payload["agent"] == "receptionist"
     assert payload["tool_results"]["status"] == "rejected"
     assert payload["message"] == "Action 'close_queue' was rejected. No changes were made."
+
+
+def test_chat_route_auto_executes_policy_allowed_action():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2,
+            "_create_chat_work_context",
+            return_value={
+                "goal_id": 951,
+                "run_id": 952,
+                "execution_mode": "interactive",
+                "trigger_source": "chat",
+                "event_context": {"trigger_source": "chat", "goal_id": 951, "run_id": 952},
+            },
+        ),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_finalize_chat_work_context", return_value=None),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch("agents.supervisor.get_conversation_history", return_value=[]),
+        patch("agents.supervisor.save_conversation_turn", return_value=None),
+        patch(
+            "agents.supervisor.get_llm",
+            return_value=_FakeLLM(
+                RoutingDecision(
+                    thought_process="Queue closure routes to booking.",
+                    next_agent="booking",
+                    is_followup=False,
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.get_llm",
+            return_value=_FakeLLM(
+                SpecialistPlan(
+                    operation="close_queue",
+                    arguments={"reason": "Owner requested closure"},
+                    requires_clarification=False,
+                    clarification_question="",
+                    rationale="High-impact queue closure.",
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.approval_policy.build_pending_approval",
+            return_value=_pending_policy_payload(
+                "close_queue",
+                {"reason": "Owner requested closure"},
+                mode="allow",
+            ),
+        ),
+        patch(
+            "agents.supervisor.booking_tools.close_queue",
+            return_value={"message": "Queue closed. Reason: Owner requested closure", "status": "closed"},
+        ),
+    ):
+        response = client.post(
+            "/api/v2/agent/chat",
+            json={"message": "Close the queue for today", "shop_id": 41},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["agent"] == "receptionist"
+    assert payload["approval_required"] is False
+    assert payload["pending_action"] is None
+    assert "executed this automatically" in payload["response"]
 
 
 def test_history_route_returns_checkpoint_messages_after_chat():

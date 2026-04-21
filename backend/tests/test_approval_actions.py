@@ -31,10 +31,28 @@ class _FakeLLM:
         return _FakeStructuredLLM(self._payload)
 
 
+def _pending_policy_payload(action, details, mode="require_approval"):
+    return {
+        "action": action,
+        "details": details,
+        "shop_id": 9,
+        "policy_key": f"approval.{action}",
+        "policy_mode": mode,
+        "category": "staffing" if action != "close_queue" else "operations",
+        "title": action.replace("_", " ").title(),
+        "risk_level": "medium",
+        "urgency": "normal",
+        "summary": "A policy-controlled action is pending.",
+        "rationale": "The agent proposed a high-impact operation.",
+        "expected_impact": "Shop operations will change after execution.",
+    }
+
+
 class TestApprovalActions(unittest.TestCase):
+    @patch("agents.specialist_graph.approval_policy.build_pending_approval")
     @patch("agents.specialist_graph.get_llm")
     @patch("agents.tools.hr_tools.assign_shift")
-    def test_hr_assign_shift_request_only_proposes_approval(self, mock_assign_shift, mock_get_llm):
+    def test_hr_assign_shift_request_only_proposes_approval(self, mock_assign_shift, mock_get_llm, mock_build_pending):
         mock_get_llm.return_value = _FakeLLM(
             {
                 "operation": "assign_shift",
@@ -48,6 +66,15 @@ class TestApprovalActions(unittest.TestCase):
                 "clarification_question": "",
                 "rationale": "Shift assignment request.",
             }
+        )
+        mock_build_pending.return_value = _pending_policy_payload(
+            "assign_shift",
+            {
+                "user_id": 4,
+                "start_time": "09:00",
+                "end_time": "17:00",
+                "date": "2026-04-21",
+            },
         )
 
         result = create_hr_runnable(shop_id=9).invoke(
@@ -144,6 +171,66 @@ class TestApprovalActions(unittest.TestCase):
         self.assertEqual(result["tool_results"]["status"], "rejected")
         self.assertIn("rejected", result["messages"][-1].content)
         mock_execute.assert_not_called()
+
+    @patch("agents.supervisor.interrupt")
+    @patch("agents.supervisor.booking_tools.close_queue")
+    def test_approval_gate_auto_executes_when_policy_allows(self, mock_close_queue, mock_interrupt):
+        mock_close_queue.return_value = {
+            "message": "Queue closed. Reason: Capacity reached",
+            "status": "closed",
+        }
+        state = cast(
+            AgentState,
+            {
+                "tenant_id": 9,
+                "messages": [HumanMessage(content="close the queue")],
+                "pending_approval": {
+                    **_pending_policy_payload(
+                        "close_queue",
+                        {"reason": "Capacity reached"},
+                        mode="allow",
+                    ),
+                    "title": "Close Active Queue",
+                },
+            },
+        )
+
+        result = supervisor.approval_gate(state)
+
+        self.assertFalse(result["needs_human_input"])
+        self.assertIsNone(result["pending_approval"])
+        self.assertEqual(result["tool_results"]["status"], "closed")
+        self.assertEqual(result["tool_results"]["policy_mode"], "allow")
+        self.assertIn("executed this automatically", result["messages"][-1].content)
+        mock_interrupt.assert_not_called()
+
+    @patch("agents.supervisor.interrupt")
+    @patch("agents.supervisor.booking_tools.close_queue")
+    def test_approval_gate_blocks_when_policy_forbids(self, mock_close_queue, mock_interrupt):
+        state = cast(
+            AgentState,
+            {
+                "tenant_id": 9,
+                "messages": [HumanMessage(content="close the queue")],
+                "pending_approval": {
+                    **_pending_policy_payload(
+                        "close_queue",
+                        {"reason": "Capacity reached"},
+                        mode="forbid",
+                    ),
+                    "title": "Close Active Queue",
+                },
+            },
+        )
+
+        result = supervisor.approval_gate(state)
+
+        self.assertFalse(result["needs_human_input"])
+        self.assertIsNone(result["pending_approval"])
+        self.assertEqual(result["tool_results"]["status"], "forbidden")
+        self.assertIn("blocked by the current shop policy", result["messages"][-1].content)
+        mock_interrupt.assert_not_called()
+        mock_close_queue.assert_not_called()
 
     @patch("agents.tools.hr_tools.SessionLocal")
     @patch("agents.tools.hr_tools.get_password_hash")
@@ -270,8 +357,9 @@ class TestApprovalActions(unittest.TestCase):
         self.assertEqual(result["employee"]["user"]["email"], result["email"])
         self.assertIn("Staff email", result["message"])
 
+    @patch("agents.specialist_graph.approval_policy.build_pending_approval")
     @patch("agents.specialist_graph.get_llm")
-    def test_hr_add_employee_request_proposes_without_email(self, mock_get_llm):
+    def test_hr_add_employee_request_proposes_without_email(self, mock_get_llm, mock_build_pending):
         mock_get_llm.return_value = _FakeLLM(
             {
                 "operation": "add_employee",
@@ -280,6 +368,10 @@ class TestApprovalActions(unittest.TestCase):
                 "clarification_question": "",
                 "rationale": "Add employee request.",
             }
+        )
+        mock_build_pending.return_value = _pending_policy_payload(
+            "add_employee",
+            {"name": "Neeraj Narayanan", "role": "employee", "email": None},
         )
 
         result = create_hr_runnable(shop_id=9).invoke(
