@@ -5,9 +5,20 @@ import secrets
 
 from database import SessionLocal
 from db_interface import db_interface
+from integrations.hr_mcp_client import HRMCPClient
 from modules.auth.models import User, UserRole
 from modules.employees.models import ShopEmployee
 from shared.auth_utils import get_password_hash
+
+
+_hr_mcp_client: Optional[HRMCPClient] = None
+
+
+def _get_hr_client() -> HRMCPClient:
+    global _hr_mcp_client
+    if _hr_mcp_client is None:
+        _hr_mcp_client = HRMCPClient()
+    return _hr_mcp_client
 
 
 def _candidate_username(name: str, email: str) -> str:
@@ -36,7 +47,7 @@ def _build_employee_email(username: str, shop_id: int, provided_email: Optional[
     return f"{username}.shop{shop_id}@staff.zeroqwait.local"
 
 
-def list_employees(shop_id: int, include_inactive: bool = False) -> Dict[str, Any]:
+def _local_list_employees(shop_id: int, include_inactive: bool = False) -> Dict[str, Any]:
     """List employees for a shop."""
     try:
         employees = db_interface.get_shop_employees(shop_id, is_active=None if include_inactive else True)
@@ -57,7 +68,7 @@ def list_employees(shop_id: int, include_inactive: bool = False) -> Dict[str, An
         return {"error": str(e)}
 
 
-def add_employee(
+def _local_add_employee(
     shop_id: int,
     name: str,
     email: Optional[str] = None,
@@ -131,7 +142,7 @@ def add_employee(
         session.close()
 
 
-def remove_employee(shop_id: int, user_id: int) -> Dict[str, Any]:
+def _local_remove_employee(shop_id: int, user_id: int) -> Dict[str, Any]:
     """Deactivate an employee after owner approval."""
     try:
         result = db_interface.update_shop_employee(shop_id, user_id, {"is_active": False})
@@ -147,7 +158,7 @@ def remove_employee(shop_id: int, user_id: int) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def get_shifts(shop_id: int, date: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
+def _local_get_shifts(shop_id: int, date: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
     """Get shifts for a shop or employee."""
     try:
         if date:
@@ -177,7 +188,7 @@ def get_shifts(shop_id: int, date: Optional[str] = None, user_id: Optional[int] 
         return {"error": str(e)}
 
 
-def assign_shift(shop_id: int, user_id: int, start_time: str, end_time: str, date: str) -> Dict[str, Any]:
+def _local_assign_shift(shop_id: int, user_id: int, start_time: str, end_time: str, date: str) -> Dict[str, Any]:
     """Assign a shift to an employee via db_interface after owner approval."""
     try:
         shift_data = {
@@ -198,7 +209,7 @@ def assign_shift(shop_id: int, user_id: int, start_time: str, end_time: str, dat
         return {"error": str(e)}
 
 
-def clock_in_out(shop_id: int, user_id: int, action: str) -> Dict[str, Any]:
+def _local_clock_in_out(shop_id: int, user_id: int, action: str) -> Dict[str, Any]:
     """Clock in or out an employee via db_interface."""
     try:
         if action == "clock_in":
@@ -245,3 +256,43 @@ def clock_in_out(shop_id: int, user_id: int, action: str) -> Dict[str, Any]:
             return {"error": f"Unknown action: {action}. Use 'clock_in' or 'clock_out'."}
     except Exception as e:
         return {"error": str(e)}
+
+
+def list_employees(shop_id: int, include_inactive: bool = False) -> Dict[str, Any]:
+    return _get_hr_client().list_employees(shop_id, include_inactive=include_inactive)
+
+
+def add_employee(
+    shop_id: int,
+    name: str,
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    role: str = "employee",
+    employee_code: Optional[str] = None,
+    created_by: Optional[int] = None,
+) -> Dict[str, Any]:
+    return _get_hr_client().add_employee(
+        shop_id,
+        name,
+        email=email,
+        phone=phone,
+        role=role,
+        employee_code=employee_code,
+        created_by=created_by,
+    )
+
+
+def remove_employee(shop_id: int, user_id: int) -> Dict[str, Any]:
+    return _get_hr_client().remove_employee(shop_id, user_id)
+
+
+def get_shifts(shop_id: int, date: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
+    return _get_hr_client().get_shifts(shop_id, date=date, user_id=user_id)
+
+
+def assign_shift(shop_id: int, user_id: int, start_time: str, end_time: str, date: str) -> Dict[str, Any]:
+    return _get_hr_client().assign_shift(shop_id, user_id, start_time, end_time, date)
+
+
+def clock_in_out(shop_id: int, user_id: int, action: str) -> Dict[str, Any]:
+    return _get_hr_client().clock_in_out(shop_id, user_id, action)

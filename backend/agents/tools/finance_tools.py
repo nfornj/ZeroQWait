@@ -2,7 +2,9 @@ from typing import Any, Dict, Optional, Tuple
 from datetime import datetime, timedelta
 import re
 import difflib
+
 from db_interface import db_interface
+from integrations.finance_mcp_client import FinanceMCPClient
 
 
 _MONTHS = {
@@ -26,6 +28,15 @@ _TIME_WINDOW_KEYWORDS = [
     "week", "weekly", "month", "monthly", "quarter", "quarterly",
     "year", "yearly", "annual", "months", "years",
 ]
+
+_finance_mcp_client: Optional[FinanceMCPClient] = None
+
+
+def _get_finance_client() -> FinanceMCPClient:
+    global _finance_mcp_client
+    if _finance_mcp_client is None:
+        _finance_mcp_client = FinanceMCPClient()
+    return _finance_mcp_client
 
 
 def _normalize_window_query(query: str) -> str:
@@ -121,7 +132,7 @@ def extract_requested_date(query: str, now: Optional[datetime] = None) -> Option
     return None
 
 
-def daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
+def _local_daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
     """Get daily revenue via db_interface.
     
     For today's date, queries queue_items in real-time (daily_analytics
@@ -365,7 +376,7 @@ def _bucket_key(dt_value: datetime, granularity: str) -> str:
     return dt_value.strftime("%Y-%m-%d")
 
 
-def trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
+def _local_trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
     """Dynamic finance trend query backed by DailyAnalytics aggregation.
     
     For windows that include today, supplements batch daily_analytics
@@ -496,7 +507,7 @@ def trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, Any]:
+def _local_weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, Any]:
     """Get weekly revenue summary.
     
     Supplements batch daily_analytics with real-time queue_items
@@ -579,7 +590,7 @@ def weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, 
         return {"error": str(e)}
 
 
-def top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
+def _local_top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
     """Get top services by revenue."""
     try:
         services = db_interface.get_shop_services(shop_id, include_inactive=False)
@@ -593,7 +604,7 @@ def top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
+def _local_customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
     """Get customer metrics for a parsed time window.
     
     Uses real-time queue_items data when the window includes today
@@ -698,7 +709,7 @@ def customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any
             session.close()
 
 
-def export_report(shop_id: int, format: str = "csv") -> Dict[str, Any]:
+def _local_export_report(shop_id: int, format: str = "csv") -> Dict[str, Any]:
     """Export analytics report."""
     try:
         return {
@@ -711,7 +722,7 @@ def export_report(shop_id: int, format: str = "csv") -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def create_invoice(
+def _local_create_invoice(
     shop_id: int,
     service_name: str,
     unit_price: float,
@@ -738,7 +749,7 @@ def create_invoice(
         return {"error": str(e)}
 
 
-def record_payment(
+def _local_record_payment(
     shop_id: int,
     amount: float,
     method: str = "cash",
@@ -776,7 +787,7 @@ def record_payment(
         return {"error": str(e)}
 
 
-def list_invoices(
+def _local_list_invoices(
     shop_id: int,
     status: Optional[str] = None,
     limit: int = 20,
@@ -792,7 +803,7 @@ def list_invoices(
         return {"error": str(e)}
 
 
-def get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
+def _local_get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
     """Get POS (point of sale) summary for a given day."""
     try:
         from modules.payments.models import Payment, PaymentStatus
@@ -832,3 +843,95 @@ def get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
             session.close()
     except Exception as e:
         return {"error": str(e)}
+
+
+def daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
+    return _get_finance_client().daily_revenue(shop_id, date)
+
+
+def weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, Any]:
+    return _get_finance_client().weekly_summary(shop_id, week_start)
+
+
+def trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
+    return _get_finance_client().trend_summary(shop_id, query)
+
+
+def top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
+    return _get_finance_client().top_services(shop_id, limit)
+
+
+def customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
+    return _get_finance_client().customer_metrics(shop_id, query=query)
+
+
+def export_report(shop_id: int, format: str = "csv") -> Dict[str, Any]:
+    return _get_finance_client().export_report(shop_id, format)
+
+
+def create_invoice(
+    shop_id: int,
+    service_name: str,
+    unit_price: float,
+    quantity: int = 1,
+    customer_id: Optional[int] = None,
+    tax_rate: float = 0.0,
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    return _get_finance_client().create_invoice(
+        shop_id,
+        service_name,
+        unit_price,
+        quantity=quantity,
+        customer_id=customer_id,
+        tax_rate=tax_rate,
+        notes=notes,
+    )
+
+
+def record_payment(
+    shop_id: int,
+    amount: float,
+    method: str = "cash",
+    invoice_id: Optional[int] = None,
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    return _get_finance_client().record_payment(
+        shop_id,
+        amount,
+        method=method,
+        invoice_id=invoice_id,
+        notes=notes,
+    )
+
+
+def list_invoices(
+    shop_id: int,
+    status: Optional[str] = None,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    return _get_finance_client().list_invoices(shop_id, status=status, limit=limit)
+
+
+def get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
+    return _get_finance_client().get_pos_summary(shop_id, date=date)
+
+
+def get_inactive_clients(shop_id: int, days_threshold: int = 45) -> Dict[str, Any]:
+    return _get_finance_client().get_inactive_clients(shop_id, days_threshold=days_threshold)
+
+
+def get_top_clients(shop_id: int, limit: int = 10) -> Dict[str, Any]:
+    return _get_finance_client().get_top_clients(shop_id, limit=limit)
+
+
+def get_visit_frequency_summary(shop_id: int) -> Dict[str, Any]:
+    return _get_finance_client().get_visit_frequency_summary(shop_id)
+
+
+def get_client_profile(shop_id: int, client_id: int) -> Dict[str, Any]:
+    return _get_finance_client().get_client_profile(shop_id, client_id)
+
+
+def search_clients(shop_id: int, name: str) -> Dict[str, Any]:
+    return _get_finance_client().search_clients(shop_id, name)

@@ -17,6 +17,9 @@ resources:
   - asr-deployment.yaml
   - asr-service.yaml
   - tts-deployment.yaml
+  - booking-mcp-deployment.yaml
+  - finance-mcp-deployment.yaml
+  - hr-mcp-deployment.yaml
   - voice-mcp-deployment.yaml
   - ingress-traefik.yaml
   - network-policy.yaml

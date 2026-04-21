@@ -48,6 +48,8 @@ services:
       - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
       - TTS_SERVICE_URL=${TTS_SERVICE_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30880}
       - BOOKING_MCP_URL=${BOOKING_MCP_URL:-http://booking-mcp:8890}
+      - FINANCE_MCP_URL=${FINANCE_MCP_URL:-http://finance-mcp:8891}
+      - HR_MCP_URL=${HR_MCP_URL:-http://hr-mcp:8892}
       - ODOO_URL=${ODOO_URL:-http://odoo:8069}
       - ODOO_DB=${ODOO_DB:-odoo}
       - ODOO_USER=${ODOO_USER:-admin}
@@ -62,6 +64,10 @@ services:
         condition: service_healthy
       booking-mcp:
         condition: service_healthy
+      finance-mcp:
+        condition: service_healthy
+      hr-mcp:
+        condition: service_healthy
     restart: unless-stopped
 
   booking-mcp:
@@ -74,6 +80,36 @@ services:
       - DB_HOST=db
       - HOST=0.0.0.0
       - PORT=8890
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  finance-mcp:
+    build:
+      context: .
+      dockerfile: ./mcps/finance/Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      - DB_HOST=db
+      - HOST=0.0.0.0
+      - PORT=8891
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  hr-mcp:
+    build:
+      context: .
+      dockerfile: ./mcps/hr/Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      - DB_HOST=db
+      - HOST=0.0.0.0
+      - PORT=8892
     depends_on:
       db:
         condition: service_healthy

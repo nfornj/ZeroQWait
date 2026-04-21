@@ -1,9 +1,7 @@
 """HR MCP server for employee and shift operations."""
 
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-from uuid import uuid4
 import logging
 import os
 import sys
@@ -18,11 +16,7 @@ BACKEND_DIR = ROOT / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from db_interface import db_interface
-import models  # noqa: F401
-from modules.auth.models import UserRole
-from modules.auth.schemas import UserCreate
-from modules.auth.service import auth_service
+from agents.tools import hr_tools
 
 
 logging.basicConfig(level=logging.INFO)
@@ -41,10 +35,11 @@ class ListEmployeesRequest(ShopRequest):
 
 class AddEmployeeRequest(ShopRequest):
     name: str
-    email: str
+    email: Optional[str] = None
     phone: Optional[str] = None
     role: str = "employee"
     employee_code: Optional[str] = None
+    created_by: Optional[int] = None
 
 
 class RemoveEmployeeRequest(ShopRequest):
@@ -68,89 +63,46 @@ class ClockRequest(ShopRequest):
     action: str
 
 
-def _parse_role(raw_role: str) -> UserRole:
-    normalized = raw_role.strip().lower()
-    return UserRole.EMPLOYEE if normalized not in UserRole._value2member_map_ else UserRole(normalized)
-
-
 @app.post("/employees/list")
 async def rest_list_employees(req: ListEmployeesRequest):
-    employees = db_interface.get_shop_employees(req.shop_id, is_active=None if req.include_inactive else True)
-    return {"shop_id": req.shop_id, "count": len(employees), "employees": employees}
+    result = hr_tools._local_list_employees(req.shop_id, include_inactive=req.include_inactive)
+    employees = list(result.get("employees") or [])
+    return {**result, "count": len(employees)}
 
 
 @app.post("/employees/add")
 async def rest_add_employee(req: AddEmployeeRequest):
-    username_seed = req.email.split("@")[0].replace(".", "_")
-    username = f"{username_seed}_{uuid4().hex[:6]}"
-    user = auth_service.create_user(
-        UserCreate(
-            email=req.email,
-            username=username,
-            password=uuid4().hex,
-            role=_parse_role(req.role),
-        )
+    return hr_tools._local_add_employee(
+        req.shop_id,
+        req.name,
+        email=req.email,
+        phone=req.phone,
+        role=req.role,
+        employee_code=req.employee_code,
+        created_by=req.created_by,
     )
-    employee = db_interface.create_shop_employee(
-        {
-            "shop_id": req.shop_id,
-            "user_id": user.id,
-            "is_active": True,
-            "employee_code": req.employee_code or f"EMP-{user.id}",
-        }
-    )
-    return {
-        "shop_id": req.shop_id,
-        "user": user.model_dump(mode="json"),
-        "employee": employee,
-        "display_name": req.name,
-        "phone": req.phone,
-    }
 
 
 @app.post("/employees/remove")
 async def rest_remove_employee(req: RemoveEmployeeRequest):
-    updated = db_interface.update_shop_employee(req.shop_id, req.user_id, {"is_active": False})
-    if not updated:
-        return {"success": False, "error": "Employee not found"}
-    return {"success": True, "shop_id": req.shop_id, "user_id": req.user_id}
+    return hr_tools._local_remove_employee(req.shop_id, req.user_id)
 
 
 @app.post("/shifts/list")
 async def rest_get_shifts(req: ShiftListRequest):
-    target_date = datetime.fromisoformat(req.date) if req.date else datetime.now(timezone.utc)
-    start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end = start + timedelta(days=1)
-    shifts = db_interface.get_employee_shifts(req.shop_id, start, end, req.user_id)
-    return {"shop_id": req.shop_id, "count": len(shifts), "shifts": shifts}
+    result = hr_tools._local_get_shifts(req.shop_id, req.date, req.user_id)
+    shifts = list(result.get("shifts") or [])
+    return {**result, "count": len(shifts)}
 
 
 @app.post("/shifts/assign")
 async def rest_assign_shift(req: AssignShiftRequest):
-    shift_date = datetime.fromisoformat(req.date)
-    start_hour, start_minute = [int(part) for part in req.start_time.split(":", 1)]
-    end_hour, end_minute = [int(part) for part in req.end_time.split(":", 1)]
-    clock_in = shift_date.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
-    clock_out = shift_date.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
-    shift = db_interface.create_employee_shift(
-        {"shop_id": req.shop_id, "user_id": req.user_id, "clock_in": clock_in, "clock_out": clock_out}
-    )
-    return {"success": True, "shift": shift}
+    return hr_tools._local_assign_shift(req.shop_id, req.user_id, req.start_time, req.end_time, req.date)
 
 
 @app.post("/shifts/clock")
 async def rest_clock_in_out(req: ClockRequest):
-    if req.action == "in":
-        shift = db_interface.create_employee_shift(
-            {"shop_id": req.shop_id, "user_id": req.user_id, "clock_in": datetime.now(timezone.utc)}
-        )
-        return {"success": True, "action": "in", "shift": shift}
-
-    active = db_interface.get_active_shift(req.user_id)
-    if not active:
-        return {"success": False, "error": "No active shift found"}
-    shift = db_interface.update_employee_shift(active["id"], {"clock_out": datetime.now(timezone.utc)})
-    return {"success": True, "action": "out", "shift": shift}
+    return hr_tools._local_clock_in_out(req.shop_id, req.user_id, req.action)
 
 
 @app.get("/health")
@@ -174,10 +126,11 @@ try:
     async def add_employee(
         shop_id: int,
         name: str,
-        email: str,
+        email: Optional[str] = None,
         phone: Optional[str] = None,
         role: str = "employee",
         employee_code: Optional[str] = None,
+        created_by: Optional[int] = None,
     ) -> dict:
         return await rest_add_employee(
             AddEmployeeRequest(
@@ -187,6 +140,7 @@ try:
                 phone=phone,
                 role=role,
                 employee_code=employee_code,
+                created_by=created_by,
             )
         )
 

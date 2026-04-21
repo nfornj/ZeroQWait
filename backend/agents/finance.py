@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional, Sequence
 from langchain_core.messages import BaseMessage
 
 from .specialist_graph import build_specialist_runnable
-from .tools import client_insights_tools, finance_tools
+from .tools import finance_tools
 
 logger = logging.getLogger(__name__)
 
@@ -127,21 +127,21 @@ def _build_finance_executor(shop_id: int):
         if operation == "get_pos_summary":
             return finance_tools.get_pos_summary(shop_id, _optional_str(arguments.get("date")))
         if operation == "get_inactive_clients":
-            return {"clients": client_insights_tools.get_inactive_clients(shop_id, _to_int(arguments.get("days_threshold")) or 45)}
+            return finance_tools.get_inactive_clients(shop_id, _to_int(arguments.get("days_threshold")) or 45)
         if operation == "get_top_clients":
-            return {"clients": client_insights_tools.get_top_clients(shop_id, _to_int(arguments.get("limit")) or 10)}
+            return finance_tools.get_top_clients(shop_id, _to_int(arguments.get("limit")) or 10)
         if operation == "get_visit_frequency_summary":
-            return client_insights_tools.get_visit_frequency_summary(shop_id)
+            return finance_tools.get_visit_frequency_summary(shop_id)
         if operation == "get_client_profile":
             client_id = _to_int(arguments.get("client_id"))
             if client_id is None:
                 return {"error": "get_client_profile requires client_id"}
-            return client_insights_tools.get_client_profile(shop_id, client_id)
+            return finance_tools.get_client_profile(shop_id, client_id)
         if operation == "search_clients":
             name = _optional_str(arguments.get("name") or arguments.get("query"))
             if not name:
                 return {"error": "search_clients requires a client name"}
-            return {"clients": client_insights_tools.get_client_search(shop_id, name)}
+            return finance_tools.search_clients(shop_id, name)
         return {"error": f"Unsupported finance operation: {operation}"}
 
     return executor

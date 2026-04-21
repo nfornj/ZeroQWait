@@ -8,6 +8,7 @@ from langchain_core.messages import HumanMessage
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from agents.finance import create_finance_runnable  # noqa: E402
+from agents.hr import create_hr_runnable  # noqa: E402
 from agents.receptionist import create_receptionist_runnable  # noqa: E402
 from agents.specialist_graph import SpecialistPlan  # noqa: E402
 
@@ -111,6 +112,58 @@ class TestExplicitSpecialistGraphs(unittest.TestCase):
         self.assertEqual(result["tool_results"]["total_revenue"], 245.0)
         self.assertIn("$245.00", result["messages"][-1].content)
         mock_daily_revenue.assert_called_once_with(9, "2026-04-20")
+
+    @patch("agents.specialist_graph.get_llm")
+    @patch("agents.tools.finance_tools.get_top_clients")
+    def test_finance_routes_top_clients_through_finance_tools(self, mock_get_top_clients, mock_get_llm):
+        mock_get_llm.return_value = _FakeLLM(
+            {
+                "operation": "get_top_clients",
+                "arguments": {"limit": 3},
+                "requires_clarification": False,
+                "clarification_question": "",
+                "rationale": "Owner wants best clients.",
+            }
+        )
+        mock_get_top_clients.return_value = {
+            "clients": [{"id": 3, "name": "Jordan", "visit_count": 8}],
+            "shop_id": 9,
+        }
+
+        result = create_finance_runnable(shop_id=9).invoke(
+            {"messages": [HumanMessage(content="Who are my top clients?")]}
+        )
+
+        self.assertEqual(result["current_agent"], "finance")
+        self.assertEqual(result["tool_results"]["clients"][0]["id"], 3)
+        self.assertIn("Jordan", result["messages"][-1].content)
+        mock_get_top_clients.assert_called_once_with(9, 3)
+
+    @patch("agents.specialist_graph.get_llm")
+    @patch("agents.tools.hr_tools.list_employees")
+    def test_hr_routes_employee_listing_through_hr_tools(self, mock_list_employees, mock_get_llm):
+        mock_get_llm.return_value = _FakeLLM(
+            {
+                "operation": "list_employees",
+                "arguments": {},
+                "requires_clarification": False,
+                "clarification_question": "",
+                "rationale": "Owner asked for the team list.",
+            }
+        )
+        mock_list_employees.return_value = {
+            "employees": [{"id": 5, "name": "Riley", "role": "employee"}],
+            "shop_id": 9,
+        }
+
+        result = create_hr_runnable(shop_id=9).invoke(
+            {"messages": [HumanMessage(content="Show me my employees")]} 
+        )
+
+        self.assertEqual(result["current_agent"], "hr")
+        self.assertEqual(result["tool_results"]["employees"][0]["id"], 5)
+        self.assertIn("Riley", result["messages"][-1].content)
+        mock_list_employees.assert_called_once_with(9, False)
 
 
 if __name__ == "__main__":

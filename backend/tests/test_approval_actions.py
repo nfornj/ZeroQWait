@@ -197,7 +197,7 @@ class TestApprovalActions(unittest.TestCase):
         session = SessionStub()
         mock_session_local.return_value = session
 
-        result = hr_tools.add_employee(
+        result = hr_tools._local_add_employee(
             shop_id=9,
             name="Casey Jones",
             email="casey@example.com",
@@ -257,7 +257,7 @@ class TestApprovalActions(unittest.TestCase):
         session = SessionStub()
         mock_session_local.return_value = session
 
-        result = hr_tools.add_employee(
+        result = hr_tools._local_add_employee(
             shop_id=41,
             name="Neeraj Narayanan",
             email=None,

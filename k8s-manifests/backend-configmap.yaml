@@ -14,6 +14,9 @@ data:
   MODEL_NAME: "qwen3:14b-q4_K_M"
   REDIS_HOST: "redis.zeroqwait.svc.cluster.local"
   REDIS_PORT: "6379"
+  BOOKING_MCP_URL: "http://booking-mcp.zeroqwait.svc.cluster.local:8890"
+  FINANCE_MCP_URL: "http://finance-mcp.zeroqwait.svc.cluster.local:8891"
+  HR_MCP_URL: "http://hr-mcp.zeroqwait.svc.cluster.local:8892"
   # All voice operations route through voice-mcp (the MCP voice gateway).
   # voice-mcp proxies to tts-service:8880 and asr-service:8000 internally.
   TTS_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881"
