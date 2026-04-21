@@ -127,7 +127,7 @@ class MasterAgent:
                 current_step = active_reg.get("step", "unknown")
                 if _CANCEL_REGISTRATION_RE.search(user_msg.strip()):
                     reg_agent._clear_session(session_id)
-                    cancel_msg = "Registration cancelled. How else can I help you?\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works"
+                    cancel_msg = "Registration cancelled. How else can I help you?\n\n1. **Register a Shop** — Set up your business and get your own AI agent team\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works"
                     processing_time = (datetime.now().timestamp() - start_time) * 1000
                     return {
                         "response": cancel_msg,
@@ -280,7 +280,7 @@ class MasterAgent:
                     )
             
             elif intent == 'GREETING':
-                final_text = "Hello! I'm ZeroQ, your queue management assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
+                final_text = "Hello! I'm ZeroQ, your AI operations assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business and get your own AI agent team\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
             
             elif intent == 'REGISTRATION':
                 final_text = await start_registration(
@@ -346,12 +346,12 @@ class MasterAgent:
                 raw_target = analysis.platform_target or 'pricing'
                 target = _target_aliases.get(raw_target, raw_target)
                 responses = {
-                    'pricing': "Here's our pricing! We offer three plans: Free ($0/mo), Premium ($29/mo), and Enterprise (custom).",
-                    'features': "Here are our features! Real-time queue management, AI wait times, SMS, analytics, and more.",
+                    'pricing': "Here's our pricing! Free gives you 1 shop and an AI receptionist, Premium unlocks the full AI agent team for $29/mo, and Enterprise is custom.",
+                    'features': "Here are our features! AI receptionist flows, live queue and appointment experiences, owner approvals, analytics, and voice interaction.",
                     'faq': "Here are our frequently asked questions!",
                     'testimonials': "Here's what our users are saying!"
                 }
-                final_text = responses.get(target, "ZeroQwait is a universal queue management platform. Check out our pricing and features!")
+                final_text = responses.get(target, "ZeroQwait gives service businesses an AI receptionist for customers and an AI workspace for owners. Check out our pricing and features!")
                 if target not in responses:
                     target = 'pricing'
                 deps.actions.append({'tool': 'navigate_to_page_section', 'result': {'target': target}, 'timestamp': datetime.now().isoformat()})
@@ -662,7 +662,7 @@ class MasterAgent:
             if _CANCEL_REGISTRATION_RE.search(user_msg.strip()):
                 reg_agent._clear_session(session_id)
                 logger.info(f"Registration cancelled by user at step={current_step}")
-                cancel_msg = "Registration cancelled. How else can I help you?\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works"
+                cancel_msg = "Registration cancelled. How else can I help you?\n\n1. **Register a Shop** — Set up your business and get your own AI agent team\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works"
                 async for event in _yield_sentences_with_tts(cancel_msg):
                     yield event
                 yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
@@ -830,7 +830,7 @@ class MasterAgent:
         
         # GREETING
         if intent == 'GREETING':
-            greeting_response = "Hello! I'm ZeroQ, your queue management assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
+            greeting_response = "Hello! I'm ZeroQ, your AI operations assistant. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business and get your own AI agent team\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
             async for event in _yield_sentences_with_tts(greeting_response):
                 yield event
             yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
@@ -921,12 +921,12 @@ class MasterAgent:
             target = _target_aliases.get(raw_target, raw_target)
             logger.info(f"Platform info intent (stream): raw={raw_target}, target={target}")
             responses = {
-                'pricing': "Here's our pricing! We offer three plans: **Free** ($0/mo) for basic queue management, **Premium** ($29/mo) with analytics and SMS notifications, and **Enterprise** (custom pricing) for multi-location businesses. Take a look below!",
-                'features': "Here are our features! ZeroQwait offers real-time queue management, AI-powered wait time estimates, SMS notifications, analytics dashboards, and more. Check them out below!",
+                'pricing': "Here's our pricing! **Free** gives you 1 shop and an AI receptionist, **Premium** ($29/mo) unlocks the full AI agent team plus analytics, and **Enterprise** is custom. Take a look below!",
+                'features': "Here are our features! ZeroQwait offers AI receptionist flows, live queue and appointment experiences, owner approvals, analytics dashboards, and voice interaction. Check them out below!",
                 'faq': "Here are our frequently asked questions! Take a look below for answers to common questions about ZeroQwait.",
                 'testimonials': "Here's what our users are saying! Check out the testimonials below."
             }
-            response_text = responses.get(target, "Great question! ZeroQwait is a universal queue management platform. Check out our pricing and features below!")
+            response_text = responses.get(target, "Great question! ZeroQwait gives service businesses an AI receptionist for customers and an AI workspace for owners. Check out our pricing and features below!")
             if target not in responses:
                 target = 'pricing'
             async for event in _yield_sentences_with_tts(response_text):

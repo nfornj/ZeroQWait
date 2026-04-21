@@ -321,7 +321,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
     return [
       {
         role: "ai",
-        text: "Welcome to ZeroQwait! I'm ZeroQ, your AI operations assistant. Here's what I can help you with:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?",
+        text: "Welcome to ZeroQwait! I'm ZeroQ, your AI operations assistant. Here's what I can help you with:\n\n1. **Register a Shop** — Set up your business and get your own AI agent team\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?",
         quickActions: DEFAULT_QUICK_ACTIONS,
       },
     ];
@@ -407,7 +407,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
           role: "ai",
           text: shopContext
             ? `Welcome to ${shopContext.name}. I'm ZeroQ, your AI concierge. Tell me your name, phone, and what service you need, and I'll add you to the queue.`
-            : "Welcome to ZeroQwait! I'm ZeroQ, your AI operations assistant. Here's what I can help you with:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?",
+            : "Welcome to ZeroQwait! I'm ZeroQ, your AI operations assistant. Here's what I can help you with:\n\n1. **Register a Shop** — Set up your business and get your own AI agent team\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?",
           quickActions: shopContext
             ? getShopQuickActions(shopContext.name)
             : DEFAULT_QUICK_ACTIONS,

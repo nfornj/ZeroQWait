@@ -144,8 +144,8 @@ export default function FAQ({ embedded = false }: { embedded?: boolean }) {
             >
               Yes. You can upgrade to Premium or Enterprise at any time from your dashboard settings.
               Your agent history, conversation checkpoints, and business data carry over seamlessly.
-              Premium unlocks the full Finance and HR agents; Enterprise adds custom agent workflows
-              and dedicated model tuning.
+              Premium unlocks the full Finance and HR agents; Enterprise adds dedicated onboarding,
+              rollout planning, and custom support.
             </Typography>
           </AccordionDetails>
         </Accordion>

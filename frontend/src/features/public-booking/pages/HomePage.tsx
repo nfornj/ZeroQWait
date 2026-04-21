@@ -63,8 +63,8 @@ const HomePage: React.FC = () => {
                 lineHeight: 1.1
               }}
             >
-              Skip the wait,
-              <br />serve smarter
+              Give your shop
+              <br />an AI team
             </Typography>
 
             <Typography
@@ -78,8 +78,8 @@ const HomePage: React.FC = () => {
                 lineHeight: 1.5
               }}
             >
-              Universal queue management for barbershops, salons, clinics, and more.
-              Manage your queues efficiently while customers check in online and track real-time wait times.
+              ZeroQwait gives service businesses an AI Receptionist for customers and an
+              owner-facing AI workspace for queue, booking, staffing, and daily operations.
             </Typography>
 
             <Box sx={{ mb: 6 }}>
@@ -105,7 +105,7 @@ const HomePage: React.FC = () => {
                   transition: 'all 0.3s ease-in-out'
                 }}
               >
-                Start Searching
+                Explore Shops
               </Button>
             </Box>
 
@@ -114,30 +114,30 @@ const HomePage: React.FC = () => {
               <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
-                    500+
+                    AI
                   </Typography>
                   <Typography variant="body1" color="text.secondary">
-                    Service Providers
+                    Receptionist for customers
                   </Typography>
                 </Box>
               </Box>
               <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'secondary.main' }}>
-                    10k+
+                    Live
                   </Typography>
                   <Typography variant="body1" color="text.secondary">
-                    Active Customers
+                    Queue and appointment flows
                   </Typography>
                 </Box>
               </Box>
               <Box sx={{ flex: 1, minWidth: '250px' }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main' }}>
-                    4.8★
+                    Owner
                   </Typography>
                   <Typography variant="body1" color="text.secondary">
-                    Average Rating
+                    Inbox, approvals, and analytics
                   </Typography>
                 </Box>
               </Box>
@@ -159,7 +159,7 @@ const HomePage: React.FC = () => {
                 color: 'text.primary'
               }}
             >
-              How ZeroQwait Works
+              What ZeroQwait Does Today
             </Typography>
             <Typography
               variant="h6"
@@ -170,7 +170,8 @@ const HomePage: React.FC = () => {
                 fontWeight: 400
               }}
             >
-              Managing queues and delighting customers is simple with our efficient 3-step process
+              The current product already supports an AI receptionist experience for customers and an
+              AI operating workspace for owners.
             </Typography>
           </Box>
 
@@ -207,11 +208,11 @@ const HomePage: React.FC = () => {
                   <LocationOnIcon sx={{ fontSize: 40, color: 'white' }} />
                 </Box>
                 <Typography variant="h5" sx={{ fontWeight: 600, mb: 2 }}>
-                  Register Your Shop
+                  Launch Your Shop Presence
                 </Typography>
                 <Typography variant="body1" color="text.secondary">
-                  Set up your business profile in minutes. Create your custom queue system
-                  with flexible settings for wait times and capacity management.
+                  Create your shop profile, publish a public page, and let customers find you,
+                  ask questions, join the queue, or book appointments online.
                 </Typography>
               </Card>
             </Box>
@@ -248,11 +249,11 @@ const HomePage: React.FC = () => {
                   <StarIcon sx={{ fontSize: 40, color: 'white' }} />
                 </Box>
                 <Typography variant="h5" sx={{ fontWeight: 600, mb: 2 }}>
-                  Manage Queue
+                  Run Daily Operations
                 </Typography>
                 <Typography variant="body1" color="text.secondary">
-                  Real-time dashboard to manage customer flow. Update wait times,
-                  process check-ins, and keep customers informed automatically.
+                  Owners can review queue status, analytics, approvals, appointments, and team updates
+                  from one AI-powered workspace instead of jumping between tools.
                 </Typography>
               </Card>
             </Box>
@@ -289,12 +290,12 @@ const HomePage: React.FC = () => {
                   <ScheduleIcon sx={{ fontSize: 40, color: 'white' }} />
                 </Box>
                 <Typography variant="h5" sx={{ fontWeight: 600, mb: 2 }}>
-                  Customers Check In
+                  Let Customers Self-Serve
                 </Typography>
                 <Typography variant="body1" color="text.secondary">
                   {isAuthenticated
-                    ? "Customers join your queue online and track their estimated wait time in real-time from anywhere."
-                    : "Let customers check in remotely and view live queue status, reducing crowding and improving satisfaction."
+                    ? "Customers can join queues, view live progress, and complete appointment booking flows from the browser."
+                    : "Customers can discover shops, join queues, and book appointments online without downloading an app."
                   }
                 </Typography>
               </Card>
@@ -321,23 +322,24 @@ const HomePage: React.FC = () => {
               >
                 <SmartToyIcon sx={{ fontSize: 60, mb: 2 }} />
                 <Typography variant="h3" sx={{ fontWeight: 700, mb: 2 }}>
-                  🎮 AI Queue Counter
+                  Experimental AI Camera Demo
                 </Typography>
                 <Typography variant="h6" sx={{ mb: 3, opacity: 0.9 }}>
-                  See AI in action! Our demo uses computer vision to count people in real-time.
+                  This is an optional demo showing how ZeroQwait experiments with computer vision for
+                  real-world queue sensing. It is separate from the core receptionist and owner-agent flows.
                 </Typography>
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body1" sx={{ mb: 1 }}>
-                    ✓ Real-time person detection
+                    ✓ Real-time person detection demo
                   </Typography>
                   <Typography variant="body1" sx={{ mb: 1 }}>
-                    ✓ Automatic wait time calculation
+                    ✓ Automatic people counting experiment
                   </Typography>
                   <Typography variant="body1" sx={{ mb: 1 }}>
-                    ✓ Works with camera on phone
+                    ✓ Works with a phone camera
                   </Typography>
                   <Typography variant="body1">
-                    ✓ Fun demo with toys or real people!
+                    ✓ Useful for testing AI-assisted queue sensing
                   </Typography>
                 </Box>
               </Box>
@@ -363,11 +365,11 @@ const HomePage: React.FC = () => {
                   <VideocamIcon sx={{ fontSize: { xs: 80, md: 100 }, color: 'primary.main' }} />
                 </Box>
                 <Typography variant="h4" sx={{ fontWeight: 600, mb: 3 }}>
-                  Try the Demo!
+                  Try the Experiment
                 </Typography>
                 <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-                  Experience the future of queue management with our AI-powered camera demo.
-                  Perfect for showing kids how AI and computer vision work!
+                  Explore one of the AI experiments behind the platform. The main ZeroQwait product today
+                  is the AI receptionist plus owner operations workspace.
                 </Typography>
                 <Button
                   variant="contained"
@@ -391,7 +393,7 @@ const HomePage: React.FC = () => {
                     transition: 'all 0.3s ease-in-out'
                   }}
                 >
-                  Launch AI Demo
+                  Launch Camera Demo
                 </Button>
               </Box>
             </Box>
@@ -416,7 +418,7 @@ const HomePage: React.FC = () => {
                 mb: 2
               }}
             >
-              Ready to modernize your queue?
+              Ready to give your shop an AI team?
             </Typography>
             <Typography
               variant="h6"
@@ -426,7 +428,7 @@ const HomePage: React.FC = () => {
                 fontWeight: 400
               }}
             >
-              Join hundreds of businesses using ZeroQwait to streamline operations and delight customers.
+              Use ZeroQwait to handle customer flow, appointments, and owner oversight from one AI-powered system.
             </Typography>
             <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
               <Button

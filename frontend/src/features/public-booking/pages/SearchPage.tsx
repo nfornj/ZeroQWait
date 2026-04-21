@@ -139,7 +139,7 @@ const SearchPage: React.FC = () => {
                 color: 'text.primary'
               }}
             >
-              Find Service Providers
+              Find Shops and Services
             </Typography>
             <Typography
               variant="h6"
@@ -151,7 +151,8 @@ const SearchPage: React.FC = () => {
                 fontWeight: 400
               }}
             >
-              Search barbershops, salons, clinics, and other services with queue management
+              Search barbershops, salons, clinics, and other businesses, then open their live queue
+              or appointment flow in one place.
             </Typography>
           </Box>
 

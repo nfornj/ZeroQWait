@@ -9,27 +9,27 @@ import PhoneAndroidIcon from '@mui/icons-material/PhoneAndroid';
 const items = [
   {
     icon: <AccessTimeIcon sx={{ color: 'primary.main' }} />,
-    title: 'Real-time Queue Management',
+    title: 'AI Receptionist',
     description:
-      'Monitor your queue in real-time. Customers can check wait times instantly and join remotely.',
+      'Your shop gets a browser-based AI receptionist for customer questions, queue joins, and appointment requests.',
   },
   {
     icon: <NotificationsActiveIcon sx={{ color: 'primary.main' }} />,
-    title: 'Smart Notifications',
+    title: 'Owner Agent Workspace',
     description:
-      'Automated SMS and email alerts keep your customers informed about their queue position.',
+      'Owners can monitor approvals, queue activity, team updates, and day-to-day operations from one workspace.',
   },
   {
     icon: <PhoneAndroidIcon sx={{ color: 'primary.main' }} />,
     title: 'Mobile-First Experience',
     description:
-      'Your customers can join queues, track wait times, and receive updates from anywhere.',
+      'Customers can join queues, view live progress, and book appointments directly from their phone browser.',
   },
   {
     icon: <QueueIcon sx={{ color: 'primary.main' }} />,
-    title: 'Multi-Location Support',
+    title: 'Live Queue and Booking',
     description:
-      'Manage queues across multiple shop locations with a unified dashboard and analytics.',
+      'ZeroQwait supports live queue management, appointment booking flows, and service discovery across your shop pages.',
   },
 ];
 

@@ -95,7 +95,7 @@ def get_master_system_prompt() -> str:
         about_zeroqwait = """
 ## ABOUT ZEROQWAIT
 
-ZeroQwait is a queue management platform that helps customers find shops and join queues remotely.
+ZeroQwait is an AI agent platform for service businesses. Customers can find shops, join queues, and book appointments, while owners monitor operations through an AI workspace.
 """
 
     return f"""You are ZeroQ, the friendly AI Assistant for ZeroQwait.
@@ -192,7 +192,7 @@ async def search_shops(
                 "result": {"target": "pricing"},
                 "timestamp": datetime.now().isoformat()
             })
-            return "Pricing page now visible. Plans: Free ($0/mo), Premium ($29/mo), Enterprise (custom)."
+            return "Pricing page now visible. Plans: Free includes an AI receptionist, Premium unlocks the full AI agent team, and Enterprise is custom."
 
         if any(x in check_term for x in ['feature', 'capability']):
             ctx.deps.actions.append({
@@ -200,7 +200,7 @@ async def search_shops(
                 "result": {"target": "features"},
                 "timestamp": datetime.now().isoformat()
             })
-            return "Features page visible. Highlight: Queue management, SMS, Analytics."
+            return "Features page visible. Highlight: AI receptionist, live queue and appointment flows, owner approvals, analytics, and voice interaction."
 
         if any(x in check_term for x in ['faq', 'help', 'support']):
             ctx.deps.actions.append({
@@ -294,7 +294,7 @@ async def check_pricing(ctx: RunContext[MasterAgentDeps]) -> str:
     logger.info(f"Pricing viewed | user={ctx.deps.user_id} | voice={ctx.deps.is_voice}")
     
     return (
-        "Pricing page now visible. Plans: Free ($0/mo), Premium ($29/mo), Enterprise (custom). "
+        "Pricing page now visible. Plans: Free includes an AI receptionist, Premium unlocks the full AI agent team, and Enterprise is custom. "
         "Provide brief friendly summary. Voice users: keep it to 1 sentence."
     )
 
@@ -311,8 +311,8 @@ async def see_features(ctx: RunContext[MasterAgentDeps]) -> str:
     logger.info(f"Features viewed | user={ctx.deps.user_id} | voice={ctx.deps.is_voice}")
     
     return (
-        "Features page visible. Highlight: Queue management, Real-time updates, "
-        "SMS notifications, Analytics, Multi-location support. Keep brief."
+        "Features page visible. Highlight: AI receptionist, live queue and appointment flows, "
+        "owner approvals, analytics, and voice interaction. Keep brief."
     )
 
 

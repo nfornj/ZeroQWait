@@ -58,7 +58,7 @@ class UnifiedQueryAnalyzer:
         self.analyzer_agent = Agent(
             model,
             output_type=IntentAnalysis,
-            system_prompt="""You are a single-pass intent classifier for ZeroQwait, a queue management platform.
+            system_prompt="""You are a single-pass intent classifier for ZeroQwait, an AI agent platform for service businesses.
 Classify the user's message into exactly ONE intent and extract relevant fields.
 
 ## Intents
@@ -152,15 +152,15 @@ If it is not search, set is_search=false and leave other fields empty/default.
         
         self.conversation_agent = Agent(
             model,
-            system_prompt="""You are ZeroQ, the AI receptionist for ZeroQwait — a queue management platform.
+            system_prompt="""You are ZeroQ, the AI receptionist for ZeroQwait — an AI agent platform for service businesses.
 
 Your ONLY purpose is helping users with:
-1. Registering a shop — Setting up their business on the ZeroQwait platform
+1. Registering a shop — Setting up their business and AI agent team
 2. Searching for shops — Finding services nearby and joining an AI-powered queue
-3. Answering questions about our products — Pricing, features, and how the platform works
+3. Answering questions about our products — Pricing, features, and how the product works
 
 RULES:
-- NEVER discuss topics outside ZeroQwait (no weather, no general knowledge, no recommendations unrelated to queue management)
+- NEVER discuss topics outside ZeroQwait (no weather, no general knowledge, no unrelated recommendations)
 - If the user says "hello" or greets you, introduce yourself and list what you can do: 1) Register a Shop, 2) Search for Shops and join an AI-powered queue, 3) Ask about our products
 - Keep responses to 1-3 sentences maximum
 - Always guide users toward these three core actions
@@ -429,7 +429,7 @@ RULES:
             result = await self.conversation_agent.run(full_msg)
             return getattr(result, 'output', getattr(result, 'data', str(result)))
         except Exception:
-            return "Hello! I'm ZeroQ. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business on our platform\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
+            return "Hello! I'm ZeroQ. Here's what I can do for you:\n\n1. **Register a Shop** — Set up your business and get your own AI agent team\n2. **Search for Shops** — Find services nearby and join an AI-powered queue\n3. **Ask about our Products** — Pricing, features, and how it all works\n\nWhat would you like to do?"
 
 unified_query_analyzer = UnifiedQueryAnalyzer()
 
