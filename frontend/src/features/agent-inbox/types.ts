@@ -19,6 +19,16 @@ export interface PendingApproval {
   recommended_decision?: string;
 }
 
+export interface ApprovalExecutionResult {
+  message?: string;
+  status?: string;
+  shop_id?: number;
+  user_id?: number;
+  shift?: Record<string, unknown>;
+  employee?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export interface BriefingAlert {
   severity: "success" | "info" | "warning" | "error";
   title: string;

@@ -25,11 +25,16 @@ import OwnerBriefing from "./OwnerBriefing";
 import ThinkingSteps, { ThinkingStep } from "./ThinkingSteps";
 import MasterAIAgent from "../../landing-page/components/MasterAIAgent";
 import {
+  buildApprovalOutcomeFeedEvent,
+  buildApprovalOutcomeInsight,
+} from "./approvalOutcome";
+import {
   createWorkspaceFeedSeed,
   createWorkspaceInsightSeed,
   createWorkspaceQuickActions,
 } from "./workspaceSeed";
 import type {
+  ApprovalExecutionResult,
   AgentFeedEvent,
   BriefingAction,
   ChatMessage,
@@ -457,11 +462,13 @@ const AgentInbox: React.FC = () => {
           action_id: approval.action_id,
           approved,
         };
+        const eventTimestamp = nowIso();
 
         const response = await axios.post<{
           message: string;
           status: string;
           agent?: string;
+          tool_results?: ApprovalExecutionResult;
         }>(`/v2/agent/approve`, payload);
 
         setMessages((prev) => [
@@ -471,7 +478,7 @@ const AgentInbox: React.FC = () => {
             role: "system",
             content: response.data.message || `Action ${approved ? "approved" : "rejected"}.`,
             status: "done",
-            timestamp: nowIso(),
+            timestamp: eventTimestamp,
             agent: response.data.agent,
           },
         ]);
@@ -482,6 +489,31 @@ const AgentInbox: React.FC = () => {
           description: `You ${approved ? "approved" : "rejected"} '${approval.action}'.`,
           payload: payload,
         });
+
+        const outcomeEvent = buildApprovalOutcomeFeedEvent(
+          approval,
+          approved,
+          response.data,
+          eventTimestamp,
+        );
+        if (outcomeEvent) {
+          addFeedEvent({
+            type: outcomeEvent.type,
+            title: outcomeEvent.title,
+            description: outcomeEvent.description,
+            payload: outcomeEvent.payload,
+          });
+        }
+
+        const outcomeInsight = buildApprovalOutcomeInsight(
+          approval,
+          approved,
+          response.data,
+          eventTimestamp,
+        );
+        if (outcomeInsight) {
+          setStreamedInsightItems((prev) => [outcomeInsight, ...prev]);
+        }
 
         await refreshPendingApprovals();
         await refreshBriefing();
