@@ -7,7 +7,6 @@ from datetime import datetime, date, timedelta
 from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 from faker import Faker
-from passlib.context import CryptContext
 
 # Add project root to path
 sys.path.append(os.getcwd())
@@ -20,7 +19,6 @@ from modules.employees.models import ShopEmployee, EmployeeShift
 from shared.auth_utils import get_password_hash
 
 fake = Faker()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 STANDARD_PASSWORD = "Password123!"
 HASHED_PASSWORD = get_password_hash(STANDARD_PASSWORD)

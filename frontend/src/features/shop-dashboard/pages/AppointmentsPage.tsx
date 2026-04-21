@@ -242,10 +242,15 @@ const AppointmentsPage: React.FC = () => {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <Header
-        title="Appointments"
-        subtitle="Manage scheduled bookings and employee availability"
-      />
+      <Header />
+      <Box>
+        <Typography variant="h4" gutterBottom>
+          Appointments
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          Manage scheduled bookings and employee availability
+        </Typography>
+      </Box>
 
       {/* Unavailable employees alert */}
       {unavailableEmployees.length > 0 && (

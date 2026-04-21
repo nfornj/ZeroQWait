@@ -144,11 +144,10 @@ sudo env DB_HOST_PORT="${DB_HOST_PORT}" BACKEND_HOST_PORT="${BACKEND_HOST_PORT}"
 echo "==> Ensuring compatibility test login account"
 sudo env DB_HOST_PORT="${DB_HOST_PORT}" BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" SHARED_OLLAMA_URL="${SHARED_OLLAMA_URL}" SHARED_MODEL_NAME="${SHARED_MODEL_NAME}" SHARED_TTS_URL="${SHARED_TTS_URL}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT}" \
 	docker compose "${COMPOSE_ARGS[@]}" exec -T backend /opt/venv/bin/python - <<'PY'
-from passlib.context import CryptContext
 from database import SessionLocal
 from models import User, UserRole, SubscriptionTier, Shop
+from shared.auth_utils import get_password_hash
 
-pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 username = "test_bulk_owner_0_3504"
 email = "test_bulk_owner_0_3504@zeroqwait.com"
 password = "password123"
@@ -160,7 +159,7 @@ try:
 		user = User(
 			email=email,
 			username=username,
-			hashed_password=pwd.hash(password),
+			hashed_password=get_password_hash(password),
 			role=UserRole.SHOP_OWNER,
 			is_active=True,
 			subscription_tier=SubscriptionTier.PREMIUM,

@@ -265,6 +265,7 @@ const QueueViewPage: React.FC = () => {
     }
 
     return (
+        <>
         <Container maxWidth="lg" sx={{ pt: 2, pb: 8 }}>
             {/* V4 Glassmorphism Header */}
             <StyledHeader>
@@ -546,6 +547,7 @@ const QueueViewPage: React.FC = () => {
                 <Button variant="contained" color="error" onClick={confirmLeaveQueue}>Leave Queue</Button>
             </DialogActions>
         </Dialog>
+        </>
     );
 };
 

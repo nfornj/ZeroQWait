@@ -38,10 +38,10 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from faker import Faker
-from passlib.context import CryptContext
 from slugify import slugify
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import Session, sessionmaker
+from shared.auth_utils import get_password_hash
 
 # Import ORM models
 from modules.auth.models import SubscriptionTier, User, UserRole
@@ -50,7 +50,6 @@ from modules.queues.models import Queue, QueueItem, QueueStatus
 from modules.shops.models import DailyAnalytics, Shop, ShopCustomer, ShopService
 
 fake = Faker("en_CA")
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 SHOP_TEMPLATES: List[Dict[str, object]] = [
@@ -304,7 +303,7 @@ def build_db_url(target: str, explicit_url: Optional[str]) -> str:
 
 
 def hash_password(raw_password: str) -> str:
-    return pwd_context.hash(raw_password)
+    return get_password_hash(raw_password)
 
 
 def safe_slug(db: Session, shop_name: str) -> str:

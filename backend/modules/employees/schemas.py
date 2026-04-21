@@ -20,9 +20,6 @@ class ShopEmployee(DictModel):
     is_active: bool
     user: User  # Nested user details
 
-    class Config:
-        from_attributes = True
-
 class EmployeeShift(DictModel):
     id: int
     user_id: int
@@ -30,6 +27,3 @@ class EmployeeShift(DictModel):
     shop_id: int
     clock_in: datetime
     clock_out: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True

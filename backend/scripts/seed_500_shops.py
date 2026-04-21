@@ -27,7 +27,6 @@ import math
 import argparse
 import logging
 from datetime import datetime, date, timedelta
-from passlib.context import CryptContext
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -36,11 +35,11 @@ from modules.auth.models import User, UserRole, SubscriptionTier
 from modules.shops.models import Shop, ShopService, DailyAnalytics, ShopCustomer
 from modules.queues.models import Queue, QueueItem, QueueStatus
 from modules.employees.models import ShopEmployee, EmployeeShift
+from shared.auth_utils import get_password_hash
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("seed500")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 BATCH_SIZE = 500  # DB flush batch size
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -458,7 +457,7 @@ def seed(
     dry_run: bool = False,
     password: str = "password123",
 ):
-    hashed_pw = pwd_context.hash(password)
+    hashed_pw = get_password_hash(password)
     db = SessionLocal()
 
     try:

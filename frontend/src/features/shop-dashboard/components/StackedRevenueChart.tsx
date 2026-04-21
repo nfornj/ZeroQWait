@@ -102,9 +102,8 @@ export default function StackedRevenueChart() {
                         }))}
                         slotProps={{
                             legend: {
-                                direction: 'row',
+                                direction: 'horizontal',
                                 position: { vertical: 'bottom', horizontal: 'center' },
-                                padding: 0,
                             },
                         }}
                         margin={{ left: 50, right: 10, top: 20, bottom: 50 }}

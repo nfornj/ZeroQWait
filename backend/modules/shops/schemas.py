@@ -1,6 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from shared.schemas import DictModel
 
 class ShopBase(DictModel):
@@ -60,9 +60,6 @@ class Shop(ShopBase):
     created_at: datetime
     odoo_company_id: Optional[int] = None
 
-    class Config:
-        from_attributes = True
-
 # Service schemas
 class ShopServiceBase(DictModel):
     name: str
@@ -87,6 +84,5 @@ class ShopService(ShopServiceBase):
     id: int
     shop_id: int
     created_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)

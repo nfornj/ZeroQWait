@@ -13,9 +13,6 @@ class AssignedEmployeeUser(DictModel):
     is_active: bool
     role: UserRole
 
-    class Config:
-        from_attributes = True
-
 # Queue Item schemas
 class QueueItemBase(DictModel):
     customer_name: str
@@ -44,9 +41,6 @@ class QueueItem(QueueItemBase):
     service_cost: Optional[float] = 0.0
     service: Optional[ShopService] = None # Populated with service details
 
-    class Config:
-        from_attributes = True
-
 # Queue schemas
 class QueueBase(DictModel):
     name: str = "Main Queue"
@@ -61,12 +55,6 @@ class Queue(QueueBase):
     is_active: bool
     queue_items: List[QueueItem] = []
 
-    class Config:
-        from_attributes = True
-
 # Shop with active queue
 class ShopWithQueue(Shop):
     queues: List[Queue] = []
-
-    class Config:
-        from_attributes = True

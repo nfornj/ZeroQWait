@@ -1,7 +1,9 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 # Custom Pydantic Model that behaves like a dict for backward compatibility
 class DictModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     def __getitem__(self, item):
         try:
             return getattr(self, item)

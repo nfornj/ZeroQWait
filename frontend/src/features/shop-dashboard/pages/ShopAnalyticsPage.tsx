@@ -78,6 +78,7 @@ export default function ShopAnalyticsPage() {
     // Peak hours data (0-23)
     const hours = Array.from({ length: 24 }, (_, i) => i);
     const peakData = hours.map(h => peakHours?.hourly_distribution?.[h.toString()] || 0);
+    const visitTrendData = visits.length > 0 ? visits : [0];
 
     return (
         <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
@@ -95,28 +96,36 @@ export default function ShopAnalyticsPage() {
                     <StatCard
                         title="Total Customers"
                         value={analytics?.total_customers?.toString() || "0"}
+                        interval="Last 30 days"
                         trend="neutral"
+                        data={visitTrendData}
                     />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                     <StatCard
                         title="Avg Wait Time"
                         value={`${analytics?.avg_wait_minutes || 0} min`}
-                        trend={analytics?.avg_wait_minutes < 15 ? "up" : "down"}
+                        interval="Target under 15 min"
+                        trend={(analytics?.avg_wait_minutes ?? 0) < 15 ? "up" : "down"}
+                        data={visitTrendData}
                     />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                     <StatCard
                         title="Avg Service Time"
                         value={`${analytics?.avg_service_minutes || 0} min`}
+                        interval="Rolling average"
                         trend="neutral"
+                        data={visitTrendData}
                     />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                     <StatCard
                         title="Busiest Hour"
                         value={peakHours?.peak_hour ? `${peakHours.peak_hour}:00` : "N/A"}
+                        interval="Peak traffic window"
                         trend="neutral"
+                        data={peakData.length > 0 ? peakData : [0]}
                     />
                 </Grid>
             </Grid>
@@ -149,14 +158,12 @@ export default function ShopAnalyticsPage() {
                                             value: item.value,
                                             label: item.name
                                         })),
-                                        highlightScope: { faded: 'global', highlighted: 'item' },
+                                        highlightScope: { fade: 'global', highlight: 'item' },
                                         faded: { innerRadius: 30, additionalRadius: -30 },
                                     }
                                 ]}
                                 height={300}
-                                slotProps={{
-                                    legend: { hidden: true } // Hide legend if too many items
-                                }}
+                                hideLegend
                             />
                         </Box>
                     </Paper>

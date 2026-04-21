@@ -134,7 +134,6 @@ export default function Testimonials({ embedded = false }: { embedded?: boolean 
             display: 'flex',
             gap: 2,
             overflowX: 'auto',
-            width: '100%',
             pb: 2, // Space for scrollbar
             scrollSnapType: 'x mandatory',
             '&::-webkit-scrollbar': { display: 'none' },

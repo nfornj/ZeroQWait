@@ -1,4 +1,4 @@
-from passlib.context import CryptContext
+import bcrypt
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status, Request
@@ -18,17 +18,24 @@ if not SECRET_KEY:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Use auto_error=False to allow manual handling (cookie check)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/token", auto_error=False)
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="api/token", auto_error=False)
 
+
+def _to_bytes(value: str | bytes) -> bytes:
+    return value if isinstance(value, bytes) else value.encode("utf-8")
+
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    if not plain_password or not hashed_password:
+        return False
+    try:
+        return bcrypt.checkpw(_to_bytes(plain_password), _to_bytes(hashed_password))
+    except ValueError:
+        return False
 
 def get_password_hash(password):
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(_to_bytes(password), bcrypt.gensalt()).decode("utf-8")
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()

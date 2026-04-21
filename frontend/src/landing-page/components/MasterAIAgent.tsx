@@ -2184,13 +2184,13 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                                         series={[{ data: values, color: theme.accent }]}
                                         height={140}
                                         margin={{ top: 8, right: 8, bottom: 24, left: 36 }}
-                                        slotProps={{ legend: { hidden: true } }}
+                                        hideLegend
                                       />
                                     ) : c.chartType === "pie" ? (
                                       <PieChart
                                         series={[{ data: c.data.map((d, i) => ({ id: i, value: d.value, label: d.label })) }]}
                                         height={140}
-                                        slotProps={{ legend: { hidden: true } }}
+                                        hideLegend
                                       />
                                     ) : (
                                       <BarChart
@@ -2198,7 +2198,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                                         series={[{ data: values, color: theme.accent }]}
                                         height={140}
                                         margin={{ top: 8, right: 8, bottom: 24, left: 36 }}
-                                        slotProps={{ legend: { hidden: true } }}
+                                        hideLegend
                                       />
                                     )}
                                   </Box>

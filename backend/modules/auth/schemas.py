@@ -17,9 +17,6 @@ class User(UserBase):
     is_active: bool
     role: UserRole
 
-    class Config:
-        from_attributes = True
-
 # Token schemas
 class Token(DictModel):
     access_token: str

@@ -16,7 +16,6 @@ import os
 import sys
 import random
 from datetime import datetime, timedelta
-from passlib.context import CryptContext
 import re
 
 # --- Ensure imports work ---
@@ -28,9 +27,9 @@ from modules.shops.models import Shop, ShopService, DailyAnalytics, ShopCloseDay
 from modules.queues.models import Queue, QueueItem, QueueStatus
 from modules.employees.models import ShopEmployee, EmployeeShift
 from modules.agent.models import CategoryAlias, LearnedSynonym, AgentKnowledge
+from shared.auth_utils import get_password_hash
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-DEFAULT_PASSWORD = pwd_context.hash("Test1234!")
+DEFAULT_PASSWORD = get_password_hash("Test1234!")
 
 # ═══════════════════════════════════════════════
 # SEED DATA DEFINITIONS
