@@ -2,6 +2,8 @@ import importlib
 import os
 import sys
 import json
+from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import FastAPI
@@ -832,6 +834,68 @@ def test_pending_route_returns_enriched_pending_approvals():
     payload = response.json()
     assert payload == {"pending": pending_payload}
     mock_pending.assert_called_once_with(41, 17, metrics={"queue_length": 6, "estimated_wait_minutes": 35})
+
+
+def test_history_route_falls_back_to_stored_conversation_when_checkpoint_empty():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    with (
+        patch.object(agent_v2._SUPERVISOR_RUNNABLE, "get_state", return_value=None),
+        patch.object(agent_v2, "get_conversation_history", return_value=[
+            {"role": "user", "content": "Show me today's queue summary"},
+            {"role": "assistant", "content": "You currently have 4 people waiting."},
+        ]),
+        patch.object(agent_v2, "_get_pending_approval_payload", return_value=[]),
+    ):
+        response = client.get("/api/v2/agent/history", params={"shop_id": 41})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["messages"] == [
+        {"role": "user", "content": "Show me today's queue summary"},
+        {"role": "assistant", "content": "You currently have 4 people waiting."},
+    ]
+
+
+def test_pending_route_falls_back_to_persisted_approval_requests_when_checkpoint_empty():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    approval_request = SimpleNamespace(
+        id=7001,
+        external_action_id="approval-7001",
+        shop_id=41,
+        action_type="close_queue",
+        request_payload={
+            "action": "close_queue",
+            "details": {"reason": "Team is at capacity"},
+            "shop_id": 41,
+            "policy_key": "approval.close_queue",
+            "policy_mode": "require_approval",
+            "category": "operations",
+        },
+        requested_at=datetime(2026, 4, 21, 9, 15, 0),
+    )
+
+    fake_repo = SimpleNamespace(list_pending_approval_requests=lambda shop_id: [approval_request])
+    fake_db = SimpleNamespace(close=lambda: None)
+
+    with (
+        patch.object(agent_v2._SUPERVISOR_RUNNABLE, "get_state", return_value=None),
+        patch.object(agent_v2.db_interface, "get_shop_live_wait_metrics", return_value={"queue_length": 6, "estimated_wait_minutes": 35}),
+        patch.object(agent_v2, "SessionLocal", return_value=fake_db),
+        patch.object(agent_v2, "AgentWorkRepository", return_value=fake_repo),
+    ):
+        response = client.get("/api/v2/agent/pending", params={"shop_id": 41})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["pending"]) == 1
+    pending = payload["pending"][0]
+    assert pending["action_id"] == "approval-7001"
+    assert pending["approval_request_id"] == 7001
+    assert pending["action"] == "close_queue"
+    assert pending["policy_key"] == "approval.close_queue"
+    assert pending["created_at"] == "2026-04-21T09:15:00"
 
 
 def test_briefing_route_returns_snapshot_with_pending_actions():

@@ -47,7 +47,11 @@ from agents.briefings import (
     get_shop_alert_history,
     refresh_shop_briefing_cache,
 )
-from agents.memory_context import merge_and_rank_memories, format_memory_context
+from agents.memory_context import (
+    format_memory_context,
+    get_conversation_history,
+    merge_and_rank_memories,
+)
 from agents.state import AgentState
 from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_saver
 from shared.auth_utils import get_current_user
@@ -241,6 +245,48 @@ def _serialize_checkpoint_messages(state_values: Dict[str, Any]) -> list[Dict[st
     return serialized
 
 
+def _serialize_stored_conversation_messages(shop_id: int, user_id: int) -> list[Dict[str, Any]]:
+    """Serialize Redis-backed owner conversation history as a history fallback."""
+    serialized: list[Dict[str, Any]] = []
+    for item in get_conversation_history(_redis, str(shop_id), str(user_id)):
+        role = str(item.get("role") or "assistant")
+        if role not in {"user", "assistant"}:
+            continue
+        content = str(item.get("content") or "")
+        if not content:
+            continue
+        serialized.append({"role": role, "content": content})
+    return serialized
+
+
+def _pending_payload_from_request(
+    approval_request: Any,
+    *,
+    metrics: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    request_payload = dict(getattr(approval_request, "request_payload", None) or {})
+    action_id = str(
+        request_payload.get("action_id")
+        or getattr(approval_request, "external_action_id", None)
+        or f"approval-request-{getattr(approval_request, 'id', 'unknown')}"
+    )
+    payload = enrich_pending_approval_payload(
+        {
+            **request_payload,
+            "action_id": action_id,
+            "action": request_payload.get("action") or getattr(approval_request, "action_type", "approval_required"),
+            "details": dict(request_payload.get("details") or {}),
+            "shop_id": int(request_payload.get("shop_id") or getattr(approval_request, "shop_id")),
+        },
+        metrics=metrics,
+    )
+    payload["approval_request_id"] = getattr(approval_request, "id", None)
+    requested_at = getattr(approval_request, "requested_at", None)
+    if requested_at is not None:
+        payload["created_at"] = requested_at.isoformat()
+    return payload
+
+
 def _get_pending_approval_payload(
     shop_id: int,
     user_id: int,
@@ -252,22 +298,41 @@ def _get_pending_approval_payload(
     snapshot = runnable.get_state(checkpoint_config)
 
     pending: list[Dict[str, Any]] = []
+    seen_action_ids: set[str] = set()
     if snapshot and snapshot.interrupts:
         values = cast(Dict[str, Any], snapshot.values or {})
         pending_approval = values.get("pending_approval")
         interrupt_id = getattr(snapshot.interrupts[0], "id", None)
         if pending_approval:
-            pending.append(
-                enrich_pending_approval_payload(
-                    {
-                        "action_id": interrupt_id,
-                        "action": pending_approval.get("action"),
-                        "details": pending_approval.get("details", {}),
-                        "shop_id": pending_approval.get("shop_id", shop_id),
-                    },
-                    metrics=metrics,
-                )
+            checkpoint_payload = enrich_pending_approval_payload(
+                {
+                    **pending_approval,
+                    "action_id": interrupt_id,
+                    "action": pending_approval.get("action"),
+                    "details": pending_approval.get("details", {}),
+                    "shop_id": pending_approval.get("shop_id", shop_id),
+                },
+                metrics=metrics,
             )
+            pending.append(checkpoint_payload)
+            if checkpoint_payload.get("action_id"):
+                seen_action_ids.add(str(checkpoint_payload["action_id"]))
+
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        for approval_request in repo.list_pending_approval_requests(shop_id):
+            repo_payload = _pending_payload_from_request(approval_request, metrics=metrics)
+            repo_action_id = str(repo_payload.get("action_id") or "")
+            if repo_action_id and repo_action_id in seen_action_ids:
+                continue
+            pending.append(repo_payload)
+            if repo_action_id:
+                seen_action_ids.add(repo_action_id)
+    except Exception as exc:
+        logger.warning("Unable to load persisted approval requests for shop %s: %s", shop_id, exc)
+    finally:
+        db.close()
 
     return pending
 
@@ -1229,9 +1294,10 @@ async def get_history(
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
     snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
     values = cast(Dict[str, Any], snapshot.values or {}) if snapshot else {}
+    checkpoint_messages = _serialize_checkpoint_messages(values)
 
     return {
-        "messages": _serialize_checkpoint_messages(values),
+        "messages": checkpoint_messages or _serialize_stored_conversation_messages(shop_id, user_id),
         "checkpoint_id": f"tenant_{shop_id}_{user_id}",
         "pending": _get_pending_approval_payload(shop_id, user_id),
     }
