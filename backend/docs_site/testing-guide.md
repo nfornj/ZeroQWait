@@ -145,8 +145,8 @@ Login URL: [https://zeroqwait.com/login](https://zeroqwait.com/login)
 
 1. On [zeroqwait.com](https://zeroqwait.com), click the **"Voice"** toggle in the top-right controls
 2. The orb enlarges to indicate recording mode
-3. Click the orb and **speak**: *"Find a barber near Oshawa"*
-4. Verify the AI returns search results
+3. Click the orb and **speak**: *"Find a barber shop in Toronto"*
+4. Verify the AI returns search results including True Toronto Point Barber Shop
 5. Speak: *"What's the wait time at True Toronto Point Barber Shop?"*
 6. Verify you **hear** the response (TTS audio plays automatically)
 7. Switch back to **Chat** mode using the same toggle — verify no audio plays
@@ -259,14 +259,12 @@ For automated or headless testing:
 
 ```bash
 curl -X POST https://zeroqwait.com/api/chat-feedback/submit \
-  -F "tester_name=Your Name" \
-  -F "message=Queue join worked perfectly" \
-  -F "rating=5"
+  -F "description=Queue join worked perfectly" \
+  -F "name=Your Name" \
+  -F "page_context=testing-guide"
 ```
 
-Optional field: `-F "screenshot=@/path/to/screenshot.png"`
-
-**Rating scale:** 1 (broken) → 5 (perfect)
+Optional fields: `-F "screenshot=@/path/to/screenshot.png"`, `-F "email=you@example.com"`, `-F "session_id=sess_123"`
 
 ---
 
