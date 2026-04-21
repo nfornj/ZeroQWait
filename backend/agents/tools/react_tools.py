@@ -226,8 +226,21 @@ def make_hr_tools(shop_id: int) -> list:
 
     @tool
     def assign_shift(user_id: int, start_time: str, end_time: str, date: str) -> Dict[str, Any]:
-        """Assign a shift. date=YYYY-MM-DD, times=HH:MM format."""
-        return hr_tools.assign_shift(shop_id, user_id, start_time, end_time, date)
+        """Propose assigning a shift. HIGH IMPACT — does NOT execute immediately; requires owner approval first."""
+        return {
+            "requires_approval": True,
+            "action": "assign_shift",
+            "details": {
+                "user_id": user_id,
+                "start_time": start_time,
+                "end_time": end_time,
+                "date": date,
+            },
+            "message": (
+                f"Assigning a shift for employee {user_id} on {date} from {start_time} to {end_time} "
+                "has been submitted for owner approval."
+            ),
+        }
 
     @tool
     def clock_in_out(user_id: int, action: str) -> Dict[str, Any]:

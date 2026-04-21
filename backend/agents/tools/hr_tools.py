@@ -32,7 +32,7 @@ def add_employee(
     role: str = "employee",
     employee_code: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Add an employee via db_interface. High-impact — requires HITL approval."""
+    """Add an employee via db_interface after owner approval."""
     try:
         result = db_interface.create_shop_employee({
             "shop_id": shop_id,
@@ -48,14 +48,13 @@ def add_employee(
             "employee": result,
             "shop_id": shop_id,
             "status": "added",
-            "requires_approval": True,
         }
     except Exception as e:
         return {"error": str(e)}
 
 
 def remove_employee(shop_id: int, user_id: int) -> Dict[str, Any]:
-    """Deactivate an employee. High-impact — requires HITL approval."""
+    """Deactivate an employee after owner approval."""
     try:
         result = db_interface.update_shop_employee(shop_id, user_id, {"is_active": False})
         if result:
@@ -64,7 +63,6 @@ def remove_employee(shop_id: int, user_id: int) -> Dict[str, Any]:
                 "shop_id": shop_id,
                 "user_id": user_id,
                 "status": "removed",
-                "requires_approval": True,
             }
         return {"error": "Employee not found", "shop_id": shop_id, "user_id": user_id}
     except Exception as e:
@@ -77,10 +75,12 @@ def get_shifts(shop_id: int, date: Optional[str] = None, user_id: Optional[int] 
         if date:
             start_date = datetime.fromisoformat(date)
             end_date = start_date
+            display_date = str(date)
         else:
             today = datetime.now()
             start_date = today.replace(hour=0, minute=0, second=0, microsecond=0)
             end_date = today.replace(hour=23, minute=59, second=59, microsecond=999999)
+            display_date = str(today.date())
         
         shifts = db_interface.get_employee_shifts(shop_id, start_date, end_date, user_id=user_id)
         
@@ -90,7 +90,7 @@ def get_shifts(shop_id: int, date: Optional[str] = None, user_id: Optional[int] 
                 "user_id": s.get("user_id"),
                 "start_time": str(s.get("start_time")),
                 "end_time": str(s.get("end_time")),
-                "date": str(date) if date else str(today.date())
+                "date": display_date,
             }
             for s in (shifts or [])
         ]
@@ -100,7 +100,7 @@ def get_shifts(shop_id: int, date: Optional[str] = None, user_id: Optional[int] 
 
 
 def assign_shift(shop_id: int, user_id: int, start_time: str, end_time: str, date: str) -> Dict[str, Any]:
-    """Assign a shift to an employee via db_interface. Requires HITL approval."""
+    """Assign a shift to an employee via db_interface after owner approval."""
     try:
         shift_data = {
             "shop_id": shop_id,
@@ -115,7 +115,6 @@ def assign_shift(shop_id: int, user_id: int, start_time: str, end_time: str, dat
             "shop_id": shop_id,
             "user_id": user_id,
             "status": "assigned",
-            "requires_approval": True,
         }
     except Exception as e:
         return {"error": str(e)}

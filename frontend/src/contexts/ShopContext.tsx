@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import api from '../services/api';
+import { useAuth } from './AuthContext';
 
 interface Shop {
   id: number;
@@ -28,7 +29,10 @@ interface ShopContextType {
 
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
 
+const ACTIVE_SHOP_STORAGE_KEY = 'zeroq_active_owner_shop_id';
+
 export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const [shop, setShop] = useState<Shop | null>(null);
   const [shopSlug, setShopSlug] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,8 +67,40 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   };
 
+  const applySelectedShop = useCallback((nextShop: Shop | null) => {
+    setShop(nextShop);
+    setShopSlug(nextShop?.slug || null);
+
+    if (nextShop?.id) {
+      localStorage.setItem(ACTIVE_SHOP_STORAGE_KEY, String(nextShop.id));
+    } else {
+      localStorage.removeItem(ACTIVE_SHOP_STORAGE_KEY);
+    }
+  }, []);
+
+  const resolvePreferredOwnedShop = useCallback((shops: Shop[]): Shop | null => {
+    if (!shops.length) return null;
+
+    const storedShopId = Number(localStorage.getItem(ACTIVE_SHOP_STORAGE_KEY));
+    if (Number.isFinite(storedShopId)) {
+      const rememberedShop = shops.find((ownedShop) => ownedShop.id === storedShopId);
+      if (rememberedShop) {
+        return rememberedShop;
+      }
+    }
+
+    if (shop?.id) {
+      const currentShop = shops.find((ownedShop) => ownedShop.id === shop.id);
+      if (currentShop) {
+        return currentShop;
+      }
+    }
+
+    return shops[0];
+  }, [shop?.id]);
+
   // Fetch shop by slug
-  const fetchShopBySlug = async (slug: string): Promise<Shop | null> => {
+  const fetchShopBySlug = useCallback(async (slug: string): Promise<Shop | null> => {
     try {
       setLoading(true);
       setError(null);
@@ -74,29 +110,28 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response = await api.get(`/shops/s/${slug}`);
       const shopData = response.data;
       console.log("[ShopContext] Shop fetched by slug:", shopData.name, shopData.slug);
-      setShop(shopData);
-      setShopSlug(slug);
+      applySelectedShop(shopData);
       return shopData;
     } catch (err: any) {
       if (err.response && err.response.status === 404) {
         console.log(`[ShopContext] Shop not found for slug: ${slug} (this is normal if the shop doesn't exist)`);
         // Don't set global error for 404, just return null
-        setShop(null);
+        applySelectedShop(null);
         return null;
       }
 
       const errorMsg = err instanceof Error ? err.message : 'Failed to fetch shop';
       console.log("[ShopContext] Slug fetch failed:", errorMsg);
       setError(errorMsg);
-      setShop(null);
+      applySelectedShop(null);
       return null;
     } finally {
       setLoading(false);
     }
-  };
+  }, [applySelectedShop]);
 
   // Fetch user's shop (for authenticated users)
-  const fetchMyShop = async (): Promise<Shop | null> => {
+  const fetchMyShop = useCallback(async (): Promise<Shop | null> => {
     try {
       setLoading(true);
 
@@ -107,12 +142,16 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setOwnedShops(shops);
 
       if (shops.length > 0) {
-        const myShop = shops[0];
+        const myShop = resolvePreferredOwnedShop(shops);
+        if (!myShop) {
+          applySelectedShop(null);
+          return null;
+        }
         console.log("[ShopContext] User's shop fetched:", myShop.name, "slug:", myShop.slug);
-        setShop(myShop);
-        setShopSlug(myShop.slug);
+        applySelectedShop(myShop);
         return myShop;
       }
+      applySelectedShop(null);
       return null;
     } catch (err) {
       // Silently fail - user might not have a shop
@@ -121,9 +160,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setLoading(false);
     }
-  };
+  }, [applySelectedShop, resolvePreferredOwnedShop]);
 
-  const refreshOwnedShops = async (): Promise<Shop[]> => {
+  const refreshOwnedShops = useCallback(async (): Promise<Shop[]> => {
     try {
       setShopsLoading(true);
       setError(null);
@@ -132,9 +171,11 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const shops = Array.isArray(response.data) ? response.data : [];
       setOwnedShops(shops);
 
-      if (!shop && shops.length > 0) {
-        setShop(shops[0]);
-        setShopSlug(shops[0].slug || null);
+      const preferredShop = resolvePreferredOwnedShop(shops);
+      if (preferredShop) {
+        applySelectedShop(preferredShop);
+      } else if (shops.length === 0) {
+        applySelectedShop(null);
       }
 
       return shops;
@@ -145,13 +186,12 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setShopsLoading(false);
     }
-  };
+  }, [applySelectedShop, resolvePreferredOwnedShop]);
 
   const selectOwnedShop = (shopId: number) => {
     const selectedShop = ownedShops.find((ownedShop) => ownedShop.id === shopId);
     if (!selectedShop) return;
-    setShop(selectedShop);
-    setShopSlug(selectedShop.slug || null);
+    applySelectedShop(selectedShop);
   };
 
   useEffect(() => {
@@ -175,7 +215,26 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     initializeShop();
-  }, []);
+  }, [fetchMyShop, fetchShopBySlug]);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    const subdomain = getSubdomainFromHost();
+    if (subdomain) return;
+
+    if (!isAuthenticated || user?.role !== 'shop_owner') {
+      if (!isAuthenticated) {
+        setOwnedShops([]);
+        applySelectedShop(null);
+      }
+      return;
+    }
+
+    if (!shop || ownedShops.length === 0) {
+      void refreshOwnedShops();
+    }
+  }, [authLoading, isAuthenticated, user?.role, shop, ownedShops.length, refreshOwnedShops, applySelectedShop]);
 
   const value: ShopContextType = {
     shop,
@@ -184,7 +243,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     shopsLoading,
     error,
     ownedShops,
-    setShop,
+    setShop: applySelectedShop,
     fetchShopBySlug,
     refreshOwnedShops,
     selectOwnedShop,

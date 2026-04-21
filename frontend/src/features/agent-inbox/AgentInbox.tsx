@@ -21,9 +21,22 @@ import AgentFeed from "./AgentFeed";
 import ApprovalCard from "./ApprovalCard";
 import AgentInsights from "./AgentInsights";
 import InsightsPanel from "./InsightsPanel";
+import OwnerBriefing from "./OwnerBriefing";
 import ThinkingSteps, { ThinkingStep } from "./ThinkingSteps";
 import MasterAIAgent from "../../landing-page/components/MasterAIAgent";
-import type { AgentFeedEvent, ChatMessage, InsightItem, PendingApproval } from "./types";
+import {
+  createWorkspaceFeedSeed,
+  createWorkspaceInsightSeed,
+  createWorkspaceQuickActions,
+} from "./workspaceSeed";
+import type {
+  AgentFeedEvent,
+  BriefingAction,
+  ChatMessage,
+  InsightItem,
+  OwnerBriefing as OwnerBriefingData,
+  PendingApproval,
+} from "./types";
 
 const nowIso = () => new Date().toISOString();
 
@@ -51,10 +64,12 @@ const AgentInbox: React.FC = () => {
   const [feedEvents, setFeedEvents] = useState<AgentFeedEvent[]>([]);
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
+  const [briefing, setBriefing] = useState<OwnerBriefingData | null>(null);
+  const [externalActionRequest, setExternalActionRequest] = useState<(BriefingAction & { id: string }) | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
-  const [insightItems, setInsightItems] = useState<InsightItem[]>([]);
+  const [streamedInsightItems, setStreamedInsightItems] = useState<InsightItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const previousShopIdRef = useRef<number | null>(null);
@@ -82,10 +97,23 @@ const AgentInbox: React.FC = () => {
     }
   }, [shop?.id]);
 
+  const refreshBriefing = useCallback(async () => {
+    if (!shop?.id) return;
+    try {
+      const response = await axios.get<OwnerBriefingData>(`/v2/agent/briefing`, {
+        params: { shop_id: shop.id },
+      });
+      setBriefing(response.data);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || "Failed to load owner briefing");
+    }
+  }, [shop?.id]);
+
   useEffect(() => {
     if (!shop?.id) return;
     refreshPendingApprovals();
-  }, [shop?.id, refreshPendingApprovals]);
+    refreshBriefing();
+  }, [shop?.id, refreshPendingApprovals, refreshBriefing]);
 
   useEffect(() => {
     if (!shop?.id) return;
@@ -97,7 +125,8 @@ const AgentInbox: React.FC = () => {
       setMessages([buildIntroMessage()]);
       setFeedEvents([]);
       setPendingApprovals([]);
-      setInsightItems([]);
+      setBriefing(null);
+      setStreamedInsightItems([]);
       setThinkingSteps([]);
       setError(null);
       return;
@@ -362,6 +391,7 @@ const AgentInbox: React.FC = () => {
         }
 
         await refreshPendingApprovals();
+        await refreshBriefing();
       } catch (err: any) {
         const detail = err?.message || "Failed to stream agent response";
         setError(detail);
@@ -412,7 +442,7 @@ const AgentInbox: React.FC = () => {
         setIsStreaming(false);
       }
     },
-    [addFeedEvent, refreshPendingApprovals, shop?.id]
+    [addFeedEvent, refreshBriefing, refreshPendingApprovals, shop?.id]
   );
 
   const handleApprovalDecision = useCallback(
@@ -454,6 +484,7 @@ const AgentInbox: React.FC = () => {
         });
 
         await refreshPendingApprovals();
+        await refreshBriefing();
       } catch (err: any) {
         const detail = err?.response?.data?.detail || err?.message || "Failed to submit approval decision";
         setError(detail);
@@ -466,10 +497,26 @@ const AgentInbox: React.FC = () => {
         setIsApproving(false);
       }
     },
-    [addFeedEvent, refreshPendingApprovals, shop?.id]
+    [addFeedEvent, refreshBriefing, refreshPendingApprovals, shop?.id]
   );
 
   const latestPending = useMemo(() => pendingApprovals.slice(0, 3), [pendingApprovals]);
+  const seededFeedEvents = useMemo(
+    () => createWorkspaceFeedSeed(briefing, pendingApprovals),
+    [briefing, pendingApprovals]
+  );
+  const displayedFeedEvents = useMemo(() => {
+    const seen = new Set(feedEvents.map((event) => event.id));
+    return [...feedEvents, ...seededFeedEvents.filter((event) => !seen.has(event.id))];
+  }, [feedEvents, seededFeedEvents]);
+  const seededInsightItems = useMemo(
+    () => createWorkspaceInsightSeed(briefing, pendingApprovals),
+    [briefing, pendingApprovals]
+  );
+  const insightItems = useMemo(() => {
+    const seen = new Set(streamedInsightItems.map((item) => item.id));
+    return [...streamedInsightItems, ...seededInsightItems.filter((item) => !seen.has(item.id))];
+  }, [streamedInsightItems, seededInsightItems]);
   const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
   const brandSecondary = shop?.secondary_color || brandPrimary;
   const panelCardBg =
@@ -486,16 +533,14 @@ const AgentInbox: React.FC = () => {
         ? [
             {
               role: "ai" as const,
-              text: `Welcome back to ${shop.name}. I can help with queue status, team scheduling, approvals, and daily performance summaries. What would you like to handle first?`,
-              quickActions: [
-                { label: "Give me today's queue summary", payload: "Give me today's queue summary" },
-                { label: "Show this week's revenue trend", payload: "Show this week's revenue trend" },
-                { label: "Who is on shift now?", payload: "Who is on shift now?" },
-              ],
+              text: briefing?.summary
+                ? `Welcome back to ${shop.name}. ${briefing.summary} What would you like to handle first?`
+                : `Welcome back to ${shop.name}. I can help with queue status, team scheduling, approvals, and daily performance summaries. What would you like to handle first?`,
+              quickActions: createWorkspaceQuickActions(briefing, pendingApprovals, shop.name),
             },
           ]
         : [],
-    [shop?.name]
+    [briefing, pendingApprovals, shop?.name]
   );
 
   const handleAgentStreamEvent = useCallback(
@@ -566,7 +611,7 @@ const AgentInbox: React.FC = () => {
       // Accumulate charts and files into the right-panel InsightsPanel
       if (eventType === "chart" && event._parsed_chart) {
         const chart = event._parsed_chart;
-        setInsightItems((prev) => [
+        setStreamedInsightItems((prev) => [
           { id: chart.id, type: "chart", chart, timestamp: chart.timestamp },
           ...prev,
         ]);
@@ -575,7 +620,7 @@ const AgentInbox: React.FC = () => {
 
       if (eventType === "file" && event._parsed_file) {
         const file = event._parsed_file;
-        setInsightItems((prev) => [
+        setStreamedInsightItems((prev) => [
           { id: file.id, type: "file", file, timestamp: file.timestamp },
           ...prev,
         ]);
@@ -597,6 +642,20 @@ const AgentInbox: React.FC = () => {
     );
   }, []);
 
+  const handleBriefingAction = useCallback((action: BriefingAction) => {
+    setExternalActionRequest({ ...action, id: toId("briefing_action") });
+    addFeedEvent({
+      type: "chat",
+      title: `Action: ${action.label}`,
+      description: action.description || action.payload,
+      payload: action,
+    });
+  }, [addFeedEvent]);
+
+  const handleExternalActionHandled = useCallback(() => {
+    setExternalActionRequest(null);
+  }, []);
+
   return (
     <Box sx={{ width: "100%", maxWidth: { sm: "100%", md: "1700px" }, height: "calc(100dvh - 64px)", display: "flex", flexDirection: "column" }}>
       <Stack spacing={1} sx={{ flex: 1, minHeight: 0 }}>
@@ -605,7 +664,7 @@ const AgentInbox: React.FC = () => {
 
         {!shop?.id && (
           <Alert severity="warning">
-            No active shop selected. Choose a shop from the sidebar settings panel to start the agent session.
+            No active shop selected. Refresh the shop workspace or choose an active shop from the top bar if you manage more than one location.
           </Alert>
         )}
 
@@ -642,6 +701,8 @@ const AgentInbox: React.FC = () => {
                   shop_id: shop.id,
                   is_voice: false,
                 }}
+                externalActionRequest={externalActionRequest}
+                onExternalActionHandled={handleExternalActionHandled}
                 initialChatHistory={ownerInitialChatHistory}
                 embeddedFooter={
                   <Box sx={{ width: "100%" }}>
@@ -665,7 +726,7 @@ const AgentInbox: React.FC = () => {
                       <Box mt={0.75}>
                         <AgentInsights
                           messages={messages}
-                          events={feedEvents}
+                          events={displayedFeedEvents}
                           pendingApprovals={pendingApprovals}
                         />
                       </Box>
@@ -679,6 +740,7 @@ const AgentInbox: React.FC = () => {
           </Grid>
           <Grid size={{ xs: 12, xl: 4.5 }}>
             <Stack spacing={1.5}>
+              <OwnerBriefing briefing={briefing} onAction={handleBriefingAction} />
               <InsightsPanel items={insightItems} />
               {latestPending.length > 0 && (
                 <Card
@@ -718,7 +780,7 @@ const AgentInbox: React.FC = () => {
                   </CardContent>
                 </Card>
               )}
-              <AgentFeed events={feedEvents} />
+              <AgentFeed events={displayedFeedEvents} />
             </Stack>
           </Grid>
         </Grid>

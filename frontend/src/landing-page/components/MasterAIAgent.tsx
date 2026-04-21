@@ -59,6 +59,13 @@ type ActionCommand = {
   relatedViewer?: "pricing" | "features" | "faq" | "shops" | null;
 };
 
+type ExternalActionRequest = {
+  id: string;
+  label?: string;
+  payload: string;
+  relatedViewer?: "pricing" | "features" | "faq" | "shops" | null;
+};
+
 type ChatHistoryEntry = {
   role: "ai" | "user";
   text: string;
@@ -115,6 +122,8 @@ type MasterAIAgentProps = {
   embeddedFooter?: React.ReactNode;
   onStreamEvent?: (event: Record<string, any>) => void;
   onChatHistoryChange?: (history: ChatHistoryEntry[]) => void;
+  externalActionRequest?: ExternalActionRequest | null;
+  onExternalActionHandled?: (actionId: string) => void;
 };
 
 const PROFESSIONAL_VOICE_INSTRUCT =
@@ -138,6 +147,14 @@ const getShopQuickActions = (shopName: string): ActionCommand[] => [
   {
     label: "Join Queue",
     payload: `I want to join the queue at ${shopName}`,
+  },
+  {
+    label: "Show Services",
+    payload: `What services does ${shopName} offer today?`,
+  },
+  {
+    label: "Book Appointment",
+    payload: `I want to book an appointment at ${shopName}`,
   },
   {
     label: "Check Wait Time",
@@ -258,6 +275,8 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   embeddedFooter,
   onStreamEvent,
   onChatHistoryChange,
+  externalActionRequest,
+  onExternalActionHandled,
 }) => {
   const [isOpen, setIsOpen] = useState(forceOpen || initialOpen);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -271,6 +290,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
     null,
   );
+  const lastExternalActionIdRef = useRef<string | null>(null);
 
   // Capture Geolocation
   useEffect(() => {
@@ -1444,6 +1464,19 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
 
     void handleChat(action.payload, action.relatedViewer ?? undefined);
   };
+
+  useEffect(() => {
+    if (!externalActionRequest?.id) return;
+    if (externalActionRequest.id === lastExternalActionIdRef.current) return;
+
+    lastExternalActionIdRef.current = externalActionRequest.id;
+    handleActionCommand({
+      label: externalActionRequest.label || "Quick Action",
+      payload: externalActionRequest.payload,
+      relatedViewer: externalActionRequest.relatedViewer ?? null,
+    });
+    onExternalActionHandled?.(externalActionRequest.id);
+  }, [externalActionRequest, onExternalActionHandled]);
 
   // Auto-scroll to bottom of chat
   useEffect(() => {

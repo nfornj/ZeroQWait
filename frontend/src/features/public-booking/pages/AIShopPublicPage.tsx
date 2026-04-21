@@ -19,6 +19,13 @@ import {
 import axios from 'axios';
 import MasterAIAgent from '../../../landing-page/components/MasterAIAgent';
 
+interface ServiceSummary {
+  id: number;
+  name: string;
+  cost?: number;
+  duration_minutes?: number;
+}
+
 interface AIShopPublicPageProps {
   shopSlug?: string;
 }
@@ -60,7 +67,9 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
   const [myQueueItem, setMyQueueItem] = useState<QueueItem | null>(null);
   const [waitEstimate, setWaitEstimate] = useState<WaitEstimate | null>(null);
   const [liveMetrics, setLiveMetrics] = useState<LiveMetrics | null>(null);
+  const [services, setServices] = useState<ServiceSummary[]>([]);
   const [etaTrend, setEtaTrend] = useState<'up' | 'down' | 'flat'>('flat');
+  const [receptionAction, setReceptionAction] = useState<{ id: string; payload: string } | null>(null);
   const [lastLiveUpdateAt, setLastLiveUpdateAt] = useState<Date | null>(null);
   const [secondsSinceUpdate, setSecondsSinceUpdate] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -119,6 +128,32 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
     return trimmed.split(/\s+/)[0];
   };
 
+  const triggerReceptionAction = (payload: string) => {
+    setReceptionAction({
+      id: `reception_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      payload,
+    });
+  };
+
+  const receptionActions = useMemo(() => {
+    const base = [
+      { label: 'Show Services', payload: `What services does ${shop?.name || 'this shop'} offer today?` },
+      { label: 'Book Appointment', payload: `I want to book an appointment at ${shop?.name || 'this shop'}.` },
+      { label: 'Check Wait Time', payload: `What is the current wait time at ${shop?.name || 'this shop'}?` },
+      { label: 'Join Queue', payload: `I want to join the queue at ${shop?.name || 'this shop'}.` },
+    ];
+
+    if (myQueueItem) {
+      return [
+        { label: 'Check My Place', payload: 'What is my current queue status and estimated wait time?' },
+        { label: 'What Happens Next', payload: 'Explain what happens next in the queue and when I should be ready.' },
+        ...base.slice(0, 2),
+      ];
+    }
+
+    return base;
+  }, [myQueueItem, shop?.name]);
+
   useEffect(() => {
     const fetchShopData = async () => {
       if (!effectiveId) {
@@ -145,6 +180,15 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
   useEffect(() => {
     if (!shop?.id) return;
 
+    const fetchServices = async () => {
+      try {
+        const response = await axios.get(`/shops/${shop.id}/services`);
+        setServices(Array.isArray(response.data) ? response.data.slice(0, 4) : []);
+      } catch {
+        setServices([]);
+      }
+    };
+
     const fetchQueue = async () => {
       try {
         const response = await axios.get(`/queues/shop/${shop.id}/active`);
@@ -164,6 +208,7 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
       }
     };
 
+    void fetchServices();
     void fetchQueue();
     const interval = setInterval(fetchQueue, 20000);
     return () => clearInterval(interval);
@@ -395,6 +440,51 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
               <Card sx={{ borderRadius: '18px' }}>
                 <CardContent>
                   <Typography variant="h6" sx={{ fontWeight: 800, mb: 1.5 }}>
+                    Reception Desk
+                  </Typography>
+                  <Typography color="text.secondary" sx={{ mb: 1.5 }}>
+                    Start with the AI receptionist for discovery, booking, or queue help.
+                  </Typography>
+                  <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mb: 1.5 }}>
+                    {receptionActions.map((action) => (
+                      <Chip
+                        key={action.label}
+                        clickable
+                        color="primary"
+                        variant="outlined"
+                        label={action.label}
+                        onClick={() => triggerReceptionAction(action.payload)}
+                      />
+                    ))}
+                  </Stack>
+                  {services.length > 0 && (
+                    <Stack spacing={1.1}>
+                      {services.map((service) => (
+                        <Box
+                          key={service.id}
+                          sx={{
+                            p: 1.1,
+                            borderRadius: '12px',
+                            bgcolor: alpha('#1976d2', 0.05),
+                            border: '1px solid',
+                            borderColor: alpha('#1976d2', 0.12),
+                          }}
+                        >
+                          <Typography sx={{ fontWeight: 700 }}>{service.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {typeof service.cost === 'number' ? `$${service.cost}` : 'Price on request'}
+                            {service.duration_minutes ? ` • ${service.duration_minutes} min` : ''}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Stack>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card sx={{ borderRadius: '18px' }}>
+                <CardContent>
+                  <Typography variant="h6" sx={{ fontWeight: 800, mb: 1.5 }}>
                     Active Queue
                   </Typography>
                   {waitingCustomers.length === 0 ? (
@@ -458,6 +548,8 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
                   city: shop.city,
                   shopType: shop.shop_type,
                 }}
+                externalActionRequest={receptionAction}
+                onExternalActionHandled={() => setReceptionAction(null)}
               />
             </Box>
           </Grid>

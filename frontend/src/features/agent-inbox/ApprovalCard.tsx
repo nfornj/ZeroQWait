@@ -12,6 +12,7 @@ import {
   Typography,
   useTheme,
 } from "@mui/material";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import type { PendingApproval } from "./types";
 import { useShop } from "../../contexts/ShopContext";
 
@@ -43,6 +44,11 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({ approval, isSubmitting, onD
     muiTheme.palette.mode === "dark"
       ? alpha(brandPrimary, 0.24)
       : alpha(brandPrimary, 0.16);
+  const riskTone = approval.risk_level === "high"
+    ? muiTheme.palette.error.main
+    : approval.risk_level === "medium"
+      ? muiTheme.palette.warning.main
+      : muiTheme.palette.success.main;
 
   return (
     <Card
@@ -72,12 +78,37 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({ approval, isSubmitting, onD
         </Stack>
 
         <Typography variant="h6" sx={{ textTransform: "capitalize", mb: 1, color: brandPrimary }}>
-          {approval.action.replace(/_/g, " ")}
+          {approval.title || approval.action.replace(/_/g, " ")}
         </Typography>
 
         <Typography variant="body2" color="text.secondary" mb={1.5}>
-          This action is paused until you approve or reject it.
+          {approval.summary || "This action is paused until you approve or reject it."}
         </Typography>
+
+        <Stack spacing={1.25} mb={1.5}>
+          <Alert
+            icon={<WarningAmberRoundedIcon fontSize="inherit" />}
+            severity={approval.risk_level === "high" ? "error" : approval.risk_level === "medium" ? "warning" : "info"}
+            sx={{ borderRadius: 2 }}
+          >
+            <Typography variant="subtitle2">Risk: {(approval.risk_level || "medium").toUpperCase()}</Typography>
+            <Typography variant="body2">{approval.expected_impact || "This changes live shop operations once approved."}</Typography>
+          </Alert>
+          <Alert icon={false} severity="info" sx={{ borderRadius: 2 }}>
+            <Typography variant="caption" color="text.secondary">
+              Reason
+            </Typography>
+            <Typography variant="body2">{approval.reason || "No explicit reason was provided."}</Typography>
+          </Alert>
+          {approval.recommended_decision && (
+            <Alert icon={false} severity="success" sx={{ borderRadius: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                Recommended handling
+              </Typography>
+              <Typography variant="body2">{approval.recommended_decision}</Typography>
+            </Alert>
+          )}
+        </Stack>
 
         {detailEntries.length > 0 ? (
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1 }}>
@@ -125,6 +156,7 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({ approval, isSubmitting, onD
           onClick={() => onDecision(approval, true)}
           sx={{
             bgcolor: brandPrimary,
+            boxShadow: `0 10px 30px ${alpha(riskTone, 0.18)}`,
             color: muiTheme.palette.getContrastText(brandPrimary),
             "&:hover": {
               bgcolor: brandPrimary,

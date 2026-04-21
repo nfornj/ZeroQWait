@@ -22,7 +22,7 @@ Phase 1 (Current): Basic Supervisor without actual sub-agents
 Phase 2: Add conditional edges to real sub-agents
 """
 
-from typing import Literal, Dict, Any, List, Optional
+from typing import Literal, Dict, Any, List, Optional, cast
 import logging
 import re
 from pydantic import BaseModel, Field
@@ -245,11 +245,11 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
 
     try:
         structured_llm = llm.with_structured_output(RoutingDecision)
-        decision: RoutingDecision = structured_llm.invoke(
+        decision = cast(RoutingDecision, structured_llm.invoke(
             [SystemMessage(content=system_prompt)]
             + history_messages
             + [HumanMessage(content=user_input)]
-        )
+        ))
         intent = decision.next_agent
         source = "llm_structured"
         logger.info(
@@ -791,7 +791,10 @@ def _execute_approved_action(state: AgentState, pending: Dict[str, Any]) -> Dict
     """Execute a previously proposed high-impact action after owner approval."""
     action = pending.get("action")
     details = pending.get("details") or {}
-    shop_id = state.get("tenant_id")
+    shop_id = pending.get("shop_id", state.get("tenant_id"))
+
+    if not shop_id:
+        return {"error": "Cannot execute approval action without shop_id"}
 
     if action == "close_queue":
         return booking_tools.close_queue(shop_id, details.get("reason") or "Owner approved closure")
@@ -810,6 +813,38 @@ def _execute_approved_action(state: AgentState, pending: Dict[str, Any]) -> Dict
         if not user_id:
             return {"error": "remove_employee requires user_id in details"}
         return hr_tools.remove_employee(shop_id=shop_id, user_id=user_id)
+
+    if action == "assign_shift":
+        user_id = details.get("user_id")
+        start_time = details.get("start_time")
+        end_time = details.get("end_time")
+        date = details.get("date")
+        missing = [field for field, value in {
+            "user_id": user_id,
+            "start_time": start_time,
+            "end_time": end_time,
+            "date": date,
+        }.items() if not value]
+        if missing:
+            return {"error": f"assign_shift requires {', '.join(missing)} in details"}
+
+        assert user_id is not None
+        assert start_time is not None
+        assert end_time is not None
+        assert date is not None
+
+        shift_user_id = int(user_id)
+        shift_start_time = str(start_time)
+        shift_end_time = str(end_time)
+        shift_date = str(date)
+
+        return hr_tools.assign_shift(
+            shop_id=shop_id,
+            user_id=shift_user_id,
+            start_time=shift_start_time,
+            end_time=shift_end_time,
+            date=shift_date,
+        )
 
     return {"error": f"Unsupported approval action: {action}"}
 
@@ -859,8 +894,9 @@ def approval_gate(state: AgentState) -> dict:
             content=f"Approval received, but the action failed: {execution_result.get('error')}"
         )
     else:
+        result_message = execution_result.get("message") or f"Action '{pending.get('action')}' was executed successfully."
         execution_msg = AIMessage(
-            content=f"Approval received. Action '{pending.get('action')}' was executed successfully."
+            content=f"Approval received. {result_message}"
         )
 
     return {

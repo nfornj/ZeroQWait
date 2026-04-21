@@ -11,6 +11,48 @@ export interface PendingApproval {
   action: string;
   details: Record<string, unknown>;
   shop_id: number;
+  title?: string;
+  summary?: string;
+  reason?: string;
+  expected_impact?: string;
+  risk_level?: "low" | "medium" | "high" | string;
+  recommended_decision?: string;
+}
+
+export interface BriefingAlert {
+  severity: "success" | "info" | "warning" | "error";
+  title: string;
+  body: string;
+  created_at?: string;
+}
+
+export interface BriefingAction {
+  label: string;
+  payload: string;
+  description?: string;
+}
+
+export interface OwnerBriefing {
+  shop_id: number;
+  shop_name: string;
+  generated_at: string;
+  source?: string;
+  summary: string;
+  metrics: {
+    queue_length: number;
+    estimated_wait_minutes: number;
+    people_being_served: number;
+    active_employees: number;
+    active_services: number;
+    pending_approvals: number;
+    today_revenue: number;
+    today_transactions: number;
+    weekly_revenue: number;
+  };
+  alerts: BriefingAlert[];
+  alert_history?: BriefingAlert[];
+  recommendations: string[];
+  actions: BriefingAction[];
 }
 
 export interface ChatMessage {
@@ -73,10 +115,20 @@ export interface AgentFile {
   timestamp: string;
 }
 
+export interface InsightSummary {
+  id: string;
+  title: string;
+  body: string;
+  severity: "success" | "info" | "warning" | "error";
+  chips?: string[];
+  timestamp: string;
+}
+
 export interface InsightItem {
   id: string;
-  type: "chart" | "file";
+  type: "chart" | "file" | "summary";
   chart?: AgentChart;
   file?: AgentFile;
+  summary?: InsightSummary;
   timestamp: string;
 }

@@ -30,6 +30,7 @@ from fastapi.responses import StreamingResponse
 from typing import Dict, Any, cast, Optional
 import asyncio
 import base64
+from datetime import datetime
 import json
 import logging
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -38,6 +39,13 @@ from redis_client import redis_client as _redis
 from langgraph.types import Command
 
 from agents.supervisor import create_supervisor_runnable
+from agents.briefings import (
+    build_owner_briefing,
+    enrich_pending_approval_payload,
+    get_cached_shop_briefing_snapshot,
+    get_shop_alert_history,
+    refresh_shop_briefing_cache,
+)
 from agents.memory_context import merge_and_rank_memories, format_memory_context
 from agents.state import AgentState
 from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_saver
@@ -206,6 +214,37 @@ def _state_last_text(state_values: Dict[str, Any]) -> str:
         return ""
     final_message = messages[-1]
     return getattr(final_message, "content", str(final_message))
+
+
+def _get_pending_approval_payload(
+    shop_id: int,
+    user_id: int,
+    metrics: Optional[Dict[str, Any]] = None,
+) -> list[Dict[str, Any]]:
+    """Return current pending approval payloads for a tenant thread."""
+    checkpoint_config = build_checkpoint_config(shop_id, user_id)
+    runnable = _SUPERVISOR_RUNNABLE
+    snapshot = runnable.get_state(checkpoint_config)
+
+    pending: list[Dict[str, Any]] = []
+    if snapshot and snapshot.interrupts:
+        values = cast(Dict[str, Any], snapshot.values or {})
+        pending_approval = values.get("pending_approval")
+        interrupt_id = getattr(snapshot.interrupts[0], "id", None)
+        if pending_approval:
+            pending.append(
+                enrich_pending_approval_payload(
+                    {
+                        "action_id": interrupt_id,
+                        "action": pending_approval.get("action"),
+                        "details": pending_approval.get("details", {}),
+                        "shop_id": pending_approval.get("shop_id", shop_id),
+                    },
+                    metrics=metrics,
+                )
+            )
+
+    return pending
 
 
 def _normalize_shop_ids(raw_ids: Any) -> list[int]:
@@ -407,6 +446,12 @@ async def chat_sync(
         # runnable.invoke() is synchronous (uses sync Postgres checkpointer + sync LLM calls).
         result = cast(Dict[str, Any], await asyncio.to_thread(runnable.invoke, initial_state, checkpoint_config))
         pending_action = _extract_pending_action(result)
+        if pending_action:
+            pending_action["shop_id"] = shop_id
+            pending_action = enrich_pending_approval_payload(
+                pending_action,
+                metrics=db_interface.get_shop_live_wait_metrics(shop_id) or {},
+            )
         approval_required = bool((result.get("__interrupt__") or []) or result.get("needs_human_input", False))
         
         # Extract final response
@@ -596,6 +641,11 @@ async def chat_stream(
                             # Graph is paused at a breakpoint (approval required).
                             pending_action = _extract_pending_action(state_vals)
                             if pending_action:
+                                pending_action["shop_id"] = shop_id
+                                pending_action = enrich_pending_approval_payload(
+                                    pending_action,
+                                    metrics=db_interface.get_shop_live_wait_metrics(shop_id) or {},
+                                )
                                 yield f"data: {json.dumps({'type': 'approval_required', 'action': pending_action.get('action'), 'details': pending_action})}\n\n"
                 except Exception as state_exc:
                     logger.warning("Could not retrieve final checkpoint state: %s", state_exc)
@@ -835,24 +885,83 @@ async def get_pending_approvals(
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
 
-    checkpoint_config = build_checkpoint_config(shop_id, user_id)
-    runnable = _SUPERVISOR_RUNNABLE
-    snapshot = runnable.get_state(checkpoint_config)
+    metrics = db_interface.get_shop_live_wait_metrics(shop_id) or {}
+    return {"pending": _get_pending_approval_payload(shop_id, user_id, metrics=metrics)}
 
-    pending = []
-    if snapshot and snapshot.interrupts:
-        values = cast(Dict[str, Any], snapshot.values or {})
-        pending_approval = values.get("pending_approval")
-        interrupt_id = getattr(snapshot.interrupts[0], "id", None)
-        if pending_approval:
-            pending.append({
-                "action_id": interrupt_id,
-                "action": pending_approval.get("action"),
-                "details": pending_approval.get("details", {}),
-                "shop_id": pending_approval.get("shop_id", shop_id),
-            })
 
-    return {"pending": pending}
+@router.get("/briefing")
+async def get_owner_briefing(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Return a lightweight operational briefing for the owner inbox."""
+    user_id = _extract_user_id(current_user)
+    user_shops = _get_owned_shop_ids(current_user)
+
+    try:
+        shop_id = int(shop_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="shop_id must be an integer")
+
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authenticated user_id missing")
+
+    if shop_id not in user_shops:
+        raise HTTPException(status_code=403, detail="Not owner of this shop")
+
+    shop = db_interface.get_shop_by_id(shop_id)
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    cached_snapshot = get_cached_shop_briefing_snapshot(shop_id)
+    if not cached_snapshot:
+        cached_snapshot = refresh_shop_briefing_cache(shop_id, shop.get("name"))
+
+    metrics = dict((cached_snapshot or {}).get("metrics") or {})
+    live_metrics = db_interface.get_shop_live_wait_metrics(shop_id) or {}
+    metrics.update({key: value for key, value in live_metrics.items() if value is not None})
+
+    if not metrics.get("active_services"):
+        services = db_interface.get_shop_services(shop_id, include_inactive=False) or []
+        metrics["active_services"] = len(services)
+    if not metrics.get("active_employees"):
+        employees = db_interface.get_shop_employees(shop_id, is_active=True) or []
+        metrics["active_employees"] = len(employees)
+
+    pending = _get_pending_approval_payload(shop_id, user_id, metrics=live_metrics or metrics)
+
+    active_services = int(metrics.get("active_services", 0) or 0)
+    active_employees = int(metrics.get("active_employees", 0) or 0)
+    pending_count = len(pending)
+    queue_length = int(metrics.get("queue_length", 0) or 0)
+    wait_minutes = int(metrics.get("estimated_wait_minutes", 0) or 0)
+    serving_count = int(metrics.get("people_being_served", 0) or 0)
+    today_total_revenue = float(metrics.get("today_revenue", 0.0) or 0.0)
+    today_transactions = int(metrics.get("today_transactions", 0) or 0)
+    weekly_total_revenue = float(metrics.get("weekly_revenue", 0.0) or 0.0)
+
+    briefing = build_owner_briefing(
+        shop_id=shop_id,
+        shop_name=shop.get("name", "Your shop"),
+        metrics={
+            **metrics,
+            "queue_length": queue_length,
+            "estimated_wait_minutes": wait_minutes,
+            "people_being_served": serving_count,
+            "active_employees": active_employees,
+        },
+        active_services=active_services,
+        active_employees=active_employees,
+        pending_count=pending_count,
+        today_revenue=today_total_revenue,
+        today_transactions=today_transactions,
+        weekly_revenue=weekly_total_revenue,
+        alert_history=get_shop_alert_history(shop_id),
+        generated_at=(cached_snapshot or {}).get("generated_at") or datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        source=str((cached_snapshot or {}).get("source") or "live"),
+    )
+    briefing["pending"] = pending
+    return briefing
 
 
 # ============================================================================

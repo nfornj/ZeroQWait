@@ -1,6 +1,6 @@
 # ZeroQwait — Project Rules & Context
 
-> **Last updated**: 2026-04-14
+> **Last updated**: 2026-04-20
 > **Live URL**: https://zeroqwait.com (test ingress: http://192.168.2.134.nip.io)
 > **Product pivot (2026-04-10)**: Transitioning from queue-management SaaS → **Agent-as-a-Service (AaaS)** platform powered by LangGraph
 
@@ -72,6 +72,31 @@ Required behavior during stabilization:
 
 Fallback methods can be introduced later, after core flows are stable and validated.
 
+### 0.6 Complexity And Product-Drift Guardrail
+
+The current goal is to build **a vertical agent product for service businesses**, not a generic agent framework.
+
+AI assistants working on this codebase must actively guard against unnecessary complexity and architecture drift.
+
+Before implementing a design that appears significantly more complex than the current need, stop and explicitly tell the user if the work is drifting in any of these directions:
+
+- Building generic agent infrastructure instead of product features
+- Creating reusable framework abstractions before one concrete product flow is validated
+- Adding orchestration layers, planners, memory systems, or tool registries that are broader than ZeroQwait's actual business needs
+- Solving speculative future scale/problems before the current owner/customer workflows are working well
+- Replacing simple shop-specific logic with abstract multi-agent/platform machinery that makes the system harder to reason about
+
+When this risk appears, the assistant must explicitly state:
+
+1. Why the proposal may be too complex for the current product stage
+2. What the simpler product-focused version would be
+3. Whether the work improves the owner experience, customer experience, or core agent operations in a directly testable way
+
+Rule of thumb:
+- Prefer the simplest design that improves the real shop-owner or customer workflow
+- Reuse LangGraph, FastAPI, PostgreSQL, Redis, and current MCP patterns instead of inventing new platform layers
+- Do not build generic framework capabilities unless the user explicitly asks for them or the current product cannot proceed without them
+
 ### 0.4 Allowed Without Approval
 
 - Bug fixes that address the actual root cause with proper design
@@ -86,6 +111,20 @@ Fallback methods can be introduced later, after core flows are stable and valida
 
 An **Agent-as-a-Service (AaaS) platform** where service businesses (barbers, salons, clinics, auto shops, etc.) each get their own **team of AI agents** — a Receptionist, Finance manager, and HR assistant — orchestrated by a Supervisor agent. Shop owners manage their entire business operations via natural-language chat with Human-in-the-Loop approval workflows. Customers interact with the shop's Receptionist agent to discover services, join queues, and get real-time updates.
 
+### Current Product Goal
+
+ZeroQwait's current product goal is to become **a practical AI operations system for one service business at a time** — not a generic agent framework.
+
+The product should feel like:
+- An **AI Receptionist** for customers that helps them discover services, ask questions, join queues, book appointments, and stay oriented without friction
+- An **AI operations workspace** for shop owners that monitors the day, surfaces issues, proposes actions, requests approval for high-impact changes, and gradually takes over repeatable operational work
+- A **supervised AI team** where the owner remains in control, but no longer has to manually run every queue, schedule, update, or follow-up
+
+The intended end-state is:
+- The customer feels like they are interacting with a smart front-desk receptionist, not a queue tool
+- The owner feels like they are supervising an AI team, not operating a traditional dashboard with a chatbot attached
+- The architecture serves real shop workflows first and should only become more complex when it directly improves owner experience, customer experience, or safe operational autonomy
+
 ### Product Vision
 
 Every shop owner gets a personalized AI operations team that:
@@ -94,9 +133,15 @@ Every shop owner gets a personalized AI operations team that:
 - **Asks for approval** before executing high-impact actions (e.g., changing schedules, processing refunds)
 - **Learns** the shop's patterns and adapts over time
 
+Near-term product focus:
+- Make the owner experience feel like an operations cockpit, not just chat
+- Make the customer experience feel like an AI receptionist, not just self-check-in
+- Build event-driven, policy-aware agent behavior only where it improves real business outcomes
+- Avoid generic platform abstractions unless they are required for a concrete ZeroQwait workflow
+
 ### Core User Flows
 
-1. **Shop Owner** → Signs up → Gets AI agent team → Manages everything via chat inbox → Approves/rejects agent proposals → Views dashboards.
+1. **Shop Owner** → Signs up → Gets AI agent team → Manages the business through an AI operations workspace and chat inbox → Reviews agent proposals and approvals → Monitors outcomes instead of manually driving every workflow.
 2. **Customer** → Lands on marketing page or shop page → Interacts with shop's Receptionist agent (text/voice) → Discovers services → Joins queue → Gets position updates.
 3. **Employee** → Logs in → Receives shift assignments from HR agent → Manages individual queue from employee dashboard.
 

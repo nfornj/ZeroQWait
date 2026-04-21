@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { PieChart } from "@mui/x-charts/PieChart";
@@ -165,6 +166,36 @@ const InsightsPanel: React.FC<InsightsPanelProps> = ({ items }) => {
                     </Stack>
                     <MiniChart chart={item.chart} accent={brandPrimary} />
                   </>
+                )}
+
+                {item.type === "summary" && item.summary && (
+                  <Stack spacing={1}>
+                    <Stack direction="row" spacing={0.75} alignItems="center">
+                      <WarningAmberRoundedIcon sx={{ fontSize: 16, color: brandPrimary }} />
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                        {item.summary.title}
+                      </Typography>
+                    </Stack>
+                    <Typography variant="body2" color="text.secondary">
+                      {item.summary.body}
+                    </Typography>
+                    {!!item.summary.chips?.length && (
+                      <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                        {item.summary.chips.map((chip) => (
+                          <Chip
+                            key={`${item.id}_${chip}`}
+                            size="small"
+                            label={chip}
+                            sx={{
+                              bgcolor: alpha(brandPrimary, 0.1),
+                              color: brandPrimary,
+                              border: `1px solid ${alpha(brandPrimary, 0.18)}`,
+                            }}
+                          />
+                        ))}
+                      </Stack>
+                    )}
+                  </Stack>
                 )}
 
                 {item.type === "file" && item.file && (

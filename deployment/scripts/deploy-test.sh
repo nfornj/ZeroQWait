@@ -139,7 +139,7 @@ sudo env DB_HOST_PORT="${DB_HOST_PORT}" BACKEND_HOST_PORT="${BACKEND_HOST_PORT}"
 	docker compose "${COMPOSE_ARGS[@]}" exec -T backend /opt/venv/bin/python init_database.py
 
 sudo env DB_HOST_PORT="${DB_HOST_PORT}" BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" SHARED_OLLAMA_URL="${SHARED_OLLAMA_URL}" SHARED_MODEL_NAME="${SHARED_MODEL_NAME}" SHARED_TTS_URL="${SHARED_TTS_URL}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT}" \
-	docker compose "${COMPOSE_ARGS[@]}" exec -T backend /opt/venv/bin/python seed_data.py
+	docker compose "${COMPOSE_ARGS[@]}" exec -T backend env PYTHONPATH=/app /opt/venv/bin/python scripts/seed_data.py
 
 echo "==> Ensuring compatibility test login account"
 sudo env DB_HOST_PORT="${DB_HOST_PORT}" BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" SHARED_OLLAMA_URL="${SHARED_OLLAMA_URL}" SHARED_MODEL_NAME="${SHARED_MODEL_NAME}" SHARED_TTS_URL="${SHARED_TTS_URL}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT}" \
@@ -235,9 +235,11 @@ echo "    Frontend: http://localhost:${FRONTEND_PUBLISHED_PORT}"
 echo "    Backend : http://localhost:${BACKEND_PUBLISHED_PORT}"
 
 ARCHIVE_SERVICES="${TEST_ARCHIVE_SERVICES:-backend,frontend}"
+TEST_ARCHIVE_REGISTRY="${TEST_ARCHIVE_REGISTRY:-localhost:5000}"
 echo "==> Archiving test images to local registry (retain last 3 tags)"
 echo "==> Archive services: ${ARCHIVE_SERVICES}"
 sudo env \
+	REGISTRY="${TEST_ARCHIVE_REGISTRY}" \
 	SKIP_TESTS="true" \
 	IMAGE_NAMESPACE="test" \
 	RETAIN_VERSIONS="3" \

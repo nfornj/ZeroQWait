@@ -108,7 +108,7 @@ def get_wait_time(shop_id: int, queue_item_id: Optional[int] = None) -> Dict[str
 
 
 def close_queue(shop_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
-    """Close the active queue for a shop. This is a high-impact action requiring HITL approval."""
+    """Close the active queue for a shop after owner approval."""
     try:
         from modules.queues.models import Queue
 
@@ -128,7 +128,6 @@ def close_queue(shop_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
                 "message": f"Queue closed. Reason: {reason or 'Not specified'}",
                 "shop_id": shop_id,
                 "status": "closed",
-                "requires_approval": True,
             }
         finally:
             session.close()
