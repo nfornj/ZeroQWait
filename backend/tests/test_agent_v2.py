@@ -965,3 +965,98 @@ def test_briefing_route_returns_snapshot_with_pending_actions():
     assert payload["pending"] == pending_payload
     assert payload["metrics"]["pending_approvals"] == 1
     mock_build.assert_called_once()
+
+
+def test_feed_route_returns_persisted_notifications():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    notifications = [
+        SimpleNamespace(
+            id=301,
+            notification_type="policy_action_executed",
+            title="Queue auto-closed by policy",
+            message="The receptionist closed intake automatically under the current policy.",
+            severity="warning",
+            status="unread",
+            created_at=datetime(2026, 4, 21, 10, 45, 0),
+            payload={"action": "close_queue", "shop_id": 41},
+        ),
+        SimpleNamespace(
+            id=302,
+            notification_type="finance_summary_ready",
+            title="Weekly summary ready",
+            message="This week's finance summary is ready to review.",
+            severity="info",
+            status="unread",
+            created_at=datetime(2026, 4, 21, 10, 50, 0),
+            payload={"report": "weekly_summary", "shop_id": 41},
+        ),
+    ]
+
+    fake_repo = SimpleNamespace(list_recent_notifications=lambda shop_id, limit=25: notifications[:limit])
+    fake_db = SimpleNamespace(close=lambda: None)
+
+    with (
+        patch.object(agent_v2, "SessionLocal", return_value=fake_db),
+        patch.object(agent_v2, "AgentWorkRepository", return_value=fake_repo),
+    ):
+        response = client.get("/api/v2/agent/feed", params={"shop_id": 41, "limit": 10})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [event["id"] for event in payload["events"]] == ["notification_301", "notification_302"]
+    assert payload["events"][0]["type"] == "approval_decision"
+    assert payload["events"][0]["notification_id"] == 301
+    assert payload["events"][1]["type"] == "system"
+
+
+def test_briefing_route_includes_recent_notifications():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    built_briefing = {
+        "shop_id": 41,
+        "shop_name": "North Barbers",
+        "generated_at": "2026-04-21T08:30:00Z",
+        "source": "cache",
+        "summary": "North Barbers currently has 4 people waiting.",
+        "metrics": {
+            "queue_length": 4,
+            "estimated_wait_minutes": 20,
+            "people_being_served": 1,
+            "active_employees": 2,
+            "active_services": 3,
+            "pending_approvals": 0,
+            "today_revenue": 420.0,
+            "today_transactions": 12,
+            "weekly_revenue": 2100.0,
+        },
+        "alerts": [],
+        "alert_history": [],
+        "recommendations": [],
+        "actions": [],
+    }
+    recent_notifications = [{
+        "id": "notification_401",
+        "type": "system",
+        "title": "Weekly summary ready",
+        "description": "This week's finance summary is ready to review.",
+        "timestamp": "2026-04-21T10:50:00",
+        "payload": {"report": "weekly_summary", "shop_id": 41},
+    }]
+
+    with (
+        patch.object(agent_v2.db_interface, "get_shop_by_id", return_value={"id": 41, "name": "North Barbers"}),
+        patch.object(agent_v2, "get_cached_shop_briefing_snapshot", return_value={"generated_at": "2026-04-21T08:30:00Z", "source": "cache", "metrics": {}}),
+        patch.object(agent_v2.db_interface, "get_shop_live_wait_metrics", return_value={}),
+        patch.object(agent_v2.db_interface, "get_shop_services", return_value=[]),
+        patch.object(agent_v2.db_interface, "get_shop_employees", return_value=[]),
+        patch.object(agent_v2, "_get_pending_approval_payload", return_value=[]),
+        patch.object(agent_v2, "get_shop_alert_history", return_value=[]),
+        patch.object(agent_v2, "build_owner_briefing", return_value=dict(built_briefing)),
+        patch.object(agent_v2, "_get_notification_feed_payload", return_value=recent_notifications),
+    ):
+        response = client.get("/api/v2/agent/briefing", params={"shop_id": 41})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["recent_notifications"] == recent_notifications

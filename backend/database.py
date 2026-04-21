@@ -9,6 +9,7 @@ from typing import Optional
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from dotenv import load_dotenv
+from shared.runtime_hosts import resolve_runtime_host
 
 Base = declarative_base()
 from pathlib import Path
@@ -20,7 +21,7 @@ env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path, override=False)
 
 # Get database connection details
-db_host = os.getenv("DB_HOST", "localhost")
+db_host = resolve_runtime_host(os.getenv("DB_HOST", "localhost"))
 db_port = os.getenv("DB_PORT", "5432")
 db_name = os.getenv("DB_NAME", "zeroqwait")
 db_user = os.getenv("DB_USER", "postgres")

@@ -398,6 +398,15 @@ class AgentWorkRepository:
         self.db.refresh(notification)
         return notification
 
+    def list_recent_notifications(self, shop_id: int, limit: int = 25) -> list[AgentNotification]:
+        return (
+            self.db.query(AgentNotification)
+            .filter(AgentNotification.shop_id == shop_id)
+            .order_by(AgentNotification.created_at.desc(), AgentNotification.id.desc())
+            .limit(limit)
+            .all()
+        )
+
     def create_customer_case(
         self,
         *,

@@ -23,6 +23,7 @@ from typing import Optional
 from langchain_core.runnables.config import RunnableConfig
 from pathlib import Path
 from dotenv import load_dotenv
+from shared.runtime_hosts import resolve_runtime_host
 
 # Load backend/.env for local host-run contexts.
 _env_path = Path(__file__).resolve().parents[1] / ".env"
@@ -34,7 +35,7 @@ def _build_db_url(db_url: Optional[str] = None) -> str:
     if db_url:
         return db_url
 
-    db_host = os.getenv("DB_HOST", "localhost")
+    db_host = resolve_runtime_host(os.getenv("DB_HOST", "localhost"))
     db_port = os.getenv("DB_PORT", "5432")
     db_name = os.getenv("DB_NAME", "fastcuts_db")
     db_user = os.getenv("DB_USER", "postgres")

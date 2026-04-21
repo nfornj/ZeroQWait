@@ -7,6 +7,7 @@ Endpoints:
 - POST /api/v2/agent/approve - Approve/reject HITL action
 - GET /api/v2/agent/history - Get conversation history
 - GET /api/v2/agent/pending - Get pending approvals
+- GET /api/v2/agent/feed - Get persisted feed events
 - GET /api/v2/agent/health - Health check
 
 Authentication:
@@ -335,6 +336,54 @@ def _get_pending_approval_payload(
         db.close()
 
     return pending
+
+
+def _notification_feed_type(notification_type: str, severity: str, title: str, message: str) -> str:
+    haystack = " ".join([notification_type, severity, title, message]).lower()
+    if "error" in haystack:
+        return "error"
+    if "approval" in haystack or "policy" in haystack:
+        return "approval_decision"
+    if "queue" in haystack:
+        return "queue_update"
+    return "system"
+
+
+def _serialize_notification_feed_event(notification: Any) -> Dict[str, Any]:
+    payload = dict(getattr(notification, "payload", None) or {})
+    notification_type = str(getattr(notification, "notification_type", "system") or "system")
+    severity = str(getattr(notification, "severity", "info") or "info")
+    created_at = getattr(notification, "created_at", None)
+    return {
+        "id": f"notification_{getattr(notification, 'id', 'unknown')}",
+        "type": _notification_feed_type(
+            notification_type,
+            severity,
+            str(getattr(notification, "title", "")),
+            str(getattr(notification, "message", "")),
+        ),
+        "title": str(getattr(notification, "title", "Agent notification")),
+        "description": str(getattr(notification, "message", "")),
+        "timestamp": created_at.isoformat() if created_at is not None else datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "severity": severity,
+        "status": str(getattr(notification, "status", "unread")),
+        "notification_type": notification_type,
+        "notification_id": getattr(notification, "id", None),
+        "payload": payload,
+    }
+
+
+def _get_notification_feed_payload(shop_id: int, limit: int = 25) -> list[Dict[str, Any]]:
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        notifications = repo.list_recent_notifications(shop_id, limit=limit)
+        return [_serialize_notification_feed_event(item) for item in notifications]
+    except Exception as exc:
+        logger.warning("Unable to load persisted agent notifications for shop %s: %s", shop_id, exc)
+        return []
+    finally:
+        db.close()
 
 
 def _normalize_shop_ids(raw_ids: Any) -> list[int]:
@@ -1415,7 +1464,22 @@ async def get_owner_briefing(
         source=str((cached_snapshot or {}).get("source") or "live"),
     )
     briefing["pending"] = pending
+    briefing["recent_notifications"] = _get_notification_feed_payload(shop_id, limit=10)
     return briefing
+
+
+@router.get("/feed")
+async def get_feed(
+    shop_id: int,
+    limit: int = 25,
+    current_user: dict = Depends(get_current_user),
+):
+    """Return persisted owner-facing feed events sourced from agent_notifications."""
+    user_id, shop_id = _require_owner_shop_access(shop_id, current_user)
+    del user_id
+
+    normalized_limit = max(1, min(int(limit), 100))
+    return {"events": _get_notification_feed_payload(shop_id, limit=normalized_limit)}
 
 
 # ============================================================================
