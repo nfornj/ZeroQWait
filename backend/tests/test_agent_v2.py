@@ -63,7 +63,7 @@ def _pending_policy_payload(action, details, *, shop_id=41, mode="require_approv
         "shop_id": shop_id,
         "policy_key": f"approval.{action}",
         "policy_mode": mode,
-        "category": "operations",
+        "category": "finance" if action in {"create_invoice", "record_payment"} else "operations",
         "title": action.replace("_", " ").title(),
         "risk_level": "high" if action == "close_queue" else "medium",
         "urgency": "high" if action == "close_queue" else "normal",
@@ -363,6 +363,219 @@ def test_chat_route_auto_executes_policy_allowed_action():
     assert payload["approval_required"] is False
     assert payload["pending_action"] is None
     assert "executed this automatically" in payload["response"]
+
+
+def test_list_policies_route_returns_catalog_with_modes():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    policies = [
+        {
+            "action": "close_queue",
+            "policy_key": "approval.close_queue",
+            "category": "operations",
+            "title": "Close Active Queue",
+            "risk_level": "high",
+            "urgency": "high",
+            "default_mode": "require_approval",
+            "supported_modes": ["allow", "require_approval", "forbid", "notify_only", "silent"],
+            "mode": "notify_only",
+            "explicit": True,
+        }
+    ]
+
+    with patch.object(agent_v2, "_list_policy_payload", return_value=policies) as mock_list:
+        response = client.get("/api/v2/agent/policies", params={"shop_id": 41})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["shop_id"] == 41
+    assert payload["user_id"] == 17
+    assert payload["policies"] == policies
+    mock_list.assert_called_once_with(41)
+
+
+def test_update_policy_route_persists_mode_change():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    updated_policy = {
+        "action": "close_queue",
+        "policy_key": "approval.close_queue",
+        "category": "operations",
+        "title": "Close Active Queue",
+        "risk_level": "high",
+        "urgency": "high",
+        "default_mode": "require_approval",
+        "supported_modes": ["allow", "require_approval", "forbid", "notify_only", "silent"],
+        "mode": "allow",
+        "explicit": True,
+    }
+
+    with patch.object(agent_v2, "_upsert_policy_payload", return_value=updated_policy) as mock_upsert:
+        response = client.put(
+            "/api/v2/agent/policies/approval.close_queue",
+            json={"shop_id": 41, "mode": "allow"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["policy"] == updated_policy
+    mock_upsert.assert_called_once_with(
+        shop_id=41,
+        policy_key="approval.close_queue",
+        mode="allow",
+        policy_value=None,
+        config=None,
+    )
+
+
+def test_chat_route_requires_approval_for_finance_invoice_creation():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2,
+            "_create_chat_work_context",
+            return_value={
+                "goal_id": 961,
+                "run_id": 962,
+                "execution_mode": "interactive",
+                "trigger_source": "chat",
+                "event_context": {"trigger_source": "chat", "goal_id": 961, "run_id": 962},
+            },
+        ),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_finalize_chat_work_context", side_effect=lambda **kwargs: kwargs["pending_action"]),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch.object(agent_v2.db_interface, "get_shop_live_wait_metrics", return_value={}),
+        patch("agents.supervisor.get_conversation_history", return_value=[]),
+        patch("agents.supervisor.save_conversation_turn", return_value=None),
+        patch(
+            "agents.supervisor.get_llm",
+            return_value=_FakeLLM(
+                RoutingDecision(
+                    thought_process="Invoice creation routes to finance.",
+                    next_agent="finance",
+                    is_followup=False,
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.get_llm",
+            return_value=_FakeLLM(
+                SpecialistPlan(
+                    operation="create_invoice",
+                    arguments={"service_name": "Haircut", "unit_price": 35.0, "quantity": 2},
+                    requires_clarification=False,
+                    clarification_question="",
+                    rationale="Owner wants to create a bill.",
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.approval_policy.build_pending_approval",
+            return_value=_pending_policy_payload(
+                "create_invoice",
+                {"service_name": "Haircut", "unit_price": 35.0, "quantity": 2},
+            ),
+        ),
+    ):
+        response = client.post(
+            "/api/v2/agent/chat",
+            json={"message": "Create an invoice for two haircuts at 35 each", "shop_id": 41},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["agent"] == "finance"
+    assert payload["approval_required"] is True
+    assert payload["pending_action"]["action"] == "create_invoice"
+    assert payload["pending_action"]["policy_key"] == "approval.create_invoice"
+
+
+def test_approve_route_executes_finance_invoice_action():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    def _passthrough_finalize(**kwargs):
+        return kwargs["pending_action"]
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2,
+            "_create_chat_work_context",
+            return_value={
+                "goal_id": 971,
+                "run_id": 972,
+                "execution_mode": "interactive",
+                "trigger_source": "chat",
+                "event_context": {"trigger_source": "chat", "goal_id": 971, "run_id": 972},
+            },
+        ),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_finalize_chat_work_context", side_effect=_passthrough_finalize),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch.object(agent_v2.db_interface, "get_shop_live_wait_metrics", return_value={}),
+        patch.object(agent_v2, "_record_approval_decision", return_value=None),
+        patch("agents.supervisor.get_conversation_history", return_value=[]),
+        patch("agents.supervisor.save_conversation_turn", return_value=None),
+        patch(
+            "agents.supervisor.get_llm",
+            return_value=_FakeLLM(
+                RoutingDecision(
+                    thought_process="Invoice creation routes to finance.",
+                    next_agent="finance",
+                    is_followup=False,
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.get_llm",
+            return_value=_FakeLLM(
+                SpecialistPlan(
+                    operation="create_invoice",
+                    arguments={"service_name": "Haircut", "unit_price": 35.0, "quantity": 2},
+                    requires_clarification=False,
+                    clarification_question="",
+                    rationale="Owner wants to create a bill.",
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.approval_policy.build_pending_approval",
+            return_value=_pending_policy_payload(
+                "create_invoice",
+                {"service_name": "Haircut", "unit_price": 35.0, "quantity": 2},
+            ),
+        ),
+        patch(
+            "agents.supervisor.finance_tools.create_invoice",
+            return_value={"message": "Invoice INV-100 created successfully", "status": "created", "invoice_id": 100},
+        ),
+    ):
+        create_response = client.post(
+            "/api/v2/agent/chat",
+            json={"message": "Create an invoice for two haircuts at 35 each", "shop_id": 41},
+        )
+        assert create_response.status_code == 200
+
+        pending_action = create_response.json()["pending_action"]
+        approve_response = client.post(
+            "/api/v2/agent/approve",
+            json={
+                "shop_id": 41,
+                "action_id": pending_action["action_id"],
+                "approved": True,
+                "reason": "Approved",
+            },
+        )
+
+    assert approve_response.status_code == 200
+    payload = approve_response.json()
+    assert payload["status"] == "approved"
+    assert payload["agent"] == "finance"
+    assert payload["tool_results"]["status"] == "created"
+    assert payload["tool_results"]["invoice_id"] == 100
 
 
 def test_history_route_returns_checkpoint_messages_after_chat():

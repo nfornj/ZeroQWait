@@ -240,6 +240,26 @@ def enrich_pending_approval_payload(
         expected_impact = "The team's staffing schedule will change immediately once approved."
         risk_level = "medium"
         recommended_decision = "Approve if the employee should be scheduled for that shift now."
+    elif action == "create_invoice":
+        service_name = str(details.get("service_name") or "the requested service")
+        unit_price = float(details.get("unit_price") or 0.0)
+        quantity = int(details.get("quantity") or 1)
+        title = "Create Invoice"
+        summary = f"Create an invoice for {service_name}."
+        reason = f"Create an invoice for {service_name} at ${unit_price:.2f} x {quantity}."
+        expected_impact = "A new invoice will appear in the shop's financial records and become payable."
+        risk_level = "medium"
+        recommended_decision = "Approve if the invoice should be created now."
+    elif action == "record_payment":
+        amount = float(details.get("amount") or 0.0)
+        method = str(details.get("method") or "cash")
+        invoice_id = details.get("invoice_id")
+        title = "Record Payment"
+        summary = f"Record a {method} payment for ${amount:.2f}."
+        reason = f"Apply the payment to invoice {invoice_id} and update the payment ledger." if invoice_id else f"Record a standalone {method} payment of ${amount:.2f}."
+        expected_impact = "Payment records and invoice status will update immediately once approved."
+        risk_level = "medium"
+        recommended_decision = "Approve if that payment should be recorded now."
 
     return {
         **payload,

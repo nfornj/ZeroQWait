@@ -36,7 +36,7 @@ from modules.agent.work_repository import AgentWorkRepository
 
 from . import approval_policy
 from .state import AgentState
-from .tools import booking_tools, hr_tools
+from .tools import booking_tools, finance_tools, hr_tools
 from .memory_context import get_conversation_history, save_conversation_turn
 from redis_client import redis_client
 
@@ -736,6 +736,16 @@ def placeholder_finance(state: AgentState) -> dict:
 
     result = finance.invoke({"messages": list(state.get("messages", []))})
 
+    pending = result.get("pending_approval")
+    if pending:
+        pending["shop_id"] = shop_id
+        return {
+            "messages": result.get("messages", []),
+            "current_agent": "finance",
+            "pending_approval": pending,
+            "needs_human_input": bool(result.get("needs_human_input", True)),
+        }
+
     return {
         "messages": result.get("messages", []),
         "current_agent": "finance",
@@ -832,6 +842,33 @@ def _execute_approved_action(state: AgentState, pending: Dict[str, Any]) -> Dict
             start_time=shift_start_time,
             end_time=shift_end_time,
             date=shift_date,
+        )
+
+    if action == "create_invoice":
+        service_name = details.get("service_name")
+        unit_price = details.get("unit_price")
+        if not service_name or unit_price in (None, ""):
+            return {"error": "create_invoice requires service_name and unit_price in details"}
+        return finance_tools.create_invoice(
+            shop_id=shop_id,
+            service_name=str(service_name),
+            unit_price=float(unit_price),
+            quantity=int(details.get("quantity") or 1),
+            customer_id=int(details["customer_id"]) if details.get("customer_id") not in (None, "") else None,
+            tax_rate=float(details.get("tax_rate") or 0.0),
+            notes=str(details.get("notes")) if details.get("notes") not in (None, "") else None,
+        )
+
+    if action == "record_payment":
+        amount = details.get("amount")
+        if amount in (None, ""):
+            return {"error": "record_payment requires amount in details"}
+        return finance_tools.record_payment(
+            shop_id=shop_id,
+            amount=float(amount),
+            method=str(details.get("method") or "cash"),
+            invoice_id=int(details["invoice_id"]) if details.get("invoice_id") not in (None, "") else None,
+            notes=str(details.get("notes")) if details.get("notes") not in (None, "") else None,
         )
 
     return {"error": f"Unsupported approval action: {action}"}

@@ -98,26 +98,41 @@ def _build_finance_executor(shop_id: int):
             unit_price = _to_float(arguments.get("unit_price") or arguments.get("amount"))
             if not service_name or unit_price is None:
                 return {"error": "create_invoice requires service_name and unit_price"}
-            return finance_tools.create_invoice(
-                shop_id,
-                service_name,
-                unit_price,
-                quantity=_to_int(arguments.get("quantity")) or 1,
-                customer_id=_to_int(arguments.get("customer_id")),
-                tax_rate=_to_float(arguments.get("tax_rate")) or 0.0,
-                notes=_optional_str(arguments.get("notes")),
-            )
+            quantity = _to_int(arguments.get("quantity")) or 1
+            customer_id = _to_int(arguments.get("customer_id"))
+            tax_rate = _to_float(arguments.get("tax_rate")) or 0.0
+            notes = _optional_str(arguments.get("notes"))
+            return {
+                "requires_approval": True,
+                "action": "create_invoice",
+                "details": {
+                    "service_name": service_name,
+                    "unit_price": unit_price,
+                    "quantity": quantity,
+                    "customer_id": customer_id,
+                    "tax_rate": tax_rate,
+                    "notes": notes,
+                },
+                "message": f"Creating an invoice for {service_name} at ${unit_price:.2f} has been submitted for owner approval.",
+            }
         if operation == "record_payment":
             amount = _to_float(arguments.get("amount"))
             if amount is None:
                 return {"error": "record_payment requires amount"}
-            return finance_tools.record_payment(
-                shop_id,
-                amount,
-                method=_optional_str(arguments.get("method")) or "cash",
-                invoice_id=_to_int(arguments.get("invoice_id")),
-                notes=_optional_str(arguments.get("notes")),
-            )
+            method = _optional_str(arguments.get("method")) or "cash"
+            invoice_id = _to_int(arguments.get("invoice_id"))
+            notes = _optional_str(arguments.get("notes"))
+            return {
+                "requires_approval": True,
+                "action": "record_payment",
+                "details": {
+                    "amount": amount,
+                    "method": method,
+                    "invoice_id": invoice_id,
+                    "notes": notes,
+                },
+                "message": f"Recording a {method} payment of ${amount:.2f} has been submitted for owner approval.",
+            }
         if operation == "list_invoices":
             return finance_tools.list_invoices(
                 shop_id,

@@ -7,6 +7,9 @@ from modules.agent.models import PolicyMode
 from modules.agent.work_repository import AgentWorkRepository
 
 
+SUPPORTED_POLICY_MODES = tuple(mode.value for mode in PolicyMode)
+
+
 _ACTION_CATALOG: Dict[str, Dict[str, str]] = {
     "close_queue": {
         "policy_key": "approval.close_queue",
@@ -40,6 +43,22 @@ _ACTION_CATALOG: Dict[str, Dict[str, str]] = {
         "urgency": "normal",
         "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
     },
+    "create_invoice": {
+        "policy_key": "approval.create_invoice",
+        "category": "finance",
+        "title": "Create Invoice",
+        "risk_level": "medium",
+        "urgency": "normal",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
+    "record_payment": {
+        "policy_key": "approval.record_payment",
+        "category": "finance",
+        "title": "Record Payment",
+        "risk_level": "medium",
+        "urgency": "normal",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
 }
 
 
@@ -68,6 +87,12 @@ def _summary_for_action(action: str, details: Dict[str, Any]) -> str:
         employee_id = details.get("user_id")
         date = details.get("date") or "the selected day"
         return f"Assign employee {employee_id} to a shift on {date}."
+    if action == "create_invoice":
+        service_name = str(details.get("service_name") or "the requested service")
+        return f"Create an invoice for {service_name}."
+    if action == "record_payment":
+        amount = details.get("amount")
+        return f"Record a payment of ${float(amount or 0.0):.2f}."
     return "A business action needs a policy decision before the agent can continue."
 
 
@@ -85,6 +110,15 @@ def _rationale_for_action(action: str, details: Dict[str, Any]) -> str:
         start_time = details.get("start_time") or "start time"
         end_time = details.get("end_time") or "end time"
         return f"Create a shift from {start_time} to {end_time} for employee {employee_id}."
+    if action == "create_invoice":
+        service_name = str(details.get("service_name") or "the requested service")
+        unit_price = float(details.get("unit_price") or 0.0)
+        quantity = int(details.get("quantity") or 1)
+        return f"Create an invoice for {service_name} at ${unit_price:.2f} x {quantity}."
+    if action == "record_payment":
+        amount = float(details.get("amount") or 0.0)
+        method = str(details.get("method") or "cash")
+        return f"Record a {method} payment of ${amount:.2f}."
     return "The agent flagged this change as operationally significant."
 
 
@@ -97,7 +131,78 @@ def _impact_for_action(action: str, details: Dict[str, Any]) -> str:
         return "The employee will no longer appear as active for staffing and scheduling workflows."
     if action == "assign_shift":
         return "The staffing schedule will change immediately after execution."
+    if action == "create_invoice":
+        return "A new financial record will be created and become available for payment tracking."
+    if action == "record_payment":
+        return "The invoice and payment ledger will update immediately after execution."
     return "Shop operations will change immediately after execution."
+
+
+def get_policy_definition(policy_key: str) -> Dict[str, Any] | None:
+    normalized = str(policy_key or "").strip()
+    if not normalized:
+        return None
+    for action, config in sorted(_ACTION_CATALOG.items()):
+        if config["policy_key"] != normalized:
+            continue
+        return {
+            "action": action,
+            "policy_key": config["policy_key"],
+            "category": config["category"],
+            "title": config["title"],
+            "risk_level": config["risk_level"],
+            "urgency": config["urgency"],
+            "default_mode": config["default_mode"],
+            "supported_modes": list(SUPPORTED_POLICY_MODES),
+        }
+    return None
+
+
+def list_policy_definitions() -> list[Dict[str, Any]]:
+    definitions: list[Dict[str, Any]] = []
+    for action, config in sorted(_ACTION_CATALOG.items(), key=lambda item: (item[1]["category"], item[1]["policy_key"])):
+        definitions.append(
+            {
+                "action": action,
+                "policy_key": config["policy_key"],
+                "category": config["category"],
+                "title": config["title"],
+                "risk_level": config["risk_level"],
+                "urgency": config["urgency"],
+                "default_mode": config["default_mode"],
+                "supported_modes": list(SUPPORTED_POLICY_MODES),
+            }
+        )
+    return definitions
+
+
+def list_shop_policies(shop_id: int) -> list[Dict[str, Any]]:
+    if shop_id <= 0:
+        return []
+
+    stored_modes: Dict[str, str] = {}
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        for policy in repo.get_shop_policies(shop_id):
+            policy_key = str(getattr(policy, "policy_key", "") or "").strip()
+            if not policy_key:
+                continue
+            resolved_mode = getattr(policy, "mode", None)
+            stored_modes[policy_key] = resolved_mode.value if hasattr(resolved_mode, "value") else str(resolved_mode)
+    finally:
+        db.close()
+
+    payload: list[Dict[str, Any]] = []
+    for item in list_policy_definitions():
+        payload.append(
+            {
+                **item,
+                "mode": stored_modes.get(item["policy_key"], item["default_mode"]),
+                "explicit": item["policy_key"] in stored_modes,
+            }
+        )
+    return payload
 
 
 def resolve_action_policy(shop_id: int, action: str, details: Dict[str, Any] | None = None) -> Dict[str, Any]:

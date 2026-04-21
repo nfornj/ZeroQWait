@@ -8,6 +8,7 @@ from langchain_core.messages import HumanMessage
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from agents.finance import create_finance_runnable  # noqa: E402
 from agents.hr import create_hr_runnable  # noqa: E402
 from agents import supervisor  # noqa: E402
 from agents.state import AgentState  # noqa: E402
@@ -38,7 +39,7 @@ def _pending_policy_payload(action, details, mode="require_approval"):
         "shop_id": 9,
         "policy_key": f"approval.{action}",
         "policy_mode": mode,
-        "category": "staffing" if action != "close_queue" else "operations",
+        "category": "finance" if action in {"create_invoice", "record_payment"} else ("staffing" if action != "close_queue" else "operations"),
         "title": action.replace("_", " ").title(),
         "risk_level": "medium",
         "urgency": "normal",
@@ -231,6 +232,67 @@ class TestApprovalActions(unittest.TestCase):
         self.assertIn("blocked by the current shop policy", result["messages"][-1].content)
         mock_interrupt.assert_not_called()
         mock_close_queue.assert_not_called()
+
+    @patch("agents.specialist_graph.approval_policy.build_pending_approval")
+    @patch("agents.specialist_graph.get_llm")
+    def test_finance_create_invoice_request_proposes_approval(self, mock_get_llm, mock_build_pending):
+        mock_get_llm.return_value = _FakeLLM(
+            {
+                "operation": "create_invoice",
+                "arguments": {"service_name": "Haircut", "unit_price": 35.0, "quantity": 2},
+                "requires_clarification": False,
+                "clarification_question": "",
+                "rationale": "Invoice creation request.",
+            }
+        )
+        mock_build_pending.return_value = _pending_policy_payload(
+            "create_invoice",
+            {"service_name": "Haircut", "unit_price": 35.0, "quantity": 2},
+        )
+
+        result = create_finance_runnable(shop_id=9).invoke(
+            {"messages": [HumanMessage(content="Create an invoice for two haircuts at 35 each.")]}
+        )
+
+        self.assertTrue(result["needs_human_input"])
+        self.assertEqual(result["pending_approval"]["action"], "create_invoice")
+        self.assertEqual(result["pending_approval"]["details"]["service_name"], "Haircut")
+
+    @patch("agents.supervisor.finance_tools.create_invoice")
+    def test_execute_approved_action_routes_create_invoice(self, mock_create_invoice):
+        mock_create_invoice.return_value = {
+            "message": "Invoice INV-100 created successfully",
+            "status": "created",
+            "invoice_id": 100,
+        }
+        state = cast(AgentState, {"tenant_id": 9})
+
+        result = supervisor._execute_approved_action(
+            state,
+            {
+                "action": "create_invoice",
+                "shop_id": 9,
+                "details": {
+                    "service_name": "Haircut",
+                    "unit_price": 35.0,
+                    "quantity": 2,
+                    "customer_id": 5,
+                    "tax_rate": 0.0,
+                    "notes": "VIP customer",
+                },
+            },
+        )
+
+        self.assertEqual(result["status"], "created")
+        mock_create_invoice.assert_called_once_with(
+            shop_id=9,
+            service_name="Haircut",
+            unit_price=35.0,
+            quantity=2,
+            customer_id=5,
+            tax_rate=0.0,
+            notes="VIP customer",
+        )
 
     @patch("agents.tools.hr_tools.SessionLocal")
     @patch("agents.tools.hr_tools.get_password_hash")

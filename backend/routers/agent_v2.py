@@ -38,6 +38,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from redis_client import redis_client as _redis
 from langgraph.types import Command
 
+from agents import approval_policy
 from agents.supervisor import create_supervisor_runnable
 from agents.briefings import (
     build_owner_briefing,
@@ -52,7 +53,7 @@ from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_save
 from shared.auth_utils import get_current_user
 from db_interface import DatabaseInterface
 from database import SessionLocal
-from modules.agent.models import ApprovalStatus, GoalSource, GoalStatus, RunStatus
+from modules.agent.models import ApprovalStatus, GoalSource, GoalStatus, PolicyMode, RunStatus
 from modules.agent.work_repository import AgentWorkRepository
 
 logger = logging.getLogger(__name__)
@@ -346,6 +347,69 @@ def _persist_chat_turn_memory(
         logger.warning("Agent memory persistence failed (non-fatal): %s", str(e))
 
 
+def _require_owner_shop_access(shop_id: Any, current_user: Dict[str, Any]) -> tuple[int, int]:
+    user_id = _extract_user_id(current_user)
+    user_shops = _get_owned_shop_ids(current_user)
+
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authenticated user_id missing")
+
+    try:
+        normalized_shop_id = int(shop_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="shop_id must be an integer")
+
+    if normalized_shop_id not in user_shops:
+        raise HTTPException(status_code=403, detail="Not owner of this shop")
+
+    return int(user_id), normalized_shop_id
+
+
+def _list_policy_payload(shop_id: int) -> list[Dict[str, Any]]:
+    return approval_policy.list_shop_policies(shop_id)
+
+
+def _upsert_policy_payload(
+    *,
+    shop_id: int,
+    policy_key: str,
+    mode: str,
+    policy_value: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    definition = approval_policy.get_policy_definition(policy_key)
+    if definition is None:
+        raise HTTPException(status_code=404, detail="Unknown policy_key")
+
+    normalized_mode = str(mode or "").strip().lower()
+    supported_modes = set(approval_policy.SUPPORTED_POLICY_MODES)
+    if normalized_mode not in supported_modes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"mode must be one of: {', '.join(sorted(supported_modes))}",
+        )
+
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        repo.upsert_shop_policy(
+            shop_id=shop_id,
+            policy_key=policy_key,
+            category=str(definition["category"]),
+            mode=PolicyMode(normalized_mode),
+            enabled=True,
+            policy_value=policy_value,
+            config=config,
+        )
+    finally:
+        db.close()
+
+    for item in _list_policy_payload(shop_id):
+        if item["policy_key"] == policy_key:
+            return item
+    raise HTTPException(status_code=500, detail="Failed to load updated policy")
+
+
 def _build_work_title(message: str, fallback: str = "Owner request") -> str:
     normalized = " ".join((message or "").split())
     if not normalized:
@@ -564,6 +628,50 @@ def _build_memory_context(shop_id: int, user_id: int, query_text: str) -> str:
     except Exception as e:
         logger.warning("Agent memory retrieval failed (non-fatal): %s", str(e))
         return ""
+
+
+# ============================================================================
+# Policy Management
+# ============================================================================
+
+
+@router.get("/policies")
+async def list_policies(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id, normalized_shop_id = _require_owner_shop_access(shop_id, current_user)
+    return {
+        "shop_id": normalized_shop_id,
+        "user_id": user_id,
+        "policies": _list_policy_payload(normalized_shop_id),
+    }
+
+
+@router.put("/policies/{policy_key}")
+async def update_policy(
+    policy_key: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+
+    user_id, shop_id = _require_owner_shop_access(body.get("shop_id"), current_user)
+    policy = _upsert_policy_payload(
+        shop_id=shop_id,
+        policy_key=policy_key,
+        mode=body.get("mode"),
+        policy_value=body.get("policy_value"),
+        config=body.get("config") if isinstance(body.get("config"), dict) else None,
+    )
+    return {
+        "shop_id": shop_id,
+        "user_id": user_id,
+        "policy": policy,
+    }
 
 
 # ============================================================================
