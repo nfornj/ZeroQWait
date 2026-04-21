@@ -1,0 +1,90 @@
+import os
+import sys
+import unittest
+from unittest.mock import patch
+
+from langchain_core.messages import HumanMessage
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from agents.finance import create_finance_runnable  # noqa: E402
+from agents.receptionist import create_receptionist_runnable  # noqa: E402
+from agents.specialist_graph import SpecialistPlan  # noqa: E402
+
+
+class _FakeStructuredLLM:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def invoke(self, _messages):
+        return SpecialistPlan(**self._payload)
+
+
+class _FakeLLM:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def with_structured_output(self, _schema):
+        return _FakeStructuredLLM(self._payload)
+
+
+class TestExplicitSpecialistGraphs(unittest.TestCase):
+    @patch("agents.specialist_graph.get_llm")
+    @patch("agents.tools.booking_tools.list_queue")
+    def test_receptionist_handles_natural_language_queue_question(self, mock_list_queue, mock_get_llm):
+        mock_get_llm.return_value = _FakeLLM(
+            {
+                "operation": "list_queue",
+                "arguments": {},
+                "requires_clarification": False,
+                "clarification_question": "",
+                "rationale": "Queue status question.",
+            }
+        )
+        mock_list_queue.return_value = {
+            "queue_items": [{"customer_name": "Alex", "position": 1}],
+            "live_metrics": {"queue_length": 1, "estimated_wait_minutes": 8},
+            "shop_id": 9,
+        }
+
+        result = create_receptionist_runnable(shop_id=9).invoke(
+            {"messages": [HumanMessage(content="How many people are in the queue right now?")]}
+        )
+
+        self.assertEqual(result["current_agent"], "receptionist")
+        self.assertEqual(result["tool_results"]["live_metrics"]["queue_length"], 1)
+        self.assertIn("1 people waiting", result["messages"][-1].content)
+        mock_list_queue.assert_called_once_with(9)
+
+    @patch("agents.specialist_graph.get_llm")
+    @patch("agents.tools.finance_tools.daily_revenue")
+    def test_finance_handles_natural_language_revenue_question(self, mock_daily_revenue, mock_get_llm):
+        mock_get_llm.return_value = _FakeLLM(
+            {
+                "operation": "daily_revenue",
+                "arguments": {"date": "2026-04-20"},
+                "requires_clarification": False,
+                "clarification_question": "",
+                "rationale": "Single-day revenue question.",
+            }
+        )
+        mock_daily_revenue.return_value = {
+            "date": "2026-04-20",
+            "total_revenue": 245.0,
+            "completed_services": 7,
+            "average_transaction": 35.0,
+            "shop_id": 9,
+        }
+
+        result = create_finance_runnable(shop_id=9).invoke(
+            {"messages": [HumanMessage(content="What was yesterday's revenue?")]}
+        )
+
+        self.assertEqual(result["current_agent"], "finance")
+        self.assertEqual(result["tool_results"]["total_revenue"], 245.0)
+        self.assertIn("$245.00", result["messages"][-1].content)
+        mock_daily_revenue.assert_called_once_with(9, "2026-04-20")
+
+
+if __name__ == "__main__":
+    unittest.main()

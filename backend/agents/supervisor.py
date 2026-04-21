@@ -24,7 +24,6 @@ Phase 2: Add conditional edges to real sub-agents
 
 from typing import Literal, Dict, Any, List, Optional, cast
 import logging
-import re
 from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 from langchain_ollama import ChatOllama
@@ -668,122 +667,83 @@ If a specialist agent already produced raw output, synthesize it into:
     }
 
 
-# ---------------------------------------------------------------------------
-# HITL bridging — scan ReAct agent output for approval proposals
-# ---------------------------------------------------------------------------
-
-def _extract_pending_from_messages(messages) -> Optional[Dict[str, Any]]:
-    """Scan tool messages (newest-first) for a ``requires_approval`` proposal.
-
-    When a ReAct agent calls a proposal-only tool (e.g. close_queue), the
-    ToolMessage content will contain a JSON dict with ``requires_approval: True``.
-    This helper extracts the first such proposal so the supervisor can set
-    ``pending_approval`` and let ``approval_gate`` handle the interrupt.
-    """
-    import json as _json
-
-    for msg in reversed(list(messages)):
-        # ToolMessages carry the tool return value
-        if not hasattr(msg, "type") or getattr(msg, "type", None) != "tool":
-            continue
-        content = getattr(msg, "content", None)
-        if content is None:
-            continue
-        # Content may be a JSON string or already a dict (depending on serialiser)
-        parsed = content
-        if isinstance(parsed, str):
-            try:
-                parsed = _json.loads(parsed)
-            except (ValueError, TypeError):
-                continue
-        if isinstance(parsed, dict) and parsed.get("requires_approval"):
-            return {
-                "action": parsed.get("action"),
-                "details": parsed.get("details", {}),
-            }
-    return None
-
-
 def placeholder_receptionist(state: AgentState) -> dict:
     """
-    Route to Receptionist ReAct agent.
-    Invokes the receptionist tool-calling loop with tenant-scoped tools.
-    After execution, checks for HITL proposal tools and bridges them
-    into ``pending_approval`` so ``approval_gate`` can interrupt.
+    Route to the receptionist specialist graph.
+
+    The specialist returns direct state updates including final messages,
+    tool results, and pending approval payloads when necessary.
     """
     from .receptionist import create_receptionist_runnable
 
     shop_id = state.get("tenant_id", 0)
     receptionist = create_receptionist_runnable(shop_id=shop_id)
 
-    # Sub-agent uses its own built-in schema; pass only messages
     result = receptionist.invoke({"messages": list(state.get("messages", []))})
 
-    # Bridge proposal-only tools into the HITL approval flow
-    pending = _extract_pending_from_messages(result.get("messages", []))
+    pending = result.get("pending_approval")
     if pending:
         pending["shop_id"] = shop_id
         return {
             "messages": result.get("messages", []),
             "current_agent": "receptionist",
             "pending_approval": pending,
-            "needs_human_input": True,
+            "needs_human_input": bool(result.get("needs_human_input", True)),
         }
 
     return {
         "messages": result.get("messages", []),
         "current_agent": "receptionist",
+        "tool_results": result.get("tool_results"),
     }
 
 
 def placeholder_finance(state: AgentState) -> dict:
     """
-    Route to Finance ReAct agent.
-    Invokes the finance tool-calling loop with tenant-scoped tools.
+    Route to the finance specialist graph.
     """
     from .finance import create_finance_runnable
 
     shop_id = state.get("tenant_id", 0)
     finance = create_finance_runnable(shop_id=shop_id)
 
-    # Sub-agent uses its own built-in schema; pass only messages
     result = finance.invoke({"messages": list(state.get("messages", []))})
 
     return {
         "messages": result.get("messages", []),
         "current_agent": "finance",
+        "tool_results": result.get("tool_results"),
     }
 
 
 def placeholder_hr(state: AgentState) -> dict:
     """
-    Route to HR ReAct agent.
-    Invokes the HR tool-calling loop with tenant-scoped tools.
-    After execution, checks for HITL proposal tools and bridges them
-    into ``pending_approval`` so ``approval_gate`` can interrupt.
+    Route to the HR specialist graph.
+
+    The specialist returns direct state updates including final messages,
+    tool results, and pending approval payloads when necessary.
     """
     from .hr import create_hr_runnable
 
     shop_id = state.get("tenant_id", 0)
     hr = create_hr_runnable(shop_id=shop_id)
 
-    # Sub-agent uses its own built-in schema; pass only messages
     result = hr.invoke({"messages": list(state.get("messages", []))})
 
-    # Bridge proposal-only tools into the HITL approval flow
-    pending = _extract_pending_from_messages(result.get("messages", []))
+    pending = result.get("pending_approval")
     if pending:
         pending["shop_id"] = shop_id
         return {
             "messages": result.get("messages", []),
             "current_agent": "hr",
             "pending_approval": pending,
-            "needs_human_input": True,
+            "needs_human_input": bool(result.get("needs_human_input", True)),
         }
 
     return {
         "messages": result.get("messages", []),
         "current_agent": "hr",
+        "tool_results": result.get("tool_results"),
     }
 
 
@@ -803,9 +763,10 @@ def _execute_approved_action(state: AgentState, pending: Dict[str, Any]) -> Dict
         return hr_tools.add_employee(
             shop_id=shop_id,
             name=details.get("name") or "New Employee",
-            email=details.get("email") or f"employee_{shop_id}@zeroqwait.local",
+            email=details.get("email"),
             phone=details.get("phone"),
             role=details.get("role") or "employee",
+            created_by=state.get("user_id"),
         )
 
     if action == "remove_employee":

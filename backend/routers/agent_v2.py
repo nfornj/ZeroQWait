@@ -51,6 +51,9 @@ from agents.state import AgentState
 from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_saver
 from shared.auth_utils import get_current_user
 from db_interface import DatabaseInterface
+from database import SessionLocal
+from modules.agent.models import ApprovalStatus, GoalSource, GoalStatus, RunStatus
+from modules.agent.work_repository import AgentWorkRepository
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +219,27 @@ def _state_last_text(state_values: Dict[str, Any]) -> str:
     return getattr(final_message, "content", str(final_message))
 
 
+def _serialize_checkpoint_messages(state_values: Dict[str, Any]) -> list[Dict[str, Any]]:
+    """Serialize checkpoint messages for the owner-facing history endpoint."""
+    serialized: list[Dict[str, Any]] = []
+    for message in state_values.get("messages") or []:
+        msg_type = getattr(message, "type", None)
+        if msg_type == "system":
+            continue
+        role = "assistant"
+        if msg_type == "human":
+            role = "user"
+        elif msg_type == "ai":
+            role = "assistant"
+        serialized.append(
+            {
+                "role": role,
+                "content": str(getattr(message, "content", "")),
+            }
+        )
+    return serialized
+
+
 def _get_pending_approval_payload(
     shop_id: int,
     user_id: int,
@@ -322,6 +346,195 @@ def _persist_chat_turn_memory(
         logger.warning("Agent memory persistence failed (non-fatal): %s", str(e))
 
 
+def _build_work_title(message: str, fallback: str = "Owner request") -> str:
+    normalized = " ".join((message or "").split())
+    if not normalized:
+        return fallback
+    return normalized if len(normalized) <= 120 else f"{normalized[:117]}..."
+
+
+def _create_chat_work_context(shop_id: int, user_id: int, message: str, *, is_voice: bool = False) -> Dict[str, Any]:
+    trigger_source = "voice_chat" if is_voice else "chat"
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        goal = repo.create_goal(
+            shop_id=shop_id,
+            created_by_user_id=user_id,
+            source=GoalSource.CHAT,
+            goal_type="owner_request",
+            title=_build_work_title(message),
+            description=message,
+            autonomy_policy="interactive",
+            context={"message": message, "trigger_source": trigger_source},
+        )
+        goal_id = cast(int, getattr(goal, "id"))
+        run = repo.create_run(
+            shop_id=shop_id,
+            goal_id=goal_id,
+            triggered_by_user_id=user_id,
+            run_type="chat",
+            trigger_source=trigger_source,
+            execution_mode="interactive",
+            graph_thread_id=f"tenant_{shop_id}_{user_id}",
+            current_agent="supervisor",
+            input_payload={"message": message},
+            event_context={"trigger_source": trigger_source},
+        )
+        run_id = cast(int, getattr(run, "id"))
+        return {
+            "goal_id": goal_id,
+            "run_id": run_id,
+            "execution_mode": "interactive",
+            "trigger_source": trigger_source,
+            "event_context": {"trigger_source": trigger_source, "goal_id": goal_id, "run_id": run_id},
+        }
+    finally:
+        db.close()
+
+
+def _persist_approval_request(
+    *,
+    shop_id: int,
+    user_id: int,
+    goal_id: int,
+    run_id: int,
+    routed_agent: str,
+    pending_action: Dict[str, Any],
+) -> Dict[str, Any]:
+    action_id = str(pending_action.get("action_id") or "").strip()
+    details = pending_action.get("details") or {}
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        approval = None
+        if action_id:
+            approval = repo.get_pending_approval_by_action_id(shop_id, action_id)
+        if approval is None:
+            approval = repo.create_approval_request(
+                external_action_id=action_id or None,
+                shop_id=shop_id,
+                goal_id=goal_id,
+                run_id=run_id,
+                requested_by_user_id=user_id,
+                requested_by_agent=routed_agent or "supervisor",
+                action_type=str(pending_action.get("action") or "approval_required"),
+                title=_build_work_title(str(details.get("title") or pending_action.get("action") or "Approval required"), fallback="Approval required"),
+                rationale=str(details.get("reason") or details.get("rationale") or "") or None,
+                expected_impact=str(details.get("impact") or details.get("expected_impact") or "") or None,
+                urgency=str(details.get("urgency") or pending_action.get("urgency") or "normal"),
+                request_payload=pending_action,
+            )
+        enriched = dict(pending_action)
+        enriched["approval_request_id"] = approval.id
+        return enriched
+    finally:
+        db.close()
+
+
+def _finalize_chat_work_context(
+    *,
+    shop_id: int,
+    user_id: int,
+    goal_id: int,
+    run_id: int,
+    routed_agent: str,
+    response_text: str,
+    tool_results: Optional[Dict[str, Any]],
+    approval_required: bool,
+    pending_action: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        output_payload = {
+            "response": response_text,
+            "agent": routed_agent,
+            "tool_results": tool_results or {},
+        }
+        if approval_required:
+            repo.update_goal_status(goal_id, GoalStatus.WAITING_APPROVAL, summary=response_text or "Waiting for owner approval")
+            repo.update_run_status(
+                run_id,
+                RunStatus.WAITING_APPROVAL,
+                output_payload=output_payload,
+                current_agent=routed_agent or "supervisor",
+            )
+            if pending_action:
+                return _persist_approval_request(
+                    shop_id=shop_id,
+                    user_id=user_id,
+                    goal_id=goal_id,
+                    run_id=run_id,
+                    routed_agent=routed_agent or "supervisor",
+                    pending_action=pending_action,
+                )
+            return pending_action
+
+        repo.update_goal_status(goal_id, GoalStatus.COMPLETED, summary=response_text)
+        repo.update_run_status(
+            run_id,
+            RunStatus.COMPLETED,
+            output_payload=output_payload,
+            current_agent=routed_agent or "supervisor",
+        )
+        return pending_action
+    finally:
+        db.close()
+
+
+def _record_approval_decision(
+    *,
+    shop_id: int,
+    action_id: Optional[str],
+    approved: bool,
+    reason: Optional[str],
+    user_id: int,
+    resumed: Dict[str, Any],
+) -> None:
+    if not action_id:
+        return
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        approval = repo.get_pending_approval_by_action_id(shop_id, action_id)
+        if approval is None:
+            return
+        approval_id = cast(int, getattr(approval, "id"))
+        repo.decide_approval_request(
+            approval_id,
+            status=ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED,
+            decided_by_user_id=user_id,
+            decision_reason=reason,
+            decision_payload={
+                "message": _state_last_text(resumed),
+                "agent": resumed.get("current_agent", "supervisor"),
+                "tool_results": resumed.get("tool_results"),
+            },
+        )
+        goal_id = getattr(approval, "goal_id", None)
+        if goal_id is not None:
+            repo.update_goal_status(
+                int(goal_id),
+                GoalStatus.COMPLETED if approved else GoalStatus.CANCELLED,
+                summary=_state_last_text(resumed),
+            )
+        run_id = getattr(approval, "run_id", None)
+        if run_id is not None:
+            repo.update_run_status(
+                int(run_id),
+                RunStatus.COMPLETED if approved else RunStatus.CANCELLED,
+                output_payload={
+                    "message": _state_last_text(resumed),
+                    "agent": resumed.get("current_agent", "supervisor"),
+                    "tool_results": resumed.get("tool_results"),
+                },
+                current_agent=resumed.get("current_agent", "supervisor"),
+            )
+    finally:
+        db.close()
+
+
 def _build_memory_context(shop_id: int, user_id: int, query_text: str) -> str:
     """Best-effort retrieval of tenant-scoped memory context for supervisor input."""
     try:
@@ -419,6 +632,7 @@ async def chat_sync(
     
     # Build checkpoint config for this tenant
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
+    work_context = _create_chat_work_context(shop_id, int(user_id), message)
     
     # Create initial state
     memory_context = _build_memory_context(shop_id, int(user_id), message)
@@ -432,10 +646,17 @@ async def chat_sync(
         "tenant_id": shop_id,
         "user_id": int(user_id),
         "current_agent": "supervisor",
+        "active_goal_id": work_context["goal_id"],
+        "active_task_id": None,
+        "execution_mode": work_context["execution_mode"],
+        "autonomy_policy": None,
+        "event_context": work_context["event_context"],
+        "proposed_actions": [],
+        "run_summary": {"run_id": work_context["run_id"], "status": "running"},
         "pending_approval": None,
         "needs_human_input": False,
         "tool_results": None,
-        "metadata": {"shop_id": shop_id, "user_id": user_id}
+        "metadata": {"shop_id": shop_id, "user_id": user_id, "goal_id": work_context["goal_id"], "run_id": work_context["run_id"]}
     }
     
     # Run supervisor graph
@@ -462,6 +683,18 @@ async def chat_sync(
         else:
             response_text = "No response"
 
+        pending_action = _finalize_chat_work_context(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            goal_id=work_context["goal_id"],
+            run_id=work_context["run_id"],
+            routed_agent=result.get("current_agent", "supervisor"),
+            response_text=response_text,
+            tool_results=cast(Optional[Dict[str, Any]], result.get("tool_results")),
+            approval_required=approval_required,
+            pending_action=pending_action,
+        )
+
         _persist_chat_turn_memory(
             shop_id=shop_id,
             user_id=int(user_id),
@@ -475,7 +708,11 @@ async def chat_sync(
             "agent": result.get("current_agent", "supervisor"),
             "approval_required": approval_required,
             "pending_action": pending_action,
-            "metadata": result.get("metadata", {})
+            "metadata": {
+                **(result.get("metadata", {}) or {}),
+                "goal_id": work_context["goal_id"],
+                "run_id": work_context["run_id"],
+            }
         }
     
     except Exception as e:
@@ -549,6 +786,7 @@ async def chat_stream(
         try:
             # Build checkpoint config
             checkpoint_config = build_checkpoint_config(shop_id, user_id)
+            work_context = _create_chat_work_context(shop_id, int(user_id), message, is_voice=bool(is_voice))
 
             # Create initial state
             memory_context = _build_memory_context(shop_id, int(user_id), message)
@@ -562,16 +800,24 @@ async def chat_stream(
                 "tenant_id": shop_id,
                 "user_id": int(user_id),
                 "current_agent": "supervisor",
+                "active_goal_id": work_context["goal_id"],
+                "active_task_id": None,
+                "execution_mode": work_context["execution_mode"],
+                "autonomy_policy": None,
+                "event_context": work_context["event_context"],
+                "proposed_actions": [],
+                "run_summary": {"run_id": work_context["run_id"], "status": "running"},
                 "pending_approval": None,
                 "needs_human_input": False,
                 "tool_results": None,
-                "metadata": {"shop_id": shop_id, "user_id": user_id, "is_voice": is_voice},
+                "metadata": {"shop_id": shop_id, "user_id": user_id, "is_voice": is_voice, "goal_id": work_context["goal_id"], "run_id": work_context["run_id"]},
             }
 
             runnable = _SUPERVISOR_RUNNABLE
             routed_agent: Optional[str] = None
             final_response_text = ""
             final_tool_results: Dict[str, Any] = {}
+            pending_action: Optional[Dict[str, Any]] = None
 
             # ----------------------------------------------------------------
             # Stream graph execution node-by-node via sync stream updates.
@@ -603,6 +849,8 @@ async def chat_stream(
 
                         ca = _extract_current_agent_from_output(out)
                         if ca and ca not in ("supervisor", "general", "", None):
+                            if ca != routed_agent:
+                                yield f"data: {json.dumps({'type': 'agent_switch', 'agent': ca})}\n\n"
                             routed_agent = ca
 
                         # Capture final synthesized text when available.
@@ -646,9 +894,24 @@ async def chat_stream(
                                     pending_action,
                                     metrics=db_interface.get_shop_live_wait_metrics(shop_id) or {},
                                 )
-                                yield f"data: {json.dumps({'type': 'approval_required', 'action': pending_action.get('action'), 'details': pending_action})}\n\n"
                 except Exception as state_exc:
                     logger.warning("Could not retrieve final checkpoint state: %s", state_exc)
+
+            approval_required = pending_action is not None
+            pending_action = _finalize_chat_work_context(
+                shop_id=shop_id,
+                user_id=int(user_id),
+                goal_id=work_context["goal_id"],
+                run_id=work_context["run_id"],
+                routed_agent=routed_agent or "supervisor",
+                response_text=final_response_text,
+                tool_results=final_tool_results,
+                approval_required=approval_required,
+                pending_action=pending_action,
+            )
+
+            if pending_action:
+                yield f"data: {json.dumps({'type': 'approval_required', 'action': pending_action.get('action'), 'details': pending_action})}\n\n"
 
             _persist_chat_turn_memory(
                 shop_id=shop_id,
@@ -657,6 +920,9 @@ async def chat_stream(
                 assistant_response=final_response_text,
                 route="/api/v2/agent/chat/stream",
             )
+
+            if isinstance(final_tool_results, dict) and final_tool_results:
+                yield f"data: {json.dumps({'type': 'tool_result', 'tool': final_tool_results.get('tool') or routed_agent or 'operation', 'result': final_tool_results, 'agent': routed_agent})}\n\n"
 
             # Stream response text character-by-character.
             for char in (final_response_text or ""):
@@ -795,6 +1061,15 @@ async def approve_action(
         ),
     )
 
+    _record_approval_decision(
+        shop_id=shop_id,
+        action_id=current_interrupt_id,
+        approved=bool(approved),
+        reason=reason,
+        user_id=int(user_id),
+        resumed=resumed,
+    )
+
     return {
         "status": "approved" if approved else "rejected",
         "message": _state_last_text(resumed),
@@ -840,12 +1115,14 @@ async def get_history(
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
     
-    # TODO: Load checkpoint history from PostgreSQL
-    # For now, return placeholder
+    checkpoint_config = build_checkpoint_config(shop_id, user_id)
+    snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
+    values = cast(Dict[str, Any], snapshot.values or {}) if snapshot else {}
+
     return {
-        "messages": [],
+        "messages": _serialize_checkpoint_messages(values),
         "checkpoint_id": f"tenant_{shop_id}_{user_id}",
-        "note": "[Phase 1] History loading not yet implemented"
+        "pending": _get_pending_approval_payload(shop_id, user_id),
     }
 
 

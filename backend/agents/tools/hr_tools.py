@@ -1,6 +1,39 @@
 from typing import Any, Dict, Optional
 from datetime import datetime
+import re
+import secrets
+
+from database import SessionLocal
 from db_interface import db_interface
+from modules.auth.models import User, UserRole
+from modules.employees.models import ShopEmployee
+from shared.auth_utils import get_password_hash
+
+
+def _candidate_username(name: str, email: str) -> str:
+    email_local = (email or "").split("@", 1)[0].strip().lower()
+    if email_local:
+        base = re.sub(r"[^a-z0-9._-]+", "", email_local)
+    else:
+        base = re.sub(r"[^a-z0-9]+", "", name.strip().lower().replace(" ", "_"))
+    return base or "employee"
+
+
+def _build_unique_username(session, name: str, email: str) -> str:
+    seed = _candidate_username(name, email)
+    candidate = seed
+    suffix = 1
+    while session.query(User).filter(User.username == candidate).first():
+        suffix += 1
+        candidate = f"{seed}{suffix}"
+    return candidate
+
+
+def _build_employee_email(username: str, shop_id: int, provided_email: Optional[str] = None) -> str:
+    normalized = (provided_email or "").strip().lower()
+    if normalized:
+        return normalized
+    return f"{username}.shop{shop_id}@staff.zeroqwait.local"
 
 
 def list_employees(shop_id: int, include_inactive: bool = False) -> Dict[str, Any]:
@@ -10,11 +43,11 @@ def list_employees(shop_id: int, include_inactive: bool = False) -> Dict[str, An
         
         employee_list = [
             {
-                "id": e.get("id"),
-                "name": e.get("name"),
-                "email": e.get("email"),
+                "id": e.get("user_id") or e.get("id"),
+                "name": (e.get("user") or {}).get("username") or e.get("name"),
+                "email": (e.get("user") or {}).get("email") or e.get("email"),
                 "phone": e.get("phone"),
-                "role": e.get("role", "employee"),
+                "role": (e.get("user") or {}).get("role") or e.get("role", "employee"),
                 "is_active": e.get("is_active", True)
             }
             for e in (employees or [])
@@ -27,30 +60,75 @@ def list_employees(shop_id: int, include_inactive: bool = False) -> Dict[str, An
 def add_employee(
     shop_id: int,
     name: str,
-    email: str,
+    email: Optional[str] = None,
     phone: Optional[str] = None,
     role: str = "employee",
     employee_code: Optional[str] = None,
+    created_by: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Add an employee via db_interface after owner approval."""
+    session = SessionLocal()
     try:
-        result = db_interface.create_shop_employee({
-            "shop_id": shop_id,
-            "name": name,
-            "email": email,
-            "phone": phone,
-            "role": role,
-            "employee_code": employee_code,
-            "is_active": True,
-        })
+        username = _build_unique_username(session, name, email)
+        resolved_email = _build_employee_email(username, shop_id, email)
+
+        if session.query(User).filter(User.email == resolved_email).first():
+            return {"error": f"Email {resolved_email} is already registered"}
+
+        temporary_password = secrets.token_urlsafe(9)
+        user = User(
+            email=resolved_email,
+            username=username,
+            hashed_password=get_password_hash(temporary_password),
+            role=UserRole(role) if role in UserRole._value2member_map_ else UserRole.EMPLOYEE,
+            is_active=True,
+        )
+        session.add(user)
+        session.flush()
+
+        employee_link = ShopEmployee(
+            shop_id=shop_id,
+            user_id=user.id,
+            created_by=created_by,
+            is_active=True,
+            employee_code=employee_code,
+        )
+        session.add(employee_link)
+        session.commit()
+        session.refresh(user)
+        session.refresh(employee_link)
+
         return {
-            "message": f"Employee {name} added successfully",
-            "employee": result,
+            "message": (
+                f"Employee {name} added successfully. Username: {username}. "
+                f"Staff email: {resolved_email}. Temporary password: {temporary_password}"
+            ),
+            "employee": {
+                "id": employee_link.id,
+                "shop_id": employee_link.shop_id,
+                "user_id": user.id,
+                "is_active": employee_link.is_active,
+                "employee_code": employee_link.employee_code,
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "username": user.username,
+                    "role": user.role.value,
+                    "is_active": user.is_active,
+                },
+            },
             "shop_id": shop_id,
+            "user_id": user.id,
+            "username": username,
+            "email": resolved_email,
+            "temporary_password": temporary_password,
             "status": "added",
         }
     except Exception as e:
+        session.rollback()
         return {"error": str(e)}
+    finally:
+        session.close()
 
 
 def remove_employee(shop_id: int, user_id: int) -> Dict[str, Any]:
