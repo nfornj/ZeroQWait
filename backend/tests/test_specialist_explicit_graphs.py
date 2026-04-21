@@ -57,6 +57,33 @@ class TestExplicitSpecialistGraphs(unittest.TestCase):
         mock_list_queue.assert_called_once_with(9)
 
     @patch("agents.specialist_graph.get_llm")
+    @patch("agents.tools.booking_tools.list_appointments")
+    def test_receptionist_routes_appointment_listing_through_booking_tools(self, mock_list_appointments, mock_get_llm):
+        mock_get_llm.return_value = _FakeLLM(
+            {
+                "operation": "list_appointments",
+                "arguments": {"date": "2026-04-22"},
+                "requires_clarification": False,
+                "clarification_question": "",
+                "rationale": "Owner asked for appointment schedule.",
+            }
+        )
+        mock_list_appointments.return_value = {
+            "appointments": [{"id": 3, "customer_name": "Jordan", "scheduled_start": "2026-04-22 10:00:00"}],
+            "shop_id": 9,
+            "count": 1,
+        }
+
+        result = create_receptionist_runnable(shop_id=9).invoke(
+            {"messages": [HumanMessage(content="Show me the appointments for 2026-04-22")]} 
+        )
+
+        self.assertEqual(result["current_agent"], "receptionist")
+        self.assertEqual(result["tool_results"]["count"], 1)
+        self.assertIn("Jordan", result["messages"][-1].content)
+        mock_list_appointments.assert_called_once_with(9, date="2026-04-22", status=None, employee_id=None)
+
+    @patch("agents.specialist_graph.get_llm")
     @patch("agents.tools.finance_tools.daily_revenue")
     def test_finance_handles_natural_language_revenue_question(self, mock_daily_revenue, mock_get_llm):
         mock_get_llm.return_value = _FakeLLM(

@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional, Sequence
 from langchain_core.messages import BaseMessage
 
 from .specialist_graph import build_specialist_runnable
-from .tools import appointment_tools, booking_tools
+from .tools import booking_tools
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ def _build_receptionist_executor(shop_id: int):
             customer_name = _optional_str(arguments.get("customer_name"))
             if service_id is None or not scheduled_start or not customer_name:
                 return {"error": "book_appointment requires service_id, scheduled_start, and customer_name"}
-            return appointment_tools.book_appointment(
+            return booking_tools.book_appointment(
                 shop_id,
                 service_id,
                 scheduled_start,
@@ -137,7 +137,7 @@ def _build_receptionist_executor(shop_id: int):
                 notes=_optional_str(arguments.get("notes")),
             )
         if operation == "list_appointments":
-            return appointment_tools.list_appointments(
+            return booking_tools.list_appointments(
                 shop_id,
                 date=_optional_str(arguments.get("date")),
                 status=_optional_str(arguments.get("status")),
@@ -147,13 +147,13 @@ def _build_receptionist_executor(shop_id: int):
             appointment_id = _to_int(arguments.get("appointment_id"))
             if appointment_id is None:
                 return {"error": "cancel_appointment requires appointment_id"}
-            return appointment_tools.cancel_appointment(shop_id, appointment_id, reason=_optional_str(arguments.get("reason")))
+            return booking_tools.cancel_appointment(shop_id, appointment_id, reason=_optional_str(arguments.get("reason")))
         if operation == "get_available_slots":
             service_id = _to_int(arguments.get("service_id"))
             date = _optional_str(arguments.get("date"))
             if service_id is None or not date:
                 return {"error": "get_available_slots requires service_id and date"}
-            return appointment_tools.get_available_slots(shop_id, service_id, date, employee_id=_to_int(arguments.get("employee_id")))
+            return booking_tools.get_available_slots(shop_id, service_id, date, employee_id=_to_int(arguments.get("employee_id")))
         return {"error": f"Unsupported receptionist operation: {operation}"}
 
     return executor

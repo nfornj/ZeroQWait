@@ -1,4 +1,4 @@
-"""Booking MCP server for queue and service operations."""
+"""Booking MCP server for queue, service, and appointment operations."""
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,10 +19,12 @@ if str(BACKEND_DIR) not in sys.path:
 
 from db_interface import db_interface
 import models  # noqa: F401
-from modules.queues import schemas as queue_schemas
 from modules.queues.models import Queue
 from modules.queues.service import queue_service
+from modules.appointments.service import appointment_service
 from database import SessionLocal
+from integrations.service_catalog_sync import sync_service_to_odoo
+from redis_client import redis_client
 
 
 logging.basicConfig(level=logging.INFO)
@@ -56,9 +58,66 @@ class ServiceSearchRequest(ShopRequest):
     query: Optional[str] = None
 
 
+class ServiceCreateRequest(ShopRequest):
+    name: str
+    cost: float
+    duration_minutes: int = 30
+    description: Optional[str] = None
+    currency: str = "USD"
+
+
+class ServiceUpdateRequest(ShopRequest):
+    service_id: int
+    name: Optional[str] = None
+    cost: Optional[float] = None
+    duration_minutes: Optional[int] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class ServiceDeleteRequest(ShopRequest):
+    service_id: int
+
+
+class BookAppointmentRequest(ShopRequest):
+    service_id: int
+    scheduled_start: str
+    customer_name: str
+    customer_phone: Optional[str] = None
+    customer_email: Optional[str] = None
+    employee_id: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class ListAppointmentsRequest(ShopRequest):
+    date: Optional[str] = None
+    status: Optional[str] = None
+    employee_id: Optional[int] = None
+
+
+class CancelAppointmentRequest(ShopRequest):
+    appointment_id: int
+    reason: Optional[str] = None
+
+
+class AvailableSlotsRequest(ShopRequest):
+    service_id: int
+    date: str
+    employee_id: Optional[int] = None
+
+
 def _active_queue(shop_id: int):
     queues = queue_service.get_active_queues(shop_id)
     return queues[0] if queues else None
+
+
+def _parse_datetime(raw_value: str) -> datetime:
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw_value, fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"Cannot parse datetime value: {raw_value!r}")
 
 
 def _queue_snapshot(shop_id: int) -> dict:
@@ -194,6 +253,132 @@ async def rest_search_services(req: ServiceSearchRequest):
     }
 
 
+@app.post("/services/create")
+async def rest_create_service(req: ServiceCreateRequest):
+    service_data = {
+        "shop_id": req.shop_id,
+        "name": req.name,
+        "cost": req.cost,
+        "duration_minutes": req.duration_minutes,
+        "description": req.description or "",
+        "is_active": True,
+        "currency": req.currency,
+    }
+    new_service = db_interface.create_shop_service(service_data)
+    if not new_service:
+        return {"error": "Failed to create service"}
+    redis_client.tenant_delete(req.shop_id, "services")
+    sync_service_to_odoo(req.shop_id, new_service, action="create")
+    return {
+        "message": f"Service '{req.name}' created at ${req.cost:.2f}",
+        "service": new_service,
+        "shop_id": req.shop_id,
+    }
+
+
+@app.post("/services/update")
+async def rest_update_service(req: ServiceUpdateRequest):
+    updates = {
+        key: value
+        for key, value in {
+            "name": req.name,
+            "cost": req.cost,
+            "duration_minutes": req.duration_minutes,
+            "description": req.description,
+            "is_active": req.is_active,
+        }.items()
+        if value is not None
+    }
+    if not updates:
+        return {"error": "No updates provided"}
+
+    updated = db_interface.update_shop_service(req.shop_id, req.service_id, updates)
+    if not updated:
+        return {"error": f"Service {req.service_id} not found"}
+    redis_client.tenant_delete(req.shop_id, "services")
+    sync_service_to_odoo(req.shop_id, updated, action="update")
+    return {
+        "message": f"Service '{updated.get('name', '')}' updated",
+        "service": updated,
+        "shop_id": req.shop_id,
+    }
+
+
+@app.post("/services/delete")
+async def rest_delete_service(req: ServiceDeleteRequest):
+    updated = db_interface.update_shop_service(req.shop_id, req.service_id, {"is_active": False})
+    if not updated:
+        return {"error": f"Service {req.service_id} not found"}
+    redis_client.tenant_delete(req.shop_id, "services")
+    return {
+        "message": f"Service '{updated.get('name', '')}' has been deactivated",
+        "shop_id": req.shop_id,
+    }
+
+
+@app.post("/appointments/book")
+async def rest_book_appointment(req: BookAppointmentRequest):
+    try:
+        parsed_start = _parse_datetime(req.scheduled_start)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    return appointment_service.book_appointment(
+        shop_id=req.shop_id,
+        service_id=req.service_id,
+        scheduled_start=parsed_start,
+        customer_name=req.customer_name,
+        customer_phone=req.customer_phone,
+        customer_email=req.customer_email,
+        employee_id=req.employee_id,
+        notes=req.notes,
+    )
+
+
+@app.post("/appointments/list")
+async def rest_list_appointments(req: ListAppointmentsRequest):
+    if req.date:
+        try:
+            parsed_date = _parse_datetime(req.date)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        appointments = appointment_service.list_appointments(
+            shop_id=req.shop_id,
+            date=parsed_date,
+            status=req.status,
+            employee_id=req.employee_id,
+        )
+    else:
+        appointments = appointment_service.get_todays_appointments(req.shop_id)
+    return {"appointments": appointments, "shop_id": req.shop_id, "count": len(appointments)}
+
+
+@app.post("/appointments/cancel")
+async def rest_cancel_appointment(req: CancelAppointmentRequest):
+    result = appointment_service.update_status(
+        shop_id=req.shop_id,
+        appointment_id=req.appointment_id,
+        new_status="cancelled",
+        reason=req.reason,
+    )
+    return result if result else {"error": "Appointment not found"}
+
+
+@app.post("/appointments/available-slots")
+async def rest_get_available_slots(req: AvailableSlotsRequest):
+    try:
+        parsed_date = _parse_datetime(req.date)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    slots = appointment_service.get_available_slots(
+        shop_id=req.shop_id,
+        service_id=req.service_id,
+        date=parsed_date,
+        employee_id=req.employee_id,
+    )
+    return {"available_slots": slots, "shop_id": req.shop_id, "date": req.date}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "booking-mcp"}
@@ -230,6 +415,114 @@ try:
     @mcp.tool(description="Search active services for a shop.")
     async def search_services(shop_id: int, query: Optional[str] = None) -> dict:
         return await rest_search_services(ServiceSearchRequest(shop_id=shop_id, query=query))
+
+    @mcp.tool(description="Create a new service for a shop.")
+    async def create_service(
+        shop_id: int,
+        name: str,
+        cost: float,
+        duration_minutes: int = 30,
+        description: Optional[str] = None,
+        currency: str = "USD",
+    ) -> dict:
+        return await rest_create_service(
+            ServiceCreateRequest(
+                shop_id=shop_id,
+                name=name,
+                cost=cost,
+                duration_minutes=duration_minutes,
+                description=description,
+                currency=currency,
+            )
+        )
+
+    @mcp.tool(description="Update an existing service for a shop.")
+    async def update_service(
+        shop_id: int,
+        service_id: int,
+        name: Optional[str] = None,
+        cost: Optional[float] = None,
+        duration_minutes: Optional[int] = None,
+        description: Optional[str] = None,
+        is_active: Optional[bool] = None,
+    ) -> dict:
+        return await rest_update_service(
+            ServiceUpdateRequest(
+                shop_id=shop_id,
+                service_id=service_id,
+                name=name,
+                cost=cost,
+                duration_minutes=duration_minutes,
+                description=description,
+                is_active=is_active,
+            )
+        )
+
+    @mcp.tool(description="Deactivate a service for a shop.")
+    async def delete_service(shop_id: int, service_id: int) -> dict:
+        return await rest_delete_service(ServiceDeleteRequest(shop_id=shop_id, service_id=service_id))
+
+    @mcp.tool(description="Book an appointment for a customer.")
+    async def book_appointment(
+        shop_id: int,
+        service_id: int,
+        scheduled_start: str,
+        customer_name: str,
+        customer_phone: Optional[str] = None,
+        customer_email: Optional[str] = None,
+        employee_id: Optional[int] = None,
+        notes: Optional[str] = None,
+    ) -> dict:
+        return await rest_book_appointment(
+            BookAppointmentRequest(
+                shop_id=shop_id,
+                service_id=service_id,
+                scheduled_start=scheduled_start,
+                customer_name=customer_name,
+                customer_phone=customer_phone,
+                customer_email=customer_email,
+                employee_id=employee_id,
+                notes=notes,
+            )
+        )
+
+    @mcp.tool(description="List appointments for a shop.")
+    async def list_appointments(
+        shop_id: int,
+        date: Optional[str] = None,
+        status: Optional[str] = None,
+        employee_id: Optional[int] = None,
+    ) -> dict:
+        return await rest_list_appointments(
+            ListAppointmentsRequest(
+                shop_id=shop_id,
+                date=date,
+                status=status,
+                employee_id=employee_id,
+            )
+        )
+
+    @mcp.tool(description="Cancel an appointment for a shop.")
+    async def cancel_appointment(shop_id: int, appointment_id: int, reason: Optional[str] = None) -> dict:
+        return await rest_cancel_appointment(
+            CancelAppointmentRequest(shop_id=shop_id, appointment_id=appointment_id, reason=reason)
+        )
+
+    @mcp.tool(description="Get available appointment slots for a shop and service.")
+    async def get_available_slots(
+        shop_id: int,
+        service_id: int,
+        date: str,
+        employee_id: Optional[int] = None,
+    ) -> dict:
+        return await rest_get_available_slots(
+            AvailableSlotsRequest(
+                shop_id=shop_id,
+                service_id=service_id,
+                date=date,
+                employee_id=employee_id,
+            )
+        )
 
     try:
         app.mount("/mcp", mcp.sse_app())

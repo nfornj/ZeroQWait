@@ -65,3 +65,65 @@ def test_close_queue_normalizes_booking_mcp_close_response():
     assert result["closed_queues"] == 1
     assert result["message"] == "Queue closed. Reason: Owner approved closure"
     client.close_queue.assert_called_once_with(41, "Owner approved closure")
+
+
+def test_create_service_delegates_to_booking_mcp():
+    client = Mock()
+    client.create_service.return_value = {
+        "message": "Service 'Haircut' created at $35.00",
+        "service": {"id": 21, "name": "Haircut", "cost": 35.0},
+        "shop_id": 41,
+    }
+
+    with patch("agents.tools.booking_tools._get_booking_client", return_value=client):
+        result = booking_tools.create_service(41, "Haircut", 35.0, duration_minutes=30)
+
+    assert result["service"]["id"] == 21
+    client.create_service.assert_called_once_with(41, "Haircut", 35.0, duration_minutes=30, description=None, currency="USD")
+
+
+def test_book_appointment_delegates_to_booking_mcp():
+    client = Mock()
+    client.book_appointment.return_value = {
+        "id": 99,
+        "shop_id": 41,
+        "customer_name": "Alex",
+        "scheduled_start": "2026-04-22 10:00:00",
+    }
+
+    with patch("agents.tools.booking_tools._get_booking_client", return_value=client):
+        result = booking_tools.book_appointment(41, 7, "2026-04-22T10:00", "Alex")
+
+    assert result["id"] == 99
+    client.book_appointment.assert_called_once_with(41, 7, "2026-04-22T10:00", "Alex", customer_phone=None, customer_email=None, employee_id=None, notes=None)
+
+
+def test_list_appointments_normalizes_booking_mcp_response():
+    client = Mock()
+    client.list_appointments.return_value = {
+        "appointments": [{"id": 9, "customer_name": "Alex"}],
+        "shop_id": 41,
+        "count": 1,
+    }
+
+    with patch("agents.tools.booking_tools._get_booking_client", return_value=client):
+        result = booking_tools.list_appointments(41, date="2026-04-22")
+
+    assert result["count"] == 1
+    assert result["appointments"][0]["id"] == 9
+    client.list_appointments.assert_called_once_with(41, date="2026-04-22", status=None, employee_id=None)
+
+
+def test_get_available_slots_normalizes_booking_mcp_response():
+    client = Mock()
+    client.get_available_slots.return_value = {
+        "available_slots": [{"start": "2026-04-22 10:00:00", "end": "2026-04-22 10:30:00", "available": True}],
+        "shop_id": 41,
+        "date": "2026-04-22",
+    }
+
+    with patch("agents.tools.booking_tools._get_booking_client", return_value=client):
+        result = booking_tools.get_available_slots(41, 7, "2026-04-22")
+
+    assert len(result["available_slots"]) == 1
+    client.get_available_slots.assert_called_once_with(41, 7, "2026-04-22", employee_id=None)

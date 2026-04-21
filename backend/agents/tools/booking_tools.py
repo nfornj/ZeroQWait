@@ -100,34 +100,19 @@ def create_service(shop_id: int, name: str, cost: float,
                    duration_minutes: int = 30,
                    description: Optional[str] = None,
                    currency: str = "USD") -> Dict[str, Any]:
-    """Create a new service for a shop and sync to Odoo."""
-    try:
-        service_data = {
-            "shop_id": shop_id,
-            "name": name,
-            "cost": cost,
-            "duration_minutes": duration_minutes,
-            "description": description or "",
-            "is_active": True,
-            "currency": currency,
-        }
-        new_service = db_interface.create_shop_service(service_data)
-        if not new_service:
-            return {"error": "Failed to create service"}
-
-        # Sync to Odoo
-        _sync_service_to_odoo(shop_id, new_service, action="create")
-
-        from redis_client import redis_client
-        redis_client.tenant_delete(shop_id, "services")
-
-        return {
-            "message": f"Service '{name}' created at ${cost:.2f}",
-            "service": new_service,
-            "shop_id": shop_id,
-        }
-    except Exception as e:
-        return {"error": str(e)}
+    """Create a new service through the booking MCP service."""
+    result = _get_booking_client().create_service(
+        shop_id,
+        name,
+        cost,
+        duration_minutes=duration_minutes,
+        description=description,
+        currency=currency,
+    )
+    if result.get("error"):
+        return result
+    result.setdefault("shop_id", shop_id)
+    return result
 
 
 def update_service(shop_id: int, service_id: int,
@@ -136,93 +121,94 @@ def update_service(shop_id: int, service_id: int,
                    duration_minutes: Optional[int] = None,
                    description: Optional[str] = None,
                    is_active: Optional[bool] = None) -> Dict[str, Any]:
-    """Update an existing service and sync changes to Odoo."""
-    try:
-        updates: Dict[str, Any] = {}
-        if name is not None:
-            updates["name"] = name
-        if cost is not None:
-            updates["cost"] = cost
-        if duration_minutes is not None:
-            updates["duration_minutes"] = duration_minutes
-        if description is not None:
-            updates["description"] = description
-        if is_active is not None:
-            updates["is_active"] = is_active
-
-        if not updates:
-            return {"error": "No updates provided"}
-
-        updated = db_interface.update_shop_service(shop_id, service_id, updates)
-        if not updated:
-            return {"error": f"Service {service_id} not found"}
-
-        # Sync to Odoo
-        _sync_service_to_odoo(shop_id, updated, action="update")
-
-        from redis_client import redis_client
-        redis_client.tenant_delete(shop_id, "services")
-
-        return {
-            "message": f"Service '{updated.get('name', '')}' updated",
-            "service": updated,
-            "shop_id": shop_id,
-        }
-    except Exception as e:
-        return {"error": str(e)}
+    """Update an existing service through the booking MCP service."""
+    result = _get_booking_client().update_service(
+        shop_id,
+        service_id,
+        name=name,
+        cost=cost,
+        duration_minutes=duration_minutes,
+        description=description,
+        is_active=is_active,
+    )
+    if result.get("error"):
+        return result
+    result.setdefault("shop_id", shop_id)
+    return result
 
 
 def delete_service(shop_id: int, service_id: int) -> Dict[str, Any]:
-    """Soft-delete a service (set is_active=False)."""
-    try:
-        updated = db_interface.update_shop_service(shop_id, service_id, {"is_active": False})
-        if not updated:
-            return {"error": f"Service {service_id} not found"}
-
-        from redis_client import redis_client
-        redis_client.tenant_delete(shop_id, "services")
-
-        return {
-            "message": f"Service '{updated.get('name', '')}' has been deactivated",
-            "shop_id": shop_id,
-        }
-    except Exception as e:
-        return {"error": str(e)}
+    """Soft-delete a service through the booking MCP service."""
+    result = _get_booking_client().delete_service(shop_id, service_id)
+    if result.get("error"):
+        return result
+    result.setdefault("shop_id", shop_id)
+    return result
 
 
-def _sync_service_to_odoo(shop_id: int, service_data: Dict, action: str = "create") -> None:
-    """Best-effort sync of a local service to Odoo product.product."""
-    try:
-        from integrations.odoo_client import OdooClient
-        odoo = OdooClient()
-        if not odoo.enabled:
-            return
+def book_appointment(
+    shop_id: int,
+    service_id: int,
+    scheduled_start: str,
+    customer_name: str,
+    customer_phone: Optional[str] = None,
+    customer_email: Optional[str] = None,
+    employee_id: Optional[int] = None,
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Book an appointment through the booking MCP service."""
+    result = _get_booking_client().book_appointment(
+        shop_id,
+        service_id,
+        scheduled_start,
+        customer_name,
+        customer_phone=customer_phone,
+        customer_email=customer_email,
+        employee_id=employee_id,
+        notes=notes,
+    )
+    if result.get("error"):
+        return result
+    result.setdefault("shop_id", shop_id)
+    return result
 
-        # Resolve the shop's Odoo company_id
-        session = db_interface.get_session()
-        try:
-            from modules.shops.models import Shop
-            shop = session.query(Shop).filter(Shop.id == shop_id).first()
-            company_id = getattr(shop, "odoo_company_id", None) if shop else None
-        finally:
-            session.close()
 
-        if action == "create":
-            odoo.create_product(
-                name=service_data.get("name", ""),
-                list_price=service_data.get("cost", 0),
-                product_type="service",
-                company_id=company_id,
-                description=service_data.get("description"),
-            )
-        elif action == "update":
-            # For updates, we'd need an odoo_product_id mapping.
-            # For now, log that sync happened — full bidirectional mapping is Phase 2.
-            import logging
-            logging.getLogger(__name__).info(
-                "Service %s updated for shop %s — Odoo product sync (update) pending product ID mapping",
-                service_data.get("id"), shop_id
-            )
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Odoo product sync failed (non-blocking): %s", e)
+def list_appointments(
+    shop_id: int,
+    date: Optional[str] = None,
+    status: Optional[str] = None,
+    employee_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """List appointments through the booking MCP service."""
+    result = _get_booking_client().list_appointments(shop_id, date=date, status=status, employee_id=employee_id)
+    if result.get("error"):
+        return result
+    result.setdefault("shop_id", shop_id)
+    result.setdefault("appointments", [])
+    result.setdefault("count", len(result.get("appointments") or []))
+    return result
+
+
+def cancel_appointment(shop_id: int, appointment_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
+    """Cancel an appointment through the booking MCP service."""
+    result = _get_booking_client().cancel_appointment(shop_id, appointment_id, reason=reason)
+    if result.get("error"):
+        return result
+    result.setdefault("shop_id", shop_id)
+    return result
+
+
+def get_available_slots(
+    shop_id: int,
+    service_id: int,
+    date: str,
+    employee_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Get available appointment slots through the booking MCP service."""
+    result = _get_booking_client().get_available_slots(shop_id, service_id, date, employee_id=employee_id)
+    if result.get("error"):
+        return result
+    result.setdefault("shop_id", shop_id)
+    result.setdefault("date", date)
+    result.setdefault("available_slots", [])
+    return result

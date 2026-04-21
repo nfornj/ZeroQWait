@@ -62,3 +62,116 @@ class BookingMCPClient:
 
     def search_services(self, shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
         return self._post("/services/search", {"shop_id": shop_id, "query": query})
+
+    def create_service(
+        self,
+        shop_id: int,
+        name: str,
+        cost: float,
+        duration_minutes: int = 30,
+        description: Optional[str] = None,
+        currency: str = "USD",
+    ) -> Dict[str, Any]:
+        return self._post(
+            "/services/create",
+            {
+                "shop_id": shop_id,
+                "name": name,
+                "cost": cost,
+                "duration_minutes": duration_minutes,
+                "description": description,
+                "currency": currency,
+            },
+        )
+
+    def update_service(
+        self,
+        shop_id: int,
+        service_id: int,
+        *,
+        name: Optional[str] = None,
+        cost: Optional[float] = None,
+        duration_minutes: Optional[int] = None,
+        description: Optional[str] = None,
+        is_active: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        return self._post(
+            "/services/update",
+            {
+                "shop_id": shop_id,
+                "service_id": service_id,
+                "name": name,
+                "cost": cost,
+                "duration_minutes": duration_minutes,
+                "description": description,
+                "is_active": is_active,
+            },
+        )
+
+    def delete_service(self, shop_id: int, service_id: int) -> Dict[str, Any]:
+        return self._post("/services/delete", {"shop_id": shop_id, "service_id": service_id})
+
+    def book_appointment(
+        self,
+        shop_id: int,
+        service_id: int,
+        scheduled_start: str,
+        customer_name: str,
+        customer_phone: Optional[str] = None,
+        customer_email: Optional[str] = None,
+        employee_id: Optional[int] = None,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return self._post(
+            "/appointments/book",
+            {
+                "shop_id": shop_id,
+                "service_id": service_id,
+                "scheduled_start": scheduled_start,
+                "customer_name": customer_name,
+                "customer_phone": customer_phone,
+                "customer_email": customer_email,
+                "employee_id": employee_id,
+                "notes": notes,
+            },
+        )
+
+    def list_appointments(
+        self,
+        shop_id: int,
+        date: Optional[str] = None,
+        status: Optional[str] = None,
+        employee_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        return self._post(
+            "/appointments/list",
+            {
+                "shop_id": shop_id,
+                "date": date,
+                "status": status,
+                "employee_id": employee_id,
+            },
+        )
+
+    def cancel_appointment(self, shop_id: int, appointment_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
+        return self._post(
+            "/appointments/cancel",
+            {"shop_id": shop_id, "appointment_id": appointment_id, "reason": reason},
+        )
+
+    def get_available_slots(
+        self,
+        shop_id: int,
+        service_id: int,
+        date: str,
+        employee_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        return self._post(
+            "/appointments/available-slots",
+            {
+                "shop_id": shop_id,
+                "service_id": service_id,
+                "date": date,
+                "employee_id": employee_id,
+            },
+        )

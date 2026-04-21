@@ -2,41 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional
 import logging
 from db_interface import db_interface
+from integrations.service_catalog_sync import sync_service_to_odoo
 from schemas import ShopService, ShopServiceCreate, ShopServiceUpdate
 from shared.auth_utils import get_current_user, get_current_user_optional
 from permissions import check_shop_access
 from redis_client import redis_client
 
 logger = logging.getLogger(__name__)
-
-
-def _sync_to_odoo(shop_id: int, service_data: dict, action: str = "create") -> None:
-    """Best-effort Odoo product sync (non-blocking)."""
-    try:
-        from integrations.odoo_client import OdooClient
-        odoo = OdooClient()
-        if not odoo.enabled:
-            return
-        session = db_interface.get_session()
-        try:
-            from modules.shops.models import Shop
-            shop = session.query(Shop).filter(Shop.id == shop_id).first()
-            company_id = getattr(shop, "odoo_company_id", None) if shop else None
-        finally:
-            session.close()
-        if action == "create":
-            odoo.create_product(
-                name=service_data.get("name", ""),
-                list_price=service_data.get("cost", 0),
-                product_type="service",
-                company_id=company_id,
-                description=service_data.get("description"),
-            )
-        elif action == "update":
-            logger.info("Service %s updated for shop %s — Odoo update sync pending product ID mapping",
-                        service_data.get("id"), shop_id)
-    except Exception as e:
-        logger.warning("Odoo product sync failed (non-blocking): %s", e)
 
 router = APIRouter()
 
@@ -60,7 +32,7 @@ def create_service(
         new_service = db_interface.create_shop_service(service_data)
         if new_service:
             redis_client.tenant_delete(shop_id, "services")
-            _sync_to_odoo(shop_id, service_data, action="create")
+            sync_service_to_odoo(shop_id, service_data, action="create")
             return new_service
         raise HTTPException(status_code=500, detail="Failed to create service")
         
@@ -122,7 +94,7 @@ def update_service(
         updated = db_interface.update_shop_service(shop_id, service_id, service_update.dict(exclude_unset=True))
         if updated:
             redis_client.tenant_delete(shop_id, "services")
-            _sync_to_odoo(shop_id, updated if isinstance(updated, dict) else {"id": service_id}, action="update")
+            sync_service_to_odoo(shop_id, updated if isinstance(updated, dict) else {"id": service_id}, action="update")
             return updated
         raise HTTPException(status_code=404, detail="Service not found")
         
