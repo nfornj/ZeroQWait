@@ -346,3 +346,97 @@ def test_history_route_returns_checkpoint_messages_after_chat():
             "content": "Revenue for 2026-04-20 was $245.00 across 7 completed services. Average transaction was $35.00.",
         },
     ]
+
+
+def test_pending_route_returns_enriched_pending_approvals():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    pending_payload = [
+        {
+            "action_id": "interrupt-123",
+            "action": "close_queue",
+            "title": "Close Active Queue",
+            "risk_level": "high",
+            "details": {"reason": "Team is at capacity"},
+        }
+    ]
+
+    with (
+        patch.object(agent_v2.db_interface, "get_shop_live_wait_metrics", return_value={"queue_length": 6, "estimated_wait_minutes": 35}),
+        patch.object(agent_v2, "_get_pending_approval_payload", return_value=pending_payload) as mock_pending,
+    ):
+        response = client.get("/api/v2/agent/pending", params={"shop_id": 41})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {"pending": pending_payload}
+    mock_pending.assert_called_once_with(41, 17, metrics={"queue_length": 6, "estimated_wait_minutes": 35})
+
+
+def test_briefing_route_returns_snapshot_with_pending_actions():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    cached_snapshot = {
+        "generated_at": "2026-04-21T08:30:00Z",
+        "source": "cache",
+        "metrics": {
+            "queue_length": 4,
+            "estimated_wait_minutes": 20,
+            "people_being_served": 1,
+            "active_services": 3,
+            "active_employees": 2,
+            "today_revenue": 420.0,
+            "today_transactions": 12,
+            "weekly_revenue": 2100.0,
+        },
+    }
+    pending_payload = [
+        {
+            "action_id": "interrupt-456",
+            "action": "assign_shift",
+            "title": "Assign Employee Shift",
+            "risk_level": "medium",
+            "details": {"user_id": 12, "date": "2026-04-21", "start_time": "09:00", "end_time": "17:00"},
+        }
+    ]
+    built_briefing = {
+        "shop_id": 41,
+        "shop_name": "North Barbers",
+        "generated_at": "2026-04-21T08:30:00Z",
+        "source": "cache",
+        "summary": "North Barbers currently has 4 people waiting.",
+        "metrics": {
+            "queue_length": 4,
+            "estimated_wait_minutes": 20,
+            "people_being_served": 1,
+            "active_employees": 2,
+            "active_services": 3,
+            "pending_approvals": 1,
+            "today_revenue": 420.0,
+            "today_transactions": 12,
+            "weekly_revenue": 2100.0,
+        },
+        "alerts": [{"severity": "info", "title": "Owner decisions are waiting", "body": "You have 1 approval request that can unblock agent work.", "created_at": "2026-04-21T08:30:00Z"}],
+        "alert_history": [{"severity": "warning", "title": "Queue pressure is building", "body": "There are 4 people waiting.", "created_at": "2026-04-21T08:00:00Z"}],
+        "recommendations": ["Review pending approvals first so agent work is not blocked."],
+        "actions": [{"label": "Review approvals", "prompt": "Show my pending approvals."}],
+    }
+
+    with (
+        patch.object(agent_v2.db_interface, "get_shop_by_id", return_value={"id": 41, "name": "North Barbers"}),
+        patch.object(agent_v2, "get_cached_shop_briefing_snapshot", return_value=cached_snapshot),
+        patch.object(agent_v2, "refresh_shop_briefing_cache", return_value=None),
+        patch.object(agent_v2.db_interface, "get_shop_live_wait_metrics", return_value={"queue_length": 4, "estimated_wait_minutes": 20, "people_being_served": 1}),
+        patch.object(agent_v2, "_get_pending_approval_payload", return_value=pending_payload),
+        patch.object(agent_v2, "get_shop_alert_history", return_value=built_briefing["alert_history"]),
+        patch.object(agent_v2, "build_owner_briefing", return_value=dict(built_briefing)) as mock_build,
+    ):
+        response = client.get("/api/v2/agent/briefing", params={"shop_id": 41})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["shop_id"] == 41
+    assert payload["shop_name"] == "North Barbers"
+    assert payload["pending"] == pending_payload
+    assert payload["metrics"]["pending_approvals"] == 1
+    mock_build.assert_called_once()

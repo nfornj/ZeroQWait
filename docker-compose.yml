@@ -47,6 +47,7 @@ services:
       - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
       - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
       - TTS_SERVICE_URL=${TTS_SERVICE_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30880}
+      - BOOKING_MCP_URL=${BOOKING_MCP_URL:-http://booking-mcp:8890}
       - ODOO_URL=${ODOO_URL:-http://odoo:8069}
       - ODOO_DB=${ODOO_DB:-odoo}
       - ODOO_USER=${ODOO_USER:-admin}
@@ -58,6 +59,23 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      booking-mcp:
+        condition: service_healthy
+    restart: unless-stopped
+
+  booking-mcp:
+    build:
+      context: .
+      dockerfile: ./mcps/booking/Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      - DB_HOST=db
+      - HOST=0.0.0.0
+      - PORT=8890
+    depends_on:
+      db:
         condition: service_healthy
     restart: unless-stopped
 
