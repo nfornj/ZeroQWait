@@ -1060,3 +1060,47 @@ def test_briefing_route_includes_recent_notifications():
     assert response.status_code == 200
     payload = response.json()
     assert payload["recent_notifications"] == recent_notifications
+
+
+def test_mark_notification_read_route_returns_updated_notification():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    updated_notification = SimpleNamespace(
+        id=301,
+        notification_type="policy_action_executed",
+        title="Queue auto-closed by policy",
+        message="The receptionist closed intake automatically under the current policy.",
+        severity="warning",
+        status="read",
+        created_at=datetime(2026, 4, 21, 10, 45, 0),
+        payload={"action": "close_queue", "shop_id": 41},
+    )
+    fake_repo = SimpleNamespace(mark_notification_read_for_shop=lambda notification_id, shop_id: updated_notification)
+    fake_db = SimpleNamespace(close=lambda: None)
+
+    with (
+        patch.object(agent_v2, "SessionLocal", return_value=fake_db),
+        patch.object(agent_v2, "AgentWorkRepository", return_value=fake_repo),
+    ):
+        response = client.post("/api/v2/agent/notifications/301/read", json={"shop_id": 41})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["notification"]["notification_id"] == 301
+    assert payload["notification"]["status"] == "read"
+
+
+def test_mark_all_notifications_read_route_returns_updated_count():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    fake_repo = SimpleNamespace(mark_all_notifications_read=lambda shop_id: 3)
+    fake_db = SimpleNamespace(close=lambda: None)
+
+    with (
+        patch.object(agent_v2, "SessionLocal", return_value=fake_db),
+        patch.object(agent_v2, "AgentWorkRepository", return_value=fake_repo),
+    ):
+        response = client.post("/api/v2/agent/notifications/read-all", json={"shop_id": 41})
+
+    assert response.status_code == 200
+    assert response.json() == {"updated": 3}

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import axios from "axios";
 import {
   Alert,
   alpha,
@@ -49,6 +48,7 @@ import type {
   PendingApproval,
   ShopPolicy,
 } from "./types";
+import api from "../../services/api";
 
 const nowIso = () => new Date().toISOString();
 
@@ -111,6 +111,7 @@ const AgentInbox: React.FC = () => {
   const { shop } = useShop();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [feedEvents, setFeedEvents] = useState<AgentFeedEvent[]>([]);
+  const [persistedFeedEvents, setPersistedFeedEvents] = useState<AgentFeedEvent[]>([]);
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [policies, setPolicies] = useState<ShopPolicy[]>([]);
@@ -122,6 +123,8 @@ const AgentInbox: React.FC = () => {
   const [streamedInsightItems, setStreamedInsightItems] = useState<InsightItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [savingPolicyKey, setSavingPolicyKey] = useState<string | null>(null);
+  const [markingNotificationId, setMarkingNotificationId] = useState<number | null>(null);
+  const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const previousShopIdRef = useRef<number | null>(null);
 
@@ -139,7 +142,7 @@ const AgentInbox: React.FC = () => {
   const refreshPendingApprovals = useCallback(async () => {
     if (!shop?.id) return;
     try {
-      const response = await axios.get<{ pending: PendingApproval[] }>(`/v2/agent/pending`, {
+      const response = await api.get<{ pending: PendingApproval[] }>(`/v2/agent/pending`, {
         params: { shop_id: shop.id },
       });
       setPendingApprovals(response.data.pending || []);
@@ -151,7 +154,7 @@ const AgentInbox: React.FC = () => {
   const refreshBriefing = useCallback(async () => {
     if (!shop?.id) return;
     try {
-      const response = await axios.get<OwnerBriefingData>(`/v2/agent/briefing`, {
+      const response = await api.get<OwnerBriefingData>(`/v2/agent/briefing`, {
         params: { shop_id: shop.id },
       });
       setBriefing(response.data);
@@ -160,10 +163,22 @@ const AgentInbox: React.FC = () => {
     }
   }, [shop?.id]);
 
+  const refreshFeed = useCallback(async () => {
+    if (!shop?.id) return;
+    try {
+      const response = await api.get<{ events: AgentFeedEvent[] }>(`/v2/agent/feed`, {
+        params: { shop_id: shop.id },
+      });
+      setPersistedFeedEvents(response.data.events || []);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || "Failed to load notification feed");
+    }
+  }, [shop?.id]);
+
   const refreshPolicies = useCallback(async () => {
     if (!shop?.id) return;
     try {
-      const response = await axios.get<{ policies: ShopPolicy[] }>(`/v2/agent/policies`, {
+      const response = await api.get<{ policies: ShopPolicy[] }>(`/v2/agent/policies`, {
         params: { shop_id: shop.id },
       });
       setPolicies(response.data.policies || []);
@@ -176,8 +191,9 @@ const AgentInbox: React.FC = () => {
     if (!shop?.id) return;
     refreshPendingApprovals();
     refreshBriefing();
+    refreshFeed();
     refreshPolicies();
-  }, [shop?.id, refreshPendingApprovals, refreshBriefing, refreshPolicies]);
+  }, [shop?.id, refreshPendingApprovals, refreshBriefing, refreshFeed, refreshPolicies]);
 
   useEffect(() => {
     if (!shop?.id) return;
@@ -188,6 +204,7 @@ const AgentInbox: React.FC = () => {
     if (shopChanged) {
       setMessages([buildIntroMessage()]);
       setFeedEvents([]);
+      setPersistedFeedEvents([]);
       setPendingApprovals([]);
       setPolicies([]);
       setBriefing(null);
@@ -210,7 +227,7 @@ const AgentInbox: React.FC = () => {
       setError(null);
       setSavingPolicyKey(policy.policy_key);
       try {
-        const response = await axios.put<{ policy: ShopPolicy }>(
+        const response = await api.put<{ policy: ShopPolicy }>(
           `/v2/agent/policies/${encodeURIComponent(policy.policy_key)}`,
           {
             shop_id: shop.id,
@@ -561,7 +578,7 @@ const AgentInbox: React.FC = () => {
         };
         const eventTimestamp = nowIso();
 
-        const response = await axios.post<{
+        const response = await api.post<{
           message: string;
           status: string;
           agent?: string;
@@ -614,6 +631,7 @@ const AgentInbox: React.FC = () => {
 
         await refreshPendingApprovals();
         await refreshBriefing();
+        await refreshFeed();
       } catch (err: any) {
         const detail = err?.response?.data?.detail || err?.message || "Failed to submit approval decision";
         setError(detail);
@@ -626,7 +644,56 @@ const AgentInbox: React.FC = () => {
         setIsApproving(false);
       }
     },
-    [addFeedEvent, refreshBriefing, refreshPendingApprovals, shop?.id]
+    [addFeedEvent, refreshBriefing, refreshFeed, refreshPendingApprovals, shop?.id]
+  );
+
+  const handleMarkNotificationRead = useCallback(
+    async (notificationId: number) => {
+      if (!shop?.id) return;
+      setError(null);
+      setMarkingNotificationId(notificationId);
+      try {
+        const response = await api.post<{ notification: AgentFeedEvent }>(
+          `/v2/agent/notifications/${notificationId}/read`,
+          { shop_id: shop.id },
+        );
+        setPersistedFeedEvents((prev) =>
+          prev.map((event) =>
+            event.notification_id === notificationId
+              ? { ...event, ...response.data.notification }
+              : event
+          )
+        );
+      } catch (err: any) {
+        setError(err?.response?.data?.detail || "Failed to mark notification as read");
+      } finally {
+        setMarkingNotificationId(null);
+      }
+    },
+    [shop?.id]
+  );
+
+  const handleMarkAllNotificationsRead = useCallback(
+    async () => {
+      if (!shop?.id) return;
+      setError(null);
+      setIsMarkingAllRead(true);
+      try {
+        await api.post(`/v2/agent/notifications/read-all`, { shop_id: shop.id });
+        setPersistedFeedEvents((prev) =>
+          prev.map((event) =>
+            event.notification_id
+              ? { ...event, status: "read" }
+              : event
+          )
+        );
+      } catch (err: any) {
+        setError(err?.response?.data?.detail || "Failed to clear unread notifications");
+      } finally {
+        setIsMarkingAllRead(false);
+      }
+    },
+    [shop?.id]
   );
 
   const latestPending = useMemo(() => pendingApprovals.slice(0, 3), [pendingApprovals]);
@@ -635,9 +702,21 @@ const AgentInbox: React.FC = () => {
     [briefing, pendingApprovals]
   );
   const displayedFeedEvents = useMemo(() => {
-    const seen = new Set(feedEvents.map((event) => event.id));
-    return [...feedEvents, ...seededFeedEvents.filter((event) => !seen.has(event.id))];
-  }, [feedEvents, seededFeedEvents]);
+    const merged = [...feedEvents, ...persistedFeedEvents, ...seededFeedEvents];
+    const deduped = new Map<string, AgentFeedEvent>();
+    merged.forEach((event) => {
+      if (!deduped.has(event.id)) {
+        deduped.set(event.id, event);
+      }
+    });
+    return Array.from(deduped.values()).sort(
+      (left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()
+    );
+  }, [feedEvents, persistedFeedEvents, seededFeedEvents]);
+  const unreadFeedCount = useMemo(
+    () => persistedFeedEvents.filter((event) => event.notification_id && event.status === "unread").length,
+    [persistedFeedEvents]
+  );
   const seededInsightItems = useMemo(
     () => createWorkspaceInsightSeed(briefing, pendingApprovals),
     [briefing, pendingApprovals]
@@ -1051,7 +1130,14 @@ const AgentInbox: React.FC = () => {
                   </CardContent>
                 </Card>
               )}
-              <AgentFeed events={displayedFeedEvents} />
+              <AgentFeed
+                events={displayedFeedEvents}
+                unreadCount={unreadFeedCount}
+                isMarkingAllRead={isMarkingAllRead}
+                markingNotificationId={markingNotificationId}
+                onMarkAsRead={handleMarkNotificationRead}
+                onMarkAllAsRead={handleMarkAllNotificationsRead}
+              />
             </Stack>
           </Grid>
         </Grid>

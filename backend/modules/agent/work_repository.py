@@ -393,10 +393,53 @@ class AgentWorkRepository:
         )
         if notification is None:
             return None
+        if notification.status == NotificationStatus.READ:
+            return notification
         _apply_model_updates(notification, status=NotificationStatus.READ, read_at=datetime.utcnow())
         self.db.commit()
         self.db.refresh(notification)
         return notification
+
+    def mark_notification_read_for_shop(
+        self,
+        notification_id: int,
+        shop_id: int,
+    ) -> Optional[AgentNotification]:
+        notification = (
+            self.db.query(AgentNotification)
+            .filter(
+                AgentNotification.id == notification_id,
+                AgentNotification.shop_id == shop_id,
+            )
+            .first()
+        )
+        if notification is None:
+            return None
+        if notification.status == NotificationStatus.READ:
+            return notification
+        _apply_model_updates(notification, status=NotificationStatus.READ, read_at=datetime.utcnow())
+        self.db.commit()
+        self.db.refresh(notification)
+        return notification
+
+    def mark_all_notifications_read(self, shop_id: int) -> int:
+        updated = (
+            self.db.query(AgentNotification)
+            .filter(
+                AgentNotification.shop_id == shop_id,
+                AgentNotification.status == NotificationStatus.UNREAD,
+            )
+            .update(
+                {
+                    AgentNotification.status: NotificationStatus.READ,
+                    AgentNotification.read_at: datetime.utcnow(),
+                    AgentNotification.updated_at: datetime.utcnow(),
+                },
+                synchronize_session=False,
+            )
+        )
+        self.db.commit()
+        return int(updated or 0)
 
     def list_recent_notifications(self, shop_id: int, limit: int = 25) -> list[AgentNotification]:
         return (

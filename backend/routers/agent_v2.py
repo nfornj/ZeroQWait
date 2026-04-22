@@ -5,6 +5,8 @@ Endpoints:
 - POST /api/v2/agent/chat - Synchronous chat
 - POST /api/v2/agent/chat/stream - SSE streaming chat
 - POST /api/v2/agent/approve - Approve/reject HITL action
+- POST /api/v2/agent/notifications/{notification_id}/read - Mark notification as read
+- POST /api/v2/agent/notifications/read-all - Mark all notifications as read
 - GET /api/v2/agent/history - Get conversation history
 - GET /api/v2/agent/pending - Get pending approvals
 - GET /api/v2/agent/feed - Get persisted feed events
@@ -1480,6 +1482,53 @@ async def get_feed(
 
     normalized_limit = max(1, min(int(limit), 100))
     return {"events": _get_notification_feed_payload(shop_id, limit=normalized_limit)}
+
+
+@router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Mark a persisted owner-facing notification as read."""
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON request body") from exc
+
+    _, shop_id = _require_owner_shop_access(body.get("shop_id"), current_user)
+
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        notification = repo.mark_notification_read_for_shop(notification_id, shop_id)
+        if notification is None:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        return {"notification": _serialize_notification_feed_event(notification)}
+    finally:
+        db.close()
+
+
+@router.post("/notifications/read-all")
+async def mark_all_notifications_read(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Mark all persisted owner-facing notifications for a shop as read."""
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON request body") from exc
+
+    _, shop_id = _require_owner_shop_access(body.get("shop_id"), current_user)
+
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        updated = repo.mark_all_notifications_read(shop_id)
+        return {"updated": updated}
+    finally:
+        db.close()
 
 
 # ============================================================================

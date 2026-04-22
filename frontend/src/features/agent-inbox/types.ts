@@ -78,6 +78,7 @@ export interface OwnerBriefing {
   };
   alerts: BriefingAlert[];
   alert_history?: BriefingAlert[];
+  recent_notifications?: AgentFeedEvent[];
   recommendations: string[];
   actions: BriefingAction[];
 }
@@ -110,6 +111,10 @@ export interface AgentFeedEvent {
   title: string;
   description: string;
   timestamp: string;
+  severity?: "success" | "info" | "warning" | "error" | string;
+  status?: "unread" | "read" | "archived" | string;
+  notification_type?: string;
+  notification_id?: number | null;
   payload?: unknown;
 }
 
