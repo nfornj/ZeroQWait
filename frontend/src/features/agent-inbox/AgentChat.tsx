@@ -379,7 +379,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
           ))}
         </Stack>
 
-        <Box sx={{ flex: 1, minHeight: 0, mb: 2 }}>
+        <Box sx={{ flex: 1, minHeight: 0, mb: 1.25 }}>
           <ChatBox
             adapter={noopChatAdapter}
             messages={chatMessages}
@@ -493,17 +493,17 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
                 position: "sticky",
                 bottom: 0,
                 minHeight: "unset",
-                mx: { xs: 0.75, md: 1 },
-                mb: { xs: 0.75, md: 1 },
-                mt: 0.75,
-                px: { xs: 0.75, md: 1 },
-                py: { xs: 0.75, md: 0.9 },
+                mx: { xs: 0.5, md: 0.75 },
+                mb: { xs: 0.5, md: 0.75 },
+                mt: 0.5,
+                px: { xs: 0.5, md: 0.75 },
+                py: { xs: 0.5, md: 0.65 },
                 border: "1px solid",
                 borderColor:
                   muiTheme.palette.mode === "dark"
                     ? alpha(brandPrimary, 0.2)
                     : alpha(brandPrimary, 0.16),
-                borderRadius: "28px",
+                borderRadius: "24px",
                 bgcolor:
                   muiTheme.palette.mode === "dark"
                     ? alpha(muiTheme.palette.common.black, 0.22)
@@ -518,19 +518,20 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
               [`& .${chatComposerClasses.textArea}`]: {
                 flex: 1,
                 alignSelf: "stretch",
-                borderRadius: "22px",
+                borderRadius: "20px",
                 borderColor: alpha(brandPrimary, 0.18),
                 bgcolor:
                   muiTheme.palette.mode === "dark"
                     ? alpha(muiTheme.palette.common.white, 0.03)
                     : alpha(muiTheme.palette.common.white, 0.44),
                 backdropFilter: "blur(10px)",
-                minHeight: 88,
+                minHeight: 96,
                 [`& textarea`]: {
-                  minHeight: 88,
+                  minHeight: 96,
                   boxSizing: "border-box",
-                  paddingTop: 14,
-                  paddingBottom: 14,
+                  paddingTop: 12,
+                  paddingBottom: 12,
+                  lineHeight: 1.45,
                 },
                 "&:hover": {
                   borderColor: brandPrimary,
@@ -539,6 +540,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
                   borderColor: brandPrimary,
                   boxShadow: `0 0 0 3px ${alpha(brandPrimary, 0.12)}`,
                 },
+              },
+              [`& .${chatComposerClasses.toolbar}`]: {
+                alignItems: "flex-end",
+                gap: 0.5,
               },
               [`& .${chatComposerClasses.sendButton}`]: {
                 borderRadius: 999,
@@ -560,7 +565,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
               [`& .${chatComposerClasses.helperText}`]: {
                 color: muiTheme.palette.text.secondary,
                 px: 0.5,
-                pt: 0.5,
+                pt: 0.35,
+                pb: 0.1,
                 fontSize: "0.75rem",
                 lineHeight: 1.35,
               },
