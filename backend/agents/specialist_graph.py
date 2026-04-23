@@ -32,6 +32,7 @@ class SpecialistState(TypedDict, total=False):
 
 Executor = Callable[[str, Dict[str, Any], Sequence[BaseMessage]], Dict[str, Any]]
 Formatter = Callable[[str, Dict[str, Any]], str]
+OperationNormalizer = Callable[[str, Dict[str, Any], Sequence[BaseMessage]], str]
 
 
 def _ollama_base_url() -> str:
@@ -67,10 +68,17 @@ def build_specialist_runnable(
     temperature: float,
     planner_instructions: str,
     supported_operations: Sequence[str],
+    operation_aliases: Optional[Dict[str, str]] = None,
+    operation_normalizer: Optional[OperationNormalizer] = None,
     executor: Executor,
     formatter: Formatter,
 ):
     supported_operation_set = set(supported_operations)
+    normalized_operation_aliases = {
+        str(alias).strip().lower(): str(target).strip()
+        for alias, target in dict(operation_aliases or {}).items()
+        if str(alias).strip() and str(target).strip()
+    }
 
     def plan_request(state: SpecialistState) -> Dict[str, Any]:
         messages = list(state.get("messages") or [])
@@ -97,11 +105,15 @@ def build_specialist_runnable(
             [SystemMessage(content=planner_prompt)] + messages
         )
         plan = decision.model_dump()
-        operation = str(plan.get("operation") or "").strip()
+        raw_operation = str(plan.get("operation") or "").strip()
+        operation = normalized_operation_aliases.get(raw_operation.lower(), raw_operation)
+        if operation_normalizer is not None:
+            operation = str(operation_normalizer(operation, plan, messages) or operation).strip()
         if not operation:
             raise ValueError(f"{agent_name} planner returned an empty operation")
         if operation not in supported_operation_set:
             raise ValueError(f"{agent_name} planner returned unsupported operation: {operation}")
+        plan["operation"] = operation
         return {"plan": plan, "current_agent": agent_name}
 
     def execute_operation(state: SpecialistState) -> Dict[str, Any]:

@@ -7,46 +7,37 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 // Context
 import { ShopProvider } from "./contexts/ShopContext";
 
-// Components
-import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AppErrorBoundary from "./components/AppErrorBoundary";
 
-// Pages
-import HomePage from "./pages/HomePage";
-import LoginPage from "./pages/LoginPage";
-import RegisterCustomerPage from "./pages/RegisterCustomerPage";
-import RegisterShopOwnerPage from "./pages/RegisterShopOwnerPage";
-import PricingPage from "./pages/PricingPage";
-import SearchPage from "./pages/SearchPage";
-import FavoritesPage from "./pages/FavoritesPage";
-import NotFoundPage from "./pages/NotFoundPage";
-import ShopRegistrationPage from "./pages/ShopRegistrationPage";
-import ShopDashboardPage from "./pages/ShopDashboardPage";
-import ShopSettingsPage from "./pages/ShopSettingsPage";
-import EmployeeManagementPage from "./pages/EmployeeManagementPage";
-import EmployeeQueuePage from "./pages/EmployeeQueuePage";
-import QueueManagementPage from "./pages/QueueManagementPage";
-import QueueDetailPage from "./pages/QueueDetailPage";
-import InShopDisplayPage from "./pages/InShopDisplayPage";
-import WidgetPage from "./pages/WidgetPage";
-import ForgotPasswordPage from "./pages/ForgotPasswordPage";
-import ResetPasswordPage from "./pages/ResetPasswordPage";
+import PricingPage from "./features/public-booking/pages/PricingPage";
+import SearchPage from "./features/public-booking/pages/SearchPage";
+import NotFoundPage from "./features/public-booking/pages/NotFoundPage";
+import ShopDashboardPage from "./features/shop-dashboard/pages/ShopDashboardPage";
+import ShopSettingsPage from "./features/shop-dashboard/pages/ShopSettingsPage";
+import EmployeeManagementPage from "./features/shop-dashboard/pages/EmployeeManagementPage";
+import EmployeeQueuePage from "./features/shop-dashboard/pages/EmployeeQueuePage";
+import QueueManagementPage from "./features/shop-dashboard/pages/QueueManagementPage";
+import QueueDetailPage from "./features/shop-dashboard/pages/QueueDetailPage";
+import InShopDisplayPage from "./features/public-booking/pages/InShopDisplayPage";
+import WidgetPage from "./features/public-booking/pages/WidgetPage";
+import ForgotPasswordPage from "./features/auth/pages/ForgotPasswordPage";
+import ResetPasswordPage from "./features/auth/pages/ResetPasswordPage";
 import ShopLayout from "./layouts/ShopLayout";
 // PublicShopPage is used via SubdomainHandler (subdomain routing only)
 import PublicLayout from "./layouts/PublicLayout";
-import QueueCounterPage from "./pages/QueueCounterPage";
 import AgentInbox from "./features/agent-inbox/AgentInbox";
 import MasterDashboardPage from "./features/admin/pages/MasterDashboardPage";
 import ServicesManagementPage from "./features/shop-dashboard/pages/ServicesManagementPage";
 import AppointmentsPage from "./features/shop-dashboard/pages/AppointmentsPage";
+import OwnerDashboardPage from "./features/shop-dashboard/pages/OwnerDashboardPage";
 import { useAuth } from "./contexts/AuthContext";
 
-import SignInSide from "./auth-sign-in/SignInSide";
-import ShopOwnerSignUp from "./auth-sign-up/ShopOwnerSignUp";
-import LandingPage from "./landing-page/LandingPage";
+import SignInSide from "./features/auth/components/auth-sign-in/SignInSide";
+import ShopOwnerSignUp from "./features/auth/components/auth-sign-up/ShopOwnerSignUp";
 import SubdomainHandler from "./components/SubdomainHandler";
 import AIShopPublicPage from "./features/public-booking/pages/AIShopPublicPage";
+import QueueViewPage from "./features/public-booking/pages/QueueViewPage";
 
 function App() {
   const { user } = useAuth();
@@ -62,7 +53,7 @@ function App() {
     if (user?.role === "employee") {
       return <Navigate to="/employee-dashboard" replace />;
     }
-    return <AgentInbox />;
+    return <OwnerDashboardPage />;
   };
 
   return (
@@ -70,28 +61,23 @@ function App() {
       <ThemeProvider>
         <Routes>
           {/* Auth Pages (No Navbar) */}
-          <Route path="/signin" element={<SignInSide />} />
           <Route path="/login" element={<SignInSide />} />
           <Route path="/signup" element={<ShopOwnerSignUp />} />
-          <Route path="/register" element={<ShopOwnerSignUp />} />
-          <Route path="/register/shop-owner" element={<ShopOwnerSignUp />} />
-          <Route path="/register/customer" element={<ShopOwnerSignUp />} />
 
           <Route path="/" element={<SubdomainHandler />} />
-          <Route path="/ai" element={<SubdomainHandler />} />
+          <Route path="/ai" element={<Navigate to="/" replace />} />
 
           {/* AI Shop page (localhost dev mode) */}
           <Route path="/shop-ai/:shopId" element={<AIShopPublicPage />} />
-          <Route path="/queue/:shopId" element={<AIShopPublicPage />} />
+          <Route path="/queue/:shopId" element={<QueueViewPage />} />
 
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>
-            <Route path="/home" element={<HomePage />} />
+            <Route path="/home" element={<Navigate to="/" replace />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/search" element={<SearchPage />} />
-            <Route path="/queue-counter" element={<QueueCounterPage />} />
           </Route>
 
           {/* In-Shop Display (No Layout - Fullscreen) */}
@@ -101,9 +87,6 @@ function App() {
           <Route path="/widget/:shopId" element={<WidgetPage />} />
 
 
-
-          {/* Shop Registration (Standalone or Public?) - Let's keep it Public for now */}
-          <Route path="/register-shop" element={<ShopOwnerSignUp />} />
 
           {/* Shop Owner Portal Routes (No Global Navbar) */}
           <Route

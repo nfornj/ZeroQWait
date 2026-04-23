@@ -234,7 +234,7 @@ const Navbar = () => {
                     </Button>
                     <Button
                       component={RouterLink}
-                      to="/pricing"
+                      to="/signup"
                       variant="contained"
                       sx={{
                         fontWeight: 600,
@@ -295,7 +295,7 @@ const Navbar = () => {
                 </MenuItem>
                 <MenuItem
                   component={RouterLink}
-                  to="/pricing"
+                  to="/signup"
                   onClick={handleCloseNavMenu}
                   sx={{ px: 3, py: 1.5 }}
                 >

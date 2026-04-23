@@ -132,6 +132,11 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Fetch user's shop (for authenticated users)
   const fetchMyShop = useCallback(async (): Promise<Shop | null> => {
+    if (user?.role !== 'shop_owner') {
+      setOwnedShops([]);
+      return null;
+    }
+
     try {
       setLoading(true);
 
@@ -160,9 +165,15 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setLoading(false);
     }
-  }, [applySelectedShop, resolvePreferredOwnedShop]);
+  }, [applySelectedShop, resolvePreferredOwnedShop, user?.role]);
 
   const refreshOwnedShops = useCallback(async (): Promise<Shop[]> => {
+    if (user?.role !== 'shop_owner') {
+      setOwnedShops([]);
+      applySelectedShop(null);
+      return [];
+    }
+
     try {
       setShopsLoading(true);
       setError(null);
@@ -186,7 +197,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setShopsLoading(false);
     }
-  }, [applySelectedShop, resolvePreferredOwnedShop]);
+  }, [applySelectedShop, resolvePreferredOwnedShop, user?.role]);
 
   const selectOwnedShop = (shopId: number) => {
     const selectedShop = ownedShops.find((ownedShop) => ownedShop.id === shopId);
@@ -195,9 +206,19 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    if (authLoading) return;
+
     const initializeShop = async () => {
       const subdomain = getSubdomainFromHost();
       console.log("[ShopContext] Subdomain detected:", subdomain);
+
+      if (isAuthenticated && user?.role === 'employee') {
+        console.log("[ShopContext] Employee session detected, skipping owner shop bootstrap");
+        setOwnedShops([]);
+        applySelectedShop(null);
+        setLoading(false);
+        return;
+      }
 
       if (subdomain && subdomain !== '192' && subdomain !== '168') {
         // This is a shop subdomain, fetch the shop data
@@ -215,7 +236,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     initializeShop();
-  }, [fetchMyShop, fetchShopBySlug]);
+  }, [authLoading, isAuthenticated, user?.role, fetchMyShop, fetchShopBySlug, applySelectedShop]);
 
   useEffect(() => {
     if (authLoading) return;

@@ -152,7 +152,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           // Only redirect to /login when the user is on a protected page.
           // Never redirect if already on /login, / (landing), or /signin to
           // avoid the redirect loop that causes root-URL jitter.
-          const publicPaths = ['/', '/login', '/signin', '/signup', '/register', '/ai'];
+          const publicPaths = ['/', '/login', '/signup'];
           const isPublic = publicPaths.some(p => window.location.pathname === p || window.location.pathname.startsWith('/shop-ai') || window.location.pathname.startsWith('/queue/'));
           if (!isPublic) {
             window.location.href = '/login';

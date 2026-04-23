@@ -3,8 +3,18 @@ import CardContent from '@mui/material/CardContent';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
+import { useLocation } from 'react-router-dom';
+import { useAuth } from '../../../contexts/AuthContext';
 
 export default function CardAlert() {
+  const location = useLocation();
+  const { user } = useAuth();
+  const isEmployee = user?.role === 'employee' || location.pathname.startsWith('/employee-dashboard');
+
+  if (isEmployee) {
+    return null;
+  }
+
   return (
     <Card variant="outlined" sx={{ m: 1.5, flexShrink: 0, bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}>
       <CardContent>

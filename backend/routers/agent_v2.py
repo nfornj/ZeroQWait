@@ -36,7 +36,9 @@ import base64
 from datetime import datetime
 import json
 import logging
-from langchain_core.messages import HumanMessage, SystemMessage
+import os
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from sqlalchemy import text
 
 from redis_client import redis_client as _redis
 from langgraph.types import Command
@@ -116,6 +118,107 @@ def _extract_current_agent_from_output(out: Any) -> Optional[str]:
     if hasattr(out, "update") and isinstance(getattr(out, "update", None), dict):
         return out.update.get("current_agent") or None
     return None
+
+
+def _checkpoint_thread_id(shop_id: int, user_id: int) -> str:
+    return f"tenant_{shop_id}_{user_id}"
+
+
+def _sync_chat_timeout_seconds() -> float:
+    raw_value = os.getenv("AGENT_SYNC_TIMEOUT_SECONDS", "50")
+    try:
+        return max(float(raw_value), 1.0)
+    except (TypeError, ValueError):
+        return 50.0
+
+
+async def _invoke_supervisor_sync(initial_state: AgentState, checkpoint_config: Any) -> Dict[str, Any]:
+    runnable = _SUPERVISOR_RUNNABLE
+    routed_agent: Optional[str] = None
+    final_response_text = ""
+    final_tool_results: Dict[str, Any] = {}
+    pending_action: Optional[Dict[str, Any]] = None
+
+    def _consume_updates() -> None:
+        nonlocal routed_agent, final_response_text, final_tool_results
+
+        try:
+            update_iter = runnable.stream(
+                initial_state,
+                config=checkpoint_config,
+                stream_mode="updates",
+            )
+
+            for update in update_iter:
+                if not isinstance(update, dict):
+                    continue
+
+                for raw_node_name, out in update.items():
+                    lg_node = _resolve_thinking_node({"name": raw_node_name})
+
+                    ca = _extract_current_agent_from_output(out)
+                    if ca and ca not in ("supervisor", "general", "", None):
+                        routed_agent = ca
+
+                    if lg_node == "synthesize_response" and isinstance(out, dict):
+                        msgs = out.get("messages") or []
+                        if msgs:
+                            final_response_text = getattr(msgs[-1], "content", "") or ""
+
+                    if isinstance(out, dict) and isinstance(out.get("tool_results"), dict):
+                        final_tool_results = out.get("tool_results") or final_tool_results
+
+        except Exception as stream_exc:
+            exc_name = type(stream_exc).__name__
+            if "interrupt" not in exc_name.lower():
+                raise
+
+    await asyncio.wait_for(
+        asyncio.to_thread(_consume_updates),
+        timeout=_sync_chat_timeout_seconds(),
+    )
+
+    snapshot = await asyncio.to_thread(runnable.get_state, checkpoint_config)
+    if snapshot and snapshot.values:
+        state_vals = dict(snapshot.values)
+        if not final_response_text:
+            final_response_text = _state_last_text(state_vals)
+        if isinstance(state_vals.get("tool_results"), dict):
+            final_tool_results = state_vals.get("tool_results") or final_tool_results
+        if snapshot.next:
+            pending_action = _extract_pending_action(
+                {
+                    **state_vals,
+                    "__interrupt__": snapshot.interrupts,
+                }
+            )
+
+    return {
+        "messages": [AIMessage(content=final_response_text)] if final_response_text else [],
+        "current_agent": routed_agent or "supervisor",
+        "tool_results": final_tool_results,
+        "pending_action": pending_action,
+        "needs_human_input": pending_action is not None,
+    }
+
+
+def _reset_checkpoint_thread_if_idle(shop_id: int, user_id: int) -> None:
+    checkpoint_config = build_checkpoint_config(shop_id, user_id)
+    snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
+    if snapshot and snapshot.interrupts:
+        return
+
+    thread_id = _checkpoint_thread_id(shop_id, user_id)
+    db = SessionLocal()
+    try:
+        db.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :thread_id"), {"thread_id": thread_id})
+        db.execute(text("DELETE FROM checkpoints WHERE thread_id = :thread_id"), {"thread_id": thread_id})
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Unable to clear idle checkpoint thread %s: %s", thread_id, exc)
+    finally:
+        db.close()
 
 
 # Agent-specific follow-up suggestion pools
@@ -219,6 +322,56 @@ def _extract_pending_action(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
+def _pending_approval_fingerprint(payload: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not payload:
+        return None
+
+    action = str(payload.get("action") or "").strip().lower()
+    if not action:
+        return None
+
+    details = payload.get("details") or {}
+    if not isinstance(details, dict):
+        details = {"value": details}
+
+    try:
+        details_key = json.dumps(details, sort_keys=True, default=str)
+    except TypeError:
+        details_key = json.dumps({key: str(value) for key, value in details.items()}, sort_keys=True)
+
+    return f"{action}::{details_key}"
+
+
+def _find_matching_pending_approval_request(
+    repo: AgentWorkRepository,
+    *,
+    shop_id: int,
+    action_id: Optional[str] = None,
+    pending_action: Optional[Dict[str, Any]] = None,
+) -> Optional[Any]:
+    normalized_action_id = str(action_id or "").strip()
+    if normalized_action_id:
+        approval = repo.get_pending_approval_by_action_id(shop_id, normalized_action_id)
+        if approval is not None:
+            return approval
+        if normalized_action_id.startswith("approval-request-"):
+            request_id = normalized_action_id.removeprefix("approval-request-")
+            for pending_approval in repo.list_pending_approval_requests(shop_id):
+                if str(getattr(pending_approval, "id", "")) == request_id:
+                    return pending_approval
+
+    pending_fingerprint = _pending_approval_fingerprint(pending_action)
+    if not pending_fingerprint:
+        return None
+
+    for approval in repo.list_pending_approval_requests(shop_id):
+        request_payload = dict(getattr(approval, "request_payload", None) or {})
+        if _pending_approval_fingerprint(request_payload) == pending_fingerprint:
+            return approval
+
+    return None
+
+
 def _state_last_text(state_values: Dict[str, Any]) -> str:
     messages = state_values.get("messages") or []
     if not messages:
@@ -302,6 +455,7 @@ def _get_pending_approval_payload(
 
     pending: list[Dict[str, Any]] = []
     seen_action_ids: set[str] = set()
+    seen_fingerprints: set[str] = set()
     if snapshot and snapshot.interrupts:
         values = cast(Dict[str, Any], snapshot.values or {})
         pending_approval = values.get("pending_approval")
@@ -320,6 +474,9 @@ def _get_pending_approval_payload(
             pending.append(checkpoint_payload)
             if checkpoint_payload.get("action_id"):
                 seen_action_ids.add(str(checkpoint_payload["action_id"]))
+            checkpoint_fingerprint = _pending_approval_fingerprint(checkpoint_payload)
+            if checkpoint_fingerprint:
+                seen_fingerprints.add(checkpoint_fingerprint)
 
     db = SessionLocal()
     try:
@@ -329,15 +486,38 @@ def _get_pending_approval_payload(
             repo_action_id = str(repo_payload.get("action_id") or "")
             if repo_action_id and repo_action_id in seen_action_ids:
                 continue
+            repo_fingerprint = _pending_approval_fingerprint(repo_payload)
+            if repo_fingerprint and repo_fingerprint in seen_fingerprints:
+                continue
             pending.append(repo_payload)
             if repo_action_id:
                 seen_action_ids.add(repo_action_id)
+            if repo_fingerprint:
+                seen_fingerprints.add(repo_fingerprint)
     except Exception as exc:
         logger.warning("Unable to load persisted approval requests for shop %s: %s", shop_id, exc)
     finally:
         db.close()
 
     return pending
+
+
+def _get_current_pending_approval(shop_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+    metrics = db_interface.get_shop_live_wait_metrics(shop_id) or {}
+    pending = _get_pending_approval_payload(shop_id, user_id, metrics=metrics)
+    return pending[0] if pending else None
+
+
+def _build_pending_approval_block_message(pending_action: Dict[str, Any]) -> str:
+    action_title = str(
+        pending_action.get("title")
+        or pending_action.get("action")
+        or "this action"
+    ).strip()
+    return (
+        f"You already have a pending approval for '{action_title}'. "
+        "Approve or reject it before sending another request."
+    )
 
 
 def _notification_feed_type(notification_type: str, severity: str, title: str, message: str) -> str:
@@ -556,7 +736,7 @@ def _create_chat_work_context(shop_id: int, user_id: int, message: str, *, is_vo
             run_type="chat",
             trigger_source=trigger_source,
             execution_mode="interactive",
-            graph_thread_id=f"tenant_{shop_id}_{user_id}",
+            graph_thread_id=_checkpoint_thread_id(shop_id, user_id),
             current_agent="supervisor",
             input_payload={"message": message},
             event_context={"trigger_source": trigger_source},
@@ -587,9 +767,16 @@ def _persist_approval_request(
     db = SessionLocal()
     try:
         repo = AgentWorkRepository(db)
-        approval = None
-        if action_id:
-            approval = repo.get_pending_approval_by_action_id(shop_id, action_id)
+        approval = _find_matching_pending_approval_request(
+            repo,
+            shop_id=shop_id,
+            action_id=action_id or None,
+            pending_action=pending_action,
+        )
+        if approval is not None and action_id and not getattr(approval, "external_action_id", None):
+            approval.external_action_id = action_id
+            db.commit()
+            db.refresh(approval)
         if approval is None:
             approval = repo.create_approval_request(
                 external_action_id=action_id or None,
@@ -670,19 +857,30 @@ def _record_approval_decision(
     *,
     shop_id: int,
     action_id: Optional[str],
+    pending_action: Optional[Dict[str, Any]],
     approved: bool,
     reason: Optional[str],
     user_id: int,
     resumed: Dict[str, Any],
 ) -> None:
-    if not action_id:
+    if not action_id and not pending_action:
         return
     db = SessionLocal()
     try:
         repo = AgentWorkRepository(db)
-        approval = repo.get_pending_approval_by_action_id(shop_id, action_id)
+        approval = _find_matching_pending_approval_request(
+            repo,
+            shop_id=shop_id,
+            action_id=action_id,
+            pending_action=pending_action,
+        )
         if approval is None:
             return
+        normalized_action_id = str(action_id or "").strip()
+        if normalized_action_id and not getattr(approval, "external_action_id", None):
+            approval.external_action_id = normalized_action_id
+            db.commit()
+            db.refresh(approval)
         approval_id = cast(int, getattr(approval, "id"))
         repo.decide_approval_request(
             approval_id,
@@ -716,6 +914,86 @@ def _record_approval_decision(
             )
     finally:
         db.close()
+
+
+def _resume_persisted_approval(
+    *,
+    shop_id: int,
+    action_id: Optional[str],
+    approved: bool,
+    reason: Optional[str],
+    user_id: int,
+) -> Optional[Dict[str, Any]]:
+    if not action_id:
+        return None
+
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        approval = _find_matching_pending_approval_request(
+            repo,
+            shop_id=shop_id,
+            action_id=action_id,
+            pending_action=None,
+        )
+        if approval is None:
+            return None
+
+        pending = dict(getattr(approval, "request_payload", None) or {})
+        pending.setdefault("action", getattr(approval, "action_type", None) or "approval_required")
+        pending.setdefault("shop_id", shop_id)
+        pending.setdefault("details", {})
+        routed_agent = str(getattr(approval, "requested_by_agent", None) or "supervisor")
+    finally:
+        db.close()
+
+    if not approved:
+        rejection_text = f"Action '{pending.get('action')}' was rejected. No changes were made."
+        return {
+            "messages": [AIMessage(content=rejection_text)],
+            "current_agent": routed_agent,
+            "tool_results": {
+                "status": "rejected",
+                "action": pending.get("action"),
+                "reason": reason,
+            },
+        }
+
+    from agents.supervisor import _execute_approved_action
+
+    approval_state: AgentState = {
+        "messages": [],
+        "tenant_id": shop_id,
+        "user_id": user_id,
+        "current_agent": routed_agent,
+        "active_goal_id": None,
+        "active_task_id": None,
+        "execution_mode": "interactive",
+        "autonomy_policy": None,
+        "event_context": None,
+        "proposed_actions": [],
+        "run_summary": None,
+        "pending_approval": None,
+        "needs_human_input": False,
+        "tool_results": None,
+        "metadata": {"shop_id": shop_id, "user_id": user_id, "approval_action_id": action_id},
+    }
+
+    execution_result = _execute_approved_action(
+        approval_state,
+        pending,
+    )
+    if execution_result.get("error"):
+        message_text = f"Approval received, but the action failed: {execution_result.get('error')}"
+    else:
+        result_message = execution_result.get("message") or f"Action '{pending.get('action')}' was executed successfully."
+        message_text = f"Approval received. {result_message}"
+
+    return {
+        "messages": [AIMessage(content=message_text)],
+        "current_agent": routed_agent,
+        "tool_results": execution_result,
+    }
 
 
 def _build_memory_context(shop_id: int, user_id: int, query_text: str) -> str:
@@ -856,6 +1134,18 @@ async def chat_sync(
 
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
+
+    existing_pending = _get_current_pending_approval(shop_id, int(user_id))
+    if existing_pending is not None:
+        return {
+            "response": _build_pending_approval_block_message(existing_pending),
+            "agent": "supervisor",
+            "approval_required": True,
+            "pending_action": existing_pending,
+            "metadata": {"pending_conflict": True},
+        }
+
+    _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
     
     # Build checkpoint config for this tenant
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
@@ -888,12 +1178,8 @@ async def chat_sync(
     
     # Run supervisor graph
     try:
-        runnable = _SUPERVISOR_RUNNABLE
-
-        # Run in thread pool to avoid blocking the asyncio event loop.
-        # runnable.invoke() is synchronous (uses sync Postgres checkpointer + sync LLM calls).
-        result = cast(Dict[str, Any], await asyncio.to_thread(runnable.invoke, initial_state, checkpoint_config))
-        pending_action = _extract_pending_action(result)
+        result = await _invoke_supervisor_sync(initial_state, checkpoint_config)
+        pending_action = cast(Optional[Dict[str, Any]], result.get("pending_action"))
         if pending_action:
             pending_action["shop_id"] = shop_id
             pending_action = enrich_pending_approval_payload(
@@ -941,6 +1227,18 @@ async def chat_sync(
                 "run_id": work_context["run_id"],
             }
         }
+
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Sync chat timed out for shop_id=%s user_id=%s after %.1fs",
+            shop_id,
+            user_id,
+            _sync_chat_timeout_seconds(),
+        )
+        raise HTTPException(
+            status_code=504,
+            detail="Sync agent request timed out. Use /api/v2/agent/chat/stream for long-running requests.",
+        )
     
     except Exception as e:
         logger.error(f"Supervisor graph error: {str(e)}", exc_info=True)
@@ -1011,6 +1309,17 @@ async def chat_stream(
     # Create streaming generator
     async def event_generator():
         try:
+            existing_pending = _get_current_pending_approval(shop_id, int(user_id))
+            if existing_pending is not None:
+                block_message = _build_pending_approval_block_message(existing_pending)
+                yield f"data: {json.dumps({'type': 'approval_required', 'action': existing_pending.get('action'), 'details': existing_pending})}\n\n"
+                for char in block_message:
+                    yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
+
             # Build checkpoint config
             checkpoint_config = build_checkpoint_config(shop_id, user_id)
             work_context = _create_chat_work_context(shop_id, int(user_id), message, is_voice=bool(is_voice))
@@ -1114,7 +1423,12 @@ async def chat_stream(
                             final_tool_results = state_vals.get("tool_results") or final_tool_results
                         if snapshot.next:
                             # Graph is paused at a breakpoint (approval required).
-                            pending_action = _extract_pending_action(state_vals)
+                            pending_action = _extract_pending_action(
+                                {
+                                    **state_vals,
+                                    "__interrupt__": snapshot.interrupts,
+                                }
+                            )
                             if pending_action:
                                 pending_action["shop_id"] = shop_id
                                 pending_action = enrich_pending_approval_payload(
@@ -1274,9 +1588,36 @@ async def approve_action(
 
     interrupts = list(snapshot.interrupts or ())
     if not interrupts:
-        raise HTTPException(status_code=409, detail="No pending approval found for this thread")
+        resumed = _resume_persisted_approval(
+            shop_id=shop_id,
+            action_id=str(action_id or "").strip() or None,
+            approved=bool(approved),
+            reason=reason,
+            user_id=int(user_id),
+        )
+        if resumed is None:
+            raise HTTPException(status_code=409, detail="No pending approval found for this thread")
+
+        _record_approval_decision(
+            shop_id=shop_id,
+            action_id=str(action_id or "").strip() or None,
+            pending_action=None,
+            approved=bool(approved),
+            reason=reason,
+            user_id=int(user_id),
+            resumed=resumed,
+        )
+
+        return {
+            "status": "approved" if approved else "rejected",
+            "message": _state_last_text(resumed),
+            "agent": resumed.get("current_agent", "supervisor"),
+            "tool_results": resumed.get("tool_results"),
+        }
 
     current_interrupt_id = getattr(interrupts[0], "id", None)
+    snapshot_values = cast(Dict[str, Any], snapshot.values or {}) if snapshot else {}
+    current_pending_action = cast(Optional[Dict[str, Any]], snapshot_values.get("pending_approval"))
     if action_id and current_interrupt_id and action_id != current_interrupt_id:
         raise HTTPException(status_code=409, detail="action_id does not match the current pending approval")
 
@@ -1291,6 +1632,7 @@ async def approve_action(
     _record_approval_decision(
         shop_id=shop_id,
         action_id=current_interrupt_id,
+        pending_action=current_pending_action,
         approved=bool(approved),
         reason=reason,
         user_id=int(user_id),

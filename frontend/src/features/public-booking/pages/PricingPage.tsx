@@ -31,7 +31,7 @@ const PricingPage: React.FC = () => {
                 "Mobile-friendly customer pages",
             ],
             cta: "Get Started",
-            to: "/register/shop-owner",
+            to: "/signup",
             highlighted: false,
             color: "primary",
         },
@@ -49,7 +49,7 @@ const PricingPage: React.FC = () => {
                 "Owner agent inbox workspace",
             ],
             cta: "Start Free Trial",
-            to: "/register/shop-owner",
+            to: "/signup",
             highlighted: true,
             color: "secondary",
         },
@@ -66,7 +66,7 @@ const PricingPage: React.FC = () => {
                 "Multi-location rollout support",
             ],
             cta: "Contact Us",
-            to: "/register/shop-owner",
+            to: "/signup",
             highlighted: false,
             color: "primary",
         },
@@ -194,7 +194,7 @@ const PricingPage: React.FC = () => {
 
             <Box sx={{ mt: 6, textAlign: "center" }}>
                 <Typography variant="body2" color="text.secondary">
-                    Need a custom plan? <Link to="/register/shop-owner">Contact us</Link> for enterprise pricing
+                    Need a custom plan? <Link to="/signup">Contact us</Link> for enterprise pricing
                 </Typography>
             </Box>
         </Container>

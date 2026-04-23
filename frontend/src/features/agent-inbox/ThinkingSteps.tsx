@@ -24,6 +24,8 @@ interface ThinkingStepsProps {
   steps: ThinkingStep[];
   isComplete: boolean;
   accentColor?: string;
+  showWhenEmpty?: boolean;
+  embedded?: boolean;
 }
 
 const COMPLETE_COLOR = "#22c55e";
@@ -33,6 +35,8 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
   steps,
   isComplete,
   accentColor,
+  showWhenEmpty = false,
+  embedded = false,
 }) => {
   const muiTheme = useTheme();
   const [expanded, setExpanded] = useState(true);
@@ -49,7 +53,7 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
     return () => clearTimeout(t);
   }, [isComplete]);
 
-  if (steps.length === 0) return null;
+  if (steps.length === 0 && (!showWhenEmpty || isComplete)) return null;
 
   // Build the pipeline from incoming dynamic steps.
   // Strip any arrow-like symbols from label and agent fields before rendering.
@@ -76,11 +80,12 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
     : pipeline;
 
   const doneCount = displayPipeline.filter((s) => s.status === "completed").length;
+  const hasSteps = displayPipeline.length > 0;
 
   return (
     <Box
       sx={{
-        mb: 1,
+        mb: embedded ? 0 : 1,
         borderRadius: "10px",
         overflow: "hidden",
         bgcolor: "transparent",
@@ -93,12 +98,12 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
         justifyContent="space-between"
         onClick={() => setExpanded((v) => !v)}
         sx={{
-          px: 1.5,
-          py: 0.75,
-          cursor: "pointer",
+          px: embedded ? 0.25 : 1.5,
+          py: embedded ? 0.25 : 0.75,
+          cursor: hasSteps ? "pointer" : "default",
           userSelect: "none",
           "&:hover": {
-            bgcolor: "rgba(0,0,0,0.03)",
+            bgcolor: hasSteps ? "rgba(0,0,0,0.03)" : "transparent",
           },
         }}
       >
@@ -166,17 +171,19 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
             </>
           )}
         </Stack>
-        <Box sx={{ color: "text.disabled", display: "flex" }}>
-          {expanded ? (
-            <KeyboardArrowUpRoundedIcon sx={{ fontSize: 16 }} />
-          ) : (
-            <KeyboardArrowDownRoundedIcon sx={{ fontSize: 16 }} />
-          )}
-        </Box>
+        {hasSteps ? (
+          <Box sx={{ color: "text.disabled", display: "flex" }}>
+            {expanded ? (
+              <KeyboardArrowUpRoundedIcon sx={{ fontSize: 16 }} />
+            ) : (
+              <KeyboardArrowDownRoundedIcon sx={{ fontSize: 16 }} />
+            )}
+          </Box>
+        ) : null}
       </Stack>
 
       {/* Expandable pipeline steps */}
-      <Collapse in={expanded}>
+      <Collapse in={expanded && hasSteps}>
         <Box sx={{ px: 1.5, pt: 0.5, pb: 1.25 }}>
           {displayPipeline.map((step, idx) => {
             const isLast = idx === displayPipeline.length - 1;

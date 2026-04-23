@@ -20,7 +20,7 @@ api.interceptors.response.use(
       localStorage.removeItem('token');
       // Only redirect to /login from protected pages — never from public pages
       // like the landing page (/) which would cause the root-URL jitter.
-      const publicPaths = ['/', '/login', '/signin', '/signup', '/register', '/ai'];
+      const publicPaths = ['/', '/login', '/signup'];
       const isPublic = publicPaths.some(
         (p) =>
           window.location.pathname === p ||

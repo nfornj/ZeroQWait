@@ -77,10 +77,10 @@ The testing documentation includes:
 
 | Name | Username | Password | Access |
 |------|----------|----------|--------|
-| Samuel James | emp_samuel_james_421_0 | EmpPassword!9e969c7a7b | Employee Dashboard |
-| Alexander Ruiz | emp_alexander_ruiz_421_1 | EmpPassword!463fa91ddc | Employee Dashboard |
-| Robert Castillo | emp_robert_castillo_421_2 | EmpPassword!ee79a90807 | Employee Dashboard |
-| William Long | emp_william_long_421_3 | EmpPassword!81f62de4f4 | Employee Dashboard |
+| Shop 41 Employee #1 | test_bulk_emp_0_0_8410 | password123 | Employee Dashboard |
+| Shop 41 Employee #2 | test_bulk_emp_0_1_3676 | password123 | Employee Dashboard |
+
+Use these current local seed accounts for same-shop E2E on shop 41. The older `emp_samuel_james_421_0` demo credential is stale for the active local dataset and should not be used for queue-flow validation.
 
 **Capabilities:**
 - View queue dashboard

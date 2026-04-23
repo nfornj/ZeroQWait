@@ -15,6 +15,8 @@ import {
 import type { AgentFeedEvent } from "./types";
 import { useShop } from "../../contexts/ShopContext";
 
+type MaxHeightValue = string | number | Record<string, string | number>;
+
 interface AgentFeedProps {
   events: AgentFeedEvent[];
   unreadCount?: number;
@@ -22,6 +24,7 @@ interface AgentFeedProps {
   markingNotificationId?: number | null;
   onMarkAsRead?: (notificationId: number) => void;
   onMarkAllAsRead?: () => void;
+  maxHeight?: MaxHeightValue;
 }
 
 const typeColorMap: Record<AgentFeedEvent["type"], "default" | "primary" | "success" | "warning" | "error" | "info"> = {
@@ -43,6 +46,7 @@ const AgentFeed: React.FC<AgentFeedProps> = ({
   markingNotificationId = null,
   onMarkAsRead,
   onMarkAllAsRead,
+  maxHeight = 160,
 }) => {
   const muiTheme = useTheme();
   const { shop } = useShop();
@@ -95,7 +99,7 @@ const AgentFeed: React.FC<AgentFeedProps> = ({
           </Stack>
         </Stack>
 
-        <Stack spacing={1} sx={{ maxHeight: 160, overflowY: "auto", pr: 0.5 }}>
+        <Stack spacing={1} sx={{ maxHeight, overflowY: "auto", pr: 0.5 }}>
           {events.length === 0 ? (
             <Box py={2}>
               <Typography variant="body2" color="text.secondary">

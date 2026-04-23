@@ -15,7 +15,6 @@ This document tracks the migration from the old domain to **zeroqwait.com**.
 - **frontend/public/index.html**: Updated page title and meta description to "ZeroQwait"
 - **frontend/public/manifest.json**: Updated app name to "ZeroQwait"
 - **frontend/src/components/Navbar.tsx**: Updated brand name display
-- **frontend/src/pages/HomePage.tsx**: Updated brand references throughout
 - **frontend/src/pages/WidgetPage.tsx**: Updated footer branding
 
 ### Deployment Configuration

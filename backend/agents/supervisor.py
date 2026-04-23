@@ -22,8 +22,9 @@ Phase 1 (Current): Basic Supervisor without actual sub-agents
 Phase 2: Add conditional edges to real sub-agents
 """
 
-from typing import Literal, Dict, Any, List, Optional, cast
+from typing import Literal, Dict, Any, List, Optional, Tuple, cast
 import logging
+import re
 from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 from langchain_ollama import ChatOllama
@@ -41,6 +42,14 @@ from .memory_context import get_conversation_history, save_conversation_turn
 from redis_client import redis_client
 
 logger = logging.getLogger(__name__)
+
+
+_QUEUE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:close|open|reopen|pause|resume)\s+(?:the\s+)?queue\b"),
+    re.compile(r"\b(?:call|serve)\s+(?:the\s+)?next(?:\s+customer)?\b"),
+    re.compile(r"\b(?:queue\s+status|queue\s+summary|queue\s+length|wait\s+time)\b"),
+    re.compile(r"\b(?:join|leave)\s+(?:the\s+)?queue\b"),
+)
 
 
 def _create_policy_notification(state: AgentState, pending: Dict[str, Any], message: str) -> None:
@@ -121,6 +130,18 @@ def _get_previous_specialist(state: AgentState) -> Optional[str]:
     current = state.get("current_agent")
     if current in {"receptionist", "finance", "hr", "crm"}:
         return current
+    return None
+
+
+def _classify_intent_fastpath(user_input: str) -> Optional[Tuple[str, str]]:
+    normalized = " ".join(str(user_input or "").lower().split())
+    if not normalized:
+        return None
+
+    for pattern in _QUEUE_OPERATION_PATTERNS:
+        if pattern.search(normalized):
+            return "booking", "fastpath_queue_operation"
+
     return None
 
 
@@ -237,6 +258,22 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
     user_input = _latest_user_text(state)
     previous_specialist = _get_previous_specialist(state)
     history_messages = _conversation_history_messages(state)
+
+    fastpath = _classify_intent_fastpath(user_input)
+    if fastpath is not None:
+        intent, source = fastpath
+        logger.info("classify_intent fast-path: %r → %s", user_input[:80], intent)
+        return Command(
+            goto="plan_execution",
+            update={
+                "current_agent": intent,
+                "metadata": _merge_metadata(state, {
+                    "classified_intent": intent,
+                    "classification_source": source,
+                    "requires_clarification": False,
+                }),
+            },
+        )
 
     # Build context for the LLM
     context_lines = []

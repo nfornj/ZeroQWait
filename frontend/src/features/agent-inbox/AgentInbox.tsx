@@ -19,7 +19,9 @@ import {
   useTheme,
 } from "@mui/material";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import { useQueryClient } from "@tanstack/react-query";
 import { useShop } from "../../contexts/ShopContext";
+import { useAuth } from "../../contexts/AuthContext";
 import AgentFeed from "./AgentFeed";
 import ApprovalCard from "./ApprovalCard";
 import AgentInsights from "./AgentInsights";
@@ -48,6 +50,13 @@ import type {
   PendingApproval,
   ShopPolicy,
 } from "./types";
+import {
+  ownerDashboardKeys,
+  useOwnerBriefingQuery,
+  useOwnerFeedQuery,
+  useOwnerPoliciesQuery,
+  usePendingApprovalsQuery,
+} from "./ownerDashboardQueries";
 import api from "../../services/api";
 
 const nowIso = () => new Date().toISOString();
@@ -108,7 +117,9 @@ const buildWebSocketUrl = (shopId: number): string => {
 
 const AgentInbox: React.FC = () => {
   const muiTheme = useTheme();
+  const queryClient = useQueryClient();
   const { shop } = useShop();
+  const { token } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [feedEvents, setFeedEvents] = useState<AgentFeedEvent[]>([]);
   const [persistedFeedEvents, setPersistedFeedEvents] = useState<AgentFeedEvent[]>([]);
@@ -120,6 +131,7 @@ const AgentInbox: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [policiesOpen, setPoliciesOpen] = useState(false);
   const [streamedInsightItems, setStreamedInsightItems] = useState<InsightItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [savingPolicyKey, setSavingPolicyKey] = useState<string | null>(null);
@@ -127,6 +139,11 @@ const AgentInbox: React.FC = () => {
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const previousShopIdRef = useRef<number | null>(null);
+
+  const pendingApprovalsQuery = usePendingApprovalsQuery(shop?.id);
+  const briefingQuery = useOwnerBriefingQuery(shop?.id);
+  const feedQuery = useOwnerFeedQuery(shop?.id);
+  const policiesQuery = useOwnerPoliciesQuery(shop?.id);
 
   const addFeedEvent = useCallback((event: Omit<AgentFeedEvent, "id" | "timestamp">) => {
     setFeedEvents((prev) => [
@@ -139,61 +156,57 @@ const AgentInbox: React.FC = () => {
     ]);
   }, []);
 
+  useEffect(() => {
+    setPendingApprovals(pendingApprovalsQuery.data || []);
+  }, [pendingApprovalsQuery.data]);
+
+  useEffect(() => {
+    setBriefing(briefingQuery.data || null);
+  }, [briefingQuery.data]);
+
+  useEffect(() => {
+    setPersistedFeedEvents(feedQuery.data || []);
+  }, [feedQuery.data]);
+
+  useEffect(() => {
+    setPolicies(policiesQuery.data || []);
+  }, [policiesQuery.data]);
+
+  useEffect(() => {
+    const queryError =
+      pendingApprovalsQuery.error ||
+      briefingQuery.error ||
+      feedQuery.error ||
+      policiesQuery.error;
+
+    if (!queryError) return;
+
+    const detail =
+      (queryError as any)?.response?.data?.detail ||
+      (queryError as Error)?.message ||
+      "Failed to load owner workspace data";
+    setError(detail);
+  }, [briefingQuery.error, feedQuery.error, pendingApprovalsQuery.error, policiesQuery.error]);
+
   const refreshPendingApprovals = useCallback(async () => {
     if (!shop?.id) return;
-    try {
-      const response = await api.get<{ pending: PendingApproval[] }>(`/v2/agent/pending`, {
-        params: { shop_id: shop.id },
-      });
-      setPendingApprovals(response.data.pending || []);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Failed to load pending approvals");
-    }
-  }, [shop?.id]);
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.pending(shop.id) });
+  }, [queryClient, shop?.id]);
 
   const refreshBriefing = useCallback(async () => {
     if (!shop?.id) return;
-    try {
-      const response = await api.get<OwnerBriefingData>(`/v2/agent/briefing`, {
-        params: { shop_id: shop.id },
-      });
-      setBriefing(response.data);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Failed to load owner briefing");
-    }
-  }, [shop?.id]);
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.briefing(shop.id) });
+  }, [queryClient, shop?.id]);
 
   const refreshFeed = useCallback(async () => {
     if (!shop?.id) return;
-    try {
-      const response = await api.get<{ events: AgentFeedEvent[] }>(`/v2/agent/feed`, {
-        params: { shop_id: shop.id },
-      });
-      setPersistedFeedEvents(response.data.events || []);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Failed to load notification feed");
-    }
-  }, [shop?.id]);
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop.id) });
+  }, [queryClient, shop?.id]);
 
   const refreshPolicies = useCallback(async () => {
     if (!shop?.id) return;
-    try {
-      const response = await api.get<{ policies: ShopPolicy[] }>(`/v2/agent/policies`, {
-        params: { shop_id: shop.id },
-      });
-      setPolicies(response.data.policies || []);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Failed to load approval policies");
-    }
-  }, [shop?.id]);
-
-  useEffect(() => {
-    if (!shop?.id) return;
-    refreshPendingApprovals();
-    refreshBriefing();
-    refreshFeed();
-    refreshPolicies();
-  }, [shop?.id, refreshPendingApprovals, refreshBriefing, refreshFeed, refreshPolicies]);
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.policies(shop.id) });
+  }, [queryClient, shop?.id]);
 
   useEffect(() => {
     if (!shop?.id) return;
@@ -900,8 +913,22 @@ const AgentInbox: React.FC = () => {
     setExternalActionRequest(null);
   }, []);
 
+  const ownerAgentRequestHeaders = useMemo(
+    () => (token ? { Authorization: `Bearer ${token}` } : undefined),
+    [token],
+  );
+
   return (
-    <Box sx={{ width: "100%", maxWidth: { sm: "100%", md: "1700px" }, height: "calc(100dvh - 64px)", display: "flex", flexDirection: "column" }}>
+    <Box
+      sx={{
+        width: "100%",
+        maxWidth: { xs: "100%", md: "1800px" },
+        mx: "auto",
+        height: "calc(100dvh - 64px)",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       <Stack spacing={1} sx={{ flex: 1, minHeight: 0 }}>
 
         {error && <Alert severity="error">{error}</Alert>}
@@ -912,8 +939,26 @@ const AgentInbox: React.FC = () => {
           </Alert>
         )}
 
-        <Grid container spacing={1.5} sx={{ flex: 1, minHeight: 0 }}>
-          <Grid size={{ xs: 12, xl: 7.5 }} sx={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <Grid
+          container
+          spacing={1.5}
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            height: "100%",
+            alignItems: { md: "stretch" },
+            overflow: { md: "hidden" },
+          }}
+        >
+          <Grid
+            size={{ xs: 12, md: 7.25 }}
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+              height: { md: "100%" },
+            }}
+          >
             {thinkingSteps.length > 0 && (
               <ThinkingSteps
                 steps={thinkingSteps}
@@ -938,9 +983,7 @@ const AgentInbox: React.FC = () => {
                 brandPrimaryColor={brandPrimary}
                 brandSecondaryColor={brandSecondary}
                 streamEndpoint="/api/v2/agent/chat/stream"
-                requestHeaders={{
-                  Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-                }}
+                requestHeaders={ownerAgentRequestHeaders}
                 extraRequestBody={{
                   shop_id: shop.id,
                   is_voice: false,
@@ -982,34 +1025,44 @@ const AgentInbox: React.FC = () => {
               />
             )}
           </Grid>
-          <Grid size={{ xs: 12, xl: 4.5 }}>
-            <Stack spacing={1.5}>
+          <Grid
+            size={{ xs: 12, md: 4.75 }}
+            sx={{
+              display: "flex",
+              minHeight: 0,
+              height: { md: "100%" },
+            }}
+          >
+            <Stack spacing={1.25} sx={{ flex: 1, minHeight: 0, height: { md: "100%" } }}>
               <OwnerBriefing briefing={briefing} onAction={handleBriefingAction} />
-              {shop?.id && (
-                <Card
-                  variant="outlined"
-                  sx={{
-                    borderRadius: 3,
-                    borderColor: panelCardBorder,
-                    bgcolor: panelCardBg,
-                    backdropFilter: "blur(20px)",
-                  }}
-                >
-                  <CardContent sx={{ py: 1.5 }}>
-                    <Stack spacing={1.25}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                        <Box>
-                          <Typography variant="h6">Approval Policies</Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Choose what the agent team can run automatically for this shop.
-                          </Typography>
-                        </Box>
-                        {savingPolicyKey ? (
-                          <CircularProgress size={18} />
-                        ) : (
+              <Box
+                sx={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: { xs: "visible", md: "auto" },
+                  pr: { md: 0.5 },
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1.25,
+                }}
+              >
+                {latestPending.length > 0 && (
+                  <Card
+                    variant="outlined"
+                    sx={{
+                      borderRadius: 3,
+                      borderColor: panelCardBorder,
+                      bgcolor: panelCardBg,
+                      backdropFilter: "blur(20px)",
+                    }}
+                  >
+                    <CardContent sx={{ py: 1.5 }}>
+                      <Stack spacing={1}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="h6">Pending Approvals</Typography>
                           <Chip
                             size="small"
-                            label={`${policies.length} actions`}
+                            label={latestPending.length}
                             sx={{
                               bgcolor: alpha(brandPrimary, 0.14),
                               color: brandPrimary,
@@ -1017,127 +1070,158 @@ const AgentInbox: React.FC = () => {
                               fontWeight: 700,
                             }}
                           />
-                        )}
-                      </Stack>
-                      <Divider sx={{ borderColor: alpha(brandPrimary, 0.12) }} />
-                      {policies.length === 0 ? (
-                        <Stack spacing={1}>
-                          <Typography variant="body2" color="text.secondary">
-                            No approval policies are available for this shop yet.
-                          </Typography>
-                          <Button size="small" onClick={() => void refreshPolicies()} sx={{ alignSelf: "flex-start" }}>
-                            Retry
-                          </Button>
                         </Stack>
-                      ) : (
-                        policies.map((policy) => {
-                          const isSaving = savingPolicyKey === policy.policy_key;
-                          return (
-                            <Box
-                              key={policy.policy_key}
-                              sx={{
-                                p: 1.25,
-                                borderRadius: 2.5,
-                                border: `1px solid ${alpha(brandPrimary, 0.12)}`,
-                                bgcolor: alpha(brandPrimary, 0.04),
-                              }}
+                        <Divider sx={{ borderColor: alpha(brandPrimary, 0.12) }} />
+                        {latestPending.map((approval) => (
+                          <ApprovalCard
+                            key={approval.action_id || `${approval.action}_${approval.shop_id}`}
+                            approval={approval}
+                            isSubmitting={isApproving}
+                            onDecision={handleApprovalDecision}
+                          />
+                        ))}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <AgentFeed
+                  events={displayedFeedEvents}
+                  unreadCount={unreadFeedCount}
+                  isMarkingAllRead={isMarkingAllRead}
+                  markingNotificationId={markingNotificationId}
+                  onMarkAsRead={handleMarkNotificationRead}
+                  onMarkAllAsRead={handleMarkAllNotificationsRead}
+                  maxHeight={{ xs: 260, md: 360 }}
+                />
+
+                <InsightsPanel items={insightItems} />
+
+                {shop?.id && (
+                  <Card
+                    variant="outlined"
+                    sx={{
+                      borderRadius: 3,
+                      borderColor: panelCardBorder,
+                      bgcolor: panelCardBg,
+                      backdropFilter: "blur(20px)",
+                    }}
+                  >
+                    <CardContent sx={{ py: 1.5 }}>
+                      <Stack spacing={1.25}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+                          <Box>
+                            <Typography variant="h6">Approval Policies</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Choose what the agent team can run automatically for this shop.
+                            </Typography>
+                          </Box>
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            {savingPolicyKey ? (
+                              <CircularProgress size={18} />
+                            ) : (
+                              <Chip
+                                size="small"
+                                label={`${policies.length} actions`}
+                                sx={{
+                                  bgcolor: alpha(brandPrimary, 0.14),
+                                  color: brandPrimary,
+                                  border: `1px solid ${alpha(brandPrimary, 0.22)}`,
+                                  fontWeight: 700,
+                                }}
+                              />
+                            )}
+                            <IconButton
+                              size="small"
+                              onClick={() => setPoliciesOpen((open) => !open)}
+                              sx={{ color: brandPrimary }}
                             >
+                              <ExpandMoreRoundedIcon
+                                sx={{
+                                  transition: "transform 0.18s",
+                                  transform: policiesOpen ? "rotate(180deg)" : "rotate(0deg)",
+                                }}
+                              />
+                            </IconButton>
+                          </Stack>
+                        </Stack>
+                        <Collapse in={policiesOpen} unmountOnExit>
+                          <Stack spacing={1.25}>
+                            <Divider sx={{ borderColor: alpha(brandPrimary, 0.12) }} />
+                            {policies.length === 0 ? (
                               <Stack spacing={1}>
-                                <Stack
-                                  direction={{ xs: "column", md: "row" }}
-                                  justifyContent="space-between"
-                                  spacing={1}
-                                >
-                                  <Box sx={{ minWidth: 0 }}>
-                                    <Typography variant="subtitle2" sx={{ color: brandPrimary }}>
-                                      {policy.title}
-                                    </Typography>
-                                    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" mt={0.5}>
-                                      <Chip size="small" variant="outlined" label={policy.category} />
-                                      <Chip size="small" variant="outlined" label={`${policy.risk_level || "medium"} risk`} />
-                                      <Chip
-                                        size="small"
-                                        variant="outlined"
-                                        label={policy.explicit ? "Custom mode" : `Default: ${labelForPolicyMode(policy.default_mode)}`}
-                                      />
+                                <Typography variant="body2" color="text.secondary">
+                                  No approval policies are available for this shop yet.
+                                </Typography>
+                                <Button size="small" onClick={() => void refreshPolicies()} sx={{ alignSelf: "flex-start" }}>
+                                  Retry
+                                </Button>
+                              </Stack>
+                            ) : (
+                              policies.map((policy) => {
+                                const isSaving = savingPolicyKey === policy.policy_key;
+                                return (
+                                  <Box
+                                    key={policy.policy_key}
+                                    sx={{
+                                      p: 1.25,
+                                      borderRadius: 2.5,
+                                      border: `1px solid ${alpha(brandPrimary, 0.12)}`,
+                                      bgcolor: alpha(brandPrimary, 0.04),
+                                    }}
+                                  >
+                                    <Stack spacing={1}>
+                                      <Stack
+                                        direction={{ xs: "column", lg: "row" }}
+                                        justifyContent="space-between"
+                                        spacing={1}
+                                      >
+                                        <Box sx={{ minWidth: 0 }}>
+                                          <Typography variant="subtitle2" sx={{ color: brandPrimary }}>
+                                            {policy.title}
+                                          </Typography>
+                                          <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" mt={0.5}>
+                                            <Chip size="small" variant="outlined" label={policy.category} />
+                                            <Chip size="small" variant="outlined" label={`${policy.risk_level || "medium"} risk`} />
+                                            <Chip
+                                              size="small"
+                                              variant="outlined"
+                                              label={policy.explicit ? "Custom mode" : `Default: ${labelForPolicyMode(policy.default_mode)}`}
+                                            />
+                                          </Stack>
+                                        </Box>
+                                        <TextField
+                                          select
+                                          size="small"
+                                          label="Mode"
+                                          value={policy.mode}
+                                          disabled={isSaving}
+                                          onChange={(event) => void handlePolicyModeChange(policy, event.target.value)}
+                                          sx={{ minWidth: { xs: "100%", lg: 220 } }}
+                                        >
+                                          {(policy.supported_modes || []).map((mode) => (
+                                            <MenuItem key={mode} value={mode}>
+                                              {labelForPolicyMode(mode)}
+                                            </MenuItem>
+                                          ))}
+                                        </TextField>
+                                      </Stack>
+                                      <Typography variant="caption" color="text.secondary">
+                                        Current mode: {labelForPolicyMode(policy.mode)}
+                                        {isSaving ? " · Saving..." : ""}
+                                      </Typography>
                                     </Stack>
                                   </Box>
-                                  <TextField
-                                    select
-                                    size="small"
-                                    label="Mode"
-                                    value={policy.mode}
-                                    disabled={isSaving}
-                                    onChange={(event) => void handlePolicyModeChange(policy, event.target.value)}
-                                    sx={{ minWidth: { xs: "100%", md: 220 } }}
-                                  >
-                                    {(policy.supported_modes || []).map((mode) => (
-                                      <MenuItem key={mode} value={mode}>
-                                        {labelForPolicyMode(mode)}
-                                      </MenuItem>
-                                    ))}
-                                  </TextField>
-                                </Stack>
-                                <Typography variant="caption" color="text.secondary">
-                                  Current mode: {labelForPolicyMode(policy.mode)}
-                                  {isSaving ? " · Saving..." : ""}
-                                </Typography>
-                              </Stack>
-                            </Box>
-                          );
-                        })
-                      )}
-                    </Stack>
-                  </CardContent>
-                </Card>
-              )}
-              <InsightsPanel items={insightItems} />
-              {latestPending.length > 0 && (
-                <Card
-                  variant="outlined"
-                  sx={{
-                    borderRadius: 3,
-                    borderColor: panelCardBorder,
-                    bgcolor: panelCardBg,
-                    backdropFilter: "blur(20px)",
-                  }}
-                >
-                  <CardContent sx={{ py: 1.5 }}>
-                    <Stack spacing={1}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center">
-                        <Typography variant="h6">Pending Approvals</Typography>
-                        <Chip
-                          size="small"
-                          label={latestPending.length}
-                          sx={{
-                            bgcolor: alpha(brandPrimary, 0.14),
-                            color: brandPrimary,
-                            border: `1px solid ${alpha(brandPrimary, 0.22)}`,
-                            fontWeight: 700,
-                          }}
-                        />
+                                );
+                              })
+                            )}
+                          </Stack>
+                        </Collapse>
                       </Stack>
-                      <Divider sx={{ borderColor: alpha(brandPrimary, 0.12) }} />
-                      {latestPending.map((approval) => (
-                        <ApprovalCard
-                          key={approval.action_id || `${approval.action}_${approval.shop_id}`}
-                          approval={approval}
-                          isSubmitting={isApproving}
-                          onDecision={handleApprovalDecision}
-                        />
-                      ))}
-                    </Stack>
-                  </CardContent>
-                </Card>
-              )}
-              <AgentFeed
-                events={displayedFeedEvents}
-                unreadCount={unreadFeedCount}
-                isMarkingAllRead={isMarkingAllRead}
-                markingNotificationId={markingNotificationId}
-                onMarkAsRead={handleMarkNotificationRead}
-                onMarkAllAsRead={handleMarkAllNotificationsRead}
-              />
+                    </CardContent>
+                  </Card>
+                )}
+              </Box>
             </Stack>
           </Grid>
         </Grid>

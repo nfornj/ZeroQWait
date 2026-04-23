@@ -1,13 +1,15 @@
 import importlib
+import asyncio
 import os
 import sys
 import json
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -73,6 +75,148 @@ def _pending_policy_payload(action, details, *, shop_id=41, mode="require_approv
         "rationale": "The agent proposed a high-impact operation.",
         "expected_impact": "Shop operations will change after execution.",
     }
+
+
+def test_reset_checkpoint_thread_if_idle_clears_completed_thread_state():
+    agent_v2 = _load_agent_v2_module()
+    fake_snapshot = SimpleNamespace(interrupts=(), values={})
+    fake_db = Mock()
+
+    with (
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", SimpleNamespace(get_state=lambda _config: fake_snapshot)),
+        patch.object(agent_v2, "SessionLocal", return_value=fake_db),
+    ):
+        agent_v2._reset_checkpoint_thread_if_idle(41, 17)
+
+    executed_sql = [str(call.args[0]) for call in fake_db.execute.call_args_list]
+    assert any("DELETE FROM checkpoint_writes" in stmt for stmt in executed_sql)
+    assert any("DELETE FROM checkpoints" in stmt for stmt in executed_sql)
+    assert fake_db.commit.called
+    assert fake_db.close.called
+
+
+def test_reset_checkpoint_thread_if_idle_preserves_pending_interrupt():
+    agent_v2 = _load_agent_v2_module()
+    fake_snapshot = SimpleNamespace(interrupts=[SimpleNamespace(id="approval_1")], values={})
+
+    with (
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", SimpleNamespace(get_state=lambda _config: fake_snapshot)),
+        patch.object(agent_v2, "SessionLocal") as session_local,
+    ):
+        agent_v2._reset_checkpoint_thread_if_idle(41, 17)
+
+    session_local.assert_not_called()
+
+
+def test_chat_stream_route_resets_idle_checkpoint_thread_before_new_turn():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    def _stream(*_args, **_kwargs):
+        yield {"route_to_agent": {"current_agent": "finance"}}
+        yield {
+            "synthesize_response": {
+                "messages": [AIMessage(content="Fresh finance reply")],
+                "current_agent": "finance",
+                "tool_results": {"status": "ok"},
+            }
+        }
+
+    fake_snapshot = SimpleNamespace(
+        values={
+            "messages": [AIMessage(content="Fresh finance reply")],
+            "tool_results": {"status": "ok"},
+        },
+        next=(),
+        interrupts=(),
+    )
+    fake_runnable = SimpleNamespace(
+        stream=lambda *_args, **_kwargs: _stream(),
+        get_state=lambda _config: fake_snapshot,
+    )
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2,
+            "_create_chat_work_context",
+            return_value={
+                "goal_id": 711,
+                "run_id": 811,
+                "execution_mode": "interactive",
+                "trigger_source": "chat",
+                "event_context": {"trigger_source": "chat", "goal_id": 711, "run_id": 811},
+            },
+        ),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch.object(agent_v2, "_finalize_chat_work_context", return_value=None),
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", fake_runnable),
+        patch.object(agent_v2, "_reset_checkpoint_thread_if_idle", return_value=None) as reset_mock,
+    ):
+        with client.stream(
+            "POST",
+            "/api/v2/agent/chat/stream",
+            json={"message": "Show this week's revenue trend", "shop_id": 41},
+        ) as response:
+            body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    reset_mock.assert_called_once_with(41, 17)
+    assert '"type": "agent_switch", "agent": "finance"' in body
+    assert "[DONE]" in body
+
+
+def test_chat_route_returns_existing_pending_approval_without_reinvoking_graph():
+    agent_v2, client = _build_test_app_with_real_graph()
+    existing_pending = {
+        **_pending_policy_payload("close_queue", {"reason": "Owner requested closure"}),
+        "action_id": "interrupt-123",
+    }
+    fake_invoke = Mock(side_effect=AssertionError("chat_sync should not invoke the graph when approval is pending"))
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(agent_v2, "_get_current_pending_approval", return_value=existing_pending),
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", SimpleNamespace(invoke=fake_invoke)),
+    ):
+        response = client.post(
+            "/api/v2/agent/chat",
+            json={"message": "Close the queue for today", "shop_id": 41},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["approval_required"] is True
+    assert payload["pending_action"]["action_id"] == "interrupt-123"
+    assert "pending approval" in payload["response"]
+    fake_invoke.assert_not_called()
+
+
+def test_chat_stream_route_returns_existing_pending_approval_without_reinvoking_graph():
+    agent_v2, client = _build_test_app_with_real_graph()
+    existing_pending = {
+        **_pending_policy_payload("close_queue", {"reason": "Owner requested closure"}),
+        "action_id": "interrupt-123",
+    }
+    fake_stream = Mock(side_effect=AssertionError("chat_stream should not start the graph when approval is pending"))
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(agent_v2, "_get_current_pending_approval", return_value=existing_pending),
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", SimpleNamespace(stream=fake_stream)),
+    ):
+        with client.stream(
+            "POST",
+            "/api/v2/agent/chat/stream",
+            json={"message": "Close the queue for today", "shop_id": 41},
+        ) as response:
+            body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert '"type": "approval_required"' in body
+    assert 'interrupt-123' in body
+    assert "[DONE]" in body
+    fake_stream.assert_not_called()
 
 
 def test_chat_route_runs_supervisor_graph_through_finance_specialist():
@@ -142,6 +286,89 @@ def test_chat_route_runs_supervisor_graph_through_finance_specialist():
     assert payload["metadata"]["goal_id"] == 501
     assert payload["metadata"]["run_id"] == 601
     mock_daily_revenue.assert_called_once_with(41, "2026-04-20")
+
+
+def test_chat_route_fast_paths_close_queue_to_receptionist_without_supervisor_llm():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2,
+            "_create_chat_work_context",
+            return_value={
+                "goal_id": 741,
+                "run_id": 841,
+                "execution_mode": "interactive",
+                "trigger_source": "chat",
+                "event_context": {"trigger_source": "chat", "goal_id": 741, "run_id": 841},
+            },
+        ),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_finalize_chat_work_context", side_effect=lambda **kwargs: kwargs["pending_action"]),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch("agents.supervisor.get_conversation_history", return_value=[]),
+        patch("agents.supervisor.save_conversation_turn", return_value=None),
+        patch(
+            "agents.supervisor.get_llm",
+            side_effect=AssertionError("explicit close_queue requests should bypass supervisor LLM routing"),
+        ),
+        patch(
+            "agents.specialist_graph.get_llm",
+            return_value=_FakeLLM(
+                SpecialistPlan(
+                    operation="close_queue",
+                    arguments={"reason": "Owner requested closure"},
+                    requires_clarification=False,
+                    clarification_question="",
+                    rationale="Queue closure is a receptionist operation.",
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.approval_policy.build_pending_approval",
+            return_value=_pending_policy_payload(
+                "close_queue",
+                {"reason": "Owner requested closure"},
+            ),
+        ),
+    ):
+        response = client.post(
+            "/api/v2/agent/chat",
+            json={"message": "Close the queue for today", "shop_id": 41},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["agent"] == "receptionist"
+    assert payload["approval_required"] is True
+    assert payload["pending_action"]["action"] == "close_queue"
+
+
+def test_chat_route_returns_explicit_504_when_sync_invoke_times_out():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(agent_v2, "_get_current_pending_approval", return_value=None),
+        patch.object(agent_v2, "_reset_checkpoint_thread_if_idle", return_value=None),
+        patch.object(agent_v2, "_create_chat_work_context", return_value={
+            "goal_id": 742,
+            "run_id": 842,
+            "execution_mode": "interactive",
+            "trigger_source": "chat",
+            "event_context": {"trigger_source": "chat", "goal_id": 742, "run_id": 842},
+        }),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_invoke_supervisor_sync", AsyncMock(side_effect=asyncio.TimeoutError())),
+    ):
+        response = client.post(
+            "/api/v2/agent/chat",
+            json={"message": "Create an invoice for one haircut at 35 dollars", "shop_id": 41},
+        )
+
+    assert response.status_code == 504
+    assert response.json()["detail"] == "Sync agent request timed out. Use /api/v2/agent/chat/stream for long-running requests."
 
 
 def test_chat_stream_route_emits_finance_events_and_done():
@@ -896,6 +1123,156 @@ def test_pending_route_falls_back_to_persisted_approval_requests_when_checkpoint
     assert pending["action"] == "close_queue"
     assert pending["policy_key"] == "approval.close_queue"
     assert pending["created_at"] == "2026-04-21T09:15:00"
+
+
+def test_pending_route_dedupes_matching_persisted_request_when_interrupt_is_active():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    pending_action = {
+        "action": "add_employee",
+        "details": {
+            "name": "Jordan Browser",
+            "email": "jordan.browser@example.com",
+            "phone": "555-555-1200",
+            "role": "stylist",
+        },
+        "shop_id": 41,
+        "policy_key": "approval.add_employee",
+        "policy_mode": "require_approval",
+        "category": "staffing",
+        "title": "Add Team Member",
+        "risk_level": "medium",
+        "urgency": "normal",
+        "summary": "Add Jordan Browser to the shop team.",
+        "reason": "Create a new employee record for Jordan Browser.",
+        "expected_impact": "The person will appear in team management and become eligible for shift assignment.",
+        "recommended_decision": "Approve if the hiring or onboarding decision is final.",
+    }
+    fake_snapshot = SimpleNamespace(
+        values={"pending_approval": pending_action},
+        interrupts=[SimpleNamespace(id="interrupt-123")],
+    )
+    approval_request = SimpleNamespace(
+        id=2,
+        external_action_id=None,
+        shop_id=41,
+        action_type="add_employee",
+        request_payload=pending_action,
+        requested_at=datetime(2026, 4, 21, 9, 15, 0),
+    )
+
+    fake_repo = SimpleNamespace(list_pending_approval_requests=lambda shop_id: [approval_request])
+    fake_db = SimpleNamespace(close=lambda: None)
+
+    with (
+        patch.object(agent_v2._SUPERVISOR_RUNNABLE, "get_state", return_value=fake_snapshot),
+        patch.object(agent_v2, "SessionLocal", return_value=fake_db),
+        patch.object(agent_v2, "AgentWorkRepository", return_value=fake_repo),
+    ):
+        response = client.get("/api/v2/agent/pending", params={"shop_id": 41})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["pending"]) == 1
+    assert payload["pending"][0]["action_id"] == "interrupt-123"
+
+
+def test_record_approval_decision_matches_pending_request_by_payload_when_action_id_missing():
+    agent_v2 = _load_agent_v2_module()
+
+    pending_action = {
+        "action": "add_employee",
+        "details": {
+            "name": "Jordan Browser",
+            "email": "jordan.browser@example.com",
+            "phone": "555-555-1200",
+            "role": "stylist",
+        },
+        "shop_id": 41,
+        "title": "Add Team Member",
+    }
+    approval_request = SimpleNamespace(
+        id=2,
+        external_action_id=None,
+        goal_id=11,
+        run_id=12,
+        request_payload=pending_action,
+        action_type="add_employee",
+    )
+    fake_repo = SimpleNamespace(
+        get_pending_approval_by_action_id=lambda shop_id, action_id: None,
+        list_pending_approval_requests=lambda shop_id: [approval_request],
+        decide_approval_request=Mock(),
+        update_goal_status=Mock(),
+        update_run_status=Mock(),
+    )
+    fake_db = SimpleNamespace(commit=Mock(), refresh=Mock(), close=Mock())
+
+    with (
+        patch.object(agent_v2, "SessionLocal", return_value=fake_db),
+        patch.object(agent_v2, "AgentWorkRepository", return_value=fake_repo),
+    ):
+        agent_v2._record_approval_decision(
+            shop_id=41,
+            action_id="interrupt-123",
+            pending_action=pending_action,
+            approved=True,
+            reason=None,
+            user_id=17,
+            resumed={
+                "messages": [AIMessage(content="Approval received. Action executed successfully.")],
+                "current_agent": "hr",
+                "tool_results": {"status": "approved"},
+            },
+        )
+
+    assert approval_request.external_action_id == "interrupt-123"
+    fake_repo.decide_approval_request.assert_called_once()
+    fake_repo.update_goal_status.assert_called_once()
+    fake_repo.update_run_status.assert_called_once()
+
+
+def test_resume_persisted_approval_matches_placeholder_action_id():
+    agent_v2 = _load_agent_v2_module()
+
+    approval_request = SimpleNamespace(
+        id=2,
+        external_action_id=None,
+        shop_id=41,
+        action_type="add_employee",
+        requested_by_agent="hr",
+        request_payload={
+            "action": "add_employee",
+            "details": {
+                "name": "Jordan Browser",
+                "email": "jordan.browser@example.com",
+                "phone": "555-555-1200",
+                "role": "stylist",
+            },
+            "shop_id": 41,
+        },
+    )
+    fake_repo = SimpleNamespace(
+        get_pending_approval_by_action_id=lambda shop_id, action_id: None,
+        list_pending_approval_requests=lambda shop_id: [approval_request],
+    )
+    fake_db = SimpleNamespace(close=lambda: None)
+
+    with (
+        patch.object(agent_v2, "SessionLocal", return_value=fake_db),
+        patch.object(agent_v2, "AgentWorkRepository", return_value=fake_repo),
+        patch("agents.supervisor._execute_approved_action", return_value={"message": "Employee created", "status": "approved"}),
+    ):
+        resumed = agent_v2._resume_persisted_approval(
+            shop_id=41,
+            action_id="approval-request-2",
+            approved=True,
+            reason=None,
+            user_id=17,
+        )
+
+    assert resumed is not None
+    assert resumed["tool_results"]["message"] == "Employee created"
 
 
 def test_briefing_route_returns_snapshot_with_pending_actions():

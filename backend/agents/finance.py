@@ -1,6 +1,7 @@
 """Finance specialist graph with explicit planner and executor nodes."""
 
 import logging
+import re
 from typing import Any, Dict, Optional, Sequence
 
 from langchain_core.messages import BaseMessage
@@ -9,6 +10,15 @@ from .specialist_graph import build_specialist_runnable
 from .tools import finance_tools
 
 logger = logging.getLogger(__name__)
+
+OPERATION_ALIASES = {
+    "analyze": "trend_summary",
+    "analyse": "trend_summary",
+    "review": "trend_summary",
+    "revenue_trend_analysis": "trend_summary",
+    "revenue_analysis": "trend_summary",
+    "sales_analysis": "trend_summary",
+}
 
 SUPPORTED_OPERATIONS = [
     "daily_revenue",
@@ -46,6 +56,7 @@ PLANNER_INSTRUCTIONS = """\
 - get_visit_frequency_summary: use for regulars, at-risk, and lapsed client mix.
 - get_client_profile: use when a specific client id is already known.
 - search_clients: use when the owner gives a client name rather than an id.
+- Never output analyze, analyse, answer, respond, summarize, or review as the operation. Pick the closest supported operation instead.
 """
 
 
@@ -72,6 +83,158 @@ def _to_float(value: Any) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _flatten_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return " ".join(_flatten_text(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_flatten_text(item) for item in value)
+    return str(value)
+
+
+def _recent_conversation_text(messages: Sequence[BaseMessage]) -> str:
+    recent_messages = list(messages or [])[-6:]
+    parts = []
+    for message in recent_messages:
+        parts.append(_flatten_text(getattr(message, "content", None)))
+        additional_kwargs = getattr(message, "additional_kwargs", None)
+        if additional_kwargs:
+            parts.append(_flatten_text(additional_kwargs))
+    return " ".join(part for part in parts if part).strip()
+
+
+def _latest_user_text(messages: Sequence[BaseMessage]) -> str:
+    for message in reversed(list(messages or [])):
+        if getattr(message, "type", None) == "human":
+            return _flatten_text(getattr(message, "content", None)).strip()
+    return ""
+
+
+def _requests_finance_trend(text: str) -> bool:
+    prompt = str(text or "").lower()
+    if not prompt:
+        return False
+
+    trend_markers = (
+        "trend",
+        "graph",
+        "chart",
+        "over time",
+        "for each day",
+        "for each date",
+        "by day",
+        "daily breakdown",
+        "line",
+        "plot",
+    )
+    if any(marker in prompt for marker in trend_markers):
+        return True
+
+    return bool(
+        re.search(r"\b(?:last|past|previous)\s+\d{1,3}\s+days?\b", prompt)
+        or re.search(r"\b(?:last|past|previous)\s+\d{1,2}\s+weeks?\b", prompt)
+        or re.search(r"\b(?:last|past|previous)\s+\d{1,2}\s+months?\b", prompt)
+    )
+
+
+def _prefers_weekly_summary(text: str) -> bool:
+    prompt = str(text or "").lower()
+    return any(phrase in prompt for phrase in ("this week", "weekly", "week start", "week starting"))
+
+
+def _normalize_finance_operation(operation: str, plan: Dict[str, Any], messages: Sequence[BaseMessage]) -> str:
+    normalized_operation = str(operation or "").strip().lower()
+    if normalized_operation in OPERATION_ALIASES:
+        normalized_operation = OPERATION_ALIASES[normalized_operation]
+
+    plan_text = _flatten_text(plan).lower()
+    conversation_text = _recent_conversation_text(messages).lower()
+    latest_user_text = _latest_user_text(messages).lower()
+    prompt_text = f"{conversation_text} {plan_text}".strip()
+    combined_text = f"{normalized_operation} {prompt_text}".strip()
+    generic_operations = {"answer", "respond", "summarize", "summary", "lookup", "analyze", "analyse", "review"}
+
+    revenue_signals = any(
+        keyword in prompt_text
+        for keyword in ("revenue", "sales", "trend", "performance", "week", "month", "quarter", "year", "yesterday", "today")
+    )
+    customer_signals = any(
+        keyword in prompt_text
+        for keyword in ("customer", "customers", "client", "clients", "repeat rate", "new vs repeat")
+    )
+    user_revenue_signals = any(
+        keyword in latest_user_text
+        for keyword in ("revenue", "sales", "trend", "performance", "week", "month", "quarter", "year", "yesterday", "today")
+    )
+    user_customer_signals = any(
+        keyword in latest_user_text
+        for keyword in ("customer", "customers", "client", "clients", "repeat rate", "new vs repeat")
+    )
+
+    def _latest_user_operation() -> Optional[str]:
+        if user_revenue_signals and not user_customer_signals:
+            if _requests_finance_trend(latest_user_text):
+                return "trend_summary"
+            if finance_tools.extract_requested_date(latest_user_text):
+                return "daily_revenue"
+            if _prefers_weekly_summary(latest_user_text):
+                return "weekly_summary"
+            return "trend_summary"
+        if user_customer_signals and not user_revenue_signals:
+            return "customer_metrics"
+        return None
+
+    latest_user_operation = _latest_user_operation()
+
+    if normalized_operation == "customer_metrics" and (
+        (user_revenue_signals and not user_customer_signals) or (revenue_signals and not customer_signals)
+    ):
+        if _requests_finance_trend(combined_text):
+            return "trend_summary"
+        if finance_tools.extract_requested_date(combined_text):
+            return "daily_revenue"
+        if _prefers_weekly_summary(combined_text):
+            return "weekly_summary"
+        return "trend_summary"
+
+    if normalized_operation == "daily_revenue" and _requests_finance_trend(combined_text):
+        return "trend_summary"
+
+    if normalized_operation == "weekly_summary" and _requests_finance_trend(combined_text):
+        return "trend_summary"
+
+    if normalized_operation in generic_operations or normalized_operation not in SUPPORTED_OPERATIONS:
+        if any(keyword in combined_text for keyword in ("invoice", "invoices")):
+            return "list_invoices"
+        if latest_user_operation is not None:
+            return latest_user_operation
+        if any(keyword in combined_text for keyword in ("customer", "customers", "client", "clients", "repeat rate", "new vs repeat")):
+            return "customer_metrics"
+        if any(keyword in combined_text for keyword in ("service", "services", "best-selling", "most popular")):
+            return "top_services"
+        if any(keyword in combined_text for keyword in ("revenue", "sales", "trend", "performance", "week", "month", "quarter", "year", "yesterday", "today")):
+            if _requests_finance_trend(combined_text):
+                return "trend_summary"
+            if finance_tools.extract_requested_date(combined_text):
+                return "daily_revenue"
+            if _prefers_weekly_summary(combined_text):
+                return "weekly_summary"
+            return "trend_summary"
+
+    if normalized_operation == "trend_summary":
+        if _requests_finance_trend(combined_text):
+            return "trend_summary"
+        if finance_tools.extract_requested_date(combined_text):
+            return "daily_revenue"
+        if _prefers_weekly_summary(combined_text):
+            return "weekly_summary"
+
+    return normalized_operation or str(operation or "").strip()
 
 
 def _build_finance_executor(shop_id: int):
@@ -188,21 +351,44 @@ def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
     if result.get("error"):
         return f"I couldn't complete that finance task: {result['error']}"
     if operation == "daily_revenue":
+        completed_services = int(result.get('completed_services', 0) or 0)
+        total_revenue = float(result.get('total_revenue', 0.0) or 0.0)
+        if completed_services == 0 and total_revenue <= 0:
+            return (
+                f"I don't see any completed services or recorded revenue for {result.get('date')} yet. "
+                "That usually means no services were closed out that day, or the shop data has not been backfilled yet."
+            )
         return (
-            f"Revenue for {result.get('date')} was ${float(result.get('total_revenue', 0.0) or 0.0):.2f} "
-            f"across {int(result.get('completed_services', 0) or 0)} completed services. "
+            f"Revenue for {result.get('date')} was ${total_revenue:.2f} "
+            f"across {completed_services} completed services. "
             f"Average transaction was ${float(result.get('average_transaction', 0.0) or 0.0):.2f}."
         )
     if operation == "weekly_summary":
+        completed_services = int(result.get('completed_services', 0) or 0)
+        total_revenue = float(result.get('total_revenue', 0.0) or 0.0)
+        total_customers = int(result.get('total_customers', 0) or 0)
+        if completed_services == 0 and total_revenue <= 0:
+            return (
+                f"I don't see any completed services or recorded revenue for the week starting {result.get('week_start')} yet. "
+                "That usually means this week's services have not been closed out yet, or daily analytics have not been populated for these dates."
+            )
         return (
-            f"Week starting {result.get('week_start')} generated ${float(result.get('total_revenue', 0.0) or 0.0):.2f}. "
-            f"Completed services: {int(result.get('completed_services', 0) or 0)}. "
-            f"Best day: {result.get('best_day') or 'not available'}."
+            f"Week starting {result.get('week_start')} generated ${total_revenue:.2f} from {completed_services} completed services "
+            f"and {total_customers} customer visit{'s' if total_customers != 1 else ''}. "
+            f"Best day: {result.get('best_day') or 'not available'}. "
+            f"Average ticket: ${float(result.get('average_transaction', 0.0) or 0.0):.2f}."
         )
     if operation == "trend_summary":
+        completed_services = int(result.get('completed_services', 0) or 0)
+        total_revenue = float(result.get('total_revenue', 0.0) or 0.0)
+        if completed_services == 0 and total_revenue <= 0:
+            return (
+                f"I don't see any completed services or recorded revenue for {result.get('window', 'the requested period')} yet. "
+                "If you expected activity, the underlying analytics for that range may still need to be populated."
+            )
         return (
-            f"For {result.get('window', 'the requested period')}, total revenue was ${float(result.get('total_revenue', 0.0) or 0.0):.2f} "
-            f"from {int(result.get('completed_services', 0) or 0)} completed services. "
+            f"For {result.get('window', 'the requested period')}, total revenue was ${total_revenue:.2f} "
+            f"from {completed_services} completed services. "
             f"Best period: {result.get('best_period') or 'not available'} at ${float(result.get('best_period_revenue', 0.0) or 0.0):.2f}."
         )
     if operation == "top_services":
@@ -214,9 +400,17 @@ def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
             lines.append(f"- {service.get('name')} — ${float(service.get('cost', 0.0) or 0.0):.2f}")
         return "Top services:\n" + "\n".join(lines)
     if operation == "customer_metrics":
+        total_customers = int(result.get('total_customers', 0) or 0)
+        new_customers = int(result.get('new_customers', 0) or 0)
+        repeat_customers = int(result.get('repeat_customers', 0) or 0)
+        if total_customers == 0 and new_customers == 0 and repeat_customers == 0:
+            return (
+                f"I don't see any customer activity recorded for {result.get('window', 'the requested period')} yet. "
+                "That usually means there were no completed visits in that window, or customer profiles have not been built up for this shop yet."
+            )
         return (
-            f"Customer metrics for {result.get('window', 'the requested period')}: {int(result.get('total_customers', 0) or 0)} total customers, "
-            f"{int(result.get('new_customers', 0) or 0)} new, {int(result.get('repeat_customers', 0) or 0)} repeat. "
+            f"Customer metrics for {result.get('window', 'the requested period')}: {total_customers} total customers, "
+            f"{new_customers} new, {repeat_customers} repeat. "
             f"Repeat rate: {round(float(result.get('repeat_rate', 0.0) or 0.0) * 100, 1)}%."
         )
     if operation in {"get_inactive_clients", "get_top_clients", "search_clients"}:
@@ -262,6 +456,8 @@ def create_finance_runnable(shop_id: int | None = None):
         temperature=0.2,
         planner_instructions=PLANNER_INSTRUCTIONS,
         supported_operations=SUPPORTED_OPERATIONS,
+        operation_aliases=OPERATION_ALIASES,
+        operation_normalizer=_normalize_finance_operation,
         executor=_build_finance_executor(shop_id),
         formatter=_format_finance_response,
     )

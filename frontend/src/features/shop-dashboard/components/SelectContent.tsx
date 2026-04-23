@@ -16,6 +16,7 @@ import AutorenewRoundedIcon from '@mui/icons-material/AutorenewRounded';
 import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
+import { useLocation } from 'react-router-dom';
 import { useShop } from '../../../contexts/ShopContext';
 import { useAuth } from '../../../contexts/AuthContext';
 
@@ -33,9 +34,11 @@ const ListItemAvatar = styled(MuiListItemAvatar)({
 });
 
 export default function SelectContent() {
+  const location = useLocation();
   const { shop, loading, ownedShops, shopsLoading, refreshOwnedShops, selectOwnedShop } = useShop();
   const { user, logout } = useAuth();
   const [company, setCompany] = React.useState('');
+  const isEmployee = user?.role === 'employee' || location.pathname.startsWith('/employee-dashboard');
 
   React.useEffect(() => {
     if (shop) {
@@ -44,10 +47,55 @@ export default function SelectContent() {
   }, [shop]);
 
   React.useEffect(() => {
-    if (!loading && !shop && user) {
+    if (!loading && !shop && user?.role === 'shop_owner' && !isEmployee) {
       void refreshOwnedShops();
     }
-  }, [loading, shop, user, refreshOwnedShops]);
+  }, [loading, shop, user?.role, refreshOwnedShops, isEmployee]);
+
+  if (isEmployee) {
+    return (
+      <Box
+        sx={{
+          width: '100%',
+          bgcolor: 'var(--owner-glass-bg)',
+          backdropFilter: 'blur(18px)',
+          borderRadius: 3,
+          boxShadow: 'var(--owner-glass-shadow)',
+          border: '1px solid var(--owner-glass-border)',
+          p: 1.25,
+        }}
+      >
+        <Stack spacing={1.25}>
+          <Stack direction="row" spacing={1.25} alignItems="center">
+            <Avatar alt={user?.username || 'Employee'} src={user?.profile_photo_url} sx={{ width: 36, height: 36 }}>
+              <PersonRoundedIcon sx={{ fontSize: '1rem' }} />
+            </Avatar>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
+                {user?.username || 'Employee'}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {user?.email || 'Queue workspace'}
+              </Typography>
+            </Box>
+          </Stack>
+
+          <Divider />
+
+          <Button
+            variant="outlined"
+            color="inherit"
+            fullWidth
+            size="small"
+            onClick={logout}
+            startIcon={<LogoutRoundedIcon />}
+          >
+            Logout
+          </Button>
+        </Stack>
+      </Box>
+    );
+  }
 
   const handleChange = (event: SelectChangeEvent) => {
     const nextShopId = Number(event.target.value as string);

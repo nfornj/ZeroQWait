@@ -45,7 +45,21 @@ def update_schema():
             conn.execute(text("ALTER TABLE shop_employees ADD COLUMN employee_code VARCHAR"))
             conn.commit()
 
-        # 3. Populate missing revenue data (Backfill)
+        # 3. Check approval_requests columns used by the agent approval flow
+        if 'approval_requests' in inspector.get_table_names():
+            print("Checking approval_requests columns...")
+            approval_request_columns = [c['name'] for c in inspector.get_columns('approval_requests')]
+            if 'external_action_id' not in approval_request_columns:
+                print(" - Adding external_action_id column to approval_requests...")
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN external_action_id VARCHAR"))
+                conn.commit()
+                print(" - Creating index on approval_requests.external_action_id...")
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_approval_requests_external_action_id ON approval_requests (external_action_id)"
+                ))
+                conn.commit()
+
+        # 4. Populate missing revenue data (Backfill)
         print("Backfilling missing revenue data...")
         # Update cost from service price if cost is 0 or null
         conn.execute(text("""
@@ -65,7 +79,7 @@ def update_schema():
         """))
         conn.commit()
 
-        # 4. Update DailyAnalytics table
+        # 5. Update DailyAnalytics table
         print("Checking daily_analytics columns...")
         try:
             # Check if total_revenue exists

@@ -32,10 +32,10 @@ Login URL: `https://urban-trim-oshawa.zeroqwait.com/login`
 
 | Name | Username | Password |
 |---|---|---|
-| Samuel James | `emp_samuel_james_421_0` | `EmpPassword!9e969c7a7b` |
-| Alexander Ruiz | `emp_alexander_ruiz_421_1` | `EmpPassword!463fa91ddc` |
-| Robert Castillo | `emp_robert_castillo_421_2` | `EmpPassword!ee79a90807` |
-| William Long | `emp_william_long_421_3` | `EmpPassword!81f62de4f4` |
+| Shop 41 Employee #1 | `test_bulk_emp_0_0_8410` | `password123` |
+| Shop 41 Employee #2 | `test_bulk_emp_0_1_3676` | `password123` |
+
+For the current local E2E seed on shop 41, use the `test_bulk_emp_*` accounts above. The older `emp_samuel_james_421_0` demo credential is stale for the active local dataset.
 
 **Access:** Employee Dashboard, Queue Management, Call Next Customer, Service Tracking
 
@@ -87,7 +87,7 @@ Login URL: `https://urban-trim-oshawa.zeroqwait.com/login`
 **Goal:** Verify employee can view and manage the active queue.
 
 1. Go to [https://urban-trim-oshawa.zeroqwait.com/login](https://urban-trim-oshawa.zeroqwait.com/login)
-2. Log in with employee credentials: `emp_samuel_james_421_0`
+2. Log in with employee credentials: `test_bulk_emp_0_0_8410`
 3. View the active queue in the employee dashboard
 4. Click **"Call Next Customer"** to serve the next person
 5. Verify the queue advances and the customer count updates

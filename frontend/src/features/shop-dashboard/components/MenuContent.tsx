@@ -14,13 +14,15 @@ import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded';
 import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded';
 import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
 import HelpRoundedIcon from '@mui/icons-material/HelpRounded';
-import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 
-const mainListItems = [
+const primaryListItems = [
   { text: 'Dashboard', icon: <DashboardRoundedIcon />, path: '/dashboard' },
   { text: 'Overview', icon: <InsightsRoundedIcon />, path: '/overview' },
+];
+
+const managementListItems = [
   { text: 'Services', icon: <ContentCutRoundedIcon />, path: '/services' },
   { text: 'Appointments', icon: <EventNoteRoundedIcon />, path: '/appointments' },
   { text: 'Queues', icon: <QueueRoundedIcon />, path: '/queues' },
@@ -42,7 +44,8 @@ export default function MenuContent() {
   const isEmployee = user?.role === 'employee';
   const visibleMainItems = isEmployee
     ? [{ text: 'Queue', icon: <QueueRoundedIcon />, path: '/employee-dashboard' }]
-    : mainListItems;
+    : primaryListItems;
+  const visibleManagementItems = isEmployee ? [] : managementListItems;
   const visibleSecondaryItems = isEmployee ? [] : secondaryListItems;
 
   return (
@@ -74,6 +77,32 @@ export default function MenuContent() {
           </ListItem>
         ))}
       </List>
+      {visibleManagementItems.length > 0 && (
+        <List dense sx={{ p: 0 }}>
+          <Typography variant="overline" sx={{ px: 1.5, color: 'text.secondary', fontWeight: 700 }}>
+            Manage
+          </Typography>
+          {visibleManagementItems.map((item, index) => (
+            <ListItem key={index} disablePadding sx={{ display: 'block' }}>
+              <ListItemButton
+                selected={isSelected(item.path)}
+                onClick={() => navigate(item.path)}
+                sx={{
+                  borderRadius: 2,
+                  mb: 0.5,
+                  '&.Mui-selected': {
+                    bgcolor: 'var(--owner-glass-bg)',
+                    border: '1px solid var(--owner-glass-border)',
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 36 }}>{item.icon}</ListItemIcon>
+                <ListItemText primary={item.text} />
+              </ListItemButton>
+            </ListItem>
+          ))}
+        </List>
+      )}
       {visibleSecondaryItems.length > 0 && (
       <List dense sx={{ p: 0 }}>
         <Typography variant="overline" sx={{ px: 1.5, color: 'text.secondary', fontWeight: 700 }}>

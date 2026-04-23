@@ -4,95 +4,58 @@ import CardContent from '@mui/material/CardContent';
 import Avatar from '@mui/material/Avatar';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
+import Chip from '@mui/material/Chip';
 import Container from '@mui/material/Container';
 import Grid from '@mui/material/Grid';
-import { useColorScheme } from '@mui/material/styles';
+import { alpha } from '@mui/material/styles';
 
 const userTestimonials = [
   {
-    avatar: <Avatar alt="Sarah Jenkins" src="/static/images/avatar/1.jpg" />,
     name: 'Sarah Jenkins',
     occupation: 'Salon Owner',
+    outcome: 'Saved Sunday reporting time',
     testimonial:
       "I just tell ZeroQ ‘what's the revenue this week’ and it answers instantly. I used to spend Sunday evenings doing this in spreadsheets. Now I spend that time with my family.",
   },
   {
-    avatar: <Avatar alt="Mark Thompson" src="/static/images/avatar/2.jpg" />,
     name: 'Mark Thompson',
     occupation: 'Barber',
+    outcome: 'Walk-ins handled during chair time',
     testimonial:
       "The AI Receptionist handles walk-ins while I’m cutting hair. It tells customers their wait time and I get a notification when I need to approve anything important. It’s like having a front-desk person I never have to train.",
   },
   {
-    avatar: <Avatar alt="Dr. Emily Chen" src="/static/images/avatar/3.jpg" />,
     name: 'Dr. Emily Chen',
     occupation: 'Clinic Manager',
+    outcome: 'Faster staff schedule decisions',
     testimonial:
       "The approval flow is brilliant. The HR agent proposed a new shift schedule and I just clicked approve. Takes 10 seconds. Patient throughput is up 40% since we stopped managing queues manually.",
   },
   {
-    avatar: <Avatar alt="Michael Ross" src="/static/images/avatar/4.jpg" />,
     name: 'Michael Ross',
     occupation: 'Repair Shop Owner',
+    outcome: 'Technicians stay on repairs',
     testimonial:
       "My technicians focus on repairs. The AI Receptionist manages the front. When a customer asks how long the wait is, ZeroQ tells them. Simple, accurate, no fuss.",
   },
   {
-    avatar: <Avatar alt="Lisa Wong" src="/static/images/avatar/5.jpg" />,
     name: 'Lisa Wong',
     occupation: 'Retail Manager',
+    outcome: 'Instant service performance answers',
     testimonial:
       "I asked the Finance agent for our top-performing service last month and it responded in seconds with a full breakdown. The kind of insight that used to require a report from our analytics team.",
   },
   {
-    avatar: <Avatar alt="David Miller" src="/static/images/avatar/6.jpg" />,
     name: 'David Miller',
     occupation: 'Gov. Office Admin',
+    outcome: 'Queue setup approved in minutes',
     testimonial:
       "We approved the queue setup in five minutes. The Supervisor routes citizen requests to the right service window automatically. Our staff no longer manage a ticketing desk — the agent does it.",
   },
 ];
 
-const darkModeLogos = [
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560628e8573c43893fe0ace_Sydney-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f4d520d0517ae8e8ddf13_Bern-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f46794c159024c1af6d44_Montreal-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/61f12e891fa22f89efd7477a_TerraLight.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560a09d1f6337b1dfed14ab_colorado-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f5caa77bf7d69fb78792e_Ankara-white.svg',
-];
-
-const lightModeLogos = [
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560628889c3bdf1129952dc_Sydney-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f4d4d8b829a89976a419c_Bern-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f467502f091ccb929529d_Montreal-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/61f12e911fa22f2203d7514c_TerraDark.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560a0990f3717787fd49245_colorado-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f5ca4e548b0deb1041c33_Ankara-black.svg',
-];
-
-const logoStyle = {
-  width: '64px',
-  opacity: 0.3,
-};
-
 
 export default function Testimonials({ embedded = false }: { embedded?: boolean }) {
-  const { mode, systemMode } = useColorScheme();
-
-  let logos: string[] = darkModeLogos;
-  if (mode === 'system') {
-    if (systemMode === 'light') {
-      logos = lightModeLogos;
-    } else {
-      logos = darkModeLogos;
-    }
-  } else if (mode === 'light') {
-    logos = lightModeLogos;
-  } else {
-    logos = darkModeLogos;
-  }
-
   return (
     <Container
       id="testimonials"
@@ -172,6 +135,7 @@ export default function Testimonials({ embedded = false }: { embedded?: boolean 
                   >
                     "{testimonial.testimonial}"
                   </Typography>
+                  <Chip label={testimonial.outcome} size="small" sx={{ borderRadius: 999, mt: 1 }} />
                 </CardContent>
                 <Box
                   sx={{
@@ -184,7 +148,7 @@ export default function Testimonials({ embedded = false }: { embedded?: boolean 
                   }}
                 >
                   <CardHeader
-                    avatar={testimonial.avatar}
+                    avatar={<Avatar sx={{ bgcolor: '#1e88e5', color: 'common.white' }}>{testimonial.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</Avatar>}
                     title={testimonial.name}
                     subheader={testimonial.occupation}
                     titleTypographyProps={{ variant: 'subtitle2' }}
@@ -209,9 +173,12 @@ export default function Testimonials({ embedded = false }: { embedded?: boolean 
                   flexDirection: 'column',
                   justifyContent: 'space-between',
                   flexGrow: 1,
+                  borderRadius: 6,
+                  background: (theme) => `linear-gradient(180deg, ${alpha(theme.palette.background.paper, 0.96)} 0%, ${alpha(theme.palette.background.default, 0.92)} 100%)`,
                 }}
               >
                 <CardContent>
+                  <Chip label={testimonial.outcome} size="small" sx={{ mb: 1.5, borderRadius: 999 }} />
                   <Typography
                     variant="body1"
                     gutterBottom
@@ -225,18 +192,20 @@ export default function Testimonials({ embedded = false }: { embedded?: boolean 
                     display: 'flex',
                     flexDirection: 'row',
                     justifyContent: 'space-between',
+                    alignItems: 'center',
+                    px: 2,
+                    pb: 2,
                   }}
                 >
                   <CardHeader
-                    avatar={testimonial.avatar}
+                    avatar={<Avatar sx={{ bgcolor: '#1e88e5', color: 'common.white' }}>{testimonial.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</Avatar>}
                     title={testimonial.name}
                     subheader={testimonial.occupation}
+                    sx={{ p: 0 }}
                   />
-                  <img
-                    src={logos[index]}
-                    alt={`Logo ${index + 1}`}
-                    style={logoStyle}
-                  />
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700 }}>
+                    Verified operator quote
+                  </Typography>
                 </Box>
               </Card>
             </Grid>

@@ -94,6 +94,8 @@ export interface ChatMessage {
   pendingAction?: PendingApproval;
   thinkingSteps?: ThinkingStep[];
   thinkingComplete?: boolean;
+  charts?: AgentChart[];
+  files?: AgentFile[];
 }
 
 export interface AgentFeedEvent {

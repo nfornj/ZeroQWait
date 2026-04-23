@@ -19,7 +19,9 @@ import SideMenuMobile from './SideMenuMobile';
 import MenuButton from './MenuButton';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
+import { useLocation } from 'react-router-dom';
 import { useShop } from '../../../contexts/ShopContext';
+import { useAuth } from '../../../contexts/AuthContext';
 
 const drawerWidth = 240;
 
@@ -40,6 +42,8 @@ const Toolbar = styled(MuiToolbar)({
 
 export default function AppNavbar() {
   const [open, setOpen] = React.useState(false);
+  const location = useLocation();
+  const { user } = useAuth();
   const { shop, ownedShops, shopsLoading, refreshOwnedShops, selectOwnedShop } = useShop();
 
   const toggleDrawer = (newOpen: boolean) => () => {
@@ -52,7 +56,10 @@ export default function AppNavbar() {
     selectOwnedShop(nextShopId);
   };
 
-  const subtitle = [shop?.city, shop?.shop_type].filter(Boolean).join(' • ') || 'Owner workspace';
+  const isEmployeeRoute = location.pathname.startsWith('/employee-dashboard');
+  const isEmployee = user?.role === 'employee' || isEmployeeRoute;
+  const subtitle = [shop?.city, shop?.shop_type].filter(Boolean).join(' • ')
+    || (isEmployee ? 'Employee workspace' : 'Owner workspace');
   const logoSrc = shop?.id && shop?.logo_url ? `/api/shops/${shop.id}/logo` : undefined;
 
   return (
@@ -115,7 +122,7 @@ export default function AppNavbar() {
           </Stack>
 
           <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: 'none', md: 'flex' } }}>
-            {ownedShops.length > 1 && (
+            {!isEmployee && ownedShops.length > 1 && (
               <FormControl size="small" sx={{ minWidth: 220 }}>
                 <InputLabel id="desktop-shop-select-label">Shop</InputLabel>
                 <Select
@@ -140,13 +147,15 @@ export default function AppNavbar() {
                 </Select>
               </FormControl>
             )}
-            <Tooltip title="Refresh shop list">
-              <span>
-                <IconButton onClick={() => void refreshOwnedShops()} disabled={shopsLoading}>
-                  {shopsLoading ? <CircularProgress size={18} /> : <AutorenewRoundedIcon />}
-                </IconButton>
-              </span>
-            </Tooltip>
+            {!isEmployee && (
+              <Tooltip title="Refresh shop list">
+                <span>
+                  <IconButton onClick={() => void refreshOwnedShops()} disabled={shopsLoading}>
+                    {shopsLoading ? <CircularProgress size={18} /> : <AutorenewRoundedIcon />}
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
           </Stack>
 
           <MenuButton aria-label="menu" onClick={toggleDrawer(true)} sx={{ display: { xs: 'inline-flex', md: 'none' } }}>

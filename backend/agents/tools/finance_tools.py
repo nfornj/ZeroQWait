@@ -530,10 +530,14 @@ def _local_weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dic
         total_completed = 0
         best_day = None
         best_day_revenue = 0.0
+        points = []
         
         for i in range(7):
             loop_date = (start_date + timedelta(days=i)).date()
             date_str = loop_date.strftime("%Y-%m-%d")
+            day_revenue = 0.0
+            day_customers = 0
+            day_completed_count = 0
 
             if loop_date == today:
                 # Real-time from queue_items
@@ -547,11 +551,13 @@ def _local_weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dic
                     )
                     .all()
                 )
-                day_completed = [i for i in today_items if i.status == QueueStatus.COMPLETED]
-                day_revenue = sum(float(i.service_cost or 0.0) for i in day_completed)
+                day_completed_items = [item for item in today_items if getattr(item, "status", None) == QueueStatus.COMPLETED]
+                day_revenue = sum(float(getattr(item, "service_cost", 0.0) or 0.0) for item in day_completed_items)
+                day_customers = len(today_items)
+                day_completed_count = len(day_completed_items)
                 total_revenue += day_revenue
-                total_customers += len(today_items)
-                total_completed += len(day_completed)
+                total_customers += day_customers
+                total_completed += day_completed_count
             elif loop_date > today:
                 continue  # Future dates — skip
             else:
@@ -560,18 +566,30 @@ def _local_weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dic
                     DailyAnalytics.shop_id == shop_id,
                     DailyAnalytics.date == date_str
                 ).all()
-                
-                day_revenue = 0.0
+
                 for record in day_records:
                     rev = getattr(record, 'total_revenue', 0.0)
                     day_revenue += rev
                     total_revenue += rev
-                    total_customers += getattr(record, 'total_customers', 0)
-                    total_completed += getattr(record, 'completed_services', 0)
+                    customers = int(getattr(record, 'total_customers', 0) or 0)
+                    completed = int(getattr(record, 'completed_services', 0) or 0)
+                    day_customers += customers
+                    day_completed_count += completed
+                    total_customers += customers
+                    total_completed += completed
             
             if day_revenue > best_day_revenue:
                 best_day_revenue = day_revenue
                 best_day = date_str
+
+            points.append(
+                {
+                    "period": date_str,
+                    "revenue": round(float(day_revenue), 2),
+                    "customers": day_customers,
+                    "completed_services": day_completed_count,
+                }
+            )
         
         session.close()
         
@@ -584,7 +602,12 @@ def _local_weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dic
             "best_day": best_day,
             "total_customers": total_customers,
             "week_start": start_date.strftime("%Y-%m-%d"),
-            "shop_id": shop_id
+            "shop_id": shop_id,
+            "window": f"week_of_{start_date.strftime('%Y-%m-%d')}",
+            "granularity": "day",
+            "range_start": start_date.strftime("%Y-%m-%d"),
+            "range_end": min((start_date + timedelta(days=6)).date(), today).strftime("%Y-%m-%d"),
+            "points": points,
         }
     except Exception as e:
         return {"error": str(e)}

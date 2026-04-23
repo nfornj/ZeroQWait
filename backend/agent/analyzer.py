@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 from agent.config import model
 from agent.cache import semantic_cache
+from agent.categories import category_manager
 
 # --- Unified Query Analyzer ---
 

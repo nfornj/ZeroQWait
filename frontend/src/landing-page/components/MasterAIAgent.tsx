@@ -18,6 +18,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import MicIcon from "@mui/icons-material/Mic";
 import MicOffIcon from "@mui/icons-material/MicOff";
 import SearchIcon from "@mui/icons-material/Search";
+import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import LocationOnIcon from "@mui/icons-material/LocationOn";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
@@ -476,8 +477,10 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   }, [sessionId]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement | null>(null);
   const latestAIResponse = chatHistory[chatHistory.length - 1];
   const navigate = useNavigate();
+  const isPublicEmbedded = embedded && !compactEmbedded;
 
   // Ref to hold the submit function (solves circular dependency)
   const submitAudioRef = useRef<() => Promise<void>>();
@@ -560,7 +563,13 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   const abortControllerRef = useRef<AbortController | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   // Media queue for paired sentence events: {text, audio}
-  const mediaQueueRef = useRef<Array<{ text: string; audio: string | null }>>(
+  const mediaQueueRef = useRef<
+    Array<{
+      text: string;
+      audio: string | null;
+      skipTextAnimation?: boolean;
+    }>
+  >(
     [],
   );
   const isPlayingQueueRef = useRef(false);
@@ -672,7 +681,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
 
   /** Process the paired media queue: play audio + typewrite text simultaneously per sentence.
    *  Audio drives the pace — typewriter catches up but never blocks next audio. */
-  const processMediaQueue = async (aiMsgIndexFn: () => number) => {
+  const processMediaQueue = async (aiMessageIndex: number) => {
     if (isPlayingQueueRef.current) return;
     isPlayingQueueRef.current = true;
     cancelQueueRef.current = false;
@@ -686,8 +695,11 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
       const updateUI = (textSoFar: string) => {
         setChatHistory((prev) => {
           const next = [...prev];
-          const idx = next.length - 1;
-          if (idx >= 0 && next[idx].role === "ai") {
+          const idx =
+            next[aiMessageIndex]?.role === "ai"
+              ? aiMessageIndex
+              : next.length - 1;
+          if (idx >= 0 && next[idx]?.role === "ai") {
             next[idx] = { ...next[idx], text: textSoFar };
           }
           return next;
@@ -697,13 +709,22 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
       const prevText = displayedText;
 
       if (item.audio && interactionModeRef.current === "voice") {
+        if (item.skipTextAnimation) {
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => resolve());
+          });
+        }
         // Audio-driven: start both, but only wait for audio.
         // Typewriter runs in background and finishes the remaining text
         // when audio ends (so next sentence audio starts without gap).
-        const typePromise = typeText(item.text, updateUI, prevText);
+        const typePromise = item.skipTextAnimation
+          ? Promise.resolve()
+          : typeText(item.text, updateUI, prevText);
         await playAudio(item.audio);
         // Flush remaining typewriter text instantly so display is complete
-        updateUI(prevText + item.text);
+        if (!item.skipTextAnimation) {
+          updateUI(prevText + item.text);
+        }
         // Don't await typePromise — it will resolve on its own
       } else {
         // No audio or chat mode — just typewrite the text
@@ -1095,21 +1116,41 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
               // --- Paired sentence event: {text, audio} ---
               const sentenceText = data.text || "";
               const audioB64 = data.audio || null;
+              const shouldRenderImmediately = Boolean(
+                audioB64 && interactionModeRef.current === "voice",
+              );
 
               console.log(
                 `[SSE] Sentence received: "${sentenceText.slice(0, 40)}..." audio=${audioB64 ? "yes" : "no"}`,
               );
 
+              if (shouldRenderImmediately) {
+                setChatHistory((prev) => {
+                  const next = [...prev];
+                  if (next[aiMessageIndex]?.role === "ai") {
+                    const existingText = next[aiMessageIndex].text || "";
+                    next[aiMessageIndex] = {
+                      ...next[aiMessageIndex],
+                      text: existingText
+                        ? `${existingText}${sentenceText}\n\n`
+                        : `${sentenceText}\n\n`,
+                    };
+                  }
+                  return next;
+                });
+              }
+
               // Push to media queue
               mediaQueueRef.current.push({
                 text: sentenceText,
                 audio: audioB64,
+                skipTextAnimation: shouldRenderImmediately,
               });
 
               // Start or restart the media queue processor
               // (it may have finished before this event arrived)
               if (!isPlayingQueueRef.current) {
-                processMediaQueue(() => aiMessageIndex);
+                processMediaQueue(aiMessageIndex);
               }
             } else if (data.type === "text") {
               // Legacy text-only event (fallback compatibility)
@@ -1397,7 +1438,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
 
       // If queue has unprocessed items after SSE loop ends, ensure processing
       if (!isPlayingQueueRef.current && mediaQueueRef.current.length > 0) {
-        processMediaQueue(() => aiMessageIndex);
+        processMediaQueue(aiMessageIndex);
       }
     } catch (error) {
       console.error("[DEBUG] MasterAgent API Stream Error:", error);
@@ -1682,8 +1723,9 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
         <Box
           sx={{
             flex: 1,
+            minHeight: 0,
             width: "100%",
-            overflowY: "auto",
+            overflowY: embedded && compactEmbedded ? "hidden" : "auto",
             overflowX: "hidden",
             display: "flex",
             flexDirection: "column",
@@ -1703,20 +1745,21 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
           <Box
             sx={{
               flex: 1,
+              minHeight: 0,
+              height: embedded && compactEmbedded ? "100%" : undefined,
               display: "flex",
               flexDirection: activeViewer
                 ? { xs: "column", md: "row" }
                 : "column",
-              // CHANGED: Center vertically in both single and split view
-              alignItems: "center",
+              alignItems: embedded && compactEmbedded ? "stretch" : "center",
               justifyContent: embedded && compactEmbedded ? "flex-start" : "center",
               py: embedded && compactEmbedded ? { xs: 0.5, md: 1 } : { xs: 2, sm: 3, md: 4 },
-              px: { xs: 2, sm: 3, md: 4, lg: 6 },
+              px: embedded && compactEmbedded ? { xs: 1, sm: 1.5, md: 2 } : { xs: 2, sm: 3, md: 4, lg: 6 },
               gap: embedded && compactEmbedded ? { xs: 1, md: 1.5 } : { xs: 3, sm: 3, md: 4 },
               width: "100%",
               // WIDER CONTAINER for Split View (Monitor Mode)
               // Constrained to 1400px for better balance on large screens
-              maxWidth: activeViewer ? "1400px" : "800px",
+              maxWidth: embedded && compactEmbedded ? "100%" : activeViewer ? "1400px" : "800px",
               m: "auto", // Safe centering that handles overflow correctly
               // Removed minHeight: '100%' which was causing clipping issues
               transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
@@ -1728,7 +1771,9 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 // FIXED WIDTH for Chat in Split View
                 flex: activeViewer
                   ? { xs: "1 1 auto", md: "0 0 400px" }
-                  : "none",
+                  : embedded && compactEmbedded
+                    ? "1 1 auto"
+                    : "none",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
@@ -1736,14 +1781,17 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 gap: embedded && compactEmbedded ? { xs: 1, md: 1.25 } : { xs: 2, sm: 2.5, md: 3 },
                 transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
                 width: "100%",
+                minHeight: 0,
                 // Fixed width constraint
                 maxWidth: activeViewer
                   ? { xs: "100%", md: "400px" }
+                  : embedded && compactEmbedded
+                    ? "100%"
                   : { xs: "100%", sm: "500px", md: "600px" },
                 height: activeViewer
                   ? { xs: "calc(100dvh - 170px)", md: "70vh" }
                   : embedded && compactEmbedded
-                    ? "100%"
+                    ? { xs: "auto", md: "calc(100dvh - 190px)" }
                     : { xs: "calc(100dvh - 170px)", md: "78vh" },
                 position: "relative",
                 py: embedded && compactEmbedded ? { xs: 0, md: 0.5 } : { xs: 1, md: 2 },
@@ -1760,15 +1808,19 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                     ? { xs: 60, sm: 70, md: 80 }
                     : activeViewer
                       ? { xs: 80, sm: 100, md: 120 }
+                      : isPublicEmbedded
+                        ? { xs: 118, sm: 134, md: 156 }
                       : { xs: 150, sm: 180, md: 220 },
                   height: interactionMode === "chat"
                     ? { xs: 60, sm: 70, md: 80 }
                     : activeViewer
                       ? { xs: 80, sm: 100, md: 120 }
+                      : isPublicEmbedded
+                        ? { xs: 118, sm: 134, md: 156 }
                       : { xs: 150, sm: 180, md: 220 },
                   transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                   flexShrink: 0,
-                  mb: interactionMode === "chat" ? 1 : activeViewer ? 1 : 2,
+                  mb: interactionMode === "chat" ? 1 : activeViewer ? 1 : isPublicEmbedded ? 1.25 : 2,
                   cursor: interactionMode === "chat"
                     ? "default"
                     : isTranscribing || isToggling ? "wait" : "pointer",
@@ -1835,6 +1887,8 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                     "& svg": {
                       fontSize: activeViewer
                         ? { xs: 24, md: 32 }
+                        : isPublicEmbedded
+                          ? { xs: 30, md: 42 }
                         : { xs: 40, md: 56 },
                       color: theme.text,
                     },
@@ -1883,7 +1937,7 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                   transition: "all 0.2s ease",
                   textAlign: "center",
                   fontSize: { xs: "0.65rem", sm: "0.7rem", md: "0.75rem" },
-                  mb: 1,
+                  mb: isPublicEmbedded ? 0.5 : 1,
                   cursor: interactionMode === "voice" ? "pointer" : "default",
                   "&:hover": {
                     opacity: 1,
@@ -1905,18 +1959,31 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 ref={scrollRef}
                 sx={{
                   width: "100%",
-                  flex: 1,
+                  flex: embedded ? "0 1 auto" : 1,
                   minHeight: 0,
                   overflowY: "auto",
+                  maxHeight: embedded && compactEmbedded
+                    ? { xs: "none", md: "calc(100dvh - 360px)" }
+                    : isPublicEmbedded
+                      ? { xs: 280, md: 332 }
+                      : undefined,
                   display: "flex",
                   flexDirection: "column",
-                  gap: 1.5,
+                  gap: isPublicEmbedded ? 1.1 : 1.5,
                   px: { xs: 1, sm: 1.5, md: 2 },
-                  py: 1,
+                  py: isPublicEmbedded ? 0.5 : 1,
                   maskImage:
-                    "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
+                    embedded && compactEmbedded
+                      ? "none"
+                      : isPublicEmbedded
+                        ? "none"
+                      : "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
                   WebkitMaskImage:
-                    "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
+                    embedded && compactEmbedded
+                      ? "none"
+                      : isPublicEmbedded
+                        ? "none"
+                      : "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
                   "&::-webkit-scrollbar": { width: "4px" },
                   "&::-webkit-scrollbar-thumb": {
                     background: isDarkMode
@@ -2673,25 +2740,40 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                 sx={{
                   display: "flex",
                   flexDirection: "column",
-                  alignItems: "center",
-                  gap: 2,
+                  alignItems: embedded && compactEmbedded ? "stretch" : "center",
+                  gap: embedded && compactEmbedded ? 1 : 2,
                   width: "100%",
-                  maxWidth: "500px",
-                  mt: "auto",
-                  pt: 1.5,
-                  borderTop: `1px solid ${theme.cardBorder}`,
+                  maxWidth: embedded && compactEmbedded ? "100%" : "500px",
+                  mt: embedded && compactEmbedded ? 0 : "auto",
+                  px: embedded && compactEmbedded ? { xs: 0.25, md: 0.5 } : 0,
+                  pt: embedded && compactEmbedded ? 1 : 1.5,
+                  borderTop: embedded && compactEmbedded ? "none" : `1px solid ${theme.cardBorder}`,
                   bgcolor: isDarkMode
-                    ? "rgba(15,15,25,0.68)"
-                    : "rgba(255,255,255,0.78)",
+                    ? embedded && compactEmbedded
+                      ? "rgba(10,12,20,0.92)"
+                      : "rgba(15,15,25,0.68)"
+                    : embedded && compactEmbedded
+                      ? "rgba(248,250,255,0.98)"
+                      : "rgba(255,255,255,0.78)",
                   backdropFilter: "blur(18px)",
-                  position: "sticky",
-                  bottom: 0,
+                  position: embedded && compactEmbedded ? "static" : "sticky",
+                  bottom: embedded && compactEmbedded ? "auto" : 0,
                   zIndex: 2,
+                  borderRadius: embedded && compactEmbedded ? "22px" : 0,
+                  boxShadow: embedded && compactEmbedded
+                    ? isDarkMode
+                      ? "0 12px 32px rgba(0,0,0,0.32)"
+                      : "0 10px 24px rgba(15,23,42,0.08)"
+                    : "none",
+                  border: embedded && compactEmbedded
+                    ? `1px solid ${alpha(theme.cardBorder, isDarkMode ? 0.9 : 1)}`
+                    : "none",
                 }}
               >
                 {/* INTEGRATED INPUT FIELD — always visible in chat mode, hidden during recording in voice mode */}
                 {(interactionMode === "chat" || (!isRecording && !isTranscribing)) && (
                   <TextField
+                    inputRef={chatInputRef}
                     fullWidth
                     placeholder={interactionMode === "chat" ? "Type your message..." : "Type to ZeroQ..."}
                     variant="outlined"
@@ -2705,20 +2787,74 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                         }
                       }
                     }}
-                    sx={{ mt: interactionMode === "chat" ? 1 : 2 }}
+                    sx={{
+                      mt: interactionMode === "chat" ? 1 : 2,
+                      "& .MuiOutlinedInput-root": {
+                        borderRadius: embedded && compactEmbedded ? "20px" : "30px",
+                        bgcolor: embedded && compactEmbedded
+                          ? isDarkMode
+                            ? "rgba(17,24,39,0.96)"
+                            : "rgba(255,255,255,0.98)"
+                          : theme.inputBg,
+                        color: theme.text,
+                        backdropFilter: "blur(10px)",
+                        boxShadow: embedded && compactEmbedded
+                          ? isDarkMode
+                            ? "inset 0 0 0 1px rgba(255,255,255,0.04)"
+                            : "0 2px 10px rgba(15,23,42,0.04)"
+                          : "none",
+                        "& fieldset": {
+                          borderColor: embedded && compactEmbedded
+                            ? alpha(theme.accent, isDarkMode ? 0.42 : 0.32)
+                            : theme.cardBorder,
+                          borderWidth: embedded && compactEmbedded ? "1.5px" : "1px",
+                        },
+                        "&:hover fieldset": {
+                          borderColor: alpha(theme.accent, isDarkMode ? 0.7 : 0.58),
+                        },
+                        "&.Mui-focused fieldset": {
+                          borderColor: theme.accent,
+                          borderWidth: "2px",
+                        },
+                      },
+                      "& input::placeholder": {
+                        color: alpha(theme.textSecondary, embedded && compactEmbedded ? 0.92 : 0.8),
+                        opacity: 1,
+                      },
+                    }}
                     slotProps={{
                       input: {
                         sx: {
-                          borderRadius: "30px",
-                          bgcolor: theme.inputBg,
-                          color: theme.text,
-                          backdropFilter: "blur(10px)",
-                          border: `1px solid ${theme.cardBorder}`,
+                          py: embedded && compactEmbedded ? 0.55 : 0,
                         },
                         endAdornment: (
-                          <SearchIcon
-                            sx={{ color: theme.textSecondary, mr: 1 }}
-                          />
+                          <IconButton
+                            size="small"
+                            disabled={isProcessing}
+                            onClick={() => {
+                              const draft = chatInputRef.current?.value?.trim();
+                              if (!draft) return;
+                              void handleChat(draft);
+                              if (chatInputRef.current) {
+                                chatInputRef.current.value = "";
+                              }
+                            }}
+                            sx={{
+                              mr: 0.5,
+                              color: theme.accent,
+                              bgcolor: alpha(theme.accent, isDarkMode ? 0.18 : 0.1),
+                              border: `1px solid ${alpha(theme.accent, isDarkMode ? 0.3 : 0.18)}`,
+                              "&:hover": {
+                                bgcolor: alpha(theme.accent, isDarkMode ? 0.26 : 0.18),
+                              },
+                            }}
+                          >
+                            {embedded && compactEmbedded ? (
+                              <SendRoundedIcon sx={{ fontSize: 18 }} />
+                            ) : (
+                              <SearchIcon sx={{ fontSize: 18 }} />
+                            )}
+                          </IconButton>
                         ),
                       },
                     }}

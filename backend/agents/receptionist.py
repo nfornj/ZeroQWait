@@ -1,5 +1,6 @@
 """Receptionist specialist graph with explicit planner and executor nodes."""
 
+import json
 import logging
 from typing import Any, Dict, Optional, Sequence
 
@@ -30,7 +31,7 @@ PLANNER_INSTRUCTIONS = """\
 - list_queue: queue status, who is waiting, queue summary, queue line.
 - join_queue: add or check in a customer; arguments: customer_name, phone(optional).
 - call_next: call the next customer; arguments: employee_id(optional).
-- get_wait_time: questions about wait time or queue length.
+- get_wait_time: questions about wait time. For queue length or queue status, use list_queue instead.
 - close_queue: owner wants to close or stop the queue; arguments: reason(optional). This requires approval.
 - search_services: list services, search by service name, or look up a service before update/delete.
 - create_service: add a new service; arguments: name, cost, duration_minutes(optional).
@@ -40,7 +41,13 @@ PLANNER_INSTRUCTIONS = """\
 - list_appointments: list appointments for a date or status.
 - cancel_appointment: cancel by appointment_id; ask if the id is missing.
 - get_available_slots: availability questions when service_id and date are known.
+- Never output read or get_queue_length. Use list_queue for queue counts and queue summaries.
 """
+
+OPERATION_ALIASES = {
+    "get_queue_length": "list_queue",
+    "read": "list_queue",
+}
 
 
 def _optional_str(value: Any) -> Optional[str]:
@@ -66,6 +73,60 @@ def _to_float(value: Any) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _flatten_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return " ".join(_flatten_text(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_flatten_text(item) for item in value)
+    return str(value)
+
+
+def _recent_conversation_text(messages: Sequence[BaseMessage]) -> str:
+    recent_messages = list(messages or [])[-6:]
+    parts = []
+    for message in recent_messages:
+        parts.append(_flatten_text(getattr(message, "content", None)))
+        additional_kwargs = getattr(message, "additional_kwargs", None)
+        if additional_kwargs:
+            parts.append(_flatten_text(additional_kwargs))
+    return " ".join(part for part in parts if part).strip()
+
+
+def _normalize_receptionist_operation(operation: str, plan: Dict[str, Any], messages: Sequence[BaseMessage]) -> str:
+    normalized_operation = str(operation or "").strip().lower()
+    if normalized_operation in OPERATION_ALIASES:
+        return OPERATION_ALIASES[normalized_operation]
+
+    plan_text = _flatten_text(plan).lower()
+    conversation_text = _recent_conversation_text(messages).lower()
+    combined_text = f"{conversation_text} {plan_text}".strip()
+    queue_keywords = ("queue", "waiting", "line")
+    asks_for_count_or_status = any(
+        phrase in combined_text
+        for phrase in ("how many", "queue status", "who is waiting", "who's waiting", "line status", "queue length")
+    )
+    asks_for_wait_time = any(phrase in combined_text for phrase in ("wait time", "how long", "estimated wait"))
+
+    if normalized_operation in {"answer", "respond", "lookup", "summarize"} and any(
+        keyword in combined_text for keyword in queue_keywords
+    ):
+        if asks_for_wait_time:
+            return "get_wait_time"
+        return "list_queue"
+
+    if any(keyword in combined_text for keyword in queue_keywords):
+        if asks_for_count_or_status:
+            return "list_queue"
+        if asks_for_wait_time:
+            return "get_wait_time"
+
+    return str(operation or "").strip()
 
 
 def _execute_receptionist_operation(operation: str, arguments: Dict[str, Any], messages: Sequence[BaseMessage]) -> Dict[str, Any]:
@@ -218,9 +279,11 @@ def create_receptionist_runnable(shop_id: int | None = None):
         temperature=0.25,
         planner_instructions=PLANNER_INSTRUCTIONS,
         supported_operations=SUPPORTED_OPERATIONS,
+        operation_aliases=OPERATION_ALIASES,
+        operation_normalizer=_normalize_receptionist_operation,
         executor=_build_receptionist_executor(shop_id),
         formatter=_format_receptionist_response,
     )
 
 
-__all__ = ["create_receptionist_runnable"]
+__all__ = ["create_receptionist_runnable", "_normalize_receptionist_operation"]

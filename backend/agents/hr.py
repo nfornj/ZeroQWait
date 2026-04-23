@@ -10,6 +10,11 @@ from .tools import hr_tools
 
 logger = logging.getLogger(__name__)
 
+OPERATION_ALIASES = {
+    "request_employee_details": "add_employee",
+    "employee_details": "list_employees",
+}
+
 SUPPORTED_OPERATIONS = [
     "list_employees",
     "add_employee",
@@ -43,6 +48,56 @@ def _to_int(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _flatten_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return " ".join(_flatten_text(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_flatten_text(item) for item in value)
+    return str(value)
+
+
+def _recent_conversation_text(messages: Sequence[BaseMessage]) -> str:
+    recent_messages = list(messages or [])[-6:]
+    parts = []
+    for message in recent_messages:
+        parts.append(_flatten_text(getattr(message, "content", None)))
+        additional_kwargs = getattr(message, "additional_kwargs", None)
+        if additional_kwargs:
+            parts.append(_flatten_text(additional_kwargs))
+    return " ".join(part for part in parts if part).strip()
+
+
+def _normalize_hr_operation(operation: str, plan: Dict[str, Any], messages: Sequence[BaseMessage]) -> str:
+    normalized_operation = str(operation or "").strip().lower()
+    if normalized_operation in OPERATION_ALIASES:
+        normalized_operation = OPERATION_ALIASES[normalized_operation]
+
+    plan_text = _flatten_text(plan).lower()
+    conversation_text = _recent_conversation_text(messages).lower()
+    combined_text = f"{normalized_operation} {conversation_text} {plan_text}".strip()
+
+    if normalized_operation in SUPPORTED_OPERATIONS:
+        return normalized_operation
+
+    if any(keyword in combined_text for keyword in ("add employee", "new employee", "hire", "onboard", "staff member")):
+        return "add_employee"
+    if any(keyword in combined_text for keyword in ("remove employee", "deactivate employee", "terminate employee", "fire employee")):
+        return "remove_employee"
+    if any(keyword in combined_text for keyword in ("assign shift", "schedule ", "put ", "roster")) and any(
+        keyword in combined_text for keyword in ("shift", "schedule", "tomorrow", "today")
+    ):
+        return "assign_shift"
+    if any(keyword in combined_text for keyword in ("clock in", "clock out", "punch in", "punch out")):
+        return "clock_in_out"
+    if any(keyword in combined_text for keyword in ("shift", "schedule", "who is on shift", "staffing")):
+        return "get_shifts"
+    return "list_employees"
 
 
 def _build_hr_executor(shop_id: int):
@@ -146,9 +201,11 @@ def create_hr_runnable(shop_id: int | None = None):
         temperature=0.2,
         planner_instructions=PLANNER_INSTRUCTIONS,
         supported_operations=SUPPORTED_OPERATIONS,
+        operation_aliases=OPERATION_ALIASES,
+        operation_normalizer=_normalize_hr_operation,
         executor=_build_hr_executor(shop_id),
         formatter=_format_hr_response,
     )
 
 
-__all__ = ["create_hr_runnable"]
+    __all__ = ["create_hr_runnable"]

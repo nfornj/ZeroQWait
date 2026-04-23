@@ -53,6 +53,45 @@ from redis_client import redis_client
 
 # --- Master Agent ---
 
+_SHOP_SERVICE_REQUEST_RE = re.compile(
+    r"(?:\b(?:show|list|what(?:'s|\s+is)?|which)\b.*\b(?:services?|menu|offer(?:s|ed)?|available)\b|\b(?:services?|menu)\b.*\b(?:available|offered?|have)\b)",
+    re.IGNORECASE,
+)
+
+
+def _is_shop_service_request(user_msg: str) -> bool:
+    return bool(_SHOP_SERVICE_REQUEST_RE.search(user_msg or ""))
+
+
+def _format_shop_services_response(shop_id: int, shop_name: str) -> str:
+    try:
+        services = db_interface.get_shop_services(shop_id)
+    except Exception as exc:
+        logger.warning("Failed to load services for shop %s: %s", shop_id, exc)
+        return f"I couldn't load the services for {shop_name} right now. Please try again in a moment."
+
+    active_services = [service for service in services if service.get("name")]
+    if not active_services:
+        return f"I couldn't find any active services listed for {shop_name} right now."
+
+    lines = [f"{shop_name} currently offers:"]
+    for service in active_services[:8]:
+        details = []
+        cost = service.get("cost")
+        duration = service.get("duration_minutes")
+        if isinstance(cost, (int, float)):
+            details.append(f"${float(cost):.2f}")
+        if isinstance(duration, (int, float)) and duration > 0:
+            details.append(f"{int(duration)} min")
+
+        suffix = f" ({' • '.join(details)})" if details else ""
+        lines.append(f"- {service['name']}{suffix}")
+
+    if len(active_services) > 8:
+        lines.append(f"...and {len(active_services) - 8} more services.")
+
+    return "\n".join(lines)
+
 class MasterAgent:
     """
     Production-grade master agent.
@@ -231,10 +270,11 @@ class MasterAgent:
             has_join_signal = _is_shop_queue_join_request(user_msg)
             has_wait_signal = _is_shop_wait_request(user_msg)
             has_appointment_signal = _is_appointment_request(user_msg)
+            has_service_signal = _is_shop_service_request(user_msg)
             extracted_name, extracted_phone, extracted_service = _extract_customer_details_for_join(user_msg)
 
             # Shop landing override: avoid generic location/category search when shop is already known.
-            if shop_id and (has_join_signal or has_wait_signal or has_appointment_signal or extracted_name):
+            if shop_id and (has_join_signal or has_wait_signal or has_appointment_signal or has_service_signal or extracted_name):
                 if has_appointment_signal:
                     # Emit inline appointment booking form
                     final_text = f"Let's schedule an appointment at **{shop_name}**. Pick a date and time below:"
@@ -252,6 +292,8 @@ class MasterAgent:
                         RunContext(deps=deps, model=model, usage=None, prompt=""),
                         shop_id=int(shop_id),
                     )
+                elif has_service_signal and not (has_join_signal or extracted_name):
+                    final_text = _format_shop_services_response(int(shop_id), shop_name)
                 elif not extracted_name:
                     # Emit inline queue join form instead of text prompt
                     final_text = f"You're joining the queue for **{shop_name}**. Please provide your details below:"
@@ -778,14 +820,36 @@ class MasterAgent:
         # Check for shop context + queue join signals BEFORE calling expensive analyzer
         has_join_signal = _is_shop_queue_join_request(user_msg)
         has_wait_signal = _is_shop_wait_request(user_msg)
+        has_service_signal = _is_shop_service_request(user_msg)
+        has_appointment_signal = _is_appointment_request(user_msg)
         extracted_name, extracted_phone, extracted_service = _extract_customer_details_for_join(user_msg)
 
-        if shop_id and (has_join_signal or has_wait_signal or extracted_name):
-            if has_wait_signal:
+        if shop_id and (has_join_signal or has_wait_signal or has_service_signal or has_appointment_signal or extracted_name):
+            if has_appointment_signal:
+                intro_text = f"Let's schedule an appointment at **{shop_name}**. Pick a date and time below:"
+                async for event in _yield_sentences_with_tts(intro_text):
+                    yield event
+
+                form_event = _build_appointment_form_event(
+                    shop_id=int(shop_id),
+                    shop_name=shop_name,
+                )
+                yield f"data: {json.dumps(form_event)}\n\n"
+                yield f"data: {json.dumps({'type': 'actions', 'actions': []})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            elif has_wait_signal:
                 final_text = await get_wait_time(
                     RunContext(deps=deps, model=model, usage=None, prompt=""),
                     shop_id=int(shop_id),
                 )
+                async for event in _yield_sentences_with_tts(final_text):
+                    yield event
+                yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            elif has_service_signal and not (has_join_signal or extracted_name):
+                final_text = _format_shop_services_response(int(shop_id), shop_name)
                 async for event in _yield_sentences_with_tts(final_text):
                     yield event
                 yield f"data: {json.dumps({'type': 'actions', 'actions': deps.actions}, default=_safe_json)}\n\n"
