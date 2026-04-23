@@ -1,7 +1,4 @@
-"""
-Apply SQL migration to Supabase database
-Reads migration file and executes it using SQLAlchemy
-"""
+"""Apply a SQL migration file to the current PostgreSQL database."""
 import sys
 from pathlib import Path
 from sqlalchemy import text

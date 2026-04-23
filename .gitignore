@@ -16,6 +16,7 @@ pdm.lock
 build/
 dist/
 *.egg-info/
+*.tsbuildinfo/
 
 # IDE files
 .idea/
@@ -32,16 +33,29 @@ yarn-error.log*
 # Testing
 coverage/
 .coverage
+.coverage.*
 htmlcov/
+.pytest_cache/
+.hypothesis/
 
 # System files
 .DS_Store
 Thumbs.db
 
 # Virtual environment
+.venv/
 venv/
 env/
 .env/
+
+# Local Python and tool caches
+.mypy_cache/
+.ruff_cache/
+.tox/
+.cache/
+
+# Generated verification artifacts
+backend/verify_voice_streaming_report*.json
 
 # Docker volumes
 

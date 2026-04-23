@@ -1,170 +1,170 @@
 # ZeroQwait
 
-A universal queue management system for service providers including barbershops, salons, clinics, and more. Customers can check in online and view real-time wait times.
+ZeroQwait is an AI operations system for service businesses. The product is aimed at barbershops, salons, clinics, and similar appointment or queue-based businesses that need an AI receptionist for customers and a supervised AI operations workspace for owners.
 
-**Live at: https://zeroqwait.com** (Self-hosted on Raspberry Pi)
+The current product direction is not a generic queue SaaS. It is a vertical Agent-as-a-Service product built around a shop-specific supervisor agent, specialist agents, approval-gated actions, and real business workflows.
 
-## Features
+Live production URL: https://zeroqwait.com
 
-- Service providers can register and create their queue systems
-- Real-time queue management dashboard for shops
-- Customer check-in and live queue viewing
-- Estimated wait time calculations
-- Multi-tenant architecture supporting various service types
-- User authentication and authorization
-- Email notifications
-- Analytics and reporting
+## Product Shape
 
-## Tech Stack
+ZeroQwait currently has two primary experiences:
 
-- **Backend**: FastAPI (Python) with Uvicorn
-- **Frontend**: React (TypeScript) with Material-UI
-- **Database**: Supabase (PostgreSQL)
-- **Containerization**: Docker & Docker Compose
-- **Reverse Proxy**: Nginx with SSL/TLS
-- **Deployment**: Self-hosted on Raspberry Pi
+- Customer-facing receptionist experience
+   Customer chat, queue help, service discovery, and voice interactions on the landing page and public shop surfaces.
+- Owner-facing operations workspace
+   A supervisor agent for queue, finance, HR, and CRM workflows with streamed chat, charts, files, approvals, and feed-style operational updates.
 
-## Getting Started
+The customer-facing chat is still served by the legacy `pydantic-ai` path during migration. The owner-facing workspace is served by the LangGraph-based v2 agent stack.
+
+## Core Capabilities
+
+- AI receptionist for shop discovery, service questions, and queue or booking help
+- Owner operations chat with streamed responses and inline charts
+- Finance summaries and revenue trend visualization
+- HR and staffing actions with approval checkpoints
+- CRM integration through Odoo-backed tools
+- Voice pipeline with Whisper ASR and Qwen3-TTS
+- Multi-tenant shop isolation across agents, data, and checkpoints
+
+## Current Stack
+
+- Frontend: React 18, TypeScript, MUI 7, MUI X Chat, MUI X Charts
+- Backend: FastAPI on Python 3.12
+- Agent orchestration: LangGraph, LangChain Ollama, PostgreSQL checkpoints
+- Legacy customer chat: `pydantic-ai` transition path in `backend/agent_logic.py`
+- Database: PostgreSQL 15
+- Cache and session state: Redis 7
+- Voice: faster-whisper ASR and Qwen3-TTS (`Vivian`)
+- ERP / CRM: Odoo 17 via XML-RPC
+- Deployment: Docker Compose for local and non-prod test flows, K3s for production, GitHub Actions on a self-hosted runner
+
+## Repository Status
+
+The authoritative product and deployment story is:
+
+- Current product: AI operations system for service businesses
+- Current data layer: PostgreSQL and Redis
+- Current production deployment: K3s in the `zeroqwait` namespace
+- Current non-prod deployment: the single-stack Docker Compose test path published to `http://localhost:3000` and `http://localhost:8000`
+
+## Local Development
 
 ### Prerequisites
 
-- Docker and Docker Compose installed on your machine
-- Node.js 16+ (for local development)
-- Python 3.9+ (for local development)
+- Python 3.12
+- Node.js 18+
+- Docker and Docker Compose
+- `uv` recommended for backend dependency sync
 
-### Local Development
+### Recommended Setup
 
-1. Clone this repository:
+1. Clone the repo.
+
 ```bash
 git clone <your-repo-url>
 cd FastCuts
 ```
 
-2. Set up backend environment:
+2. Set up the backend environment.
+
 ```bash
 cd backend
-cp .env.example .env  # Edit with your configuration
-pdm install  # Or: pip install -r requirements.txt
+uv sync --dev
 ```
 
-3. Set up frontend environment:
+Ensure `backend/.env` exists before starting the backend. If you do not already have one, create it with the database, Redis, Ollama, TTS, MCP, and frontend URL settings used by your local environment.
+
+3. Set up the frontend.
+
 ```bash
-cd frontend
+cd ../frontend
 npm install
 ```
 
-4. Run with Docker Compose:
+4. Start the local supporting stack.
+
 ```bash
-docker-compose up
+cd ..
+docker compose up -d db redis booking-mcp finance-mcp hr-mcp odoo
 ```
 
-5. Access the application:
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8000
-   - API Documentation: http://localhost:8000/docs
-
-### Production Deployment (Raspberry Pi)
-
-For deploying to Raspberry Pi, see **[RASPBERRY_PI_DEPLOYMENT.md](RASPBERRY_PI_DEPLOYMENT.md)** for comprehensive instructions.
-
-Quick deployment:
-```bash
-# From your local machine
-./deploy-pi.sh
-```
-
-## Project Structure
-
-```
-ZeroQwait/
-├── backend/                      # FastAPI application
-│   ├── routers/                  # API route handlers
-│   ├── models.py                 # Database models
-│   ├── schemas.py                # Pydantic schemas
-│   ├── auth_utils.py             # Authentication utilities
-│   ├── main.py                   # Application entry point
-│   └── Dockerfile                # Backend container config
-├── frontend/                     # React application
-│   ├── src/
-│   │   ├── components/           # Reusable UI components
-│   │   ├── pages/                # Page components
-│   │   ├── services/             # API services
-│   │   └── App.tsx               # Main app component
-│   ├── nginx.conf                # Nginx configuration
-│   └── Dockerfile                # Frontend container config
-├── docker-compose.yml            # Development environment
-├── docker-compose.prod.yml       # Production environment
-├── deploy-pi.sh                  # Deployment script
-├── RASPBERRY_PI_DEPLOYMENT.md    # Deployment guide
-└── README.md                     # This file
-```
-
-## Documentation
-
-- **[RASPBERRY_PI_DEPLOYMENT.md](RASPBERRY_PI_DEPLOYMENT.md)** - Complete Raspberry Pi deployment guide
-- **[WARP.md](WARP.md)** - Development guidelines for AI assistants
-
-## Development Workflow
-
-### Backend Development
+5. Start the backend and frontend in source mode.
 
 ```bash
 cd backend
-pdm run start  # Start with auto-reload
-pdm run test   # Run tests
-pdm run lint   # Run linter
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
-
-### Frontend Development
 
 ```bash
 cd frontend
-npm start      # Start development server
-npm test       # Run tests
-npm run build  # Build for production
+REACT_APP_API_URL=http://localhost:8000/api npm start
 ```
 
-## API Endpoints
+6. Open the app.
 
-- `GET /api/` - Health check
-- `POST /api/auth/register` - User registration
-- `POST /api/auth/login` - User login
-- `GET /api/shops` - List all shops
-- `POST /api/shops` - Create new shop
-- `GET /api/queues/{shop_id}` - Get shop queue
-- `POST /api/queues/{shop_id}/join` - Join queue
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- OpenAPI docs: http://localhost:8000/docs
 
-Full API documentation: https://zeroqwait.com/docs
+### Full Non-Prod Test Deploy
 
-## Environment Variables
+The authoritative non-prod deployment path is:
 
-### Backend (.env)
-
-```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_key
-SECRET_KEY=your_secret_key_for_jwt
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_USER=your_email
-EMAIL_PASSWORD=your_app_password
-FRONTEND_URL=https://zeroqwait.com
+```bash
+bash deployment/scripts/deploy-test.sh
 ```
 
-### Frontend (.env.production)
+That script brings up the single `zeroqwait` Docker Compose stack and publishes the canonical local URLs:
 
-```env
-REACT_APP_API_URL=/api
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8000
+
+## Deployment Model
+
+- Non-`prod` branch push: GitHub Actions runs the test deployment flow through `deployment/scripts/deploy-test.sh`
+- `prod` branch push: GitHub Actions runs the production deployment flow to K3s
+- Local image versioning and registry flow: `deployment/scripts/run-local-pipeline.sh`
+
+Production runs on K3s with supporting services and manifests in `k8s-manifests/`.
+
+## Project Structure
+
+```text
+FastCuts/
+├── backend/                  FastAPI app, LangGraph agents, DB and auth modules
+├── frontend/                 React app, landing page, owner dashboard, agent inbox UI
+├── mcps/                     Booking, finance, HR, and voice MCP services
+├── deployment/               Deployment scripts, local registry tooling, docs
+├── k8s-manifests/            Production K3s manifests
+├── asr_service/              Whisper ASR service
+├── tts_service/              Qwen3-TTS service
+├── voice_mcp/                Voice gateway / proxy
+├── docker-compose.yml        Local and non-prod stack definition
+└── claude.md                 Project operating context and architecture notes
 ```
 
-## Contributing
+## Documentation Map
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+- `README.md`: top-level product, stack, and development overview
+- `docs/README.md`: documentation index and current-vs-legacy guidance
+- `backend/README.md`: backend runtime and API overview
+- `deployment/docs/README.md`: current deployment model and script guide
+- `claude.md`: detailed product, architecture, and operational context used by coding agents
+
+## Key API Surfaces
+
+- Legacy customer chat: `/api/agent/master/chat` and `/api/agent/master/chat/stream`
+- Owner agent v2: `/api/v2/agent/chat`, `/api/v2/agent/chat/stream`, `/api/v2/agent/approve`
+- Voice: `/api/voice/transcribe`, `/api/voice/tts`
+- Auth: `/api/auth/token`, `/api/auth/forgot-password`, `/api/auth/reset-password`
+
+## Notes For Contributors
+
+- The backend dependency source of truth is `backend/pyproject.toml` and `backend/uv.lock`
+- The frontend runs against `/api` in containerized mode and `http://localhost:8000/api` in source-run mode
+- The owner agent stack is already live in the repo; do not document it as future work unless the note is explicitly marked as historical
 
 ## License
 
 This project is licensed under the MIT License.
-
-## Support
-
-For issues or questions, please open an issue on GitHub.

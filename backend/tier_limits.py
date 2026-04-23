@@ -1,4 +1,4 @@
-# Tier limits configuration for Nowait freemium model
+# Tier limits configuration for the ZeroQwait service-business offering
 
 TIER_LIMITS = {
     "free": {

@@ -1,5 +1,5 @@
 -- Add 'employee' role to the user_role enum
--- Run this in Supabase SQL Editor BEFORE creating shop_employees table
+-- Run this against the current PostgreSQL database before creating shop_employees
 
 -- Check if 'employee' role already exists, if not add it
 DO $$ 

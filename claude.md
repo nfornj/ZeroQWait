@@ -169,7 +169,7 @@ These three items must appear consistently across:
 | Layer                       | Technology                               | Details                                                             |
 | --------------------------- | ---------------------------------------- | ------------------------------------------------------------------- |
 | **Frontend**                | React 18 + TypeScript                    | MUI v7.3.7, react-router-dom v6, axios                              |
-| **Backend**                 | FastAPI 0.128.0 (Python 3.9+)            | Uvicorn 0.39.0, SQLAlchemy 2.0.44                                   |
+| **Backend**                 | FastAPI 0.128.0 (Python 3.12+)           | Uvicorn 0.39.0, SQLAlchemy 2.0.44                                   |
 | **Agent Framework**         | LangGraph >= 0.4 on FastAPI              | Graph-based state machines, Human-in-the-Loop breakpoints, PostgreSQL checkpoints |
 | **Agent Checkpoints**       | langgraph-checkpoint-postgres             | Persistent agent state per tenant in PostgreSQL                     |
 | **Database**                | PostgreSQL 15                            | Via K8s StatefulSet (prod DB: `fastcuts_db`, user: `fastcuts_user`) |
@@ -783,60 +783,27 @@ Implementation details:
 1. **Semantic cache `__version__` errors**: `SemanticCache.set()` and `.get()` still throw `Failed to set cache: '__version__'` because the `json.load` monkey-patch only covers model initialization, not subsequent `encode()` calls. The semantic cache effectively doesn't work, but the agent functions normally without it. Fix: extend the monkey-patch scope or upgrade sentence-transformers.
 2. **Duplicate `except` block**: `SemanticCache.set()` (around line 97-109 in `agent_logic.py`) has two `except Exception` clauses — the second is dead code.
 
-### AaaS Transition Roadmap (2026-04-10)
+### AaaS Transition Status (2026-04-23)
 
 > **Deployment policy**: All phases are validated via the single local Docker Compose deployment path (`deploy-test.yml` / `deployment/scripts/deploy-test.sh`) first. Production deployment to `zeroqwait.com` only after explicit approval.
 
-#### Phase 1: LangGraph Foundation (Current)
-- [ ] Add `langgraph`, `langgraph-checkpoint-postgres`, `langchain-ollama`, `langchain-core` to `pyproject.toml`
-- [ ] Create `backend/agents/` package: `state.py`, `checkpoints.py`
-- [ ] Implement `AgentState` TypedDict with `tenant_id`, `user_id`, message history
-- [ ] Set up `AsyncPostgresSaver` checkpoint persistence
-- [ ] Create basic Supervisor graph (classify intent → respond) — no sub-agents yet
-- [ ] Add `routers/agent_v2.py` with `/api/v2/agent/chat` and `/api/v2/agent/chat/stream`
-- [ ] Verify LangGraph ↔ Ollama integration (qwen3:14b-q4_K_M via langchain-ollama)
-- [ ] **Test**: End-to-end owner chat → Supervisor responds via LangGraph
+#### Implemented Or In Progress
+- [x] `langgraph`, `langgraph-checkpoint-postgres`, `langchain-ollama`, and `langchain-core` are part of the backend dependency set
+- [x] `backend/agents/` exists with shared state, supervisor, specialist graphs, checkpoint setup, and tool integrations
+- [x] Owner-facing v2 endpoints exist in `routers/agent_v2.py`
+- [x] Supervisor routing and specialist execution exist for receptionist, finance, HR, and CRM flows
+- [x] MCP-backed booking, finance, and HR service paths exist in the repo
+- [x] Owner-facing frontend chat and approval UI exist under `frontend/src/features/agent-inbox/`
 
-#### Phase 2: Sub-Agent Graphs
-- [ ] Implement Receptionist sub-agent graph (queue tools, service discovery)
-- [ ] Implement Finance sub-agent graph (analytics, revenue reports)
-- [ ] Implement HR sub-agent graph (employees, shifts, scheduling)
-- [ ] Wire Supervisor → sub-agent routing via conditional edges
-- [ ] Add `tenant_id` injection + validation (agents cannot cross tenant boundaries)
-- [ ] **Test**: Owner commands route correctly to sub-agents and return results
-
-#### Phase 3: MCP Tool Servers
-- [ ] Create `mcps/booking/server.py` — wraps `db_interface` queue/service methods
-- [ ] Create `mcps/finance/server.py` — wraps analytics/revenue methods
-- [ ] Create `mcps/hr/server.py` — wraps employee/shift methods
-- [ ] Wire sub-agent `ToolNode`s to call MCP servers instead of direct DB calls
-- [ ] Add Dockerfiles + K8s manifests for MCP pods (optional — can run in-process initially)
-- [ ] **Test**: Tool calls flow through MCP layer correctly
-
-#### Phase 4: Human-in-the-Loop Approvals
-- [ ] Define HITL action categories (queue close, schedule change, refund, etc.)
-- [ ] Add `interrupt_before` breakpoints to sub-agent graphs for high-impact actions
-- [ ] Implement `POST /api/v2/agent/approve` endpoint (resume graph from checkpoint)
-- [ ] SSE event: `{type: 'approval_required', action, details}`
-- [ ] **Test**: Agent pauses at breakpoint → owner approves → action executes
-
-#### Phase 5: Frontend Agent Inbox
-- [ ] Create `features/agent-inbox/` directory: `AgentInbox.tsx`, `AgentChat.tsx`, `AgentFeed.tsx`, `ApprovalCard.tsx`
-- [ ] Implement owner ↔ Supervisor SSE chat interface
-- [ ] Implement approval card UI (approve/reject buttons + action summary)
-- [ ] Implement chronological agent activity feed (WebSocket updates)
-- [ ] Wire into existing shop dashboard navigation
-- [ ] **Test**: Full end-to-end owner experience in test environment
-
-#### Phase 6: Migration & Cutover
-- [ ] Migrate customer-facing chat from pydantic-ai → LangGraph Receptionist (optional — can keep dual-stack)
-- [ ] Update landing page `MasterAIAgent.tsx` to use v2 endpoints
-- [ ] Performance testing: checkpoint latency, concurrent tenants, GPU utilization
-- [ ] **Production deploy** after test environment validation + explicit approval
+#### Remaining High-Priority Work
+- [ ] Tighten validation and observability for agent routing, approvals, and health checks
+- [ ] Continue migrating customer-facing chat from the legacy path to the LangGraph receptionist when ready
+- [ ] Improve deployment reproducibility and runtime verification for local and production paths
+- [ ] Continue performance and concurrency validation for checkpointed owner-agent workflows
 
 ### Recommended Near-Term Fixes (Carry-Over)
 1. **Fix semantic cache**: Upgrade sentence-transformers or extend monkey-patch
-2. **Reset password endpoint**: Currently returns 501 (not implemented)
+2. **Health check depth**: `agent_v2` health still includes a placeholder Ollama probe and should be upgraded to a real connectivity check
 3. **Shop subdomain routing**: Verify `*.192.168.2.134.nip.io` resolution
 
 ---
@@ -935,7 +902,7 @@ curl -sk -X POST https://zeroqwait.com/api/agent/master/chat \
 
 ## 15. Coding Conventions
 
-- **Backend**: Python 3.9+, type hints, async/await, Pydantic models for validation
+- **Backend**: Python 3.12+, type hints, async/await, Pydantic models for validation
 - **Frontend**: TypeScript strict, functional components, React hooks, MUI v7
 - **State**: React Context (AuthContext, ShopContext, ThemeContext) — no Redux
 - **API calls**: axios with interceptors (frontend), httpx (backend-to-service)
@@ -1060,7 +1027,7 @@ Use a **local Docker registry only** (no cloud image registry), persist image bl
 4. No LangChain wrappers needed — plain async Python functions only
 
 ### What is NOT in this project
-- No Supabase — database is plain SQLAlchemy + PostgreSQL
+- No managed cloud-database abstraction layer — database access is plain SQLAlchemy + PostgreSQL
 - No OpenAI — LLM is local Ollama (qwen3:14b-q4_K_M)
 - No Twenty CRM — fully removed, Odoo handles all CRM
 - No LangChain Tool/StructuredTool wrappers anywhere in agents/tools/

@@ -1,7 +1,7 @@
 # Employee Assignment Implementation Summary
 
 ## Overview
-Implemented employee assignment functionality for the queue system, allowing business owners to assign specific employees to customers or use random assignment from clocked-in employees.
+This note documents the employee-assignment feature in the service workflow. The feature lets shop staff or owners associate an in-progress customer with a specific employee, or fall back to an automatic assignment strategy.
 
 ## Files Created
 
@@ -191,20 +191,23 @@ POST /api/queues/{queue_id}/call-next?employee_id={employee_id}
 
 ## Setup Instructions
 
-### 1. Run Database Migration
-```sql
--- In Supabase SQL Editor or PostgreSQL
-\i backend/sql/add_employee_assignment.sql
+### 1. Run The Database Migration
+
+Apply the migration against the active PostgreSQL database used by the backend.
+
+```bash
+psql "$DATABASE_URL" -f backend/sql/add_employee_assignment.sql
 ```
 
-### 2. Restart Backend
+### 2. Restart The Backend
 ```bash
-# If using Docker
-docker-compose restart backend
+# If using the non-prod Compose stack
+docker compose restart backend
 
-# If running locally
+# If running locally from source
 cd backend
-pdm run start
+uv sync --dev
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### 3. Frontend is Ready
@@ -236,7 +239,7 @@ No additional setup needed. Changes are in the code.
 - **Recognition**: Customers see who is serving them
 
 ### For Customers
-- **Personal Connection**: Know who their server is
+- **Personal Connection**: Know who is serving them
 - **Trust**: See employee accountability
 - **Communication**: Can refer to employee by name
 

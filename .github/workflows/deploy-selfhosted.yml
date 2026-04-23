@@ -1,4 +1,4 @@
-name: Deploy to Raspberry Pi (Self-Hosted)
+name: Deploy on Self-Hosted Runner
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
 jobs:
   deploy:
     name: Deploy to Production
-    runs-on: self-hosted  # This runs on your Pi!
+    runs-on: self-hosted
     
     steps:
     - name: Checkout code

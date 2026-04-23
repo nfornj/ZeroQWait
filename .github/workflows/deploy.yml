@@ -1,4 +1,4 @@
-name: Deploy to Raspberry Pi
+name: Deploy to Production Host
 
 on:
   workflow_dispatch:  # Allows manual trigger from GitHub UI
@@ -12,7 +12,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
       
-    - name: Deploy to Raspberry Pi
+    - name: Deploy to Production Host
       uses: appleboy/ssh-action@v1.0.0
       with:
         host: ${{ secrets.PI_HOST }}
@@ -87,7 +87,7 @@ jobs:
     - name: Notify on success
       if: success()
       run: |
-        echo "✅ Deployment to Raspberry Pi successful!"
+        echo "✅ Deployment to production host successful!"
         echo "🌐 Site: https://zeroqwait.com"
         echo "🔌 API: https://zeroqwait.com/api"
         

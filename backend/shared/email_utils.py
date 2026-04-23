@@ -15,7 +15,7 @@ EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USER = os.getenv("EMAIL_USER", "usvisachat@gmail.com")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
-EMAIL_FROM = os.getenv("EMAIL_FROM", "NoWait <usvisachat@gmail.com>")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "ZeroQwait <usvisachat@gmail.com>")
 
 def send_password_reset_email(email: str, reset_token: str):
     """
@@ -25,7 +25,7 @@ def send_password_reset_email(email: str, reset_token: str):
     
     # Create email message
     msg = MIMEMultipart('alternative')
-    msg['Subject'] = 'Password Reset Request - NoWait'
+    msg['Subject'] = 'Password Reset Request - ZeroQwait'
     msg['From'] = EMAIL_FROM
     msg['To'] = email
     
@@ -33,7 +33,7 @@ def send_password_reset_email(email: str, reset_token: str):
     text_content = f"""
     Password Reset Request
     
-    You requested to reset your password for NoWait.
+    You requested to reset your password for ZeroQwait.
     
     Click the link below to reset your password:
     {reset_link}
@@ -48,7 +48,7 @@ def send_password_reset_email(email: str, reset_token: str):
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
         <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2 style="color: #4a90e2;">Password Reset Request</h2>
-          <p>You requested to reset your password for NoWait.</p>
+          <p>You requested to reset your password for ZeroQwait.</p>
           <p>Click the button below to reset your password:</p>
           <div style="margin: 30px 0;">
             <a href="{reset_link}" 

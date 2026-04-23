@@ -2,222 +2,113 @@
 
 ## Overview
 
-Nowait implements a **hybrid multi-tenancy model** based on subscription tiers:
+ZeroQwait currently uses an application-enforced multi-tenant model built around shop ownership, employee membership, and tenant-scoped agent execution.
 
-- **FREE Tier**: Shared database (cost-effective, multi-tenant)
-- **PREMIUM Tier**: Dedicated database (data isolation, better performance)
+The active design is:
 
-## Database Architecture
+- One PostgreSQL application database for core business data
+- Shop-scoped authorization for owner and employee operations
+- Tenant-aware LangGraph state keyed by shop and user
+- Public-response sanitization for customer-facing endpoints
 
-### Shared Database (FREE Tier)
-```
-┌─────────────────────────────────┐
-│     PostgreSQL: fastcuts        │
-├─────────────────────────────────┤
-│  users (all users)              │
-│  shops (owner_id foreign key)   │
-│  queues (shop_id foreign key)   │
-│  queue_items                    │
-└─────────────────────────────────┘
-```
+This file replaces the older subscription-tier and dedicated-database story.
 
-### Dedicated Databases (PREMIUM)
-```
-┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
-│ PostgreSQL:          │  │ PostgreSQL:          │  │ PostgreSQL:          │
-│ tenant_1             │  │ tenant_2             │  │ tenant_3             │
-├──────────────────────┤  ├──────────────────────┤  ├──────────────────────┤
-│ users (user_id=1)    │  │ users (user_id=2)    │  │ users (user_id=3)    │
-│ shops (owner_id=1)   │  │ shops (owner_id=2)   │  │ shops (owner_id=3)   │
-│ queues               │  │ queues               │  │ queues               │
-│ queue_items          │  │ queue_items          │  │ queue_items          │
-└──────────────────────┘  └──────────────────────┘  └──────────────────────┘
-```
+## Current Isolation Model
 
-## Benefits by Tier
+### Application Data
 
-### FREE Tier (Shared Database)
-✅ **Cost-effective** - One database for all users
-✅ **Simple** - No complex infrastructure
-✅ **Fast onboarding** - Instant account creation
-✅ **Adequate for small businesses**
+Core business entities live in the main PostgreSQL database and are linked through explicit ownership fields and foreign keys:
 
-### PREMIUM Tier (Dedicated Database)
-🔒 **Data Isolation** - Your data in separate database
-📊 **Better Performance** - No noisy neighbors
-🛡️ **Enhanced Security** - Physical data separation
-💾 **Custom Backups** - Individual backup schedules
-📈 **Compliance Ready** - Easier GDPR/HIPAA compliance
+- `users`
+- `shops`
+- `queues`
+- `queue_items`
+- `shop_employees`
+- `employee_shifts`
+- `conversation_history`
 
+Isolation is enforced by:
 
-## Implementation
+- `owner_id` on shops
+- `shop_id` on shop-owned records
+- employee membership checks against `shop_employees`
+- route-level permission helpers such as `check_shop_access(...)`
 
-### Key Components
+### Agent State
 
-1. **`database_manager.py`** - Multi-tenancy logic
-   - `get_database_for_user(user)` - Returns correct DB session
-   - `create_tenant_database(user_id)` - Creates dedicated DB
-   - `migrate_user_to_dedicated_database(user, session)` - Handles upgrades
+Owner-facing agent workflows add a second tenant boundary:
 
-2. **`models.py`** - Subscription tiers
-   ```python
-   class SubscriptionTier(enum.Enum):
-       FREE = "free"
-       PREMIUM = "premium"
-   ```
+- `tenant_id` is injected into `AgentState` at request entry
+- checkpoint thread IDs follow the shop-scoped pattern `tenant_{shop_id}_{user_id}`
+- tool calls inherit tenant context and execute against the correct shop scope
 
-3. **User Model** - Tracks subscription
-   ```python
-   class User(Base):
-       subscription_tier = Column(Enum(SubscriptionTier))
-       subscription_started_at = Column(DateTime)
-       subscription_expires_at = Column(DateTime)
-   ```
+### Public Surfaces
 
-### Usage in API Routes
+Customer and public endpoints use sanitized payloads so internal staffing or owner-only data is not leaked outside authenticated owner or employee flows.
 
-```python
-from database_manager import get_database_for_user
-from auth_utils import get_current_user
+## Runtime Components
 
-@router.get("/shops/my-shops")
-def get_my_shops(current_user: User = Depends(get_current_user)):
-    # Automatically routes to correct database
-    db = get_database_for_user(current_user)
-    shops = db.query(Shop).filter(Shop.owner_id == current_user.id).all()
-    db.close()
-    return shops
-```
+### Backend Request Layer
 
-## Upgrade Flow
+- JWT authentication establishes the current user
+- route dependencies enforce required or optional auth
+- permission helpers determine shop ownership or employee access
 
-When a user upgrades from FREE to PREMIUM:
+### Data Layer
 
-1. **User purchases** PREMIUM subscription
-2. **System creates** dedicated database: `tenant_{user_id}`
-3. **Migration runs** - Copies all data:
-   - User record
-   - Shops owned by user
-   - All queues and queue items
-   - Custom branding/settings
-4. **Switch happens** - Future requests use new database
-5. **Old data** - Can be archived/deleted from shared DB
+- SQLAlchemy sessions connect to the current PostgreSQL database
+- `db_interface.py` provides domain-level access patterns used by routes and agent tools
+- Redis is used for cache and transient state, not as the source of tenant truth
 
-### Migration Function
+### Agent Layer
 
-```python
-def migrate_user_to_dedicated_database(user: User, old_session: Session) -> bool:
-    # 1. Create tenant database
-    create_tenant_database(user.id)
-    
-    # 2. Copy all user's data
-    # - User record
-    # - Shops
-    # - Queues
-    # - Queue items
-    
-    # 3. Commit to new database
-    new_session.commit()
-    
-    return True
-```
+- LangGraph owner-agent flows run under shop-scoped context
+- checkpoints are persisted in PostgreSQL
+- approval-gated actions pause before high-impact writes
 
-## Database Naming Convention
+## Authorization Model
 
-- **Shared**: `fastcuts` (default)
-- **Tenant**: `tenant_{user_id}` (e.g., `tenant_42`, `tenant_123`)
+### Shop Owners
 
-## Security Considerations
+- can manage their own shops
+- can access owner dashboards, analytics, and agent operations
+- can add, remove, and reactivate employees for their shops
 
-1. **Row-Level Security** (Shared DB)
-   - All queries filtered by `owner_id` or `shop_id`
-   - API middleware validates ownership
+### Employees
 
-2. **Physical Separation** (Dedicated DB)
-   - Separate PostgreSQL databases
-   - No shared tables
-   - Complete isolation
+- can access only assigned shops
+- can perform employee-scoped queue and shift operations
+- cannot perform owner-only configuration or billing actions
 
-3. **Access Control**
-   - Connection pooling per tenant
-   - Credentials managed per database
-   - API keys validate tier access
+### Customers And Public Users
 
-## Performance Optimization
+- can access public discovery and queue flows where allowed
+- cannot access management endpoints or owner workspaces
 
-### Shared Database
-- Indexed foreign keys (`owner_id`, `shop_id`)
-- Connection pooling
-- Query optimization
+## What Is Not Current
 
-### Dedicated Database
-- Smaller tables = faster queries
-- Custom indexes per tenant
-- Dedicated connection pool
-- No table contention
+The following older ideas are not the active tenancy design:
 
-## Backup Strategy
+- subscription-tier-specific dedicated databases
+- per-tenant PostgreSQL database creation during upgrades
+- physical database isolation for premium plans as the default product model
 
-### Shared Database
-- Daily full backup
-- Hourly incremental
-- Point-in-time recovery
+If that architecture is revisited later, it should be documented as a new design rather than assumed from this file.
 
-### Dedicated Databases (PREMIUM)
-- Daily backups (7-day retention)
-- Custom backup schedules available
-- Export-on-demand
+## Operational Notes
 
-## Monitoring
+- Keep all owner and employee actions tied to an explicit `shop_id`
+- Prefer permission helpers over ad hoc ownership checks
+- Keep agent requests tenant-scoped from the router entry point
+- Treat shop-scoped thread IDs and checkpoint keys as part of the isolation model
 
-- **Shared DB**: Monitor total connections, query performance
-- **Dedicated DBs**: Per-tenant metrics
-  - Database size
-  - Query performance
-  - Connection count
-  - Storage usage
+## Useful References
 
-## Cost Implications
-
-| Tier | Database Cost | Est. Monthly Cost |
-|------|---------------|-------------------|
-| FREE | Shared | $0 (included) |
-| PREMIUM | Dedicated DB | ~$5-10/tenant |
-
-## Future Enhancements
-
-- [ ] Automatic tenant DB scaling
-- [ ] Self-service DB backups
-- [ ] Tenant DB health dashboard
-- [ ] Automated failover
-- [ ] Enterprise tier with database clusters (future)
-
-## Troubleshooting
-
-### User can't access their data after upgrade
-```python
-# Check which DB they're using
-from database_manager import get_database_for_user
-db = get_database_for_user(user)
-print(f"Using database: {db.bind.url}")
-```
-
-### Migration failed
-```python
-# Rollback to shared database temporarily
-user.subscription_tier = SubscriptionTier.FREE
-db.commit()
-
-# Retry migration
-migrate_user_to_dedicated_database(user, shared_db)
-```
-
-### Tenant DB not found
-```python
-# Recreate tenant database
-from database_manager import create_tenant_database
-create_tenant_database(user.id)
-```
+- `permissions.py`
+- `tenant_manager.py`
+- `routers/agent_v2.py`
+- `agents/state.py`
+- `agents/checkpoints.py`
 
 ## Best Practices
 
