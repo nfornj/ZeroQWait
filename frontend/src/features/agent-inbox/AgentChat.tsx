@@ -408,17 +408,16 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
                 },
               },
               composerInput: {
-                placeholder: "Ask your supervisor agent anything about shop operations...",
+                placeholder: "Ask about queue, team, finance, or CRM...",
                 disabled: isStreaming,
-                maxRows: 6,
               },
               composerSendButton: {
                 disabled: isStreaming || !composerValue.trim(),
               },
               composerHelperText: {
                 children: isStreaming
-                  ? "Thinking appears inline and is replaced as soon as the response lands."
-                  : "Finance charts and image/file previews appear inline here. Uploads stay off until the backend accepts inbound files.",
+                  ? "Thinking appears inline while the reply streams."
+                  : "Charts and previews appear inline.",
               },
             }}
             sx={{
@@ -491,34 +490,64 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
                 color: alpha(muiTheme.palette.text.secondary, 0.9),
               },
               [`& .${chatComposerClasses.root}`]: {
-                borderTop: "1px solid",
-                borderColor: alpha(brandPrimary, 0.12),
-                px: { xs: 1.25, md: 1.5 },
-                py: 1.5,
+                position: "sticky",
+                bottom: 0,
+                minHeight: "unset",
+                mx: { xs: 0.75, md: 1 },
+                mb: { xs: 0.75, md: 1 },
+                mt: 0.75,
+                px: { xs: 0.75, md: 1 },
+                py: { xs: 0.75, md: 0.9 },
+                border: "1px solid",
+                borderColor:
+                  muiTheme.palette.mode === "dark"
+                    ? alpha(brandPrimary, 0.2)
+                    : alpha(brandPrimary, 0.16),
+                borderRadius: "28px",
                 bgcolor:
                   muiTheme.palette.mode === "dark"
-                    ? alpha(muiTheme.palette.common.black, 0.08)
-                    : alpha(muiTheme.palette.common.white, 0.75),
+                    ? alpha(muiTheme.palette.common.black, 0.22)
+                    : alpha(muiTheme.palette.common.white, 0.62),
+                backdropFilter: "blur(18px)",
+                alignItems: "stretch",
+                boxShadow:
+                  muiTheme.palette.mode === "dark"
+                    ? `0 18px 36px ${alpha(muiTheme.palette.common.black, 0.22)}`
+                    : `0 14px 32px ${alpha(brandPrimary, 0.1)}`,
               },
               [`& .${chatComposerClasses.textArea}`]: {
-                borderRadius: "24px",
-                borderColor: `${brandPrimary}55`,
+                flex: 1,
+                alignSelf: "stretch",
+                borderRadius: "22px",
+                borderColor: alpha(brandPrimary, 0.18),
                 bgcolor:
                   muiTheme.palette.mode === "dark"
-                    ? alpha(muiTheme.palette.common.white, 0.04)
-                    : alpha(muiTheme.palette.common.white, 0.88),
+                    ? alpha(muiTheme.palette.common.white, 0.03)
+                    : alpha(muiTheme.palette.common.white, 0.44),
+                backdropFilter: "blur(10px)",
+                minHeight: 88,
+                [`& textarea`]: {
+                  minHeight: 88,
+                  boxSizing: "border-box",
+                  paddingTop: 14,
+                  paddingBottom: 14,
+                },
                 "&:hover": {
                   borderColor: brandPrimary,
                 },
                 "&:focus-within": {
                   borderColor: brandPrimary,
-                  boxShadow: `0 0 0 3px ${alpha(brandPrimary, 0.16)}`,
+                  boxShadow: `0 0 0 3px ${alpha(brandPrimary, 0.12)}`,
                 },
               },
               [`& .${chatComposerClasses.sendButton}`]: {
                 borderRadius: 999,
                 bgcolor: brandPrimary,
                 color: userBubbleText,
+                minWidth: 40,
+                width: 40,
+                height: 40,
+                boxShadow: `0 10px 20px ${alpha(brandPrimary, 0.24)}`,
                 "&:hover": {
                   bgcolor: brandPrimary,
                   filter: "brightness(0.95)",
@@ -530,7 +559,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
               },
               [`& .${chatComposerClasses.helperText}`]: {
                 color: muiTheme.palette.text.secondary,
-                px: 0.25,
+                px: 0.5,
+                pt: 0.5,
+                fontSize: "0.75rem",
+                lineHeight: 1.35,
               },
             }}
           />
