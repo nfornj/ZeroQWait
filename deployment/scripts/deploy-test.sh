@@ -87,9 +87,9 @@ fi
 cat > "${CI_OVERRIDE_FILE}" <<'EOF'
 services:
   backend:
-		build:
-			args:
-				PREWARM_SENTENCE_TRANSFORMER: "0"
+    build:
+      args:
+        PREWARM_SENTENCE_TRANSFORMER: "0"
     volumes: []
     environment:
       - OLLAMA_URL=${SHARED_OLLAMA_URL}
