@@ -1,14 +1,20 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   alpha,
   Box,
   Card,
   CardContent,
   Chip,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   Stack,
   Typography,
   useTheme,
 } from "@mui/material";
+import CreateNewFolderRoundedIcon from "@mui/icons-material/CreateNewFolderRounded";
+import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { PieChart } from "@mui/x-charts/PieChart";
@@ -21,7 +27,6 @@ import {
 } from "@mui/x-chat";
 import type {
   ChatAdapter,
-  ChatConversation,
   ChatMessage as MuiChatMessage,
   ChatPartRendererMap,
   ChatUser,
@@ -33,7 +38,9 @@ import { useShop } from "../../contexts/ShopContext";
 interface AgentChatProps {
   messages: ChatMessage[];
   isStreaming: boolean;
+  isUploading?: boolean;
   onSend: (message: string) => Promise<void>;
+  onUpload: (files: File[]) => Promise<void>;
 }
 
 const OWNER_CONVERSATION_ID = "owner-supervisor";
@@ -175,13 +182,22 @@ const InlineThinking: React.FC<{
   </Box>
 );
 
-const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) => {
+const AgentChat: React.FC<AgentChatProps> = ({
+  messages,
+  isStreaming,
+  isUploading = false,
+  onSend,
+  onUpload,
+}) => {
   const muiTheme = useTheme();
   const { shop } = useShop();
   const [composerValue, setComposerValue] = useState("");
+  const [uploadMenuAnchor, setUploadMenuAnchor] = useState<HTMLElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
 
-  const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
-  const brandSecondary = shop?.secondary_color || brandPrimary;
+  const brandPrimary = muiTheme.palette.primary.main;
+  const brandSecondary = muiTheme.palette.secondary.main;
   const userBubbleText = muiTheme.palette.getContrastText(brandPrimary);
   const panelBorder = alpha(brandPrimary, muiTheme.palette.mode === "dark" ? 0.24 : 0.16);
 
@@ -291,28 +307,49 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
     [brandPrimary],
   );
 
-  const conversation = useMemo<ChatConversation>(
-    () => ({
-      id: OWNER_CONVERSATION_ID,
-      title: "Supervisor Chat",
-      subtitle: isStreaming ? "Streaming response" : "Owner operations workspace",
-      participants: [OWNER_USER, assistantUser],
-    }),
-    [assistantUser, isStreaming],
-  );
-
   const submit = useCallback(
     async (event?: React.FormEvent) => {
       event?.preventDefault();
 
       const trimmed = composerValue.trim();
-      if (!trimmed || isStreaming) return;
+      if (!trimmed || isStreaming || isUploading) return;
 
       setComposerValue("");
       await onSend(trimmed);
     },
-    [composerValue, isStreaming, onSend],
+    [composerValue, isStreaming, isUploading, onSend],
   );
+
+  const closeUploadMenu = useCallback(() => {
+    setUploadMenuAnchor(null);
+  }, []);
+
+  const handleUploadSelection = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const selectedFiles = Array.from(event.target.files || []);
+      event.target.value = "";
+      closeUploadMenu();
+      if (selectedFiles.length === 0 || isUploading) {
+        return;
+      }
+      await onUpload(selectedFiles);
+    },
+    [closeUploadMenu, isUploading, onUpload],
+  );
+
+  const openFilePicker = useCallback(() => {
+    closeUploadMenu();
+    fileInputRef.current?.click();
+  }, [closeUploadMenu]);
+
+  const openFolderPicker = useCallback(() => {
+    closeUploadMenu();
+    if (folderInputRef.current) {
+      folderInputRef.current.setAttribute("webkitdirectory", "");
+      folderInputRef.current.setAttribute("directory", "");
+      folderInputRef.current.click();
+    }
+  }, [closeUploadMenu]);
 
   return (
     <Card
@@ -342,12 +379,18 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
           </Typography>
           <Chip
             size="small"
-            label={isStreaming ? "Streaming" : "Ready"}
+            label={isUploading ? "Uploading" : isStreaming ? "Streaming" : "Ready"}
             sx={{
-              bgcolor: isStreaming ? "warning.main" : brandSecondary,
-              color: muiTheme.palette.getContrastText(
-                isStreaming ? muiTheme.palette.warning.main : brandSecondary,
-              ),
+              bgcolor: isUploading
+                ? alpha(brandPrimary, 0.18)
+                : isStreaming
+                  ? "warning.main"
+                  : brandSecondary,
+              color: isUploading
+                ? brandPrimary
+                : muiTheme.palette.getContrastText(
+                    isStreaming ? muiTheme.palette.warning.main : brandSecondary,
+                  ),
               fontWeight: 700,
             }}
           />
@@ -366,7 +409,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
               size="small"
               clickable
               onClick={() => setComposerValue(prompt)}
-              disabled={isStreaming}
+              disabled={isStreaming || isUploading}
               sx={{
                 borderColor: `${brandPrimary}80`,
                 color: brandPrimary,
@@ -379,11 +422,25 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
           ))}
         </Stack>
 
-        <Box sx={{ flex: 1, minHeight: 0, mb: 1.25 }}>
+        <Box sx={{ flex: 1, minHeight: 0, mb: 1.25, position: "relative" }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            hidden
+            multiple
+            accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.xml,.yml,.yaml,.tsv,text/plain,text/markdown,text/csv,application/json,text/html,text/xml,application/xml,text/yaml,application/x-yaml"
+            onChange={handleUploadSelection}
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            hidden
+            multiple
+            onChange={handleUploadSelection}
+          />
           <ChatBox
             adapter={noopChatAdapter}
             messages={chatMessages}
-            conversations={[conversation]}
             activeConversationId={OWNER_CONVERSATION_ID}
             members={[OWNER_USER, assistantUser, SYSTEM_USER]}
             currentUser={OWNER_USER}
@@ -393,14 +450,15 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
             variant="default"
             density="standard"
             features={{
-              attachments: false,
+              attachments: true,
               conversationHeader: false,
-              helperText: true,
+              helperText: false,
               suggestions: false,
               scrollToBottom: true,
             }}
             slotProps={{
               composerRoot: {
+                variant: "compact",
                 slotProps: {
                   root: {
                     onSubmit: submit,
@@ -409,15 +467,18 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
               },
               composerInput: {
                 placeholder: "Ask about queue, team, finance, or CRM...",
-                disabled: isStreaming,
+                disabled: isStreaming || isUploading,
+                maxRows: undefined,
+              },
+              composerAttachButton: {
+                disabled: isUploading,
+                onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
+                  event.preventDefault();
+                  setUploadMenuAnchor(event.currentTarget);
+                },
               },
               composerSendButton: {
-                disabled: isStreaming || !composerValue.trim(),
-              },
-              composerHelperText: {
-                children: isStreaming
-                  ? "Thinking appears inline while the reply streams."
-                  : "Charts and previews appear inline.",
+                disabled: isStreaming || isUploading || !composerValue.trim(),
               },
             }}
             sx={{
@@ -495,63 +556,92 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
                 minHeight: "unset",
                 mx: { xs: 0.5, md: 0.75 },
                 mb: { xs: 0.5, md: 0.75 },
-                mt: 0.5,
-                px: { xs: 0.5, md: 0.75 },
-                py: { xs: 0.5, md: 0.65 },
+                mt: 0.35,
+                px: 0,
+                py: 0,
                 border: "1px solid",
                 borderColor:
                   muiTheme.palette.mode === "dark"
                     ? alpha(brandPrimary, 0.2)
                     : alpha(brandPrimary, 0.16),
-                borderRadius: "24px",
+                borderRadius: "28px",
                 bgcolor:
                   muiTheme.palette.mode === "dark"
-                    ? alpha(muiTheme.palette.common.black, 0.22)
-                    : alpha(muiTheme.palette.common.white, 0.62),
-                backdropFilter: "blur(18px)",
-                alignItems: "stretch",
+                    ? alpha(muiTheme.palette.common.black, 0.24)
+                    : alpha(muiTheme.palette.common.white, 0.72),
+                backdropFilter: "blur(22px)",
+                overflow: "hidden",
                 boxShadow:
                   muiTheme.palette.mode === "dark"
                     ? `0 18px 36px ${alpha(muiTheme.palette.common.black, 0.22)}`
                     : `0 14px 32px ${alpha(brandPrimary, 0.1)}`,
               },
+              [`& .${chatComposerClasses.variantCompact}`]: {
+                position: "relative",
+                alignItems: "flex-end",
+                flexWrap: "nowrap",
+                gap: 0.5,
+                minHeight: 82,
+                px: { xs: 1.1, md: 1.25 },
+                py: { xs: 0.55, md: 0.65 },
+              },
               [`& .${chatComposerClasses.textArea}`]: {
                 flex: 1,
                 alignSelf: "stretch",
-                borderRadius: "20px",
-                borderColor: alpha(brandPrimary, 0.18),
-                bgcolor:
-                  muiTheme.palette.mode === "dark"
-                    ? alpha(muiTheme.palette.common.white, 0.03)
-                    : alpha(muiTheme.palette.common.white, 0.44),
-                backdropFilter: "blur(10px)",
-                minHeight: 96,
-                [`& textarea`]: {
-                  minHeight: 96,
-                  boxSizing: "border-box",
-                  paddingTop: 12,
-                  paddingBottom: 12,
-                  lineHeight: 1.45,
-                },
-                "&:hover": {
-                  borderColor: brandPrimary,
-                },
-                "&:focus-within": {
-                  borderColor: brandPrimary,
-                  boxShadow: `0 0 0 3px ${alpha(brandPrimary, 0.12)}`,
+                minHeight: 68,
+                maxHeight: 220,
+                padding: "14px 8px 14px 48px",
+                border: "none",
+                backgroundColor: "transparent",
+                lineHeight: 1.45,
+                fontSize: "0.95rem",
+                "&::placeholder": {
+                  color: alpha(muiTheme.palette.text.secondary, 0.72),
                 },
               },
-              [`& .${chatComposerClasses.toolbar}`]: {
-                alignItems: "flex-end",
-                gap: 0.5,
+              [`& .${chatComposerClasses.attachButton}`]: {
+                position: "absolute",
+                left: { xs: 14, md: 16 },
+                bottom: { xs: 13, md: 14 },
+                zIndex: 1,
+                borderRadius: 999,
+                minWidth: 34,
+                width: 34,
+                height: 34,
+                marginBottom: 0,
+                border: "1px solid",
+                borderColor:
+                  muiTheme.palette.mode === "dark"
+                    ? alpha(brandPrimary, 0.3)
+                    : alpha(brandPrimary, 0.18),
+                bgcolor:
+                  muiTheme.palette.mode === "dark"
+                    ? alpha(brandPrimary, 0.14)
+                    : alpha(brandPrimary, 0.08),
+                color: brandPrimary,
+                backdropFilter: "blur(10px)",
+                boxShadow: "none",
+                "&:hover": {
+                  bgcolor:
+                    muiTheme.palette.mode === "dark"
+                      ? alpha(brandPrimary, 0.22)
+                      : alpha(brandPrimary, 0.14),
+                  color: brandPrimary,
+                },
+                "&:disabled": {
+                  color: alpha(brandPrimary, 0.56),
+                  borderColor: alpha(brandPrimary, 0.12),
+                },
               },
               [`& .${chatComposerClasses.sendButton}`]: {
                 borderRadius: 999,
                 bgcolor: brandPrimary,
                 color: userBubbleText,
-                minWidth: 40,
-                width: 40,
-                height: 40,
+                minWidth: 38,
+                width: 38,
+                height: 38,
+                marginInlineStart: 0,
+                marginBottom: 2,
                 boxShadow: `0 10px 20px ${alpha(brandPrimary, 0.24)}`,
                 "&:hover": {
                   bgcolor: brandPrimary,
@@ -562,16 +652,28 @@ const AgentChat: React.FC<AgentChatProps> = ({ messages, isStreaming, onSend }) 
                   color: alpha(userBubbleText, 0.72),
                 },
               },
-              [`& .${chatComposerClasses.helperText}`]: {
-                color: muiTheme.palette.text.secondary,
-                px: 0.5,
-                pt: 0.35,
-                pb: 0.1,
-                fontSize: "0.75rem",
-                lineHeight: 1.35,
-              },
             }}
           />
+          <Menu
+            anchorEl={uploadMenuAnchor}
+            open={Boolean(uploadMenuAnchor)}
+            onClose={closeUploadMenu}
+            anchorOrigin={{ vertical: "top", horizontal: "left" }}
+            transformOrigin={{ vertical: "bottom", horizontal: "left" }}
+          >
+            <MenuItem onClick={openFilePicker}>
+              <ListItemIcon>
+                <UploadFileRoundedIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Upload files" secondary="Text, markdown, CSV, JSON, HTML, XML, YAML" />
+            </MenuItem>
+            <MenuItem onClick={openFolderPicker}>
+              <ListItemIcon>
+                <CreateNewFolderRoundedIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Upload folder" secondary="Imports supported documents from a selected folder" />
+            </MenuItem>
+          </Menu>
         </Box>
       </CardContent>
     </Card>

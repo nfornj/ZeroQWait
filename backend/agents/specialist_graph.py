@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
 from . import approval_policy
+from .llm_factory import create_chat_model
 
 
 class SpecialistPlan(BaseModel):
@@ -33,23 +32,6 @@ class SpecialistState(TypedDict, total=False):
 Executor = Callable[[str, Dict[str, Any], Sequence[BaseMessage]], Dict[str, Any]]
 Formatter = Callable[[str, Dict[str, Any]], str]
 OperationNormalizer = Callable[[str, Dict[str, Any], Sequence[BaseMessage]], str]
-
-
-def _ollama_base_url() -> str:
-    base_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1").rstrip("/")
-    if base_url.endswith("/v1"):
-        return base_url[:-3]
-    return base_url
-
-
-def get_llm(temperature: float) -> ChatOllama:
-    return ChatOllama(
-        model=os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M"),
-        base_url=_ollama_base_url(),
-        temperature=temperature,
-        top_p=0.9,
-        num_gpu=-1,
-    )
 
 
 def _latest_user_text(messages: Sequence[BaseMessage]) -> str:
@@ -85,7 +67,7 @@ def build_specialist_runnable(
         if not messages:
             raise ValueError(f"{agent_name} planner requires at least one message")
 
-        llm = get_llm(temperature)
+        llm = create_chat_model(shop_id, temperature=temperature)
         planner_prompt = (
             f"You are the {agent_name} specialist planner for ZeroQwait. "
             "Pick exactly one supported operation and extract the arguments required to run it.\n\n"

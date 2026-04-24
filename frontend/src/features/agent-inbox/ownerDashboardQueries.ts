@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import api from "../../services/api";
-import type { AgentFeedEvent, OwnerBriefing as OwnerBriefingData, PendingApproval, ShopPolicy } from "./types";
+import type { AgentFeedEvent, OwnerBriefing as OwnerBriefingData, OwnerDocumentRecord, PendingApproval, ShopPolicy } from "./types";
 
 export interface QueueMetricsSnapshot {
   queue_length: number;
@@ -74,6 +74,7 @@ export const ownerDashboardKeys = {
   briefing: (shopId: number) => ["owner-dashboard", "briefing", shopId] as const,
   pending: (shopId: number) => ["owner-dashboard", "pending", shopId] as const,
   feed: (shopId: number) => ["owner-dashboard", "feed", shopId] as const,
+  documents: (shopId: number) => ["owner-dashboard", "documents", shopId] as const,
   policies: (shopId: number) => ["owner-dashboard", "policies", shopId] as const,
   queueMetrics: (shopId: number) => ["owner-dashboard", "queue-metrics", shopId] as const,
   queues: (shopId: number) => ["owner-dashboard", "queues", shopId] as const,
@@ -115,6 +116,18 @@ export const useOwnerFeedQuery = (shopId?: number, limit = 25) =>
         params: { shop_id: shopId, limit },
       });
       return data.events || [];
+    },
+    enabled: Boolean(shopId),
+  });
+
+export const useOwnerDocumentsQuery = (shopId?: number) =>
+  useQuery({
+    queryKey: shopId ? ownerDashboardKeys.documents(shopId) : ["owner-dashboard", "documents", "idle"],
+    queryFn: async () => {
+      const { data } = await api.get<{ documents: OwnerDocumentRecord[] }>("/v2/agent/documents", {
+        params: { shop_id: shopId },
+      });
+      return data.documents || [];
     },
     enabled: Boolean(shopId),
   });

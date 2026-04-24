@@ -32,12 +32,14 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { useShop } from "../../../contexts/ShopContext";
 import api from "../../../services/api";
 import AgentChat from "../../agent-inbox/AgentChat";
+import OwnerDocumentsPanel from "../../agent-inbox/OwnerDocumentsPanel";
 import AgentFeed from "../../agent-inbox/AgentFeed";
 import ApprovalCard from "../../agent-inbox/ApprovalCard";
 import OwnerBriefing from "../../agent-inbox/OwnerBriefing";
 import {
   ownerDashboardKeys,
   useOwnerBriefingQuery,
+  useOwnerDocumentsQuery,
   useOwnerFeedQuery,
   useOwnerOperationsSnapshot,
   useOwnerPoliciesQuery,
@@ -50,6 +52,7 @@ import type {
   ApprovalExecutionResult,
   BriefingAction,
   ChatMessage,
+  OwnerDocumentRecord,
   ThinkingStep,
   PendingApproval,
 } from "../../agent-inbox/types";
@@ -214,14 +217,18 @@ const OwnerDashboardPage: React.FC = () => {
   const [localFeedEvents, setLocalFeedEvents] = useState<AgentFeedEvent[]>([]);
   const [streamedPendingApprovals, setStreamedPendingApprovals] = useState<PendingApproval[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const [markingNotificationId, setMarkingNotificationId] = useState<number | null>(null);
+  const [actingDocumentId, setActingDocumentId] = useState<number | null>(null);
+  const [actingDocumentType, setActingDocumentType] = useState<"reindex" | "delete" | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   const briefingQuery = useOwnerBriefingQuery(shop?.id);
   const pendingQuery = usePendingApprovalsQuery(shop?.id);
   const feedQuery = useOwnerFeedQuery(shop?.id);
+  const documentsQuery = useOwnerDocumentsQuery(shop?.id);
   const policiesQuery = useOwnerPoliciesQuery(shop?.id);
   const operationsSnapshot = useOwnerOperationsSnapshot(shop?.id);
 
@@ -379,6 +386,195 @@ const OwnerDashboardPage: React.FC = () => {
       setIsMarkingAllRead(false);
     }
   }, [queryClient, shop?.id]);
+
+  const handleUploadDocuments = useCallback(
+    async (selectedFiles: File[]) => {
+      if (!shop?.id) {
+        setDashboardError("No active shop selected for document upload.");
+        return;
+      }
+      if (selectedFiles.length === 0) {
+        return;
+      }
+
+      setDashboardError(null);
+      setIsUploadingDocuments(true);
+
+      try {
+        const formData = new FormData();
+        formData.append("shop_id", String(shop.id));
+
+        selectedFiles.forEach((file) => {
+          formData.append("files", file);
+          formData.append(
+            "relative_paths",
+            ((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name),
+          );
+        });
+
+        const response = await api.post<{
+          message: string;
+          ingested_chunks: number;
+          documents: Array<{
+            id: number;
+            filename: string;
+            relative_path?: string | null;
+            chunk_count: number;
+            duplicate: boolean;
+          }>;
+        }>("/v2/agent/documents/upload", formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+
+        const uploadedCount = response.data.documents.length;
+        const duplicateCount = response.data.documents.filter((document) => document.duplicate).length;
+        const newDocumentCount = uploadedCount - duplicateCount;
+        const uploadedNames = response.data.documents
+          .slice(0, 3)
+          .map((document) => document.relative_path || document.filename)
+          .join(", ");
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: toId("msg_system"),
+            role: "system",
+            content:
+              duplicateCount > 0
+                ? `Added ${newDocumentCount} new document${newDocumentCount === 1 ? "" : "s"} to the knowledge base and skipped ${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"}. ${uploadedNames ? `Latest files: ${uploadedNames}.` : ""}`
+                : `Added ${uploadedCount} document${uploadedCount === 1 ? "" : "s"} to the knowledge base. ${uploadedNames ? `Latest files: ${uploadedNames}.` : ""}`,
+            status: "done",
+            timestamp: nowIso(),
+            agent: "system",
+          },
+        ]);
+
+        addFeedEvent({
+          type: "system",
+          title: "Knowledge base updated",
+          description: response.data.message,
+          payload: response.data.documents,
+        });
+
+        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
+      } catch (error) {
+        const detail = getErrorDetail(error, "Failed to upload documents");
+        setDashboardError(detail);
+        addFeedEvent({
+          type: "error",
+          title: "Document upload failed",
+          description: detail,
+        });
+      } finally {
+        setIsUploadingDocuments(false);
+      }
+    },
+    [addFeedEvent, queryClient, shop?.id],
+  );
+
+  const handleReindexDocument = useCallback(
+    async (document: OwnerDocumentRecord) => {
+      if (!shop?.id) return;
+
+      setDashboardError(null);
+      setActingDocumentId(document.id);
+      setActingDocumentType("reindex");
+
+      try {
+        const response = await api.post<{ message: string; indexed_chunks: number }>(
+          `/v2/agent/documents/${document.id}/reindex`,
+          { shop_id: shop.id },
+        );
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: toId("msg_system"),
+            role: "system",
+            content: response.data.message,
+            status: "done",
+            timestamp: nowIso(),
+            agent: "system",
+          },
+        ]);
+        addFeedEvent({
+          type: "system",
+          title: "Document re-indexed",
+          description: response.data.message,
+          payload: { document_id: document.id, indexed_chunks: response.data.indexed_chunks },
+        });
+
+        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
+      } catch (error) {
+        const detail = getErrorDetail(error, "Failed to re-index document");
+        setDashboardError(detail);
+        addFeedEvent({
+          type: "error",
+          title: "Document re-index failed",
+          description: detail,
+        });
+      } finally {
+        setActingDocumentId(null);
+        setActingDocumentType(null);
+      }
+    },
+    [addFeedEvent, queryClient, shop?.id],
+  );
+
+  const handleDeleteDocument = useCallback(
+    async (document: OwnerDocumentRecord) => {
+      if (!shop?.id) return;
+
+      const label = document.relative_path || document.filename;
+      if (!window.confirm(`Delete ${label} from secure storage and remove its indexed knowledge?`)) {
+        return;
+      }
+
+      setDashboardError(null);
+      setActingDocumentId(document.id);
+      setActingDocumentType("delete");
+
+      try {
+        const response = await api.delete<{ message: string }>(`/v2/agent/documents/${document.id}`, {
+          params: { shop_id: shop.id },
+        });
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: toId("msg_system"),
+            role: "system",
+            content: response.data.message,
+            status: "done",
+            timestamp: nowIso(),
+            agent: "system",
+          },
+        ]);
+        addFeedEvent({
+          type: "system",
+          title: "Document removed",
+          description: response.data.message,
+          payload: { document_id: document.id },
+        });
+
+        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
+      } catch (error) {
+        const detail = getErrorDetail(error, "Failed to delete document");
+        setDashboardError(detail);
+        addFeedEvent({
+          type: "error",
+          title: "Document delete failed",
+          description: detail,
+        });
+      } finally {
+        setActingDocumentId(null);
+        setActingDocumentType(null);
+      }
+    },
+    [addFeedEvent, queryClient, shop?.id],
+  );
 
   const handleSend = useCallback(
     async (messageText: string) => {
@@ -961,7 +1157,13 @@ const OwnerDashboardPage: React.FC = () => {
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, lg: 7.5 }}>
               <Box sx={{ minHeight: { lg: 640 } }}>
-                <AgentChat messages={messages} isStreaming={isStreaming} onSend={handleSend} />
+                <AgentChat
+                  messages={messages}
+                  isStreaming={isStreaming}
+                  isUploading={isUploadingDocuments}
+                  onSend={handleSend}
+                  onUpload={handleUploadDocuments}
+                />
               </Box>
             </Grid>
             <Grid size={{ xs: 12, lg: 4.5 }}>
@@ -988,6 +1190,15 @@ const OwnerDashboardPage: React.FC = () => {
                     </Stack>
                   </CardContent>
                 </Card>
+
+                <OwnerDocumentsPanel
+                  documents={documentsQuery.data || []}
+                  isLoading={documentsQuery.isLoading}
+                  actingDocumentId={actingDocumentId}
+                  actingType={actingDocumentType}
+                  onReindex={handleReindexDocument}
+                  onDelete={handleDeleteDocument}
+                />
 
                 <AgentFeed
                   events={displayedFeedEvents.slice(0, 8)}

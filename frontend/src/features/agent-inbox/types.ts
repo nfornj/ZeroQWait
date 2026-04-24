@@ -46,6 +46,19 @@ export interface ApprovalExecutionResult {
   [key: string]: unknown;
 }
 
+export interface OwnerDocumentRecord {
+  id: number;
+  filename: string;
+  relative_path?: string | null;
+  size_bytes: number;
+  content_type?: string | null;
+  knowledge_status: string;
+  chunk_count: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+  duplicate?: boolean;
+}
+
 export interface BriefingAlert {
   severity: "success" | "info" | "warning" | "error";
   title: string;

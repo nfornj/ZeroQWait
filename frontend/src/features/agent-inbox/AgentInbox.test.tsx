@@ -2,6 +2,7 @@ import React from "react";
 import "@testing-library/jest-dom";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import AgentInbox from "./AgentInbox";
 import api from "../../services/api";
@@ -15,6 +16,19 @@ jest.mock("../../contexts/ShopContext", () => ({
       primary_color: "#1976d2",
       secondary_color: "#00a3a3",
     },
+  }),
+}));
+
+jest.mock("../../contexts/AuthContext", () => ({
+  useAuth: () => ({
+    token: "test-owner-token",
+    user: {
+      id: 42,
+      username: "bulk-owner",
+      email: "bulk-owner@example.com",
+      role: "shop_owner",
+    },
+    isAuthenticated: true,
   }),
 }));
 
@@ -151,11 +165,23 @@ class MockWebSocket {
 }
 
 const renderInbox = () =>
-  render(
-    <ThemeProvider theme={createTheme()}>
-      <AgentInbox />
-    </ThemeProvider>
-  );
+  {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider theme={createTheme()}>
+          <AgentInbox />
+        </ThemeProvider>
+      </QueryClientProvider>
+    );
+  };
 
 describe("AgentInbox", () => {
   beforeEach(() => {

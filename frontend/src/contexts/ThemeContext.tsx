@@ -1,6 +1,8 @@
 import React, { createContext, useState, useContext, useEffect, useMemo } from 'react';
-import { ThemeProvider as MUIThemeProvider, createTheme, Theme } from '@mui/material/styles';
+import { ThemeProvider as MUIThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+
+import { createOwnerBrandTokens } from '../hooks/useOwnerBrand';
 
 // Define available themes
 export type ThemePreset = 'default' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'corporate';
@@ -104,20 +106,21 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const theme = useMemo(() => {
-        // ... (theme creation logic) ...
-        // We can inject the gradient into the theme if we want, but keeping it separate is also fine
+        const palettePrimary = themePalettes[themePreset].primary;
+        const paletteSecondary = themePalettes[themePreset].secondary;
+
         return createTheme({
-            // ... (existing theme config) ...
             palette: {
                 mode,
                 primary: {
-                    main: themePalettes[themePreset].primary,
+                    main: palettePrimary,
                 },
                 secondary: {
-                    main: themePalettes[themePreset].secondary,
+                    main: paletteSecondary,
                 },
-                // ...
             },
+            ownerBrand: createOwnerBrandTokens(mode, palettePrimary, palettePrimary, paletteSecondary),
+            shape: { borderRadius: 10 },
             typography: {
                 fontFamily: appFontFamily,
                 h1: { fontWeight: 700, letterSpacing: '-0.02em' },
@@ -136,7 +139,28 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     textTransform: 'none',
                 },
             },
-            // ...
+            components: {
+                MuiCard: {
+                    defaultProps: {
+                        elevation: 0,
+                    },
+                },
+                MuiButton: {
+                    styleOverrides: {
+                        root: {
+                            textTransform: 'none',
+                            borderRadius: 10,
+                        },
+                    },
+                },
+                MuiChip: {
+                    styleOverrides: {
+                        root: {
+                            borderRadius: 8,
+                        },
+                    },
+                },
+            },
         });
     }, [mode, themePreset]); // Re-create theme only when these change
 

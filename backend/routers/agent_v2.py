@@ -28,12 +28,13 @@ Streaming (SSE):
 - [DONE] marks end of stream
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from typing import Dict, Any, cast, Optional
+from typing import Dict, Any, cast, Optional, List
 import asyncio
 import base64
 from datetime import datetime
+import hashlib
 import json
 import logging
 import os
@@ -62,7 +63,7 @@ from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_save
 from shared.auth_utils import get_current_user
 from db_interface import DatabaseInterface
 from database import SessionLocal
-from modules.agent.models import ApprovalStatus, GoalSource, GoalStatus, PolicyMode, RunStatus
+from modules.agent.models import AgentDocument, AgentMemory, ApprovalStatus, GoalSource, GoalStatus, PolicyMode, RunStatus
 from modules.agent.work_repository import AgentWorkRepository
 
 logger = logging.getLogger(__name__)
@@ -251,6 +252,37 @@ _FOLLOWUP_POOLS: Dict[Optional[str], list] = {
         "What can you help me with?",
     ],
 }
+
+_OWNER_DOCUMENT_MAX_BYTES = 2 * 1024 * 1024
+_OWNER_DOCUMENT_MAX_FILES = 25
+_OWNER_DOCUMENT_ALLOWED_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".markdown",
+    ".csv",
+    ".json",
+    ".html",
+    ".htm",
+    ".xml",
+    ".yml",
+    ".yaml",
+    ".tsv",
+}
+_OWNER_DOCUMENT_ALLOWED_MIME_TYPES = {
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "text/tab-separated-values",
+    "application/json",
+    "application/ld+json",
+    "text/html",
+    "application/xml",
+    "text/xml",
+    "application/x-yaml",
+    "text/yaml",
+}
+_OWNER_DOCUMENT_CHUNK_SIZE = 1200
+_OWNER_DOCUMENT_CHUNK_OVERLAP = 200
 
 
 def _generate_followup_suggestions(
@@ -1022,6 +1054,374 @@ def _build_memory_context(shop_id: int, user_id: int, query_text: str) -> str:
     except Exception as e:
         logger.warning("Agent memory retrieval failed (non-fatal): %s", str(e))
         return ""
+
+
+def _sanitize_document_name(raw_name: Optional[str], fallback: str = "document.txt") -> str:
+    cleaned = (raw_name or fallback).replace("\\", "/").split("/")[-1].strip()
+    return cleaned or fallback
+
+
+def _sanitize_relative_document_path(raw_path: Optional[str], fallback_name: str) -> str:
+    candidate = (raw_path or "").replace("\\", "/").strip()
+    parts = [part for part in candidate.split("/") if part and part not in {".", ".."}]
+    if not parts:
+        return fallback_name
+    return "/".join(parts)[:500]
+
+
+def _extract_owner_document_text(file_bytes: bytes, *, filename: str, content_type: str) -> str:
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail=f"{filename}: file is empty")
+
+    lowered = filename.lower()
+    extension = os.path.splitext(lowered)[1]
+    normalized_type = (content_type or "").split(";")[0].strip().lower()
+
+    if extension not in _OWNER_DOCUMENT_ALLOWED_EXTENSIONS and normalized_type not in _OWNER_DOCUMENT_ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{filename}: unsupported file type. Upload text, markdown, CSV, JSON, HTML, XML, or YAML documents."
+            ),
+        )
+
+    if b"\x00" in file_bytes[:4096]:
+        raise HTTPException(status_code=400, detail=f"{filename}: binary files are not supported yet")
+
+    for encoding in ("utf-8-sig", "utf-8", "utf-16"):
+        try:
+            text = file_bytes.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            text = ""
+    else:
+        raise HTTPException(status_code=400, detail=f"{filename}: file encoding is not supported")
+
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail=f"{filename}: no readable text content found")
+    return normalized
+
+
+def _chunk_owner_document_text(text: str) -> List[str]:
+    if len(text) <= _OWNER_DOCUMENT_CHUNK_SIZE:
+        return [text]
+
+    chunks: List[str] = []
+    step = _OWNER_DOCUMENT_CHUNK_SIZE - _OWNER_DOCUMENT_CHUNK_OVERLAP
+    for start in range(0, len(text), step):
+        chunk = text[start:start + _OWNER_DOCUMENT_CHUNK_SIZE].strip()
+        if chunk:
+            chunks.append(chunk)
+    return chunks or [text]
+
+
+def _serialize_owner_document(document: AgentDocument, *, duplicate: bool = False) -> Dict[str, Any]:
+    return {
+        "id": document.id,
+        "filename": document.filename,
+        "relative_path": document.relative_path,
+        "size_bytes": document.size_bytes,
+        "content_type": document.content_type,
+        "knowledge_status": document.knowledge_status,
+        "chunk_count": document.chunk_count,
+        "created_at": document.created_at.isoformat() if document.created_at else None,
+        "updated_at": document.updated_at.isoformat() if document.updated_at else None,
+        "duplicate": duplicate,
+    }
+
+
+def _document_memory_query(db, *, shop_id: int, document_id: int):
+    return db.query(AgentMemory).filter(
+        AgentMemory.shop_id == shop_id,
+        AgentMemory.memory_type == "document",
+        AgentMemory.memory_meta["document_id"].as_integer() == document_id,
+    )
+
+
+def _reindex_owner_document_in_session(
+    db,
+    *,
+    document: AgentDocument,
+    shop_id: int,
+) -> int:
+    extracted_text = document.extracted_text or _extract_owner_document_text(
+        document.file_blob,
+        filename=document.filename,
+        content_type=document.content_type,
+    )
+    chunks = _chunk_owner_document_text(extracted_text)
+    relative_path = document.relative_path or document.filename
+
+    _document_memory_query(db, shop_id=shop_id, document_id=document.id).delete(synchronize_session=False)
+
+    for chunk_index, chunk in enumerate(chunks, start=1):
+        db.add(
+            AgentMemory(
+                shop_id=shop_id,
+                user_id=None,
+                memory_type="document",
+                content=f"From {relative_path} (chunk {chunk_index}/{len(chunks)}): {chunk}",
+                source=relative_path,
+                importance_score=0.82,
+                memory_meta={
+                    "document_id": document.id,
+                    "filename": document.filename,
+                    "relative_path": relative_path,
+                    "chunk_index": chunk_index,
+                    "chunk_count": len(chunks),
+                    "checksum": document.checksum,
+                },
+                is_active=True,
+                created_at=datetime.utcnow(),
+            )
+        )
+
+    document.extracted_text = extracted_text
+    document.chunk_count = len(chunks)
+    document.knowledge_status = "indexed"
+    document.updated_at = datetime.utcnow()
+    db.flush()
+    return len(chunks)
+
+
+def _get_owner_document_or_404(db, *, shop_id: int, document_id: int) -> AgentDocument:
+    document = (
+        db.query(AgentDocument)
+        .filter(
+            AgentDocument.id == document_id,
+            AgentDocument.shop_id == shop_id,
+        )
+        .first()
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return document
+
+
+@router.get("/documents")
+async def list_owner_documents(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id, normalized_shop_id = _require_owner_shop_access(shop_id, current_user)
+
+    db = SessionLocal()
+    try:
+        documents = (
+            db.query(AgentDocument)
+            .filter(AgentDocument.shop_id == normalized_shop_id)
+            .order_by(AgentDocument.updated_at.desc(), AgentDocument.id.desc())
+            .all()
+        )
+        return {
+            "shop_id": normalized_shop_id,
+            "user_id": user_id,
+            "documents": [_serialize_owner_document(document) for document in documents],
+        }
+    finally:
+        db.close()
+
+
+@router.delete("/documents/{document_id}")
+async def delete_owner_document(
+    document_id: int,
+    shop_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id, normalized_shop_id = _require_owner_shop_access(shop_id, current_user)
+
+    db = SessionLocal()
+    try:
+        document = _get_owner_document_or_404(db, shop_id=normalized_shop_id, document_id=document_id)
+        deleted_chunks = _document_memory_query(db, shop_id=normalized_shop_id, document_id=document.id).delete(
+            synchronize_session=False
+        )
+        filename = document.relative_path or document.filename
+        db.delete(document)
+        db.commit()
+        return {
+            "shop_id": normalized_shop_id,
+            "user_id": user_id,
+            "document_id": document_id,
+            "deleted_memory_chunks": deleted_chunks,
+            "message": f"Removed '{filename}' from secure storage and the knowledge base.",
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Owner document delete failed")
+        raise HTTPException(status_code=500, detail=f"Failed to delete document: {exc}")
+    finally:
+        db.close()
+
+
+@router.post("/documents/{document_id}/reindex")
+async def reindex_owner_document(
+    document_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+
+    user_id, normalized_shop_id = _require_owner_shop_access(body.get("shop_id"), current_user)
+
+    db = SessionLocal()
+    try:
+        document = _get_owner_document_or_404(db, shop_id=normalized_shop_id, document_id=document_id)
+        indexed_chunks = _reindex_owner_document_in_session(
+            db,
+            document=document,
+            shop_id=normalized_shop_id,
+        )
+        db.commit()
+        db.refresh(document)
+        return {
+            "shop_id": normalized_shop_id,
+            "user_id": user_id,
+            "indexed_chunks": indexed_chunks,
+            "document": _serialize_owner_document(document),
+            "message": f"Re-indexed '{document.relative_path or document.filename}' into {indexed_chunks} knowledge chunk(s).",
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Owner document re-index failed")
+        raise HTTPException(status_code=500, detail=f"Failed to re-index document: {exc}")
+    finally:
+        db.close()
+
+
+@router.post("/documents/upload")
+async def upload_owner_documents(
+    shop_id: int = Form(...),
+    files: List[UploadFile] = File(...),
+    relative_paths: Optional[List[str]] = Form(None),
+    current_user: dict = Depends(get_current_user),
+):
+    user_id, normalized_shop_id = _require_owner_shop_access(shop_id, current_user)
+
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one file is required")
+    if len(files) > _OWNER_DOCUMENT_MAX_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"You can upload up to {_OWNER_DOCUMENT_MAX_FILES} files at once",
+        )
+    if relative_paths and len(relative_paths) != len(files):
+        raise HTTPException(status_code=400, detail="relative_paths must match the files array")
+
+    db = SessionLocal()
+    uploaded_documents: List[Dict[str, Any]] = []
+    total_chunks_created = 0
+    duplicate_count = 0
+
+    try:
+        for index, upload in enumerate(files):
+            safe_name = _sanitize_document_name(upload.filename)
+            safe_relative_path = _sanitize_relative_document_path(
+                relative_paths[index] if relative_paths else upload.filename,
+                safe_name,
+            )
+            file_bytes = await upload.read()
+            if len(file_bytes) > _OWNER_DOCUMENT_MAX_BYTES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{safe_name}: exceeds the {_OWNER_DOCUMENT_MAX_BYTES // (1024 * 1024)} MB limit",
+                )
+
+            extracted_text = _extract_owner_document_text(
+                file_bytes,
+                filename=safe_name,
+                content_type=upload.content_type or "text/plain",
+            )
+            checksum = hashlib.sha256(file_bytes).hexdigest()
+
+            existing = (
+                db.query(AgentDocument)
+                .filter(
+                    AgentDocument.shop_id == normalized_shop_id,
+                    AgentDocument.checksum == checksum,
+                )
+                .first()
+            )
+            if existing:
+                duplicate_count += 1
+                uploaded_documents.append(_serialize_owner_document(existing, duplicate=True))
+                continue
+
+            chunks = _chunk_owner_document_text(extracted_text)
+            document = AgentDocument(
+                shop_id=normalized_shop_id,
+                uploaded_by_user_id=user_id,
+                filename=safe_name,
+                relative_path=safe_relative_path,
+                content_type=(upload.content_type or "text/plain"),
+                size_bytes=len(file_bytes),
+                checksum=checksum,
+                file_blob=file_bytes,
+                extracted_text=extracted_text,
+                knowledge_status="indexed",
+                chunk_count=len(chunks),
+            )
+            db.add(document)
+            db.flush()
+
+            for chunk_index, chunk in enumerate(chunks, start=1):
+                db.add(
+                    AgentMemory(
+                        shop_id=normalized_shop_id,
+                        user_id=None,
+                        memory_type="document",
+                        content=f"From {safe_relative_path} (chunk {chunk_index}/{len(chunks)}): {chunk}",
+                        source=safe_relative_path,
+                        importance_score=0.82,
+                        memory_meta={
+                            "document_id": document.id,
+                            "filename": safe_name,
+                            "relative_path": safe_relative_path,
+                            "chunk_index": chunk_index,
+                            "chunk_count": len(chunks),
+                            "checksum": checksum,
+                        },
+                        is_active=True,
+                        created_at=datetime.utcnow(),
+                    )
+                )
+
+            uploaded_documents.append(
+                _serialize_owner_document(document)
+            )
+            total_chunks_created += len(chunks)
+
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Owner document upload failed")
+        raise HTTPException(status_code=500, detail=f"Failed to ingest uploaded documents: {exc}")
+    finally:
+        db.close()
+
+    return {
+        "shop_id": normalized_shop_id,
+        "user_id": user_id,
+        "documents": uploaded_documents,
+        "ingested_chunks": total_chunks_created,
+        "duplicate_documents": duplicate_count,
+        "message": (
+            f"Stored {len(uploaded_documents) - duplicate_count} new document(s) securely, skipped {duplicate_count} duplicate(s), and indexed {total_chunks_created} knowledge chunk(s)."
+        ),
+    }
 
 
 # ============================================================================

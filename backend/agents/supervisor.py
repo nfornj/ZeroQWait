@@ -27,7 +27,6 @@ import logging
 import re
 from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
-from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 from langgraph.types import Command, interrupt
 
@@ -36,6 +35,7 @@ from modules.agent.models import PolicyMode
 from modules.agent.work_repository import AgentWorkRepository
 
 from . import approval_policy
+from .llm_factory import create_chat_model
 from .state import AgentState
 from .tools import booking_tools, finance_tools, hr_tools
 from .memory_context import get_conversation_history, save_conversation_turn
@@ -145,25 +145,12 @@ def _classify_intent_fastpath(user_input: str) -> Optional[Tuple[str, str]]:
     return None
 
 
-# Initialize LLM (qwen3:14b-q4_K_M via Ollama)
-def get_llm():
-    """Create LLM instance for agent graphs."""
-    import os
-    ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
-    model_name = os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M")
-
-    # ChatOllama uses the native Ollama REST API (/api/chat), NOT the OpenAI-compatible
-    # /v1 endpoint. Strip the /v1 suffix when present so URLs like
-    # http://host:30002/v1 don't result in http://host:30002/v1/api/chat (404).
-    base_url = ollama_url[:-3] if ollama_url.endswith("/v1") else ollama_url
-
-    return ChatOllama(
-        model=model_name,
-        base_url=base_url,
-        temperature=0.3,  # Deterministic for tool calling
-        top_p=0.9,
-        num_gpu=-1,
-    )
+def get_llm(state: Optional[AgentState] = None, *, temperature: float = 0.3):
+    """Create the shop-aware chat model for agent graphs."""
+    shop_id = None
+    if state is not None:
+        shop_id = state.get("tenant_id")
+    return create_chat_model(shop_id, temperature=temperature)
 
 
 def _merge_metadata(state: AgentState, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -304,7 +291,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
         + "Respond with your classification."
     )
 
-    llm = get_llm()
+    llm = get_llm(state)
 
     try:
         structured_llm = llm.with_structured_output(RoutingDecision)
@@ -535,7 +522,7 @@ async def _run_crm_agent(state: AgentState) -> dict:
     except Exception as e:
         data = {"error": str(e)}
 
-    llm = get_llm()
+    llm = get_llm(state)
     history_messages = _conversation_history_messages(state)
 
     crm_system_prompt = f"""You are the CRM/ERP assistant for shop (shop_id={shop_id}).
@@ -680,7 +667,7 @@ def synthesize_response(state: AgentState) -> dict:
                 "tool_results": state.get("tool_results"),
             }
 
-    llm = get_llm()
+    llm = get_llm(state)
 
     # ── Shop-type adaptive prompt ────────────────────────────────
     shop_type_hint = ""

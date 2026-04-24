@@ -5,7 +5,7 @@ from starlette.requests import Request
 import re as _re
 import uvicorn
 from contextlib import asynccontextmanager
-from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments
+from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments, llm_settings
 from modules.auth.router import router as auth_router
 from modules.users.router import router as users_router
 from modules.shops.router import router as shops_router
@@ -209,6 +209,7 @@ app.include_router(subscriptions.router, prefix="/api/subscriptions", tags=["Sub
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(data_generation.router, prefix="/api", tags=["Data Generation"])
 app.include_router(services.router, prefix="/api", tags=["Services"])
+app.include_router(llm_settings.router, prefix="/api", tags=["LLM Settings"])
 app.include_router(agent.router, prefix="/api/agent", tags=["AI Agent"])
 app.include_router(agent_v2.router, prefix="", tags=["AI Agent v2"])
 app.include_router(registration.router, prefix="/api/agent/registration", tags=["Registration"])

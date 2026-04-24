@@ -141,7 +141,12 @@ class KnowledgeMixin:
             if memory_type:
                 query = query.filter(AgentMemory.memory_type == memory_type)
             if user_id is not None:
-                query = query.filter(AgentMemory.user_id == user_id)
+                query = query.filter(
+                    or_(
+                        AgentMemory.user_id == user_id,
+                        AgentMemory.user_id.is_(None),
+                    )
+                )
 
             items = query.order_by(
                 desc(AgentMemory.importance_score),
@@ -169,7 +174,12 @@ class KnowledgeMixin:
             if memory_type:
                 query = query.filter(AgentMemory.memory_type == memory_type)
             if user_id is not None:
-                query = query.filter(AgentMemory.user_id == user_id)
+                query = query.filter(
+                    or_(
+                        AgentMemory.user_id == user_id,
+                        AgentMemory.user_id.is_(None),
+                    )
+                )
 
             items = query.order_by(
                 desc(AgentMemory.importance_score),

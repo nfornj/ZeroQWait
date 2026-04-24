@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-    Container,
     Typography,
     Paper,
     TextField,
@@ -11,7 +10,6 @@ import {
     Avatar,
     Card,
     Grid,
-    CardActionArea,
     CardContent,
     Tabs,
     Tab,
@@ -25,10 +23,11 @@ import {
     ListItem,
     ListItemText,
     ListItemSecondaryAction,
-    Divider
+    Divider,
+    Stack,
+    Chip
 } from '@mui/material';
 import Header from '../components/Header';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -53,6 +52,19 @@ interface TabPanelProps {
     value: number;
 }
 
+interface ShopAIEnvironmentResponse {
+    shop_id: number;
+    subscription_tier: string;
+    environment_name: string;
+    environment_summary: string;
+    operating_mode: string;
+    status_label: string;
+    uses_default: boolean;
+    can_customize: boolean;
+    capabilities: string[];
+    experience_notes: string[];
+}
+
 function CustomTabPanel(props: TabPanelProps) {
     const { children, value, index, ...other } = props;
     return (
@@ -69,7 +81,7 @@ function CustomTabPanel(props: TabPanelProps) {
 
 const ShopSettingsPage: React.FC = () => {
     // Shared State
-    const { themePreset, setThemePreset, setDashboardGradient } = useThemeContext();
+    const { themePreset, setThemePreset } = useThemeContext();
     const presetTheme = THEMES.find((item) => item.id === themePreset) || THEMES[0];
     const [shop, setShop] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -98,17 +110,18 @@ const ShopSettingsPage: React.FC = () => {
     const [generateDataDialogOpen, setGenerateDataDialogOpen] = useState(false);
     const [deleteServiceConfirmId, setDeleteServiceConfirmId] = useState<number | null>(null);
 
+    // AI Settings State
+    const [llmLoading, setLlmLoading] = useState(false);
+    const [llmError, setLlmError] = useState<string | null>(null);
+    const [aiEnvironment, setAiEnvironment] = useState<ShopAIEnvironmentResponse | null>(null);
+
     // Close Days State
     const [closeDays, setCloseDays] = useState<any[]>([]);
     const [closeDaysLoading, setCloseDaysLoading] = useState(false);
     const [newCloseDate, setNewCloseDate] = useState('');
     const [newCloseReason, setNewCloseReason] = useState('');
 
-    useEffect(() => {
-        fetchShop();
-    }, []);
-
-    const fetchShop = async () => {
+    const fetchShop = useCallback(async () => {
         try {
             const response = await api.get(`/shops/my-shops`);
 
@@ -133,13 +146,18 @@ const ShopSettingsPage: React.FC = () => {
                 // Fetch related data
                 fetchServices(shopData.id);
                 fetchCloseDays(shopData.id);
+                fetchLLMSettings(shopData.id);
             }
             setLoading(false);
         } catch (err) {
             setError('Failed to load shop settings');
             setLoading(false);
         }
-    };
+    }, [presetTheme.primary, presetTheme.secondary]);
+
+    useEffect(() => {
+        fetchShop();
+    }, [fetchShop]);
 
     const fetchServices = async (shopId: number) => {
         try {
@@ -162,6 +180,19 @@ const ShopSettingsPage: React.FC = () => {
         } catch (err) {
             console.error("Failed to fetch close days", err);
             setCloseDaysLoading(false);
+        }
+    };
+
+    const fetchLLMSettings = async (shopId: number) => {
+        try {
+            setLlmLoading(true);
+            setLlmError(null);
+            const response = await api.get<ShopAIEnvironmentResponse>(`/shops/${shopId}/llm-settings`);
+            setAiEnvironment(response.data);
+        } catch (err: any) {
+            setLlmError(err.response?.data?.detail || 'Failed to load AI settings');
+        } finally {
+            setLlmLoading(false);
         }
     };
 
@@ -291,7 +322,6 @@ const ShopSettingsPage: React.FC = () => {
             ]
         }
     ];
-
     return (
         <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
             <Box sx={{ width: '100%', mb: 2 }}>
@@ -326,6 +356,7 @@ const ShopSettingsPage: React.FC = () => {
                 <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
                     <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
                         <Tab label="General Settings" />
+                        <Tab label="AI Environment" />
                         <Tab label="Services" />
                         <Tab label="Schedule & Close Days" />
                     </Tabs>
@@ -393,8 +424,99 @@ const ShopSettingsPage: React.FC = () => {
                     </Box>
                 </CustomTabPanel>
 
-                {/* TAB 2: SERVICES */}
+                {/* TAB 2: AI ENVIRONMENT */}
                 <CustomTabPanel value={tabValue} index={1}>
+                    <Box p={3}>
+                        <Grid container spacing={2}>
+                            <Grid size={{ xs: 12, md: 8 }}>
+                                <Card variant="outlined" sx={{ borderRadius: 3, mb: 2 }}>
+                                    <CardContent>
+                                        <Typography variant="h6" gutterBottom>AI Environment</Typography>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                                            Your shop runs inside a ZeroQwait-managed AI environment built for owner operations, approvals, and day-to-day assistance.
+                                        </Typography>
+
+                                        {llmError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setLlmError(null)}>{llmError}</Alert>}
+
+                                        {llmLoading ? (
+                                            <Box display="flex" justifyContent="center" py={6}>
+                                                <CircularProgress />
+                                            </Box>
+                                        ) : (
+                                            aiEnvironment && (
+                                                <Box display="flex" flexDirection="column" gap={3}>
+                                                    <Box>
+                                                        <Typography variant="h5" sx={{ fontWeight: 700, mb: 1 }}>
+                                                            {aiEnvironment.environment_name}
+                                                        </Typography>
+                                                        <Typography variant="body1" color="text.secondary">
+                                                            {aiEnvironment.environment_summary}
+                                                        </Typography>
+                                                    </Box>
+
+                                                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                                        <Chip size="small" label={aiEnvironment.status_label} color="primary" />
+                                                        <Chip size="small" label={aiEnvironment.operating_mode} variant="outlined" />
+                                                        <Chip size="small" label={`Plan: ${aiEnvironment.subscription_tier}`} variant="outlined" />
+                                                    </Stack>
+
+                                                    <Alert severity="info">
+                                                        ZeroQwait manages the underlying AI stack automatically so your team can focus on running the business, not configuring models.
+                                                    </Alert>
+
+                                                    <Box>
+                                                        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
+                                                            What Your AI Team Handles
+                                                        </Typography>
+                                                        <Stack spacing={1.5}>
+                                                            {aiEnvironment.capabilities.map((item) => (
+                                                                <Box key={item} sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                                                                    <Typography variant="body2">{item}</Typography>
+                                                                </Box>
+                                                            ))}
+                                                        </Stack>
+                                                    </Box>
+                                                </Box>
+                                            )
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, md: 4 }}>
+                                <Card variant="outlined" sx={{ borderRadius: 3, mb: 2 }}>
+                                    <CardContent>
+                                        <Typography variant="subtitle2" color="text.secondary">Environment Status</Typography>
+                                        <Typography variant="h6" sx={{ fontWeight: 700, mt: 0.5 }}>
+                                            {aiEnvironment?.uses_default ? 'Managed by ZeroQwait' : 'Managed with internal override'}
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                                            Technical model, provider, and infrastructure choices are handled centrally and are not exposed in owner settings.
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+
+                                <Card variant="outlined" sx={{ borderRadius: 3 }}>
+                                    <CardContent>
+                                        <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>How ZeroQwait Runs It</Typography>
+                                        <Stack spacing={1}>
+                                            {(aiEnvironment?.experience_notes || []).map((note) => (
+                                                <Box key={note} sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        {note}
+                                                    </Typography>
+                                                </Box>
+                                            ))}
+                                        </Stack>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                        </Grid>
+                    </Box>
+                </CustomTabPanel>
+
+                {/* TAB 3: SERVICES */}
+                <CustomTabPanel value={tabValue} index={2}>
                     <Box p={3}>
                         <Box display="flex" justifyContent="space-between" mb={2}>
                             <Typography variant="h6">Manage Services</Typography>
@@ -409,8 +531,8 @@ const ShopSettingsPage: React.FC = () => {
                     </Box>
                 </CustomTabPanel>
 
-                {/* TAB 3: SCHEDULE */}
-                <CustomTabPanel value={tabValue} index={2}>
+                {/* TAB 4: SCHEDULE */}
+                <CustomTabPanel value={tabValue} index={3}>
                     <Box p={3}>
                         <Typography variant="h6" gutterBottom>Operating Schedule</Typography>
                         <Alert severity="info" sx={{ mb: 3 }}>

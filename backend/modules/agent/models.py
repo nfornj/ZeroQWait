@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, JSON, ForeignKey, Enum as SQLEnum, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, JSON, ForeignKey, Enum as SQLEnum, UniqueConstraint, LargeBinary
 from sqlalchemy.types import UserDefinedType
 from datetime import datetime
 from database import Base
@@ -78,6 +78,42 @@ class AgentMemory(Base):
     last_accessed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AgentDocument(Base):
+    __tablename__ = "agent_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    uploaded_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    filename = Column(String, nullable=False)
+    relative_path = Column(String, nullable=True)
+    content_type = Column(String, nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    checksum = Column(String(64), nullable=False, index=True)
+    file_blob = Column(LargeBinary, nullable=False)
+    extracted_text = Column(Text, nullable=False)
+    knowledge_status = Column(String, nullable=False, default="indexed", index=True)
+    chunk_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ShopLLMConfig(Base):
+    __tablename__ = "shop_llm_configs"
+    __table_args__ = (
+        UniqueConstraint("shop_id", name="uq_shop_llm_configs_shop"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider = Column(String(32), nullable=False, default="ollama", index=True)
+    model_name = Column(String, nullable=False)
+    api_base_url = Column(String, nullable=True)
+    api_key_encrypted = Column(Text, nullable=True)
+    settings = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
 class GoalSource(str, enum.Enum):

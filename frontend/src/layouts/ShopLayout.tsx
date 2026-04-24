@@ -3,23 +3,19 @@ import { Outlet } from 'react-router-dom';
 import { Box, CssBaseline, alpha, useTheme } from '@mui/material';
 import AppNavbar from '../features/shop-dashboard/components/AppNavbar';
 import SideMenu from '../features/shop-dashboard/components/SideMenu';
-import { useShop } from '../contexts/ShopContext';
+import { useOwnerBrand } from '../hooks/useOwnerBrand';
+
+declare module '@mui/material/styles' {
+    interface Theme {
+        ownerBrand: import('../hooks/useOwnerBrand').OwnerBrandTokens;
+    }
+}
 
 const ShopLayout: React.FC = () => {
     const theme = useTheme();
-    const { shop } = useShop();
-    const brandPrimary = shop?.primary_color || theme.palette.primary.main;
-    const brandSecondary = shop?.secondary_color || shop?.primary_color || theme.palette.secondary.main;
-    const glassBg = theme.palette.mode === 'dark'
-        ? 'rgba(255,255,255,0.05)'
-        : alpha('#ffffff', 0.68);
-    const glassBgStrong = theme.palette.mode === 'dark'
-        ? 'rgba(15,18,28,0.82)'
-        : alpha('#ffffff', 0.82);
-    const glassBorder = theme.palette.mode === 'dark'
-        ? alpha(brandPrimary, 0.24)
-        : alpha(brandPrimary, 0.16);
-    const glassShadow = `0 18px 60px ${alpha(brandPrimary, theme.palette.mode === 'dark' ? 0.18 : 0.10)}`;
+    const ownerBrand = useOwnerBrand();
+    const brandPrimary = ownerBrand.primary;
+    const brandSecondary = ownerBrand.secondary;
 
     return (
         <Box
@@ -27,10 +23,10 @@ const ShopLayout: React.FC = () => {
                 display: 'flex',
                 '--owner-primary': brandPrimary,
                 '--owner-secondary': brandSecondary,
-                '--owner-glass-bg': glassBg,
-                '--owner-glass-bg-strong': glassBgStrong,
-                '--owner-glass-border': glassBorder,
-                '--owner-glass-shadow': glassShadow,
+                '--owner-glass-bg': ownerBrand.glass.bg,
+                '--owner-glass-bg-strong': ownerBrand.glass.bgStrong,
+                '--owner-glass-border': ownerBrand.glass.border,
+                '--owner-glass-shadow': ownerBrand.glass.shadow,
                 '& .MuiButton-containedPrimary': {
                     backgroundColor: 'var(--owner-primary)',
                     color: '#fff',
@@ -66,7 +62,7 @@ const ShopLayout: React.FC = () => {
                 '& .MuiSvgIcon-colorSecondary': {
                     color: 'var(--owner-secondary)',
                 },
-            } as any}
+            }}
         >
             <CssBaseline enableColorScheme />
             <SideMenu />

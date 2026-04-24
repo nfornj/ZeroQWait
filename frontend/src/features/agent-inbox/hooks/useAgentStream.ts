@@ -1,0 +1,355 @@
+import { useCallback, useEffect, useState } from "react";
+
+import {
+  buildStreamToolResultFeedEvent,
+  buildStreamToolResultInsight,
+} from "../approvalOutcome";
+import { nowIso, normalizePendingApproval, toId } from "../agentInboxShared";
+import type { AgentFeedEvent, ChatMessage, InsightItem, PendingApproval } from "../types";
+import type { ThinkingStep } from "../ThinkingSteps";
+
+const apiBaseUrl = process.env.REACT_APP_API_URL || "/api";
+
+type FeedEventInput = Omit<AgentFeedEvent, "id" | "timestamp">;
+
+interface UseAgentStreamOptions {
+  shopId?: number;
+  addFeedEvent: (event: FeedEventInput) => void;
+  addPendingApproval: (approval: PendingApproval) => void;
+  prependInsightItem: (item: InsightItem) => void;
+  refreshPendingApprovals: () => Promise<void>;
+  refreshBriefing: () => Promise<void>;
+}
+
+export const useAgentStream = ({
+  shopId,
+  addFeedEvent,
+  addPendingApproval,
+  prependInsightItem,
+  refreshPendingApprovals,
+  refreshBriefing,
+}: UseAgentStreamOptions) => {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+
+  useEffect(() => {
+    setIsStreaming(messages.some((message) => message.status === "sending" || message.status === "streaming"));
+  }, [messages]);
+
+  const appendSystemMessage = useCallback((content: string, agent?: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: toId("msg_system"),
+        role: "system",
+        content,
+        status: "done",
+        timestamp: nowIso(),
+        agent,
+      },
+    ]);
+  }, []);
+
+  const processStreamEvent = useCallback(
+    (event: Record<string, any>, assistantMessageId?: string) => {
+      const eventType = String(event.type || "");
+
+      if (eventType === "text") {
+        const content = String(event.content || "");
+        if (!assistantMessageId || !content) return;
+
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  content: `${message.content}${content}`,
+                  status: "streaming",
+                }
+              : message,
+          ),
+        );
+        return;
+      }
+
+      if (eventType === "approval_required") {
+        const approval = normalizePendingApproval((event.details || event) as Record<string, any>, shopId || 0);
+        addPendingApproval(approval);
+        addFeedEvent({
+          type: "approval_required",
+          title: "Approval required",
+          description: `Action '${approval.action}' is waiting for your decision.`,
+          payload: approval,
+        });
+        return;
+      }
+
+      if (eventType === "agent_switch") {
+        addFeedEvent({
+          type: "agent_switch",
+          title: "Agent switched",
+          description: `Supervisor delegated to ${String(event.agent || "sub-agent")}.`,
+          payload: event,
+        });
+        return;
+      }
+
+      if (eventType === "tool_call") {
+        addFeedEvent({
+          type: "tool_call",
+          title: `Tool call: ${String(event.tool || "unknown")}`,
+          description: "Tool execution started.",
+          payload: event,
+        });
+        setThinkingSteps((prev) => {
+          const completed = prev.map((step) =>
+            step.status === "active" ? { ...step, status: "completed" as const } : step,
+          );
+          return [
+            ...completed,
+            {
+              id: `tool-${String(event.tool || "unknown")}-${Date.now()}`,
+              label: `Calling ${String(event.tool || "unknown")}...`,
+              status: "active" as const,
+            },
+          ];
+        });
+        return;
+      }
+
+      if (eventType === "tool_result") {
+        const eventTimestamp = String(event.timestamp || nowIso());
+        const outcomeEvent = buildStreamToolResultFeedEvent(
+          {
+            tool: event.tool,
+            result: event.result,
+            agent: event.agent,
+          },
+          eventTimestamp,
+        );
+
+        if (outcomeEvent) {
+          addFeedEvent({
+            type: outcomeEvent.type,
+            title: outcomeEvent.title,
+            description: outcomeEvent.description,
+            payload: outcomeEvent.payload,
+          });
+        } else {
+          addFeedEvent({
+            type: "tool_result",
+            title: `Tool result: ${String(event.tool || "unknown")}`,
+            description: "Tool execution completed.",
+            payload: event,
+          });
+        }
+
+        const outcomeInsight = buildStreamToolResultInsight(
+          {
+            tool: event.tool,
+            result: event.result,
+            agent: event.agent,
+          },
+          eventTimestamp,
+        );
+        if (outcomeInsight) {
+          prependInsightItem(outcomeInsight);
+        }
+
+        setThinkingSteps((prev) =>
+          prev.map((step) =>
+            step.label === `Calling ${String(event.tool || "unknown")}...`
+              ? { ...step, status: event.error ? ("error" as const) : ("completed" as const) }
+              : step,
+          ),
+        );
+        return;
+      }
+
+      if (eventType === "chart" && event._parsed_chart) {
+        const chart = event._parsed_chart;
+        prependInsightItem({ id: chart.id, type: "chart", chart, timestamp: chart.timestamp });
+        return;
+      }
+
+      if (eventType === "file" && event._parsed_file) {
+        const file = event._parsed_file;
+        prependInsightItem({ id: file.id, type: "file", file, timestamp: file.timestamp });
+      }
+    },
+    [addFeedEvent, addPendingApproval, prependInsightItem, shopId],
+  );
+
+  const handleSend = useCallback(
+    async (messageText: string) => {
+      if (!shopId) {
+        setError("No active shop selected for agent inbox");
+        return;
+      }
+
+      setError(null);
+      setThinkingSteps([]);
+
+      const userMessage: ChatMessage = {
+        id: toId("msg_user"),
+        role: "user",
+        content: messageText,
+        status: "done",
+        timestamp: nowIso(),
+      };
+      const assistantMessageId = toId("msg_assistant");
+      const assistantPlaceholder: ChatMessage = {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "",
+        status: "streaming",
+        retryMessage: messageText,
+        timestamp: nowIso(),
+      };
+
+      setMessages((prev) => [...prev, userMessage, assistantPlaceholder]);
+      addFeedEvent({
+        type: "chat",
+        title: "Owner message sent",
+        description: messageText,
+      });
+
+      let streamEndedWithDone = false;
+
+      try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${apiBaseUrl}/v2/agent/chat/stream`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            message: messageText,
+            shop_id: shopId,
+            is_voice: false,
+          }),
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`Streaming request failed with status ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+
+            const payload = trimmed.slice(5).trim();
+            if (payload === "[DONE]") {
+              streamEndedWithDone = true;
+              setMessages((prev) =>
+                prev.map((message) =>
+                  message.id === assistantMessageId ? { ...message, status: "done" } : message,
+                ),
+              );
+              continue;
+            }
+
+            try {
+              processStreamEvent(JSON.parse(payload), assistantMessageId);
+            } catch {
+              continue;
+            }
+          }
+        }
+
+        await refreshPendingApprovals();
+        await refreshBriefing();
+      } catch (err: any) {
+        const detail = err?.message || "Failed to stream agent response";
+        setError(detail);
+        addFeedEvent({
+          type: "error",
+          title: "Chat stream failed",
+          description: detail,
+        });
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantMessageId ? { ...message, status: "error" } : message,
+          ),
+        );
+      } finally {
+        setMessages((prev) => {
+          const target = prev.find((message) => message.id === assistantMessageId);
+          if (!target) return prev;
+
+          const contentEmpty = !String(target.content || "").trim();
+          if (contentEmpty || !streamEndedWithDone) {
+            return prev.map((message) =>
+              message.id === assistantMessageId
+                ? {
+                    ...message,
+                    content: contentEmpty ? "Something went wrong — please try again." : message.content,
+                    status: "error",
+                  }
+                : message,
+            );
+          }
+
+          return prev.map((message) =>
+            message.id === assistantMessageId && message.status !== "error"
+              ? { ...message, status: "done" }
+              : message,
+          );
+        });
+      }
+    },
+    [addFeedEvent, processStreamEvent, refreshBriefing, refreshPendingApprovals, shopId],
+  );
+
+  const handleStreamEvent = useCallback(
+    (event: Record<string, any>) => {
+      processStreamEvent(event);
+      if (String(event.type || "") === "approval_required") {
+        void refreshPendingApprovals();
+      }
+    },
+    [processStreamEvent, refreshPendingApprovals],
+  );
+
+  const handleChatHistoryChange = useCallback((history: any[]) => {
+    setMessages(
+      history.map((item, index) => ({
+        id: item.id || `mirrored_${index}`,
+        role: item.role === "user" ? "user" : "assistant",
+        content: item.text || "",
+        status: item.status || "done",
+        timestamp: item.timestamp || nowIso(),
+      })),
+    );
+  }, []);
+
+  return {
+    messages,
+    setMessages,
+    isStreaming,
+    handleSend,
+    thinkingSteps,
+    error,
+    setError,
+    appendSystemMessage,
+    handleStreamEvent,
+    handleChatHistoryChange,
+  };
+};
+
+export default useAgentStream;
