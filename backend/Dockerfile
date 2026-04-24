@@ -37,7 +37,12 @@ ENV HOME=/home/appuser
 
 # Pre-warm the sentence-transformer model as appuser so the HuggingFace cache
 # lands in /home/appuser/.cache and is readable at runtime under UID 1000.
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" || true
+ARG PREWARM_SENTENCE_TRANSFORMER=1
+RUN if [ "$PREWARM_SENTENCE_TRANSFORMER" = "1" ]; then \
+        python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" || true; \
+    else \
+        echo "Skipping sentence-transformer prewarm"; \
+    fi
 
 # Expose port
 EXPOSE 8000
