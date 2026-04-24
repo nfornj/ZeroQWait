@@ -161,6 +161,25 @@ const getErrorDetail = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const STREAM_INTERRUPTED_MESSAGE = "The response stream was interrupted before completion. Partial output may be shown below.";
+const STREAM_RETRY_MESSAGE = "The response was interrupted before it finished. Please try again.";
+
+const normalizeStreamErrorDetail = (error: unknown, fallback: string) => {
+  const detail = getErrorDetail(error, fallback).trim();
+  const lowered = detail.toLowerCase();
+
+  if (
+    lowered.includes("error in input stream") ||
+    lowered.includes("failed to fetch") ||
+    lowered.includes("networkerror") ||
+    lowered.includes("body stream")
+  ) {
+    return STREAM_INTERRUPTED_MESSAGE;
+  }
+
+  return detail || fallback;
+};
+
 interface TabPanelProps {
   activeValue: string;
   value: string;
@@ -616,6 +635,9 @@ const OwnerDashboardPage: React.FC = () => {
       });
 
       let streamEndedWithDone = false;
+      let streamTerminalStatus: "completed" | "error" | null = null;
+      let streamErrorDetail: string | null = null;
+      let sawRenderableAssistantContent = false;
 
       try {
         const response = await fetch(`${apiBaseUrl}/v2/agent/chat/stream`, {
@@ -680,8 +702,50 @@ const OwnerDashboardPage: React.FC = () => {
           if (eventType === "text") {
             const content = String(eventJson.content || "");
             if (content) {
+              sawRenderableAssistantContent = true;
               applyAssistantDelta(content);
             }
+            return;
+          }
+
+          if (eventType === "stream_status") {
+            const status = String(eventJson.status || "");
+
+            if (status === "completed") {
+              streamTerminalStatus = "completed";
+              addFeedEvent({
+                type: "system",
+                title: "Stream completed",
+                description: `Supervisor response completed via ${String(eventJson.agent || "supervisor")}.`,
+                payload: eventJson,
+              });
+              return;
+            }
+
+            if (status === "error") {
+              streamTerminalStatus = "error";
+              streamErrorDetail = normalizeStreamErrorDetail(eventJson.message, STREAM_RETRY_MESSAGE);
+              setDashboardError(streamErrorDetail);
+              addFeedEvent({
+                type: "error",
+                title: "Stream error",
+                description: streamErrorDetail,
+                payload: eventJson,
+              });
+            }
+            return;
+          }
+
+          if (eventType === "error") {
+            streamTerminalStatus = "error";
+            streamErrorDetail = normalizeStreamErrorDetail(eventJson.message, STREAM_RETRY_MESSAGE);
+            setDashboardError(streamErrorDetail);
+            addFeedEvent({
+              type: "error",
+              title: "Stream error",
+              description: streamErrorDetail,
+              payload: eventJson,
+            });
             return;
           }
 
@@ -783,6 +847,7 @@ const OwnerDashboardPage: React.FC = () => {
           if (eventType === "chart") {
             const chart = parseStreamChart(eventJson);
             if (chart) {
+              sawRenderableAssistantContent = true;
               updateAssistantMessage((msg) =>
                 msg.id === assistantMessageId
                   ? {
@@ -799,6 +864,7 @@ const OwnerDashboardPage: React.FC = () => {
           if (eventType === "file") {
             const file = parseStreamFile(eventJson);
             if (file) {
+              sawRenderableAssistantContent = true;
               updateAssistantMessage((msg) =>
                 msg.id === assistantMessageId
                   ? {
@@ -834,7 +900,9 @@ const OwnerDashboardPage: React.FC = () => {
           queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop.id) }),
         ]);
       } catch (error) {
-        const detail = getErrorDetail(error, "Failed to stream agent response");
+        const detail = normalizeStreamErrorDetail(error, STREAM_RETRY_MESSAGE);
+        streamTerminalStatus = "error";
+        streamErrorDetail = streamErrorDetail || detail;
         setDashboardError(detail);
         addFeedEvent({
           type: "error",
@@ -845,18 +913,31 @@ const OwnerDashboardPage: React.FC = () => {
           prev.map((msg) => (msg.id === assistantMessageId ? { ...msg, status: "error" } : msg))
         );
       } finally {
+        if (!streamEndedWithDone && streamTerminalStatus === null) {
+          streamTerminalStatus = "error";
+          streamErrorDetail = sawRenderableAssistantContent ? STREAM_INTERRUPTED_MESSAGE : STREAM_RETRY_MESSAGE;
+          setDashboardError(streamErrorDetail);
+          addFeedEvent({
+            type: "error",
+            title: "Stream interrupted",
+            description: streamErrorDetail,
+            payload: { endedWithDone: false },
+          });
+        }
+
         setMessages((prev) => {
           const target = prev.find((msg) => msg.id === assistantMessageId);
           if (!target) return prev;
 
           const contentEmpty = !String(target.content || "").trim();
           const hasRichPayload = Boolean((target.charts && target.charts.length > 0) || (target.files && target.files.length > 0));
-          if (contentEmpty || !streamEndedWithDone) {
+
+          if (streamTerminalStatus === "error") {
             return prev.map((msg) =>
               msg.id === assistantMessageId
                 ? {
                     ...msg,
-                    content: contentEmpty && !hasRichPayload ? "Something went wrong — please try again." : msg.content,
+                    content: contentEmpty && !hasRichPayload ? (streamErrorDetail || STREAM_RETRY_MESSAGE) : msg.content,
                     status: "error",
                     thinkingComplete: true,
                   }
@@ -866,7 +947,7 @@ const OwnerDashboardPage: React.FC = () => {
 
           return prev.map((msg) =>
             msg.id === assistantMessageId
-              ? { ...msg, status: msg.status === "error" ? "error" : "done", thinkingComplete: true }
+              ? { ...msg, status: streamEndedWithDone || streamTerminalStatus === "completed" ? "done" : msg.status, thinkingComplete: true }
               : msg
           );
         });

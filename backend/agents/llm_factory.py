@@ -214,6 +214,55 @@ def load_shop_llm_config(shop_id: Optional[int]) -> ResolvedLLMConfig:
     )
 
 
+def resolve_shop_llm_environment(shop_id: Optional[int]) -> ResolvedLLMConfig:
+    """Resolve the effective shop LLM environment without decrypting secrets.
+
+    Owner settings only need environment metadata. Avoiding secret decryption here
+    prevents stale encrypted API keys from breaking the read-only settings view.
+    """
+
+    provider = normalize_provider(os.getenv("LLM_PROVIDER", "ollama"))
+    model_name = default_model_name_for_provider(provider)
+    api_base_url = default_api_base_url_for_provider(provider)
+    settings: dict[str, Any] = {}
+    subscription_tier = normalize_subscription_tier(os.getenv("DEFAULT_SUBSCRIPTION_TIER", "free"))
+
+    if shop_id:
+        db = SessionLocal()
+        try:
+            subscription_tier = _shop_subscription_tier(db, int(shop_id))
+            record = (
+                db.query(ShopLLMConfig)
+                .filter(ShopLLMConfig.shop_id == int(shop_id))
+                .first()
+            )
+            if record is not None:
+                provider = normalize_provider(record.provider)
+                model_name = record.model_name or default_model_name_for_provider(provider)
+                api_base_url = record.api_base_url or default_api_base_url_for_provider(provider)
+                settings = dict(record.settings or {})
+        finally:
+            db.close()
+
+    if not provider_allowed_for_tier(provider, subscription_tier):
+        provider = "ollama"
+        model_name = default_model_name_for_provider(provider)
+        api_base_url = _free_tier_ollama_base_url()
+        settings = {}
+
+    if provider == "ollama" and subscription_tier not in PREMIUM_SUBSCRIPTION_TIERS:
+        api_base_url = _free_tier_ollama_base_url()
+
+    return ResolvedLLMConfig(
+        provider=provider,
+        model_name=model_name,
+        api_base_url=api_base_url,
+        api_key=None,
+        settings=settings,
+        subscription_tier=subscription_tier,
+    )
+
+
 def _import_attr(module_name: str, attr_name: str):
     module = importlib.import_module(module_name)
     return getattr(module, attr_name)

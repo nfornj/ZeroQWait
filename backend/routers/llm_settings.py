@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from agents.llm_factory import (
     load_shop_llm_config,
+    resolve_shop_llm_environment,
 )
 from database import get_db
 from modules.agent.models import ShopLLMConfig
@@ -38,7 +39,7 @@ OWNER_AI_SETTINGS_LOCKED_MESSAGE = (
 
 
 def _build_response(shop_id: int, record: Optional[ShopLLMConfig]) -> ShopAIEnvironmentResponse:
-    effective = load_shop_llm_config(shop_id)
+    effective = resolve_shop_llm_environment(shop_id)
 
     runtime_uses_default = record is None
     if record is not None and record.provider:

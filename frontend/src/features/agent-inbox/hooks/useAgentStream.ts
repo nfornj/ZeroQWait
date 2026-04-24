@@ -10,6 +10,25 @@ import type { ThinkingStep } from "../ThinkingSteps";
 
 const apiBaseUrl = process.env.REACT_APP_API_URL || "/api";
 
+const STREAM_INTERRUPTED_MESSAGE = "The response stream was interrupted before completion. Partial output may be shown below.";
+const STREAM_RETRY_MESSAGE = "The response was interrupted before it finished. Please try again.";
+
+const normalizeStreamErrorDetail = (error: unknown, fallback: string) => {
+  const detail = typeof error === "string" ? error.trim() : error instanceof Error ? error.message.trim() : fallback;
+  const lowered = detail.toLowerCase();
+
+  if (
+    lowered.includes("error in input stream") ||
+    lowered.includes("failed to fetch") ||
+    lowered.includes("networkerror") ||
+    lowered.includes("body stream")
+  ) {
+    return STREAM_INTERRUPTED_MESSAGE;
+  }
+
+  return detail || fallback;
+};
+
 type FeedEventInput = Omit<AgentFeedEvent, "id" | "timestamp">;
 
 interface UseAgentStreamOptions {
@@ -217,6 +236,9 @@ export const useAgentStream = ({
       });
 
       let streamEndedWithDone = false;
+      let streamTerminalStatus: "completed" | "error" | null = null;
+      let streamErrorDetail: string | null = null;
+      let sawRenderableAssistantContent = false;
 
       try {
         const token = localStorage.getItem("token");
@@ -265,7 +287,55 @@ export const useAgentStream = ({
             }
 
             try {
-              processStreamEvent(JSON.parse(payload), assistantMessageId);
+              const event = JSON.parse(payload);
+              const eventType = String(event.type || "");
+
+              if (eventType === "stream_status") {
+                const status = String(event.status || "");
+                if (status === "completed") {
+                  streamTerminalStatus = "completed";
+                  addFeedEvent({
+                    type: "system",
+                    title: "Stream completed",
+                    description: `Supervisor response completed via ${String(event.agent || "supervisor")}.`,
+                    payload: event,
+                  });
+                } else if (status === "error") {
+                  streamTerminalStatus = "error";
+                  streamErrorDetail = normalizeStreamErrorDetail(event.message, STREAM_RETRY_MESSAGE);
+                  setError(streamErrorDetail);
+                  addFeedEvent({
+                    type: "error",
+                    title: "Stream error",
+                    description: streamErrorDetail,
+                    payload: event,
+                  });
+                }
+                continue;
+              }
+
+              if (eventType === "error") {
+                streamTerminalStatus = "error";
+                streamErrorDetail = normalizeStreamErrorDetail(event.message, STREAM_RETRY_MESSAGE);
+                setError(streamErrorDetail);
+                addFeedEvent({
+                  type: "error",
+                  title: "Stream error",
+                  description: streamErrorDetail,
+                  payload: event,
+                });
+                continue;
+              }
+
+              if (eventType === "text" && String(event.content || "")) {
+                sawRenderableAssistantContent = true;
+              }
+
+              if (eventType === "chart" || eventType === "file") {
+                sawRenderableAssistantContent = true;
+              }
+
+              processStreamEvent(event, assistantMessageId);
             } catch {
               continue;
             }
@@ -275,7 +345,9 @@ export const useAgentStream = ({
         await refreshPendingApprovals();
         await refreshBriefing();
       } catch (err: any) {
-        const detail = err?.message || "Failed to stream agent response";
+        const detail = normalizeStreamErrorDetail(err, STREAM_RETRY_MESSAGE);
+        streamTerminalStatus = "error";
+        streamErrorDetail = streamErrorDetail || detail;
         setError(detail);
         addFeedEvent({
           type: "error",
@@ -288,17 +360,29 @@ export const useAgentStream = ({
           ),
         );
       } finally {
+        if (!streamEndedWithDone && streamTerminalStatus === null) {
+          streamTerminalStatus = "error";
+          streamErrorDetail = sawRenderableAssistantContent ? STREAM_INTERRUPTED_MESSAGE : STREAM_RETRY_MESSAGE;
+          setError(streamErrorDetail);
+          addFeedEvent({
+            type: "error",
+            title: "Stream interrupted",
+            description: streamErrorDetail,
+            payload: { endedWithDone: false },
+          });
+        }
+
         setMessages((prev) => {
           const target = prev.find((message) => message.id === assistantMessageId);
           if (!target) return prev;
 
           const contentEmpty = !String(target.content || "").trim();
-          if (contentEmpty || !streamEndedWithDone) {
+          if (streamTerminalStatus === "error") {
             return prev.map((message) =>
               message.id === assistantMessageId
                 ? {
                     ...message,
-                    content: contentEmpty ? "Something went wrong — please try again." : message.content,
+                    content: contentEmpty ? (streamErrorDetail || STREAM_RETRY_MESSAGE) : message.content,
                     status: "error",
                   }
                 : message,

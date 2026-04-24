@@ -1665,6 +1665,7 @@ async def chat_stream(
     - {type: 'approval_required', action: '...', details: {...}} - HITL breakpoint
     - {type: 'actions', actions: [...]} - quick-action buttons
     - {type: 'sentence', text: '...', audio: 'base64...'} - paired TTS
+    - {type: 'stream_status', status: 'completed'|'error', ...} - terminal stream telemetry
     - [DONE] - stream complete
     
     Request body same as /chat endpoint.
@@ -1911,12 +1912,25 @@ async def chat_stream(
             if follow_ups:
                 yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': follow_ups})}\n\n"
 
+            completion_event = {
+                "type": "stream_status",
+                "status": "completed",
+                "agent": routed_agent or "supervisor",
+                "has_text": bool(final_response_text),
+                "has_tool_results": bool(final_tool_results),
+                "approval_required": approval_required,
+            }
+            yield f"data: {json.dumps(completion_event)}\n\n"
             yield "data: [DONE]\n\n"
 
         except Exception as e:
             logger.error(f"Stream error: {str(e)}", exc_info=True)
-            error_event = {"type": "error", "message": str(e)}
+            error_message = str(e) or "Unexpected stream error"
+            status_event = {"type": "stream_status", "status": "error", "message": error_message}
+            error_event = {"type": "error", "message": error_message}
+            yield f"data: {json.dumps(status_event)}\n\n"
             yield f"data: {json.dumps(error_event)}\n\n"
+            yield "data: [DONE]\n\n"
     
     return StreamingResponse(
         event_generator(),
