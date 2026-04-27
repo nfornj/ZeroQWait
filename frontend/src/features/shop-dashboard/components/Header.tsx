@@ -1,3 +1,4 @@
+// RESTYLED: Perplexity-style
 import React, { useState, useEffect } from 'react';
 import Stack from '@mui/material/Stack';
 import Box from '@mui/material/Box';
@@ -75,8 +76,8 @@ export default function Header() {
         alignItems: { xs: 'flex-start', md: 'center' },
         justifyContent: 'space-between',
         maxWidth: { sm: '100%', md: '1700px' },
-        pt: 0.5,
-        pb: 1.5,
+        pt: 0,
+        pb: 1,
       }}
       spacing={2}
     >
@@ -84,15 +85,15 @@ export default function Header() {
       <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
 
         {/* Time & Timezone Selector */}
-        <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(18px)', borderRadius: 2, px: 1, border: '1px solid', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}>
-          <Typography variant="body1" sx={{ fontWeight: 'bold', mr: 1, minWidth: 70, textAlign: 'right' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, bgcolor: 'background.paper', borderRadius: 2, px: 1, border: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="body2" sx={{ fontWeight: 600, mr: 1, minWidth: 64, textAlign: 'right' }}>
             {formattedTime}
           </Typography>
           <Button
             size="small"
             onClick={handleClick}
             endIcon={<KeyboardArrowDownIcon />}
-            sx={{ textTransform: 'none', color: 'text.secondary', minWidth: 'auto', px: 1 }}
+            sx={{ textTransform: 'none', color: 'text.secondary', minWidth: 'auto', px: 1, fontWeight: 500 }}
           >
             {shortLabel}
           </Button>

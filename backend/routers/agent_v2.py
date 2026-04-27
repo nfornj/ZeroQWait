@@ -121,6 +121,28 @@ def _extract_current_agent_from_output(out: Any) -> Optional[str]:
     return None
 
 
+def _extract_metadata_from_output(out: Any) -> Dict[str, Any]:
+    """Extract metadata from a node output — handles both plain dict and LangGraph Command."""
+    if isinstance(out, dict):
+        metadata = out.get("metadata")
+        return metadata if isinstance(metadata, dict) else {}
+    if hasattr(out, "update") and isinstance(getattr(out, "update", None), dict):
+        metadata = out.update.get("metadata")
+        return metadata if isinstance(metadata, dict) else {}
+    return {}
+
+
+def _normalize_reasoning_events(value: Any) -> list[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    events: list[Dict[str, Any]] = []
+    for item in value:
+        if isinstance(item, dict) and isinstance(item.get("text"), str) and item.get("text", "").strip():
+            events.append(item)
+    return events
+
+
 def _checkpoint_thread_id(shop_id: int, user_id: int) -> str:
     return f"tenant_{shop_id}_{user_id}"
 
@@ -1754,6 +1776,7 @@ async def chat_stream(
             routed_agent: Optional[str] = None
             final_response_text = ""
             final_tool_results: Dict[str, Any] = {}
+            final_metadata: Dict[str, Any] = {}
             pending_action: Optional[Dict[str, Any]] = None
 
             # ----------------------------------------------------------------
@@ -1780,6 +1803,10 @@ async def chat_stream(
                         if not lg_node:
                             continue
 
+                        metadata_out = _extract_metadata_from_output(out)
+                        if metadata_out:
+                            final_metadata = dict(metadata_out)
+
                         # Emit active first for visual progression.
                         start_label = _thinking_label_active(lg_node, routed_agent)
                         yield f"data: {json.dumps({'type': 'thinking_step', 'step': lg_node, 'label': start_label, 'status': 'active', 'agent': routed_agent})}\n\n"
@@ -1789,6 +1816,20 @@ async def chat_stream(
                             if ca != routed_agent:
                                 yield f"data: {json.dumps({'type': 'agent_switch', 'agent': ca})}\n\n"
                             routed_agent = ca
+
+                        if lg_node == "classify_intent":
+                            reasoning_text = metadata_out.get("routing_reasoning")
+                            if isinstance(reasoning_text, str) and reasoning_text.strip():
+                                yield f"data: {json.dumps({'type': 'reasoning', 'step': lg_node, 'id': 'supervisor_route', 'text': reasoning_text.strip(), 'agent': routed_agent or 'supervisor'})}\n\n"
+
+                        for reasoning_event in _normalize_reasoning_events(metadata_out.get("reasoning_events")):
+                            yield f"data: {json.dumps({'type': 'reasoning', 'step': lg_node, 'id': reasoning_event.get('id') or f'{lg_node}_reasoning', 'text': str(reasoning_event.get('text')).strip(), 'agent': routed_agent or metadata_out.get('execution_target') or metadata_out.get('route', {}).get('to') or 'supervisor', 'tool': reasoning_event.get('tool')})}\n\n"
+
+                        if lg_node == "execute_plan":
+                            execution_target = metadata_out.get("execution_target") or routed_agent
+                            specialist_operation = metadata_out.get("specialist_operation") or execution_target
+                            if execution_target in {"receptionist", "finance", "hr", "crm"}:
+                                yield f"data: {json.dumps({'type': 'tool_call', 'tool': specialist_operation, 'agent': execution_target, 'label': _thinking_label_active(lg_node, execution_target)})}\n\n"
 
                         # Capture final synthesized text when available.
                         if lg_node == "synthesize_response" and isinstance(out, dict):
@@ -1822,6 +1863,8 @@ async def chat_stream(
                         final_response_text = _state_last_text(state_vals)
                         if isinstance(state_vals.get("tool_results"), dict):
                             final_tool_results = state_vals.get("tool_results") or final_tool_results
+                            if isinstance(state_vals.get("metadata"), dict):
+                                final_metadata = dict(state_vals.get("metadata") or final_metadata)
                         if snapshot.next:
                             # Graph is paused at a breakpoint (approval required).
                             pending_action = _extract_pending_action(
@@ -1864,7 +1907,7 @@ async def chat_stream(
             )
 
             if isinstance(final_tool_results, dict) and final_tool_results:
-                yield f"data: {json.dumps({'type': 'tool_result', 'tool': final_tool_results.get('tool') or routed_agent or 'operation', 'result': final_tool_results, 'agent': routed_agent})}\n\n"
+                yield f"data: {json.dumps({'type': 'tool_result', 'tool': final_metadata.get('specialist_operation') or final_tool_results.get('tool') or routed_agent or 'operation', 'result': final_tool_results, 'agent': routed_agent})}\n\n"
 
             # Stream response text character-by-character.
             for char in (final_response_text or ""):
@@ -1873,29 +1916,145 @@ async def chat_stream(
             # Emit structured chart/file payloads for frontend insights panel and inline attachments.
             if routed_agent == "finance" and isinstance(final_tool_results, dict):
                 points = final_tool_results.get("points")
+                services = final_tool_results.get("services")
+                preferred_presentation = str(final_tool_results.get("preferred_presentation") or "").lower()
                 if isinstance(points, list) and points:
                     chart_points = []
+                    table_rows = []
                     for row in points[:60]:
                         try:
+                            revenue = float(row.get("revenue", 0.0) or 0.0)
+                            customers = int(row.get("customers", 0) or 0)
+                            completed_services = int(row.get("completed_services", 0) or 0)
+                            average_ticket = revenue / completed_services if completed_services else 0.0
                             chart_points.append(
                                 {
                                     "label": str(row.get("period", "")),
-                                    "value": float(row.get("revenue", 0.0) or 0.0),
+                                    "revenue": revenue,
+                                    "customers": customers,
+                                }
+                            )
+                            table_rows.append(
+                                {
+                                    "period": str(row.get("period", "")),
+                                    "revenue": revenue,
+                                    "completedServices": completed_services,
+                                    "customers": customers,
+                                    "averageTicket": average_ticket,
                                 }
                             )
                         except (TypeError, ValueError):
                             continue
 
-                    if chart_points:
+                    if table_rows and preferred_presentation == "table":
+                        table_event = {
+                            "type": "table",
+                            "title": f"Revenue by Day ({final_tool_results.get('window', 'custom').replace('_', ' ')})",
+                            "rowIdKey": "period",
+                            "columns": [
+                                {"key": "period", "label": "Date", "priority": "primary"},
+                                {
+                                    "key": "revenue",
+                                    "label": "Revenue",
+                                    "align": "right",
+                                    "priority": "primary",
+                                    "format": {"kind": "currency", "currency": "USD", "decimals": 2},
+                                },
+                                {
+                                    "key": "completedServices",
+                                    "label": "Services",
+                                    "align": "right",
+                                    "priority": "secondary",
+                                    "format": {"kind": "number", "decimals": 0},
+                                },
+                                {
+                                    "key": "customers",
+                                    "label": "Customers",
+                                    "align": "right",
+                                    "priority": "secondary",
+                                    "format": {"kind": "number", "decimals": 0},
+                                },
+                                {
+                                    "key": "averageTicket",
+                                    "label": "Avg Ticket",
+                                    "align": "right",
+                                    "priority": "secondary",
+                                    "format": {"kind": "currency", "currency": "USD", "decimals": 2},
+                                },
+                            ],
+                            "data": table_rows,
+                        }
+                        yield f"data: {json.dumps(table_event)}\n\n"
+
+                    if chart_points and preferred_presentation != "table":
+                        chart_window = str(
+                            final_tool_results.get("window_display")
+                            or final_tool_results.get("window")
+                            or "custom"
+                        ).replace("_", " ")
                         chart_event = {
                             "type": "chart",
-                            "title": f"Revenue Trend ({final_tool_results.get('window', 'custom').replace('_', ' ')})",
+                            "title": f"Revenue Trend ({chart_window})",
+                            "description": "Revenue and customers by period.",
                             "chartType": "line" if len(chart_points) > 2 else "bar",
                             "data": chart_points,
                             "xKey": "label",
-                            "yKey": "value",
+                            "series": [
+                                {"key": "revenue", "label": "Revenue"},
+                                {"key": "customers", "label": "Customers"},
+                            ],
+                            "showLegend": True,
+                            "showGrid": True,
                         }
                         yield f"data: {json.dumps(chart_event)}\n\n"
+
+                if preferred_presentation == "table" and isinstance(services, list) and services:
+                    service_rows = []
+                    for index, service in enumerate(services[:60], start=1):
+                        try:
+                            service_rows.append(
+                                {
+                                    "rank": index,
+                                    "name": str(service.get("name", "")),
+                                    "price": float(service.get("cost", 0.0) or 0.0),
+                                    "durationMinutes": int(service.get("duration_minutes", 0) or 0),
+                                }
+                            )
+                        except (TypeError, ValueError):
+                            continue
+
+                    if service_rows:
+                        table_event = {
+                            "type": "table",
+                            "title": "Services",
+                            "rowIdKey": "rank",
+                            "columns": [
+                                {
+                                    "key": "rank",
+                                    "label": "#",
+                                    "align": "right",
+                                    "priority": "secondary",
+                                    "format": {"kind": "number", "decimals": 0},
+                                },
+                                {"key": "name", "label": "Service", "priority": "primary"},
+                                {
+                                    "key": "price",
+                                    "label": "Price",
+                                    "align": "right",
+                                    "priority": "primary",
+                                    "format": {"kind": "currency", "currency": "USD", "decimals": 2},
+                                },
+                                {
+                                    "key": "durationMinutes",
+                                    "label": "Minutes",
+                                    "align": "right",
+                                    "priority": "secondary",
+                                    "format": {"kind": "number", "decimals": 0},
+                                },
+                            ],
+                            "data": service_rows,
+                        }
+                        yield f"data: {json.dumps(table_event)}\n\n"
 
                 csv_content = final_tool_results.get("csv_content")
                 if isinstance(csv_content, str) and csv_content.strip():

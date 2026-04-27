@@ -51,7 +51,7 @@ def _load_agent_v2_module():
 def _build_test_app_with_real_graph():
     agent_v2 = _load_agent_v2_module()
     saver = InMemorySaver()
-    agent_v2._SUPERVISOR_RUNNABLE = create_supervisor_runnable(checkpointer=saver)
+    setattr(agent_v2, "_SUPERVISOR_RUNNABLE", create_supervisor_runnable(checkpointer=saver))
 
     app = FastAPI()
     app.include_router(agent_v2.router)
@@ -240,6 +240,7 @@ def test_chat_route_runs_supervisor_graph_through_finance_specialist():
         patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
         patch("agents.supervisor.get_conversation_history", return_value=[]),
         patch("agents.supervisor.save_conversation_turn", return_value=None),
+        patch("agents.supervisor._classify_intent_fastpath", return_value=None),
         patch(
             "agents.supervisor.get_llm",
             return_value=_FakeLLM(
@@ -262,6 +263,7 @@ def test_chat_route_runs_supervisor_graph_through_finance_specialist():
                 )
             ),
         ),
+        patch("agents.finance._build_finance_fast_plan", return_value=None),
         patch(
             "agents.tools.finance_tools.daily_revenue",
             return_value={
@@ -435,10 +437,147 @@ def test_chat_stream_route_emits_finance_events_and_done():
     assert response.status_code == 200
     assert '"type": "agent_switch", "agent": "finance"' in body
     assert '"type": "thinking_step"' in body
+    assert '"type": "reasoning"' in body
+    assert 'Revenue question routes to finance.' in body
+    assert 'Single-day finance question.' in body
+    assert '"type": "tool_call", "tool": "daily_revenue"' in body
     assert '"type": "tool_result"' in body
     assert '"type": "suggestions"' in body
     assert '"type": "text"' in body
+    assert '"type": "stream_status", "status": "completed"' in body
     assert "[DONE]" in body
+
+
+def test_chat_stream_route_emits_finance_table_for_list_requests():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_create_chat_work_context", return_value={"goal_id": 1, "run_id": 2, "execution_mode": "interactive", "trigger_source": "chat", "event_context": {}}),
+        patch.object(agent_v2, "_finalize_chat_work_context", side_effect=lambda **kwargs: kwargs["pending_action"]),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch.object(agent_v2.db_interface, "get_shop_live_wait_metrics", return_value={}),
+        patch("agents.supervisor.get_conversation_history", return_value=[]),
+        patch("agents.supervisor.save_conversation_turn", return_value=None),
+        patch(
+            "agents.supervisor.get_llm",
+            return_value=_FakeLLM(
+                RoutingDecision(
+                    next_agent="finance",
+                    thought_process="Finance question",
+                    is_followup=False,
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.create_chat_model",
+            return_value=_FakeLLM(
+                SpecialistPlan(
+                    operation="trend_summary",
+                    arguments={"query": "give me as a list for last 10 days"},
+                    requires_clarification=False,
+                    clarification_question="",
+                    rationale="Trend request.",
+                )
+            ),
+        ),
+        patch(
+            "agents.tools.finance_tools.trend_summary",
+            return_value={
+                "window": "last_10_days",
+                "total_revenue": 835.0,
+                "completed_services": 37,
+                "best_period": "2026-04-21",
+                "best_period_revenue": 420.0,
+                "preferred_presentation": "table",
+                "points": [
+                    {"period": "2026-04-21", "revenue": 420.0, "customers": 10, "completed_services": 12},
+                    {"period": "2026-04-22", "revenue": 215.0, "customers": 7, "completed_services": 9},
+                ],
+            },
+        ),
+    ):
+        with client.stream(
+            "POST",
+            "/api/v2/agent/chat/stream",
+            json={"message": "give me as a list for last 10 days", "shop_id": 41},
+        ) as response:
+            body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert '"type": "table"' in body
+    assert '"title": "Revenue by Day (last 10 days)"' in body
+    assert '"rowIdKey": "period"' in body
+    assert '"type": "stream_status", "status": "completed"' in body
+
+
+def test_chat_stream_route_emits_multi_series_finance_chart_for_trend_requests():
+    agent_v2, client = _build_test_app_with_real_graph()
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_create_chat_work_context", return_value={"goal_id": 1, "run_id": 2, "execution_mode": "interactive", "trigger_source": "chat", "event_context": {}}),
+        patch.object(agent_v2, "_finalize_chat_work_context", side_effect=lambda **kwargs: kwargs["pending_action"]),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch.object(agent_v2.db_interface, "get_shop_live_wait_metrics", return_value={}),
+        patch("agents.supervisor.get_conversation_history", return_value=[]),
+        patch("agents.supervisor.save_conversation_turn", return_value=None),
+        patch(
+            "agents.supervisor.get_llm",
+            return_value=_FakeLLM(
+                RoutingDecision(
+                    next_agent="finance",
+                    thought_process="Finance question",
+                    is_followup=False,
+                )
+            ),
+        ),
+        patch(
+            "agents.specialist_graph.create_chat_model",
+            return_value=_FakeLLM(
+                SpecialistPlan(
+                    operation="trend_summary",
+                    arguments={"query": "show this week's revenue trend and customers"},
+                    requires_clarification=False,
+                    clarification_question="",
+                    rationale="Trend request.",
+                )
+            ),
+        ),
+        patch(
+            "agents.tools.finance_tools.trend_summary",
+            return_value={
+                "window": "this_week",
+                "total_revenue": 835.0,
+                "completed_services": 37,
+                "best_period": "2026-04-21",
+                "best_period_revenue": 420.0,
+                "points": [
+                    {"period": "2026-04-21", "revenue": 420.0, "customers": 10, "completed_services": 12},
+                    {"period": "2026-04-22", "revenue": 215.0, "customers": 7, "completed_services": 9},
+                    {"period": "2026-04-23", "revenue": 200.0, "customers": 5, "completed_services": 8},
+                ],
+            },
+        ),
+    ):
+        with client.stream(
+            "POST",
+            "/api/v2/agent/chat/stream",
+            json={"message": "show this week's revenue trend and customers", "shop_id": 41},
+        ) as response:
+            body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert '"type": "chart"' in body
+    assert '"title": "Revenue Trend (this week)"' in body
+    assert '"description": "Revenue and customers by period."' in body
+    assert '"key": "revenue"' in body
+    assert '"key": "customers"' in body
+    assert '"showLegend": true' in body
+    assert '"showGrid": true' in body
+    assert '"type": "stream_status", "status": "completed"' in body
 
 
 def test_approve_route_resumes_pending_action_from_real_interrupt():

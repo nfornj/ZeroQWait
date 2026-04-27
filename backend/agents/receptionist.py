@@ -220,6 +220,36 @@ def _build_receptionist_executor(shop_id: int):
     return executor
 
 
+def _suggest_queue_next_action(result: Dict[str, Any]) -> str:
+    items = list(result.get("queue_items") or [])
+    live_metrics = dict(result.get("live_metrics") or {})
+    queue_length = _to_int(live_metrics.get("queue_length"))
+    if queue_length is None:
+        queue_length = len(items)
+
+    waiting_count = _to_int(result.get("waiting_count"))
+    if waiting_count is None:
+        waiting_count = queue_length
+
+    serving_count = _to_int(result.get("serving_count")) or 0
+    wait_minutes = _to_int(live_metrics.get("estimated_wait_minutes"))
+    next_customer = _optional_str(result.get("next_customer"))
+
+    if queue_length <= 0:
+        return "No immediate queue action is needed. Keep the queue open and monitor for new arrivals."
+
+    if waiting_count > 0 and serving_count <= 0 and next_customer:
+        return f"Call {next_customer} next so the line starts moving again."
+
+    if wait_minutes is not None and wait_minutes >= 20 and next_customer:
+        return f"Prepare {next_customer} for the next handoff and watch capacity closely to bring the wait down."
+
+    if next_customer:
+        return f"Keep the current service moving and prepare {next_customer} as the next customer."
+
+    return "Keep the queue moving and monitor the next handoff."
+
+
 def _format_receptionist_response(operation: str, result: Dict[str, Any]) -> str:
     if result.get("error"):
         return f"I couldn't complete that receptionist task: {result['error']}"
@@ -229,12 +259,21 @@ def _format_receptionist_response(operation: str, result: Dict[str, Any]) -> str
         queue_length = live_metrics.get("queue_length", len(items))
         wait_minutes = live_metrics.get("estimated_wait_minutes")
         if not items:
-            return "There is no active queue right now."
+            return (
+                "There is no active queue right now. "
+                f"Next operational action: {_suggest_queue_next_action(result)}"
+            )
         names = [str(item.get("customer_name") or "customer") for item in items[:5]]
         names_text = ", ".join(names)
         if wait_minutes is not None:
-            return f"There are {queue_length} people waiting. Estimated wait time is about {wait_minutes} minutes. First in line: {names_text}."
-        return f"There are {queue_length} people waiting. First in line: {names_text}."
+            return (
+                f"There are {queue_length} people waiting. Estimated wait time is about {wait_minutes} minutes. "
+                f"First in line: {names_text}. Next operational action: {_suggest_queue_next_action(result)}"
+            )
+        return (
+            f"There are {queue_length} people waiting. First in line: {names_text}. "
+            f"Next operational action: {_suggest_queue_next_action(result)}"
+        )
     if operation == "get_wait_time":
         return (
             f"Estimated wait time is about {result.get('estimated_wait_minutes', 0)} minutes "

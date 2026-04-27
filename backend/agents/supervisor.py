@@ -1,3 +1,4 @@
+import time
 """
 Supervisor Agent Graph - Central router for owner commands.
 The Supervisor:
@@ -49,6 +50,15 @@ _QUEUE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:call|serve)\s+(?:the\s+)?next(?:\s+customer)?\b"),
     re.compile(r"\b(?:queue\s+status|queue\s+summary|queue\s+length|wait\s+time)\b"),
     re.compile(r"\b(?:join|leave)\s+(?:the\s+)?queue\b"),
+)
+
+_FINANCE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:revenue|sales)\b.*\b(?:trend|trends|graph|chart|over\s+time|by\s+day|by\s+date|daily\s+breakdown)\b"),
+    re.compile(r"\b(?:trend|trends|graph|chart|over\s+time|by\s+day|by\s+date|daily\s+breakdown)\b.*\b(?:revenue|sales)\b"),
+    re.compile(r"\b(?:today|today's|yesterday|yesterday's|this\s+week|last\s+week|this\s+month|last\s+month|this\s+quarter|last\s+quarter|this\s+year|last\s+year)\b.*\b(?:revenue|sales)\b"),
+    re.compile(r"\b(?:revenue|sales)\b.*\b(?:today|today's|yesterday|yesterday's|this\s+week|last\s+week|this\s+month|last\s+month|this\s+quarter|last\s+quarter|this\s+year|last\s+year)\b"),
+    re.compile(r"\b(?:weekly|monthly|quarterly|yearly)\s+(?:revenue|sales)\s+(?:summary|summaries)\b"),
+    re.compile(r"\b(?:summary|summaries)\s+of\s+(?:weekly|monthly|quarterly|yearly)\s+(?:revenue|sales)\b"),
 )
 
 
@@ -142,6 +152,10 @@ def _classify_intent_fastpath(user_input: str) -> Optional[Tuple[str, str]]:
         if pattern.search(normalized):
             return "booking", "fastpath_queue_operation"
 
+    for pattern in _FINANCE_OPERATION_PATTERNS:
+        if pattern.search(normalized):
+            return "finance", "fastpath_finance_operation"
+
     return None
 
 
@@ -229,6 +243,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
     the previous 300+ lines of keyword arrays and fuzzy heuristics.
     """
 
+    started_at = time.perf_counter()
     messages = state.get("messages", [])
     if not messages:
         return Command(
@@ -238,6 +253,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
                 "metadata": _merge_metadata(state, {
                     "classified_intent": "general",
                     "classification_source": "empty_messages",
+                    "routing_reasoning": "There was no owner message to classify, so I stayed on the general supervisor path.",
                 }),
             },
         )
@@ -249,7 +265,9 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
     fastpath = _classify_intent_fastpath(user_input)
     if fastpath is not None:
         intent, source = fastpath
-        logger.info("classify_intent fast-path: %r → %s", user_input[:80], intent)
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        logger.info("classify_intent fast-path: %r → %s in %.1fms", user_input[:80], intent, elapsed_ms)
+        reasoning = f"I routed this directly to {intent} because the request clearly matched the {source.replace('_', ' ')} pattern."
         return Command(
             goto="plan_execution",
             update={
@@ -257,6 +275,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
                 "metadata": _merge_metadata(state, {
                     "classified_intent": intent,
                     "classification_source": source,
+                    "routing_reasoning": reasoning,
                     "requires_clarification": False,
                 }),
             },
@@ -302,9 +321,10 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
         ))
         intent = decision.next_agent
         source = "llm_structured"
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
         logger.info(
-            "classify_intent: %r → %s (followup=%s, reason=%s)",
-            user_input[:80], intent, decision.is_followup, decision.thought_process,
+            "classify_intent: %r → %s in %.1fms (followup=%s, reason=%s)",
+            user_input[:80], intent, elapsed_ms, decision.is_followup, decision.thought_process,
         )
     except Exception as e:
         logger.warning("classify_intent structured output failed, falling back: %s", e)
@@ -319,6 +339,8 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
             raw = str(resp.content).strip().lower()
             intent = raw if raw in {"booking", "finance", "hr", "crm", "general"} else "general"
             source = "llm_fallback"
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            logger.info("classify_intent fallback: %r → %s in %.1fms", user_input[:80], intent, elapsed_ms)
         except Exception:
             intent = "general"
             source = "error_fallback"
@@ -330,6 +352,8 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
             "metadata": _merge_metadata(state, {
                 "classified_intent": intent,
                 "classification_source": source,
+                "routing_reasoning": decision.thought_process.strip(),
+                "is_followup": decision.is_followup,
                 "requires_clarification": False,
             }),
         },
@@ -738,6 +762,7 @@ def placeholder_receptionist(state: AgentState) -> dict:
         return {
             "messages": result.get("messages", []),
             "current_agent": "receptionist",
+            "metadata": result.get("metadata"),
             "pending_approval": pending,
             "needs_human_input": bool(result.get("needs_human_input", True)),
         }
@@ -745,6 +770,7 @@ def placeholder_receptionist(state: AgentState) -> dict:
     return {
         "messages": result.get("messages", []),
         "current_agent": "receptionist",
+        "metadata": result.get("metadata"),
         "tool_results": result.get("tool_results"),
     }
 
@@ -766,6 +792,7 @@ def placeholder_finance(state: AgentState) -> dict:
         return {
             "messages": result.get("messages", []),
             "current_agent": "finance",
+            "metadata": result.get("metadata"),
             "pending_approval": pending,
             "needs_human_input": bool(result.get("needs_human_input", True)),
         }
@@ -773,6 +800,7 @@ def placeholder_finance(state: AgentState) -> dict:
     return {
         "messages": result.get("messages", []),
         "current_agent": "finance",
+        "metadata": result.get("metadata"),
         "tool_results": result.get("tool_results"),
     }
 
@@ -797,6 +825,7 @@ def placeholder_hr(state: AgentState) -> dict:
         return {
             "messages": result.get("messages", []),
             "current_agent": "hr",
+            "metadata": result.get("metadata"),
             "pending_approval": pending,
             "needs_human_input": bool(result.get("needs_human_input", True)),
         }
@@ -804,6 +833,7 @@ def placeholder_hr(state: AgentState) -> dict:
     return {
         "messages": result.get("messages", []),
         "current_agent": "hr",
+        "metadata": result.get("metadata"),
         "tool_results": result.get("tool_results"),
     }
 

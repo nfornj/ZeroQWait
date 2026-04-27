@@ -17,6 +17,29 @@ PREMIUM_SUBSCRIPTION_TIERS = frozenset({"premium", "enterprise"})
 HOSTED_LLM_PROVIDERS = SUPPORTED_LLM_PROVIDERS.difference({"ollama"})
 
 
+def _env_flag_enabled(name: str, *, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def provider_runtime_enabled(provider: str) -> bool:
+    if provider == "groq":
+        return _env_flag_enabled("ENABLE_GROQ_PROVIDER", default=False)
+    return True
+
+
+def _fallback_to_ollama(subscription_tier: Optional[str], *, include_api_key: bool) -> tuple[str, str, Optional[str], Optional[str], dict[str, Any]]:
+    provider = "ollama"
+    model_name = default_model_name_for_provider(provider)
+    api_base_url = default_api_base_url_for_provider(provider)
+    if normalize_subscription_tier(subscription_tier) not in PREMIUM_SUBSCRIPTION_TIERS:
+        api_base_url = _free_tier_ollama_base_url()
+    api_key = _default_api_key(provider) if include_api_key else None
+    return provider, model_name, api_base_url, api_key, {}
+
+
 def normalize_subscription_tier(subscription_tier: Optional[str]) -> str:
     if hasattr(subscription_tier, "value"):
         subscription_tier = subscription_tier.value
@@ -71,7 +94,8 @@ def provider_catalog(subscription_tier: Optional[str] = None) -> list[dict[str, 
     return [
         provider
         for provider in available
-        if provider_allowed_for_tier(provider["key"], subscription_tier)
+        if provider_runtime_enabled(provider["key"])
+        and provider_allowed_for_tier(provider["key"], subscription_tier)
     ]
 
 
@@ -136,7 +160,10 @@ def _normalize_ollama_base_url(base_url: Optional[str]) -> str:
 
 
 def _free_tier_ollama_base_url() -> str:
-    return os.getenv("FREE_TIER_OLLAMA_URL", "http://localhost:30002/v1")
+    return os.getenv(
+        "FREE_TIER_OLLAMA_URL",
+        default_api_base_url_for_provider("ollama") or "http://localhost:30002/v1",
+    )
 
 
 def _shop_subscription_tier(db, shop_id: int) -> str:
@@ -194,12 +221,17 @@ def load_shop_llm_config(shop_id: Optional[int]) -> ResolvedLLMConfig:
         finally:
             db.close()
 
+    if not provider_runtime_enabled(provider):
+        provider, model_name, api_base_url, api_key, settings = _fallback_to_ollama(
+            subscription_tier,
+            include_api_key=True,
+        )
+
     if not provider_allowed_for_tier(provider, subscription_tier):
-        provider = "ollama"
-        model_name = default_model_name_for_provider(provider)
-        api_base_url = _free_tier_ollama_base_url()
-        api_key = _default_api_key(provider)
-        settings = {}
+        provider, model_name, api_base_url, api_key, settings = _fallback_to_ollama(
+            subscription_tier,
+            include_api_key=True,
+        )
 
     if provider == "ollama" and subscription_tier not in PREMIUM_SUBSCRIPTION_TIERS:
         api_base_url = _free_tier_ollama_base_url()
@@ -244,11 +276,17 @@ def resolve_shop_llm_environment(shop_id: Optional[int]) -> ResolvedLLMConfig:
         finally:
             db.close()
 
+    if not provider_runtime_enabled(provider):
+        provider, model_name, api_base_url, _, settings = _fallback_to_ollama(
+            subscription_tier,
+            include_api_key=False,
+        )
+
     if not provider_allowed_for_tier(provider, subscription_tier):
-        provider = "ollama"
-        model_name = default_model_name_for_provider(provider)
-        api_base_url = _free_tier_ollama_base_url()
-        settings = {}
+        provider, model_name, api_base_url, _, settings = _fallback_to_ollama(
+            subscription_tier,
+            include_api_key=False,
+        )
 
     if provider == "ollama" and subscription_tier not in PREMIUM_SUBSCRIPTION_TIERS:
         api_base_url = _free_tier_ollama_base_url()

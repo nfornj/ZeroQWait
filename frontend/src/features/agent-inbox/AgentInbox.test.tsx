@@ -5,7 +5,135 @@ import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import AgentInbox from "./AgentInbox";
+import AgentChat from "./AgentChat";
 import api from "../../services/api";
+import { createAgentChartFromPayload } from "./types";
+
+jest.mock("@assistant-ui/react", () => {
+  const React = require("react");
+
+  const RuntimeContext = React.createContext(null);
+  const MessageContext = React.createContext(null);
+
+  const renderAsChild = (children: React.ReactNode, props: Record<string, unknown>) => {
+    if (React.isValidElement(children)) {
+      return React.cloneElement(children, props);
+    }
+
+    return React.createElement(React.Fragment, null, children);
+  };
+
+  const passthrough = ({ children }: { children?: React.ReactNode }) => React.createElement(React.Fragment, null, children);
+
+  return {
+    __esModule: true,
+    AssistantRuntimeProvider: ({ runtime, children }: { runtime: any; children?: React.ReactNode }) =>
+      React.createElement(RuntimeContext.Provider, { value: runtime }, children),
+    useExternalStoreRuntime: ({ messages, convertMessage }: { messages: any[]; convertMessage: (message: any) => any }) => ({
+      messages: messages.map((message) => ({ ...convertMessage(message), __externalMessage: message })),
+      composer: { setText: jest.fn() },
+    }),
+    useThreadRuntime: () => React.useContext(RuntimeContext),
+    useThreadComposer: (selector: (state: { text: string }) => unknown) => selector({ text: "" }),
+    getExternalStoreMessages: (message: any) => [message.__externalMessage || message],
+    ActionBarPrimitive: {
+      Root: passthrough,
+      Edit: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+      Copy: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+      Reload: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+    },
+    BranchPickerPrimitive: {
+      Root: passthrough,
+      Previous: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+      Next: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+      Number: () => React.createElement("span", null, "1"),
+      Count: () => React.createElement("span", null, "1"),
+    },
+    ChainOfThoughtPrimitive: {
+      Root: passthrough,
+      AccordionTrigger: ({ children, ...props }: any) => React.createElement("button", props, children),
+      Parts: ({ children }: any) => {
+        const message = React.useContext(MessageContext);
+        const parts = Array.isArray(message?.content)
+          ? message.content.filter((part: any) => part.type === "reasoning" || part.type === "tool-call")
+          : [];
+
+        if (typeof children !== "function") {
+          return null;
+        }
+
+        return React.createElement(
+          React.Fragment,
+          null,
+          parts.map((part: any, index: number) =>
+            React.createElement(React.Fragment, { key: `${part.type}_${index}` }, children({ part })),
+          ),
+        );
+      },
+    },
+    ComposerPrimitive: {
+      Root: passthrough,
+      Input: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+      Cancel: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+      Send: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+    },
+    MessagePrimitive: {
+      Root: passthrough,
+      Parts: ({ components }: any) => {
+        const message = React.useContext(MessageContext);
+        const parts = Array.isArray(message?.content) ? message.content : [];
+        const renderedChainParents = new Set<string>();
+
+        return React.createElement(
+          React.Fragment,
+          null,
+          parts.map((part: any, index: number) => {
+            if (part.type === "text" && components?.Text) {
+              return React.createElement(React.Fragment, { key: `${part.type}_${index}` }, components.Text({ text: part.text }));
+            }
+
+            if ((part.type === "reasoning" || part.type === "tool-call") && components?.ChainOfThought) {
+              const parentKey = typeof part.parentId === "string" && part.parentId ? part.parentId : `${part.type}_${index}`;
+              if (renderedChainParents.has(parentKey)) {
+                return null;
+              }
+              renderedChainParents.add(parentKey);
+              return React.createElement(React.Fragment, { key: `${part.type}_${index}` }, components.ChainOfThought({}));
+            }
+
+            return null;
+          }),
+        );
+      },
+    },
+    ThreadPrimitive: {
+      Root: passthrough,
+      Viewport: passthrough,
+      ViewportFooter: passthrough,
+      Messages: ({ children }: { children: (payload: { message: any }) => React.ReactNode }) => {
+        const runtime = React.useContext(RuntimeContext) as { messages?: any[] } | null;
+        const messages = runtime?.messages || [];
+
+        return React.createElement(
+          React.Fragment,
+          null,
+          messages.map((message) =>
+            React.createElement(
+              MessageContext.Provider,
+              { key: message.id, value: message },
+              children({ message }),
+            )
+          ),
+        );
+      },
+    },
+  };
+});
+
+jest.mock("react-markdown", () => ({
+  __esModule: true,
+  default: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+}));
 
 jest.mock("../../contexts/ShopContext", () => ({
   useShop: () => ({
@@ -70,6 +198,44 @@ jest.mock("../../services/api", () => ({
     post: jest.fn(),
     put: jest.fn(),
   },
+}));
+
+jest.mock("@mui/x-charts/LineChart", () => ({
+  __esModule: true,
+  LineChart: ({ series = [], xAxis = [] }: { series?: Array<{ label?: string }>; xAxis?: Array<{ data?: string[] }> }) => (
+    <svg data-testid="line-chart" data-series-count={String(series.length)}>
+      {series.map((entry, index) => (
+        <text key={`${entry.label || "series"}_${index}`}>{entry.label || `series-${index}`}</text>
+      ))}
+      {(xAxis[0]?.data || []).map((label, index) => (
+        <text key={`${label}_${index}`}>{label}</text>
+      ))}
+    </svg>
+  ),
+}));
+
+jest.mock("@mui/x-charts/BarChart", () => ({
+  __esModule: true,
+  BarChart: ({ series = [], xAxis = [] }: { series?: Array<{ label?: string }>; xAxis?: Array<{ data?: string[] }> }) => (
+    <svg data-testid="bar-chart" data-series-count={String(series.length)}>
+      {series.map((entry, index) => (
+        <text key={`${entry.label || "series"}_${index}`}>{entry.label || `series-${index}`}</text>
+      ))}
+      {(xAxis[0]?.data || []).map((label, index) => (
+        <text key={`${label}_${index}`}>{label}</text>
+      ))}
+    </svg>
+  ),
+}));
+
+jest.mock("@mui/x-charts/PieChart", () => ({
+  __esModule: true,
+  PieChart: () => <svg data-testid="pie-chart" />,
+}));
+
+jest.mock("@mui/x-charts/SparkLineChart", () => ({
+  __esModule: true,
+  SparkLineChart: () => <svg data-testid="sparkline-chart" />,
 }));
 
 const mockedApi = api as unknown as {
@@ -183,6 +349,18 @@ const renderInbox = () =>
     );
   };
 
+const renderChat = (messages: React.ComponentProps<typeof AgentChat>["messages"]) =>
+  render(
+    <ThemeProvider theme={createTheme()}>
+      <AgentChat
+        messages={messages}
+        isStreaming={false}
+        onSend={jest.fn(async () => undefined)}
+        onUpload={jest.fn(async () => undefined)}
+      />
+    </ThemeProvider>
+  );
+
 describe("AgentInbox", () => {
   beforeEach(() => {
     let pendingApprovals = [approvalPayload];
@@ -246,7 +424,8 @@ describe("AgentInbox", () => {
     expect(screen.getByText(/120/)).toBeInTheDocument();
     expect(screen.getByText("Pending Approvals")).toBeInTheDocument();
     expect(screen.getAllByText("Add Team Member").length).toBeGreaterThan(0);
-    expect(screen.getByText("Approval Required")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deny" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add" })).toBeInTheDocument();
 
     await waitFor(() => expect(mockedApi.get).toHaveBeenCalledWith("/v2/agent/pending", { params: { shop_id: 141 } }));
   });
@@ -256,7 +435,7 @@ describe("AgentInbox", () => {
 
     expect(await screen.findByText("Pending Approvals")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
     await waitFor(() => {
       expect(mockedApi.post).toHaveBeenCalledWith("/v2/agent/approve", {
@@ -271,5 +450,190 @@ describe("AgentInbox", () => {
     });
     expect(screen.getByText(/Action approved: You approved 'add_employee'\./i)).toBeInTheDocument();
     expect(screen.getByText(/Employee added: Employee Maria added successfully\./i)).toBeInTheDocument();
+  });
+
+  it("renders inline multi-series finance charts in the chat thread", async () => {
+    const chart = createAgentChartFromPayload(
+      {
+        title: "Revenue Trend (this week)",
+        description: "Revenue and customers by period.",
+        chartType: "line",
+        data: [
+          { label: "2026-04-22", revenue: 50, customers: 4 },
+          { label: "2026-04-26", revenue: 0, customers: 0 },
+        ],
+        xKey: "label",
+        series: [
+          { key: "revenue", label: "Revenue" },
+          { key: "customers", label: "Customers" },
+        ],
+        showLegend: true,
+        showGrid: true,
+      },
+      "2026-04-26T12:48:00.000Z",
+    );
+
+    expect(chart).not.toBeNull();
+
+    renderChat([
+      {
+        id: "assistant_1",
+        role: "assistant",
+        content: "For this week, revenue and customer volume are shown below.",
+        status: "done",
+        timestamp: "2026-04-26T12:48:00.000Z",
+        agent: "finance",
+        charts: chart ? [chart] : [],
+      },
+    ]);
+
+    expect(await screen.findByText("Finance Assistant")).toBeInTheDocument();
+    expect(screen.getByText("Revenue Trend (this week)")).toBeInTheDocument();
+
+    const lineChart = screen.getByTestId("line-chart");
+    expect(lineChart).toHaveAttribute("data-series-count", "2");
+    expect(lineChart).toHaveTextContent("Revenue");
+    expect(lineChart).toHaveTextContent("Customers");
+    expect(lineChart).toHaveTextContent("2026-04-22");
+  });
+
+  it("does not keep the thinking block once assistant text is available", async () => {
+    renderChat([
+      {
+        id: "assistant_2",
+        role: "assistant",
+        content: "Queue is stable and ready for the next customer.",
+        status: "done",
+        timestamp: "2026-04-26T12:49:00.000Z",
+        agent: "receptionist",
+        thinkingSteps: [
+          {
+            id: "step_1",
+            label: "Checking queue status",
+            status: "completed",
+            agent: "receptionist",
+          },
+        ],
+      },
+    ]);
+
+    expect(await screen.findByText("Receptionist Assistant")).toBeInTheDocument();
+    expect(screen.getByText("Queue is stable and ready for the next customer.")).toBeInTheDocument();
+    expect(screen.queryByText(/^Thinking$/)).not.toBeInTheDocument();
+  });
+
+  it("hides the chain of thought once the final assistant response is available", async () => {
+    renderChat([
+      {
+        id: "assistant_3",
+        role: "assistant",
+        content: "Finance summary ready.",
+        status: "done",
+        timestamp: "2026-04-26T12:50:00.000Z",
+        agent: "finance",
+        thinkingSteps: [
+          {
+            id: "reasoning_1",
+            label: "I matched this to finance because the owner asked about revenue trends.",
+            status: "completed",
+            agent: "finance",
+          },
+          {
+            id: "tool_finance",
+            label: "Completed finance",
+            status: "completed",
+            agent: "finance",
+            toolName: "finance",
+          },
+        ],
+      },
+    ]);
+
+    expect(await screen.findByText("Finance Assistant")).toBeInTheDocument();
+    expect(screen.getByText("Finance summary ready.")).toBeInTheDocument();
+    expect(screen.queryByText("Chain of thought")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("I matched this to finance because the owner asked about revenue trends."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows only rich reasoning while the assistant is still thinking", async () => {
+    renderChat([
+      {
+        id: "assistant_4",
+        role: "assistant",
+        content: "",
+        status: "streaming",
+        timestamp: "2026-04-26T12:51:00.000Z",
+        agent: "hr",
+        thinkingSteps: [
+          {
+            id: "step_classify_intent",
+            label: "Classified HR Assistant",
+            status: "completed",
+            agent: "hr",
+          },
+          {
+            id: "hr_reasoning",
+            label: "The user is asking about staffing gaps, so I need today's shifts before I can assess coverage.",
+            status: "completed",
+            agent: "hr",
+          },
+          {
+            id: "tool_get_shifts",
+            label: "Completed Get Shifts",
+            status: "completed",
+            agent: "hr",
+            toolName: "get_shifts",
+          },
+        ],
+      },
+    ]);
+
+    expect(await screen.findByText("Hr Assistant")).toBeInTheDocument();
+    expect(screen.getByText("Chain of thought")).toBeInTheDocument();
+    expect(
+      screen.getByText("The user is asking about staffing gaps, so I need today's shifts before I can assess coverage."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Classified HR Assistant")).not.toBeInTheDocument();
+    expect(screen.queryByText("Completed Get Shifts")).not.toBeInTheDocument();
+  });
+
+  it("lets the active chain of thought collapse and expand", async () => {
+    renderChat([
+      {
+        id: "assistant_5",
+        role: "assistant",
+        content: "",
+        status: "streaming",
+        timestamp: "2026-04-26T12:52:00.000Z",
+        agent: "hr",
+        thinkingSteps: [
+          {
+            id: "hr_reasoning_toggle",
+            label: "The user is asking about staffing gaps, so I need today's shifts before I can assess coverage.",
+            status: "completed",
+            agent: "hr",
+          },
+        ],
+      },
+    ]);
+
+    const toggle = await screen.findByText("Chain of thought");
+    const reasoning = screen.getByText(
+      "The user is asking about staffing gaps, so I need today's shifts before I can assess coverage.",
+    );
+
+    expect(reasoning).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(screen.queryByText(
+      "The user is asking about staffing gaps, so I need today's shifts before I can assess coverage.",
+    )).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(screen.getByText(
+      "The user is asking about staffing gaps, so I need today's shifts before I can assess coverage.",
+    )).toBeInTheDocument();
   });
 });

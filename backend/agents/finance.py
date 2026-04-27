@@ -1,5 +1,6 @@
 """Finance specialist graph with explicit planner and executor nodes."""
 
+from datetime import datetime, timedelta
 import logging
 import re
 from typing import Any, Dict, Optional, Sequence
@@ -115,6 +116,13 @@ def _latest_user_text(messages: Sequence[BaseMessage]) -> str:
     return ""
 
 
+def _humanize_window_label(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "the requested period"
+    return text.replace("_", " ")
+
+
 def _requests_finance_trend(text: str) -> bool:
     prompt = str(text or "").lower()
     if not prompt:
@@ -145,6 +153,188 @@ def _requests_finance_trend(text: str) -> bool:
 def _prefers_weekly_summary(text: str) -> bool:
     prompt = str(text or "").lower()
     return any(phrase in prompt for phrase in ("this week", "weekly", "week start", "week starting"))
+
+
+def _prefers_structured_table(text: str) -> bool:
+    prompt = str(text or "").lower()
+    return any(
+        phrase in prompt
+        for phrase in (
+            "as a list",
+            "in a list",
+            "show a list",
+            "show me a list",
+            "table",
+            "tabular",
+            "sortable",
+            "for each day",
+            "for each date",
+            "by day",
+            "by date",
+            "daily breakdown",
+        )
+    )
+
+
+def _looks_like_top_services_request(text: str) -> bool:
+    prompt = str(text or "").lower()
+    if not prompt:
+        return False
+
+    has_service_subject = any(keyword in prompt for keyword in ("service", "services"))
+    has_ranking_language = any(
+        phrase in prompt
+        for phrase in (
+            "top",
+            "best-selling",
+            "best selling",
+            "most popular",
+            "popular services",
+        )
+    )
+    return has_service_subject and has_ranking_language
+
+
+def _looks_like_customer_metrics_request(text: str) -> bool:
+    prompt = str(text or "").lower()
+    if not prompt:
+        return False
+
+    return any(
+        phrase in prompt
+        for phrase in (
+            "customer metrics",
+            "client metrics",
+            "repeat rate",
+            "new vs repeat",
+            "repeat customer",
+            "repeat customers",
+            "top clients",
+            "best clients",
+            "inactive clients",
+            "lapsed clients",
+            "visit frequency",
+            "client profile",
+        )
+    )
+
+
+def _looks_like_weekly_revenue_breakdown_request(text: str) -> bool:
+    prompt = str(text or "").lower()
+    if not prompt or not _prefers_weekly_summary(prompt):
+        return False
+
+    has_revenue_subject = any(
+        keyword in prompt for keyword in ("revenue", "sales", "average ticket", "avg ticket")
+    )
+    has_explicit_trend_language = any(
+        keyword in prompt for keyword in ("trend", "graph", "chart", "plot", "line", "over time")
+    )
+    wants_breakdown = _prefers_structured_table(prompt) or any(
+        keyword in prompt for keyword in ("average ticket", "avg ticket", "customers")
+    )
+
+    return has_revenue_subject and wants_breakdown and not has_explicit_trend_language
+
+
+def _extract_requested_limit(text: str) -> Optional[int]:
+    prompt = str(text or "").lower()
+    if not prompt:
+        return None
+
+    match = re.search(r"\btop\s+(\d{1,2})\b", prompt)
+    if not match:
+        return None
+
+    try:
+        requested_limit = int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+    if requested_limit <= 0:
+        return None
+    return min(requested_limit, 25)
+
+
+def _resolve_obvious_daily_date(text: str) -> Optional[str]:
+    prompt = str(text or "").lower().strip()
+    if not prompt:
+        return None
+
+    explicit_date = finance_tools.extract_requested_date(prompt)
+    if explicit_date:
+        return explicit_date
+
+    now = datetime.now()
+    if "yesterday" in prompt:
+        return (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    if "today" in prompt:
+        return now.strftime("%Y-%m-%d")
+
+    return None
+
+
+def _build_finance_fast_plan(messages: Sequence[BaseMessage]) -> Optional[Dict[str, Any]]:
+    latest_user_text = _latest_user_text(messages)
+    if not latest_user_text:
+        return None
+
+    prompt = latest_user_text.lower()
+    if _looks_like_top_services_request(latest_user_text):
+        return {
+            "operation": "top_services",
+            "arguments": {"limit": _extract_requested_limit(latest_user_text) or 5},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched an obvious service ranking request.",
+        }
+
+    revenue_subject_signals = any(
+        keyword in prompt
+        for keyword in ("revenue", "sales", "trend", "performance", "average ticket", "avg ticket")
+    )
+
+    if not revenue_subject_signals or _looks_like_customer_metrics_request(latest_user_text):
+        return None
+
+    if _looks_like_weekly_revenue_breakdown_request(latest_user_text):
+        return {
+            "operation": "weekly_summary",
+            "arguments": {},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched a weekly revenue breakdown request.",
+        }
+
+    if _requests_finance_trend(latest_user_text):
+        return {
+            "operation": "trend_summary",
+            "arguments": {"query": latest_user_text},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched an obvious trend request.",
+        }
+
+    specific_date = _resolve_obvious_daily_date(latest_user_text)
+    if specific_date:
+        return {
+            "operation": "daily_revenue",
+            "arguments": {"date": specific_date},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched an obvious single-day revenue request.",
+        }
+
+    if _prefers_weekly_summary(latest_user_text):
+        return {
+            "operation": "weekly_summary",
+            "arguments": {},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched an obvious weekly summary request.",
+        }
+
+    return None
 
 
 def _normalize_finance_operation(operation: str, plan: Dict[str, Any], messages: Sequence[BaseMessage]) -> str:
@@ -248,12 +438,24 @@ def _build_finance_executor(shop_id: int):
         if operation == "daily_revenue":
             return finance_tools.daily_revenue(shop_id, _optional_str(arguments.get("date")))
         if operation == "weekly_summary":
-            return finance_tools.weekly_summary(shop_id, _optional_str(arguments.get("week_start")))
+            result = finance_tools.weekly_summary(shop_id, _optional_str(arguments.get("week_start")))
+            if _prefers_structured_table(user_text):
+                result = dict(result)
+                result["preferred_presentation"] = "table"
+            return result
         if operation == "trend_summary":
             query = _optional_str(arguments.get("query")) or user_text
-            return finance_tools.trend_summary(shop_id, query)
+            result = finance_tools.trend_summary(shop_id, query)
+            if _prefers_structured_table(query):
+                result = dict(result)
+                result["preferred_presentation"] = "table"
+            return result
         if operation == "top_services":
-            return finance_tools.top_services(shop_id, _to_int(arguments.get("limit")) or 5)
+            result = finance_tools.top_services(shop_id, _to_int(arguments.get("limit")) or 5)
+            if _prefers_structured_table(user_text):
+                result = dict(result)
+                result["preferred_presentation"] = "table"
+            return result
         if operation == "customer_metrics":
             return finance_tools.customer_metrics(shop_id, _optional_str(arguments.get("query")) or user_text)
         if operation == "export_report":
@@ -372,6 +574,8 @@ def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
                 f"I don't see any completed services or recorded revenue for the week starting {result.get('week_start')} yet. "
                 "That usually means this week's services have not been closed out yet, or daily analytics have not been populated for these dates."
             )
+        if str(result.get("preferred_presentation") or "").lower() == "table":
+            return f"Here is the day-by-day revenue table for the week starting {result.get('week_start')}."
         return (
             f"Week starting {result.get('week_start')} generated ${total_revenue:.2f} from {completed_services} completed services "
             f"and {total_customers} customer visit{'s' if total_customers != 1 else ''}. "
@@ -381,13 +585,16 @@ def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
     if operation == "trend_summary":
         completed_services = int(result.get('completed_services', 0) or 0)
         total_revenue = float(result.get('total_revenue', 0.0) or 0.0)
+        window_label = _humanize_window_label(result.get('window_display') or result.get('window'))
         if completed_services == 0 and total_revenue <= 0:
             return (
-                f"I don't see any completed services or recorded revenue for {result.get('window', 'the requested period')} yet. "
+                f"I don't see any completed services or recorded revenue for {window_label} yet. "
                 "If you expected activity, the underlying analytics for that range may still need to be populated."
             )
+        if str(result.get("preferred_presentation") or "").lower() == "table":
+            return f"Here is the day-by-day revenue table for {window_label}."
         return (
-            f"For {result.get('window', 'the requested period')}, total revenue was ${total_revenue:.2f} "
+            f"For {window_label}, total revenue was ${total_revenue:.2f} "
             f"from {completed_services} completed services. "
             f"Best period: {result.get('best_period') or 'not available'} at ${float(result.get('best_period_revenue', 0.0) or 0.0):.2f}."
         )
@@ -395,6 +602,8 @@ def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
         services = list(result.get("services") or [])
         if not services:
             return "I couldn't find any active services to rank right now."
+        if str(result.get("preferred_presentation") or "").lower() == "table":
+            return "Here is the service table I found for the current catalog."
         lines = []
         for service in services[:8]:
             lines.append(f"- {service.get('name')} — ${float(service.get('cost', 0.0) or 0.0):.2f}")
@@ -403,13 +612,14 @@ def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
         total_customers = int(result.get('total_customers', 0) or 0)
         new_customers = int(result.get('new_customers', 0) or 0)
         repeat_customers = int(result.get('repeat_customers', 0) or 0)
+        window_label = _humanize_window_label(result.get('window_display') or result.get('window'))
         if total_customers == 0 and new_customers == 0 and repeat_customers == 0:
             return (
-                f"I don't see any customer activity recorded for {result.get('window', 'the requested period')} yet. "
+                f"I don't see any customer activity recorded for {window_label} yet. "
                 "That usually means there were no completed visits in that window, or customer profiles have not been built up for this shop yet."
             )
         return (
-            f"Customer metrics for {result.get('window', 'the requested period')}: {total_customers} total customers, "
+            f"Customer metrics for {window_label}: {total_customers} total customers, "
             f"{new_customers} new, {repeat_customers} repeat. "
             f"Repeat rate: {round(float(result.get('repeat_rate', 0.0) or 0.0) * 100, 1)}%."
         )
@@ -458,6 +668,7 @@ def create_finance_runnable(shop_id: int | None = None):
         supported_operations=SUPPORTED_OPERATIONS,
         operation_aliases=OPERATION_ALIASES,
         operation_normalizer=_normalize_finance_operation,
+        fast_plan_builder=_build_finance_fast_plan,
         executor=_build_finance_executor(shop_id),
         formatter=_format_finance_response,
     )

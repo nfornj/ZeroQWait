@@ -1,3 +1,4 @@
+// RESTYLED: Perplexity-style
 import { styled } from '@mui/material/styles';
 import Typography from '@mui/material/Typography';
 import Breadcrumbs, { breadcrumbsClasses } from '@mui/material/Breadcrumbs';
@@ -5,7 +6,7 @@ import NavigateNextRoundedIcon from '@mui/icons-material/NavigateNextRounded';
 import { useLocation } from 'react-router-dom';
 
 const StyledBreadcrumbs = styled(Breadcrumbs)(({ theme }) => ({
-  margin: theme.spacing(1, 0),
+  margin: 0,
   [`& .${breadcrumbsClasses.separator}`]: {
     color: (theme.vars || theme).palette.action.disabled,
     margin: 1,
@@ -16,7 +17,7 @@ const StyledBreadcrumbs = styled(Breadcrumbs)(({ theme }) => ({
 }));
 
 const routeNameMap: { [key: string]: string } = {
-  '/dashboard': 'Home',
+  '/dashboard': 'Agent',
   '/queues': 'Queues',
   '/agent-inbox': 'Agent Inbox',
   '/employees': 'Team',
@@ -34,8 +35,8 @@ export default function NavbarBreadcrumbs() {
       aria-label="breadcrumb"
       separator={<NavigateNextRoundedIcon fontSize="small" />}
     >
-      <Typography variant="body1">Dashboard</Typography>
-      <Typography variant="body1" sx={{ color: 'text.primary', fontWeight: 600 }}>
+      <Typography variant="body2" color="text.secondary">Workspace</Typography>
+      <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 600 }}>
         {pageName}
       </Typography>
     </StyledBreadcrumbs>

@@ -1,58 +1,33 @@
+// RESTYLED: Perplexity-style
 import React, { useCallback, useMemo, useState } from "react";
 import {
   Alert,
-  alpha,
   Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Divider,
-  Grid,
   Stack,
-  Tab,
-  Tabs,
-  Typography,
-  useTheme,
 } from "@mui/material";
-import AutoGraphRoundedIcon from "@mui/icons-material/AutoGraphRounded";
-import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
-import ContentCutRoundedIcon from "@mui/icons-material/ContentCutRounded";
-import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
-import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
-import QueueRoundedIcon from "@mui/icons-material/QueueRounded";
-import SmartToyRoundedIcon from "@mui/icons-material/SmartToyRounded";
-import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
-import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link as RouterLink } from "react-router-dom";
 
 import { useAuth } from "../../../contexts/AuthContext";
 import { useShop } from "../../../contexts/ShopContext";
 import api from "../../../services/api";
-import AgentChat from "../../agent-inbox/AgentChat";
-import OwnerDocumentsPanel from "../../agent-inbox/OwnerDocumentsPanel";
-import AgentFeed from "../../agent-inbox/AgentFeed";
-import ApprovalCard from "../../agent-inbox/ApprovalCard";
-import OwnerBriefing from "../../agent-inbox/OwnerBriefing";
+import AgentChat, {
+  AgentChatPromptSection,
+} from "../../agent-inbox/AgentChat";
 import {
   ownerDashboardKeys,
   useOwnerBriefingQuery,
-  useOwnerDocumentsQuery,
   useOwnerFeedQuery,
   useOwnerOperationsSnapshot,
   useOwnerPoliciesQuery,
   usePendingApprovalsQuery,
 } from "../../agent-inbox/ownerDashboardQueries";
+import { createAgentChartFromPayload } from "../../agent-inbox/types";
 import type {
   AgentChart,
   AgentFeedEvent,
   AgentFile,
-  ApprovalExecutionResult,
-  BriefingAction,
+  AgentTable,
   ChatMessage,
-  OwnerDocumentRecord,
   ThinkingStep,
   PendingApproval,
 } from "../../agent-inbox/types";
@@ -76,30 +51,48 @@ const labelForPolicyMode = (mode?: string): string => {
   return POLICY_MODE_LABELS[mode] || mode.replace(/_/g, " ");
 };
 
-const buildIntroMessage = (shopName?: string): ChatMessage => ({
-  id: toId("msg_intro"),
-  role: "assistant",
-  content: shopName
-    ? `Welcome back to ${shopName}. Use the Today view for operational priorities, Operations for live business summaries, or ask the supervisor agent to handle an action.`
-    : "Welcome back. Use the Today view for operational priorities, Operations for live business summaries, or ask the supervisor agent to handle an action.",
-  status: "done",
-  timestamp: nowIso(),
+const formatAssistantProgressLabel = (value?: string | null): string => {
+  if (!value) return "Thinking";
+
+  return value
+    .split(/[_-]/g)
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+};
+
+const buildAssistantProgressStep = (
+  label: string,
+  agent?: string | null,
+  toolName?: string | null,
+  status: ThinkingStep["status"] = "active",
+  id?: string,
+): ThinkingStep => ({
+  id: id || `progress_${label.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
+  label,
+  status,
+  agent: agent || undefined,
+  toolName: toolName || undefined,
 });
 
-const parseStreamChart = (payload: Record<string, any>): AgentChart | null => {
-  if (!Array.isArray(payload.data) || payload.data.length === 0) {
-    return null;
+const upsertThinkingStep = (existingSteps: ThinkingStep[] | undefined, nextStep: ThinkingStep): ThinkingStep[] => {
+  const currentSteps = existingSteps || [];
+  const index = currentSteps.findIndex((step) => step.id === nextStep.id);
+
+  if (index === -1) {
+    return [...currentSteps, nextStep];
   }
 
-  return {
-    id: `chart_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    title: String(payload.title || "Chart"),
-    chartType: payload.chartType || "bar",
-    data: payload.data,
-    xKey: payload.xKey,
-    yKey: payload.yKey,
-    timestamp: nowIso(),
+  const updated = [...currentSteps];
+  updated[index] = {
+    ...updated[index],
+    ...nextStep,
   };
+  return updated;
+};
+
+const parseStreamChart = (payload: Record<string, any>): AgentChart | null => {
+  return createAgentChartFromPayload(payload, nowIso());
 };
 
 const parseStreamFile = (payload: Record<string, any>): AgentFile | null => {
@@ -113,6 +106,21 @@ const parseStreamFile = (payload: Record<string, any>): AgentFile | null => {
     filename: String(payload.filename || "download"),
     content,
     mimeType: String(payload.mimeType || "application/octet-stream"),
+    timestamp: nowIso(),
+  };
+};
+
+const parseStreamTable = (payload: Record<string, any>): AgentTable | null => {
+  if (!Array.isArray(payload.columns) || !Array.isArray(payload.data) || payload.columns.length === 0) {
+    return null;
+  }
+
+  return {
+    id: `table_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    title: String(payload.title || "Table"),
+    columns: payload.columns,
+    data: payload.data,
+    rowIdKey: String(payload.rowIdKey || payload.columns[0]?.key || "id"),
     timestamp: nowIso(),
   };
 };
@@ -180,87 +188,22 @@ const normalizeStreamErrorDetail = (error: unknown, fallback: string) => {
   return detail || fallback;
 };
 
-interface TabPanelProps {
-  activeValue: string;
-  value: string;
-  children: React.ReactNode;
-}
-
-const TabPanel: React.FC<TabPanelProps> = ({ activeValue, value, children }) => {
-  if (activeValue !== value) return null;
-  return <Box sx={{ pt: 2.5 }}>{children}</Box>;
-};
-
-interface OperationsCardProps {
-  title: string;
-  value: string;
-  description: string;
-  caption: string;
-  icon: React.ReactNode;
-  to: string;
-  cta: string;
-}
-
-const OperationsCard: React.FC<OperationsCardProps> = ({ title, value, description, caption, icon, to, cta }) => (
-  <Card variant="outlined" sx={{ borderRadius: 3, height: "100%" }}>
-    <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5, height: "100%" }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography variant="overline" color="text.secondary">
-          {title}
-        </Typography>
-        {icon}
-      </Stack>
-      <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: "-0.04em" }}>
-        {value}
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        {description}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ mt: "auto" }}>
-        {caption}
-      </Typography>
-      <Button component={RouterLink} to={to} variant="outlined" sx={{ alignSelf: "flex-start", borderRadius: 999, textTransform: "none", fontWeight: 700 }}>
-        {cta}
-      </Button>
-    </CardContent>
-  </Card>
-);
-
 const OwnerDashboardPage: React.FC = () => {
-  const muiTheme = useTheme();
   const queryClient = useQueryClient();
   const { shop } = useShop();
   const { token } = useAuth();
-  const [activeSection, setActiveSection] = useState<"today" | "operations" | "agent">("today");
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [buildIntroMessage()]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [localFeedEvents, setLocalFeedEvents] = useState<AgentFeedEvent[]>([]);
   const [streamedPendingApprovals, setStreamedPendingApprovals] = useState<PendingApproval[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
-  const [isApproving, setIsApproving] = useState(false);
-  const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
-  const [markingNotificationId, setMarkingNotificationId] = useState<number | null>(null);
-  const [actingDocumentId, setActingDocumentId] = useState<number | null>(null);
-  const [actingDocumentType, setActingDocumentType] = useState<"reindex" | "delete" | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   const briefingQuery = useOwnerBriefingQuery(shop?.id);
   const pendingQuery = usePendingApprovalsQuery(shop?.id);
   const feedQuery = useOwnerFeedQuery(shop?.id);
-  const documentsQuery = useOwnerDocumentsQuery(shop?.id);
   const policiesQuery = useOwnerPoliciesQuery(shop?.id);
   const operationsSnapshot = useOwnerOperationsSnapshot(shop?.id);
-
-  const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
-  const brandSecondary = shop?.secondary_color || brandPrimary;
-  const panelCardBg =
-    muiTheme.palette.mode === "dark"
-      ? "rgba(255, 255, 255, 0.05)"
-      : alpha("#ffffff", 0.72);
-  const panelCardBorder =
-    muiTheme.palette.mode === "dark"
-      ? alpha(brandPrimary, 0.24)
-      : alpha(brandPrimary, 0.16);
 
   const addFeedEvent = useCallback((event: Omit<AgentFeedEvent, "id" | "timestamp">) => {
     setLocalFeedEvents((prev) => [
@@ -299,112 +242,12 @@ const OwnerDashboardPage: React.FC = () => {
     );
   }, [feedQuery.data, localFeedEvents]);
 
-  const unreadFeedCount = useMemo(
-    () => (feedQuery.data || []).filter((event) => event.notification_id && event.status === "unread").length,
-    [feedQuery.data]
-  );
-
   const policySummary = useMemo(() => {
     return (policiesQuery.data || []).reduce<Record<string, number>>((summary, policy) => {
       summary[policy.mode] = (summary[policy.mode] || 0) + 1;
       return summary;
     }, {});
   }, [policiesQuery.data]);
-
-  const handleApproveDecision = useCallback(
-    async (approval: PendingApproval, approved: boolean) => {
-      if (!shop?.id) return;
-      setDashboardError(null);
-      setIsApproving(true);
-
-      try {
-        const response = await api.post<{
-          message?: string;
-          status?: string;
-          agent?: string;
-          tool_results?: ApprovalExecutionResult;
-        }>("/v2/agent/approve", {
-          shop_id: shop.id,
-          action_id: approval.action_id,
-          approved,
-        });
-
-        const eventTimestamp = nowIso();
-        setStreamedPendingApprovals((prev) =>
-          prev.filter((item) => item.action_id !== approval.action_id)
-        );
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: toId("msg_system"),
-            role: "system",
-            content: response.data.message || `Action ${approved ? "approved" : "rejected"}.`,
-            status: "done",
-            timestamp: eventTimestamp,
-            agent: response.data.agent,
-          },
-        ]);
-        addFeedEvent({
-          type: "approval_decision",
-          title: approved ? "Action approved" : "Action rejected",
-          description: `You ${approved ? "approved" : "rejected"} '${approval.action}'.`,
-          payload: response.data.tool_results || response.data,
-        });
-
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.pending(shop.id) }),
-          queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.briefing(shop.id) }),
-          queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop.id) }),
-        ]);
-      } catch (error) {
-        const detail = getErrorDetail(error, "Failed to submit approval decision");
-        setDashboardError(detail);
-        addFeedEvent({
-          type: "error",
-          title: "Approval failed",
-          description: detail,
-        });
-      } finally {
-        setIsApproving(false);
-      }
-    },
-    [addFeedEvent, queryClient, shop?.id]
-  );
-
-  const handleMarkNotificationRead = useCallback(
-    async (notificationId: number) => {
-      if (!shop?.id) return;
-      setDashboardError(null);
-      setMarkingNotificationId(notificationId);
-
-      try {
-        await api.post(`/v2/agent/notifications/${notificationId}/read`, {
-          shop_id: shop.id,
-        });
-        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop.id) });
-      } catch (error) {
-        setDashboardError(getErrorDetail(error, "Failed to mark notification as read"));
-      } finally {
-        setMarkingNotificationId(null);
-      }
-    },
-    [queryClient, shop?.id]
-  );
-
-  const handleMarkAllNotificationsRead = useCallback(async () => {
-    if (!shop?.id) return;
-    setDashboardError(null);
-    setIsMarkingAllRead(true);
-
-    try {
-      await api.post("/v2/agent/notifications/read-all", { shop_id: shop.id });
-      await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop.id) });
-    } catch (error) {
-      setDashboardError(getErrorDetail(error, "Failed to clear unread notifications"));
-    } finally {
-      setIsMarkingAllRead(false);
-    }
-  }, [queryClient, shop?.id]);
 
   const handleUploadDocuments = useCallback(
     async (selectedFiles: File[]) => {
@@ -493,107 +336,6 @@ const OwnerDashboardPage: React.FC = () => {
     [addFeedEvent, queryClient, shop?.id],
   );
 
-  const handleReindexDocument = useCallback(
-    async (document: OwnerDocumentRecord) => {
-      if (!shop?.id) return;
-
-      setDashboardError(null);
-      setActingDocumentId(document.id);
-      setActingDocumentType("reindex");
-
-      try {
-        const response = await api.post<{ message: string; indexed_chunks: number }>(
-          `/v2/agent/documents/${document.id}/reindex`,
-          { shop_id: shop.id },
-        );
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: toId("msg_system"),
-            role: "system",
-            content: response.data.message,
-            status: "done",
-            timestamp: nowIso(),
-            agent: "system",
-          },
-        ]);
-        addFeedEvent({
-          type: "system",
-          title: "Document re-indexed",
-          description: response.data.message,
-          payload: { document_id: document.id, indexed_chunks: response.data.indexed_chunks },
-        });
-
-        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
-      } catch (error) {
-        const detail = getErrorDetail(error, "Failed to re-index document");
-        setDashboardError(detail);
-        addFeedEvent({
-          type: "error",
-          title: "Document re-index failed",
-          description: detail,
-        });
-      } finally {
-        setActingDocumentId(null);
-        setActingDocumentType(null);
-      }
-    },
-    [addFeedEvent, queryClient, shop?.id],
-  );
-
-  const handleDeleteDocument = useCallback(
-    async (document: OwnerDocumentRecord) => {
-      if (!shop?.id) return;
-
-      const label = document.relative_path || document.filename;
-      if (!window.confirm(`Delete ${label} from secure storage and remove its indexed knowledge?`)) {
-        return;
-      }
-
-      setDashboardError(null);
-      setActingDocumentId(document.id);
-      setActingDocumentType("delete");
-
-      try {
-        const response = await api.delete<{ message: string }>(`/v2/agent/documents/${document.id}`, {
-          params: { shop_id: shop.id },
-        });
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: toId("msg_system"),
-            role: "system",
-            content: response.data.message,
-            status: "done",
-            timestamp: nowIso(),
-            agent: "system",
-          },
-        ]);
-        addFeedEvent({
-          type: "system",
-          title: "Document removed",
-          description: response.data.message,
-          payload: { document_id: document.id },
-        });
-
-        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
-      } catch (error) {
-        const detail = getErrorDetail(error, "Failed to delete document");
-        setDashboardError(detail);
-        addFeedEvent({
-          type: "error",
-          title: "Document delete failed",
-          description: detail,
-        });
-      } finally {
-        setActingDocumentId(null);
-        setActingDocumentType(null);
-      }
-    },
-    [addFeedEvent, queryClient, shop?.id],
-  );
 
   const handleSend = useCallback(
     async (messageText: string) => {
@@ -674,7 +416,29 @@ const OwnerDashboardPage: React.FC = () => {
                   ...msg,
                   content: `${msg.content}${delta}`,
                   status: "streaming",
-                  thinkingComplete: true,
+                  thinkingComplete: false,
+                }
+              : msg
+          );
+        };
+
+        const setAssistantProgress = (
+          stepId: string,
+          label: string,
+          status: ThinkingStep["status"],
+          agent?: string | null,
+          toolName?: string | null,
+        ) => {
+          updateAssistantMessage((msg) =>
+            msg.id === assistantMessageId
+              ? {
+                  ...msg,
+                  agent: agent || msg.agent,
+                  thinkingSteps: upsertThinkingStep(
+                    msg.thinkingSteps,
+                    buildAssistantProgressStep(label, agent, toolName, status, stepId),
+                  ),
+                  thinkingComplete: false,
                 }
               : msg
           );
@@ -710,6 +474,17 @@ const OwnerDashboardPage: React.FC = () => {
 
           if (eventType === "stream_status") {
             const status = String(eventJson.status || "");
+
+            if (eventJson.agent) {
+              updateAssistantMessage((msg) =>
+                msg.id === assistantMessageId
+                  ? {
+                      ...msg,
+                      agent: String(eventJson.agent),
+                    }
+                  : msg
+              );
+            }
 
             if (status === "completed") {
               streamTerminalStatus = "completed";
@@ -750,50 +525,29 @@ const OwnerDashboardPage: React.FC = () => {
           }
 
           if (eventType === "thinking_step") {
-            const stepId = `${String(eventJson.step || eventJson.label || "step")}_${String(eventJson.tool || "")}`;
-            updateAssistantMessage((msg) => {
-              if (msg.id !== assistantMessageId) return msg;
+            setAssistantProgress(
+              `step_${String(eventJson.step || "thinking")}`,
+              String(eventJson.label || "Thinking"),
+              String(eventJson.status || "active") === "done" ? "completed" : "active",
+              eventJson.agent ? String(eventJson.agent) : undefined,
+              eventJson.tool ? String(eventJson.tool) : undefined,
+            );
+            return;
+          }
 
-              const existingSteps = msg.thinkingSteps || [];
-              const existing = existingSteps.find((step) => step.id === stepId);
-              const nextStatus: ThinkingStep["status"] =
-                eventJson.status === "active"
-                  ? "active"
-                  : eventJson.status === "done"
-                    ? "completed"
-                    : "pending";
-              const nextSteps = existing
-                ? existingSteps.map((step) =>
-                    step.id === stepId
-                      ? {
-                          ...step,
-                          label: String(eventJson.label || step.label),
-                          status:
-                            eventJson.status === "active"
-                              ? "active"
-                              : eventJson.status === "done"
-                                ? "completed"
-                                : step.status,
-                          agent: eventJson.agent || step.agent,
-                        }
-                      : step
-                  )
-                : [
-                    ...existingSteps,
-                    {
-                      id: stepId,
-                      label: String(eventJson.label || "Thinking"),
-                      status: nextStatus,
-                      agent: eventJson.agent,
-                    },
-                  ];
+          if (eventType === "reasoning") {
+            const reasoningText = String(eventJson.text || "").trim();
+            if (!reasoningText) {
+              return;
+            }
 
-              return {
-                ...msg,
-                thinkingSteps: nextSteps,
-                thinkingComplete: false,
-              };
-            });
+            setAssistantProgress(
+              String(eventJson.id || `reasoning_${String(eventJson.step || Date.now())}`),
+              reasoningText,
+              "completed",
+              eventJson.agent ? String(eventJson.agent) : undefined,
+              eventJson.tool ? String(eventJson.tool) : undefined,
+            );
             return;
           }
 
@@ -815,6 +569,14 @@ const OwnerDashboardPage: React.FC = () => {
           }
 
           if (eventType === "agent_switch") {
+            updateAssistantMessage((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    agent: eventJson.agent ? String(eventJson.agent) : msg.agent,
+                  }
+                : msg
+            );
             addFeedEvent({
               type: "agent_switch",
               title: "Agent switched",
@@ -825,6 +587,13 @@ const OwnerDashboardPage: React.FC = () => {
           }
 
           if (eventType === "tool_call") {
+            setAssistantProgress(
+              `tool_${String(eventJson.tool || "tool")}`,
+              String(eventJson.label || `Running ${formatAssistantProgressLabel(String(eventJson.tool || "tool"))}`),
+              "active",
+              eventJson.agent ? String(eventJson.agent) : undefined,
+              eventJson.tool ? String(eventJson.tool) : undefined,
+            );
             addFeedEvent({
               type: "tool_call",
               title: `Tool call: ${String(eventJson.tool || "unknown")}`,
@@ -835,6 +604,13 @@ const OwnerDashboardPage: React.FC = () => {
           }
 
           if (eventType === "tool_result") {
+            setAssistantProgress(
+              `tool_${String(eventJson.tool || "tool")}`,
+              `Completed ${formatAssistantProgressLabel(String(eventJson.tool || "tool"))}`,
+              "completed",
+              eventJson.agent ? String(eventJson.agent) : undefined,
+              eventJson.tool ? String(eventJson.tool) : undefined,
+            );
             addFeedEvent({
               type: "tool_result",
               title: `Tool result: ${String(eventJson.tool || "unknown")}`,
@@ -853,6 +629,23 @@ const OwnerDashboardPage: React.FC = () => {
                   ? {
                       ...msg,
                       charts: [...(msg.charts || []), chart],
+                      thinkingComplete: true,
+                    }
+                  : msg
+              );
+            }
+            return;
+          }
+
+          if (eventType === "table") {
+            const table = parseStreamTable(eventJson);
+            if (table) {
+              sawRenderableAssistantContent = true;
+              updateAssistantMessage((msg) =>
+                msg.id === assistantMessageId
+                  ? {
+                      ...msg,
+                      tables: [...(msg.tables || []), table],
                       thinkingComplete: true,
                     }
                   : msg
@@ -930,7 +723,11 @@ const OwnerDashboardPage: React.FC = () => {
           if (!target) return prev;
 
           const contentEmpty = !String(target.content || "").trim();
-          const hasRichPayload = Boolean((target.charts && target.charts.length > 0) || (target.files && target.files.length > 0));
+          const hasRichPayload = Boolean(
+            (target.charts && target.charts.length > 0) ||
+              (target.tables && target.tables.length > 0) ||
+              (target.files && target.files.length > 0)
+          );
 
           if (streamTerminalStatus === "error") {
             return prev.map((msg) =>
@@ -957,132 +754,144 @@ const OwnerDashboardPage: React.FC = () => {
     [addFeedEvent, queryClient, shop?.id, token]
   );
 
-  const derivedOperationsCards = useMemo(() => {
+  const contextPromptSections = useMemo<AgentChatPromptSection[]>(() => {
     const nextAvailability = operationsSnapshot.employeeAvailability.find((entry) => entry.next_available_slot);
-    return [
+    const sections: AgentChatPromptSection[] = [
       {
-        title: "Queues",
-        value: `${operationsSnapshot.stats.waiting}`,
-        description: `${operationsSnapshot.stats.activeQueues} queue${operationsSnapshot.stats.activeQueues === 1 ? "" : "s"} active with an estimated wait of ${operationsSnapshot.stats.etaMinutes} minutes.`,
-        caption: `${operationsSnapshot.queueMetrics?.people_being_served || 0} currently being served`,
-        icon: <QueueRoundedIcon sx={{ color: brandPrimary }} />,
-        to: "/queues",
-        cta: "Open queues",
+        id: "start",
+        title: "Start with",
+        prompts: [
+          {
+            id: "queue-summary",
+            label: "Queue summary",
+            prompt: "Give me today's queue summary and the next operational action.",
+          },
+          {
+            id: "revenue-trend",
+            label: "Revenue trend",
+            prompt: "Show this week's revenue trend and explain any change worth acting on.",
+          },
+          {
+            id: "shift-now",
+            label: "Who's on shift",
+            prompt: "Who is on shift now and where are the staffing gaps?",
+          },
+          {
+            id: "crm-pipeline",
+            label: "CRM pipeline",
+            prompt: "Show my CRM pipeline summary and tell me what needs attention first.",
+          },
+        ],
       },
       {
-        title: "Appointments",
-        value: `${operationsSnapshot.stats.confirmedAppointments}`,
-        description: `${operationsSnapshot.stats.activeAppointments} active appointment${operationsSnapshot.stats.activeAppointments === 1 ? "" : "s"} today across the live schedule.`,
-        caption: operationsSnapshot.appointments[0]
-          ? `Next at ${formatDateTime(operationsSnapshot.appointments[0].scheduled_start)}`
-          : "No appointments scheduled today",
-        icon: <CalendarMonthRoundedIcon sx={{ color: brandSecondary }} />,
-        to: "/appointments",
-        cta: "Open appointments",
-      },
-      {
-        title: "Team",
-        value: `${operationsSnapshot.stats.clockedInEmployees}/${operationsSnapshot.stats.totalEmployees}`,
-        description: `${operationsSnapshot.stats.unavailableEmployees} team member${operationsSnapshot.stats.unavailableEmployees === 1 ? "" : "s"} currently unavailable.`,
-        caption: nextAvailability ? `${nextAvailability.username} next free at ${formatDateTime(nextAvailability.next_available_slot)}` : "No upcoming availability published",
-        icon: <GroupsRoundedIcon sx={{ color: brandPrimary }} />,
-        to: "/employees",
-        cta: "Open team",
-      },
-      {
-        title: "Services",
-        value: `${operationsSnapshot.stats.totalServices}`,
-        description: `Average service length is ${operationsSnapshot.stats.averageServiceDuration || 0} minutes with an average price of ${formatCurrency(operationsSnapshot.stats.averageServiceCost)}.`,
-        caption: operationsSnapshot.services[0] ? `${operationsSnapshot.services[0].name} is currently published` : "No services configured yet",
-        icon: <ContentCutRoundedIcon sx={{ color: brandSecondary }} />,
-        to: "/services",
-        cta: "Open services",
+        id: "workspace",
+        title: "Workspace context",
+        prompts: [
+          {
+            id: "queues",
+            label: `Queues: ${operationsSnapshot.stats.waiting} waiting`,
+            prompt: `Show the live queue status. There are ${operationsSnapshot.stats.waiting} people waiting, ${operationsSnapshot.stats.activeQueues} active queues, and ${operationsSnapshot.queueMetrics?.people_being_served || 0} currently being served.`,
+          },
+          {
+            id: "appointments",
+            label: `Appointments: ${operationsSnapshot.stats.confirmedAppointments} today`,
+            prompt: `Review today's appointments. There are ${operationsSnapshot.stats.confirmedAppointments} confirmed appointments and ${operationsSnapshot.stats.activeAppointments} active appointments. ${operationsSnapshot.appointments[0] ? `The next appointment is at ${formatDateTime(operationsSnapshot.appointments[0].scheduled_start)}.` : "There are no appointments scheduled right now."}`,
+          },
+          {
+            id: "team",
+            label: `Team: ${operationsSnapshot.stats.clockedInEmployees}/${operationsSnapshot.stats.totalEmployees}`,
+            prompt: `Review team availability. ${operationsSnapshot.stats.clockedInEmployees} of ${operationsSnapshot.stats.totalEmployees} employees are clocked in, and ${operationsSnapshot.stats.unavailableEmployees} are unavailable. ${nextAvailability ? `${nextAvailability.username} is next free at ${formatDateTime(nextAvailability.next_available_slot)}.` : "No upcoming availability is published."}`,
+          },
+          {
+            id: "services",
+            label: `Services: ${operationsSnapshot.stats.totalServices} active`,
+            prompt: `Summarize current services. There are ${operationsSnapshot.stats.totalServices} active services with an average duration of ${operationsSnapshot.stats.averageServiceDuration || 0} minutes and an average price of ${formatCurrency(operationsSnapshot.stats.averageServiceCost)}.`,
+          },
+        ],
       },
     ];
+
+    if (briefingQuery.data) {
+      sections.push({
+        id: "today",
+        title: "Today",
+        prompts: [
+          {
+            id: "briefing-summary",
+            label: "Today summary",
+            prompt: briefingQuery.data.summary,
+          },
+          ...(briefingQuery.data.actions || []).slice(0, 3).map((action, index) => ({
+            id: `briefing-action-${index}`,
+            label: action.label,
+            prompt: action.payload,
+          })),
+          ...(briefingQuery.data.recommendations || []).slice(0, 2).map((recommendation, index) => ({
+            id: `recommendation-${index}`,
+            label: `Recommendation ${index + 1}`,
+            prompt: recommendation,
+          })),
+        ],
+      });
+    }
+
+    if (pendingApprovals.length > 0) {
+      sections.push({
+        id: "approvals",
+        title: "Pending approvals",
+        prompts: pendingApprovals.slice(0, 3).map((approval, index) => ({
+          id: approval.action_id || `approval-${index}`,
+          label: approval.title || approval.action.replace(/_/g, " "),
+          prompt: `Review the pending approval '${approval.title || approval.action}'. Reason: ${approval.reason || "not provided"}. Expected impact: ${approval.expected_impact || "not provided"}. Tell me whether I should approve it.`,
+        })),
+      });
+    }
+
+    if (displayedFeedEvents.length > 0) {
+      sections.push({
+        id: "recent",
+        title: "Recent activity",
+        prompts: displayedFeedEvents.slice(0, 4).map((event) => ({
+          id: `feed-${event.id}`,
+          label: event.title,
+          prompt: `Explain this recent activity and tell me if I should act on it: ${event.title}. ${event.description}`,
+        })),
+      });
+    }
+
+    if (Object.keys(policySummary).length > 0) {
+      sections.push({
+        id: "automation",
+        title: "Automation",
+        prompts: [
+          {
+            id: "policy-summary",
+            label: "Automation posture",
+            prompt: `Summarize my current automation policy posture. ${Object.entries(policySummary)
+              .map(([mode, count]) => `${count} set to ${labelForPolicyMode(mode)}`)
+              .join(", ")}.`,
+          },
+        ],
+      });
+    }
+
+    return sections;
   }, [
-    brandPrimary,
-    brandSecondary,
+    briefingQuery.data,
+    displayedFeedEvents,
     operationsSnapshot.appointments,
     operationsSnapshot.employeeAvailability,
     operationsSnapshot.queueMetrics,
-    operationsSnapshot.services,
     operationsSnapshot.stats,
+    pendingApprovals,
+    policySummary,
   ]);
 
-  const handleSectionChange = (_event: React.SyntheticEvent, value: string) => {
-    setActiveSection(value as "today" | "operations" | "agent");
-  };
-
-  const handleOpenAgentFromToday = useCallback(async (action?: BriefingAction) => {
-    setActiveSection("agent");
-    if (action?.payload) {
-      await handleSend(action.payload);
-    }
-  }, [handleSend]);
-
   return (
-    <Box sx={{ width: "100%", maxWidth: { sm: "100%", md: "1700px" } }}>
+    <Box sx={{ width: "100%", maxWidth: { sm: "100%", md: "1680px" }, mx: "auto" }}>
       <Header />
 
-      <Stack spacing={2.5}>
-        <Card
-          variant="outlined"
-          sx={{
-            borderRadius: 3,
-            borderColor: panelCardBorder,
-            bgcolor: panelCardBg,
-            backdropFilter: "blur(20px)",
-          }}
-        >
-          <CardContent>
-            <Stack spacing={1.5}>
-              <Stack
-                direction={{ xs: "column", lg: "row" }}
-                spacing={1.5}
-                justifyContent="space-between"
-                alignItems={{ xs: "flex-start", lg: "center" }}
-              >
-                <Box>
-                  <Typography variant="overline" sx={{ color: brandPrimary, fontWeight: 800, letterSpacing: "0.16em" }}>
-                    OWNER WORKSPACE
-                  </Typography>
-                  <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: "-0.05em", mt: 0.5 }}>
-                    Today, operations, and agent control in one owner shell.
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1, maxWidth: 760 }}>
-                    Today surfaces briefings, approvals, and feed. Operations summarizes queues, appointments, team, and services with deep links into the existing workspaces. Agent keeps the live assistant available without dominating the page.
-                  </Typography>
-                </Box>
-                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                  <Chip icon={<WarningAmberRoundedIcon />} label={`${pendingApprovals.length} pending approval${pendingApprovals.length === 1 ? "" : "s"}`} />
-                  <Chip icon={<AutoGraphRoundedIcon />} label={`${operationsSnapshot.stats.confirmedAppointments} appointments today`} />
-                  <Chip icon={<SmartToyRoundedIcon />} label={isStreaming ? "Agent active" : "Agent ready"} />
-                </Stack>
-              </Stack>
-
-              <Tabs
-                value={activeSection}
-                onChange={handleSectionChange}
-                variant="scrollable"
-                allowScrollButtonsMobile
-                sx={{
-                  borderTop: `1px solid ${alpha(brandPrimary, 0.12)}`,
-                  pt: 1,
-                  "& .MuiTabs-indicator": {
-                    backgroundColor: brandPrimary,
-                    height: 3,
-                    borderRadius: 999,
-                  },
-                }}
-              >
-                <Tab value="today" icon={<InsightsRoundedIcon />} iconPosition="start" label="Today" sx={{ textTransform: "none", fontWeight: 700 }} />
-                <Tab value="operations" icon={<QueueRoundedIcon />} iconPosition="start" label="Operations" sx={{ textTransform: "none", fontWeight: 700 }} />
-                <Tab value="agent" icon={<SmartToyRoundedIcon />} iconPosition="start" label="Agent" sx={{ textTransform: "none", fontWeight: 700 }} />
-              </Tabs>
-            </Stack>
-          </CardContent>
-        </Card>
-
+      <Stack spacing={2}>
         {dashboardError && <Alert severity="error">{dashboardError}</Alert>}
 
         {!shop?.id && (
@@ -1091,209 +900,24 @@ const OwnerDashboardPage: React.FC = () => {
           </Alert>
         )}
 
-        <TabPanel activeValue={activeSection} value="today">
-          <Stack spacing={2}>
-            {briefingQuery.isLoading ? (
-              <Card variant="outlined" sx={{ borderRadius: 3 }}>
-                <CardContent>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <CircularProgress size={18} />
-                    <Typography variant="body2" color="text.secondary">
-                      Loading your live briefing...
-                    </Typography>
-                  </Stack>
-                </CardContent>
-              </Card>
-            ) : (
-              <OwnerBriefing briefing={briefingQuery.data || null} onAction={handleOpenAgentFromToday} />
-            )}
-
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, lg: 5 }}>
-                <Stack spacing={2}>
-                  <Card
-                    variant="outlined"
-                    sx={{
-                      borderRadius: 3,
-                      borderColor: panelCardBorder,
-                      bgcolor: panelCardBg,
-                      backdropFilter: "blur(20px)",
-                    }}
-                  >
-                    <CardContent sx={{ py: 1.5 }}>
-                      <Stack spacing={1.25}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="h6">Pending Approvals</Typography>
-                          <Chip size="small" label={pendingApprovals.length} sx={{ bgcolor: alpha(brandPrimary, 0.14), color: brandPrimary, fontWeight: 700 }} />
-                        </Stack>
-                        <Divider sx={{ borderColor: alpha(brandPrimary, 0.12) }} />
-                        {pendingQuery.isLoading ? (
-                          <Stack direction="row" spacing={1} alignItems="center" py={1}>
-                            <CircularProgress size={16} />
-                            <Typography variant="body2" color="text.secondary">
-                              Refreshing approvals...
-                            </Typography>
-                          </Stack>
-                        ) : pendingApprovals.length > 0 ? (
-                          pendingApprovals.slice(0, 4).map((approval) => (
-                            <ApprovalCard
-                              key={approval.action_id || `${approval.action}_${approval.shop_id}`}
-                              approval={approval}
-                              isSubmitting={isApproving}
-                              onDecision={handleApproveDecision}
-                            />
-                          ))
-                        ) : (
-                          <Typography variant="body2" color="text.secondary">
-                            No actions are waiting for approval right now.
-                          </Typography>
-                        )}
-                      </Stack>
-                    </CardContent>
-                  </Card>
-
-                  <Card variant="outlined" sx={{ borderRadius: 3 }}>
-                    <CardContent>
-                      <Stack spacing={1.25}>
-                        <Typography variant="h6">Quick actions</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Jump straight into the detailed workspaces when you need full control.
-                        </Typography>
-                        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                          <Button component={RouterLink} to="/overview" variant="outlined" sx={{ borderRadius: 999, textTransform: "none", fontWeight: 700 }}>
-                            View analytics
-                          </Button>
-                          <Button component={RouterLink} to="/appointments" variant="outlined" sx={{ borderRadius: 999, textTransform: "none", fontWeight: 700 }}>
-                            Open schedule
-                          </Button>
-                        </Stack>
-                      </Stack>
-                    </CardContent>
-                  </Card>
-                </Stack>
-              </Grid>
-
-              <Grid size={{ xs: 12, lg: 7 }}>
-                <AgentFeed
-                  events={displayedFeedEvents}
-                  unreadCount={unreadFeedCount}
-                  isMarkingAllRead={isMarkingAllRead}
-                  markingNotificationId={markingNotificationId}
-                  onMarkAsRead={handleMarkNotificationRead}
-                  onMarkAllAsRead={handleMarkAllNotificationsRead}
-                  maxHeight={{ xs: 420, lg: 720 }}
-                />
-              </Grid>
-            </Grid>
-          </Stack>
-        </TabPanel>
-
-        <TabPanel activeValue={activeSection} value="operations">
-          <Stack spacing={2}>
-            <Card variant="outlined" sx={{ borderRadius: 3 }}>
-              <CardContent>
-                <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} justifyContent="space-between">
-                  <Box>
-                    <Typography variant="h6">Operations summary</Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                      These summaries are powered by the existing queue, appointment, employee, and service endpoints. The detailed workspaces stay live and unchanged behind each card.
-                    </Typography>
-                  </Box>
-                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                    <Button component={RouterLink} to="/overview" variant="contained" sx={{ borderRadius: 999, textTransform: "none", fontWeight: 700 }}>
-                      Open overview
-                    </Button>
-                    <Button component={RouterLink} to="/settings" variant="outlined" sx={{ borderRadius: 999, textTransform: "none", fontWeight: 700 }}>
-                      Shop setup
-                    </Button>
-                  </Stack>
-                </Stack>
-              </CardContent>
-            </Card>
-
-            {operationsSnapshot.isLoading ? (
-              <Card variant="outlined" sx={{ borderRadius: 3 }}>
-                <CardContent>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <CircularProgress size={18} />
-                    <Typography variant="body2" color="text.secondary">
-                      Loading operations snapshots...
-                    </Typography>
-                  </Stack>
-                </CardContent>
-              </Card>
-            ) : (
-              <Grid container spacing={2}>
-                {derivedOperationsCards.map((card) => (
-                  <Grid key={card.title} size={{ xs: 12, md: 6 }}>
-                    <OperationsCard {...card} />
-                  </Grid>
-                ))}
-              </Grid>
-            )}
-          </Stack>
-        </TabPanel>
-
-        <TabPanel activeValue={activeSection} value="agent">
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, lg: 7.5 }}>
-              <Box sx={{ minHeight: { lg: 640 } }}>
-                <AgentChat
-                  messages={messages}
-                  isStreaming={isStreaming}
-                  isUploading={isUploadingDocuments}
-                  onSend={handleSend}
-                  onUpload={handleUploadDocuments}
-                />
-              </Box>
-            </Grid>
-            <Grid size={{ xs: 12, lg: 4.5 }}>
-              <Stack spacing={2}>
-                <Card variant="outlined" sx={{ borderRadius: 3 }}>
-                  <CardContent>
-                    <Stack spacing={1.25}>
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <TuneRoundedIcon sx={{ color: brandPrimary }} />
-                        <Typography variant="h6">Agent controls</Typography>
-                      </Stack>
-                      <Typography variant="body2" color="text.secondary">
-                        Policy management remains on the same backend contract. This view surfaces the current automation posture without widening scope.
-                      </Typography>
-                      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                        {Object.keys(policySummary).length > 0 ? (
-                          Object.entries(policySummary).map(([mode, count]) => (
-                            <Chip key={mode} label={`${labelForPolicyMode(mode)}: ${count}`} variant="outlined" />
-                          ))
-                        ) : (
-                          <Chip label={policiesQuery.isLoading ? "Loading policies" : "No policies loaded"} variant="outlined" />
-                        )}
-                      </Stack>
-                    </Stack>
-                  </CardContent>
-                </Card>
-
-                <OwnerDocumentsPanel
-                  documents={documentsQuery.data || []}
-                  isLoading={documentsQuery.isLoading}
-                  actingDocumentId={actingDocumentId}
-                  actingType={actingDocumentType}
-                  onReindex={handleReindexDocument}
-                  onDelete={handleDeleteDocument}
-                />
-
-                <AgentFeed
-                  events={displayedFeedEvents.slice(0, 8)}
-                  unreadCount={unreadFeedCount}
-                  isMarkingAllRead={isMarkingAllRead}
-                  markingNotificationId={markingNotificationId}
-                  onMarkAsRead={handleMarkNotificationRead}
-                  onMarkAllAsRead={handleMarkAllNotificationsRead}
-                  maxHeight={{ xs: 320, lg: 420 }}
-                />
-              </Stack>
-            </Grid>
-          </Grid>
-        </TabPanel>
+        <Box
+          sx={{
+            height: { xs: 620, lg: "calc(100vh - 210px)" },
+            minHeight: { xs: 620, lg: "calc(100vh - 210px)" },
+            display: "flex",
+          }}
+        >
+          <AgentChat
+            messages={messages}
+            isStreaming={isStreaming}
+            isUploading={isUploadingDocuments}
+            onSend={handleSend}
+            onUpload={handleUploadDocuments}
+            title="Hello there!"
+            subtitle="How can I help you today?"
+            promptSections={contextPromptSections}
+          />
+        </Box>
       </Stack>
     </Box>
   );

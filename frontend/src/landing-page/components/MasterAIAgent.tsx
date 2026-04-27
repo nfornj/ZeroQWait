@@ -34,6 +34,7 @@ import ThinkingSteps, { ThinkingStep } from "../../features/agent-inbox/Thinking
 import { BarChart } from "@mui/x-charts/BarChart";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { PieChart } from "@mui/x-charts/PieChart";
+import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
 import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
 
 import Pricing from "./Pricing";
@@ -52,7 +53,8 @@ import InlineCheckoutCard, { CheckoutCardData } from "./InlineCheckoutCard";
 import InlineFeedbackForm from "./InlineFeedbackForm";
 import { constructShopUrl, isLocalhost } from "../../utils/domainUtils";
 
-import type { AgentChart, AgentFile } from "../../features/agent-inbox/types";
+import { createAgentChartFromPayload, resolveAgentChart } from "../../features/agent-inbox/types";
+import type { AgentChart, AgentFile, ResolvedAgentChart } from "../../features/agent-inbox/types";
 
 type ActionCommand = {
   label: string;
@@ -103,6 +105,21 @@ type ShopContext = {
   city?: string;
   shopType?: string;
 };
+
+const buildChartPalette = (chart: ResolvedAgentChart, accent: string) => {
+  const explicit = Array.isArray(chart.colors) ? chart.colors.filter((value) => typeof value === "string" && value.trim()) : [];
+  return explicit.length > 0 ? explicit : [accent, "#0284c7", "#0f766e", "#ca8a04"];
+};
+
+const toChartSeries = (chart: ResolvedAgentChart, palette: string[]) =>
+  chart.series.map((series, index) => ({
+    data: chart.data.map((point) => {
+      const rawValue = point[series.key];
+      return typeof rawValue === "number" ? rawValue : Number(rawValue ?? 0);
+    }),
+    label: series.label,
+    color: series.color || palette[index % palette.length],
+  }));
 
 type MasterAIAgentProps = {
   forceOpen?: boolean;
@@ -1393,15 +1410,10 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
               }
             } else if (data.type === "chart") {
               // --- Inline chart data ---
-              const chart: import("../../features/agent-inbox/types").AgentChart = {
-                id: `chart_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                title: data.title || "Chart",
-                chartType: data.chartType || "bar",
-                data: Array.isArray(data.data) ? data.data : [],
-                xKey: data.xKey,
-                yKey: data.yKey,
-                timestamp: new Date().toISOString(),
-              };
+              const chart = createAgentChartFromPayload(data, new Date().toISOString());
+              if (!chart) {
+                continue;
+              }
               setChatHistory((prev) => {
                 const next = [...prev];
                 if (next[aiMessageIndex]) {
@@ -2238,34 +2250,64 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                           {chat.charts && chat.charts.length > 0 && (
                             <Box sx={{ mt: 1.5, width: "100%" }}>
                               {chat.charts.map((c) => {
-                                const labels = c.data.map((d) => d.label);
-                                const values = c.data.map((d) => d.value);
+                                const resolvedChart = resolveAgentChart(c);
+                                if (!resolvedChart) {
+                                  return null;
+                                }
+
+                                const labels = resolvedChart.data.map((point) => String(point[resolvedChart.xKey] ?? ""));
+                                const palette = buildChartPalette(resolvedChart, theme.accent);
+                                const chartSeries = toChartSeries(resolvedChart, palette);
+                                const primarySeries = chartSeries[0];
                                 return (
                                   <Box key={c.id} sx={{ mb: 1 }}>
                                     <Typography variant="caption" sx={{ fontWeight: 700, mb: 0.5, display: "block", color: theme.accent }}>
-                                      {c.title}
+                                      {resolvedChart.title}
                                     </Typography>
-                                    {c.chartType === "line" ? (
+                                    {resolvedChart.description ? (
+                                      <Typography variant="caption" sx={{ mb: 0.75, display: "block", color: alpha(theme.accent, 0.78) }}>
+                                        {resolvedChart.description}
+                                      </Typography>
+                                    ) : null}
+                                    {resolvedChart.chartType === "sparkline" && primarySeries ? (
+                                      <SparkLineChart
+                                        data={primarySeries.data}
+                                        height={72}
+                                        curve="natural"
+                                        area
+                                        color={primarySeries.color}
+                                      />
+                                    ) : resolvedChart.chartType === "line" ? (
                                       <LineChart
                                         xAxis={[{ data: labels, scaleType: "band" }]}
-                                        series={[{ data: values, color: theme.accent }]}
+                                        series={chartSeries}
                                         height={140}
                                         margin={{ top: 8, right: 8, bottom: 24, left: 36 }}
-                                        hideLegend
+                                        hideLegend={!resolvedChart.showLegend}
+                                        grid={{ horizontal: resolvedChart.showGrid, vertical: false }}
                                       />
-                                    ) : c.chartType === "pie" ? (
+                                    ) : resolvedChart.chartType === "pie" && primarySeries ? (
                                       <PieChart
-                                        series={[{ data: c.data.map((d, i) => ({ id: i, value: d.value, label: d.label })) }]}
+                                        series={[
+                                          {
+                                            data: resolvedChart.data.map((point, index) => ({
+                                              id: index,
+                                              value: primarySeries.data[index] ?? 0,
+                                              label: String(point[resolvedChart.xKey] ?? ""),
+                                            })),
+                                          },
+                                        ]}
                                         height={140}
-                                        hideLegend
+                                        hideLegend={!resolvedChart.showLegend}
                                       />
                                     ) : (
                                       <BarChart
                                         xAxis={[{ data: labels, scaleType: "band" }]}
-                                        series={[{ data: values, color: theme.accent }]}
+                                        series={chartSeries}
                                         height={140}
                                         margin={{ top: 8, right: 8, bottom: 24, left: 36 }}
-                                        hideLegend
+                                        hideLegend={!resolvedChart.showLegend}
+                                        grid={{ horizontal: resolvedChart.showGrid, vertical: false }}
                                       />
                                     )}
                                   </Box>

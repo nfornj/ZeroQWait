@@ -26,7 +26,6 @@ import ResetPasswordPage from "./features/auth/pages/ResetPasswordPage";
 import ShopLayout from "./layouts/ShopLayout";
 // PublicShopPage is used via SubdomainHandler (subdomain routing only)
 import PublicLayout from "./layouts/PublicLayout";
-import AgentInbox from "./features/agent-inbox/AgentInbox";
 import MasterDashboardPage from "./features/admin/pages/MasterDashboardPage";
 import ServicesManagementPage from "./features/shop-dashboard/pages/ServicesManagementPage";
 import AppointmentsPage from "./features/shop-dashboard/pages/AppointmentsPage";
@@ -107,7 +106,7 @@ function App() {
             <Route path="/queues/:queueId" element={<OwnerOnly><QueueDetailPage /></OwnerOnly>} />
             <Route path="/services" element={<OwnerOnly><ServicesManagementPage /></OwnerOnly>} />
             <Route path="/appointments" element={<OwnerOnly><AppointmentsPage /></OwnerOnly>} />
-          <Route path="/agent-inbox" element={<OwnerOnly><AgentInbox /></OwnerOnly>} />
+            <Route path="/agent-inbox" element={<DashboardEntry />} />
           </Route>
 
           {/* Admin Portal — super_admin only, standalone (no ShopLayout) */}

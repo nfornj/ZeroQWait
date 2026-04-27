@@ -1,3 +1,4 @@
+// RESTYLED: Perplexity-style
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Box, CssBaseline, alpha, useTheme } from '@mui/material';
@@ -71,23 +72,17 @@ const ShopLayout: React.FC = () => {
             {/* Main Content */}
             <Box
                 component="main"
-                sx={(theme) => ({
+                sx={{
                     flexGrow: 1,
-                    backgroundColor: theme.vars
-                        ? `rgba(${theme.vars.palette.background.defaultChannel} / 1)`
-                        : alpha(theme.palette.background.default, 1),
-                    backgroundImage:
-                        theme.palette.mode === 'light'
-                            ? `radial-gradient(circle at 15% 20%, ${alpha(brandPrimary, 0.16)}, transparent 36%), radial-gradient(circle at 85% 0%, ${alpha(brandSecondary, 0.12)}, transparent 35%), linear-gradient(180deg, ${alpha('#ffffff', 0.94)}, ${alpha('#f8fbff', 0.98)})`
-                            : `radial-gradient(circle at 15% 20%, ${alpha(brandPrimary, 0.24)}, transparent 36%), radial-gradient(circle at 85% 0%, ${alpha(brandSecondary, 0.18)}, transparent 35%), linear-gradient(180deg, rgba(8,10,18,0.98), rgba(10,12,22,0.98))`,
+                    backgroundColor: theme.palette.background.default,
                     overflow: 'auto',
                     minHeight: '100vh',
-                })}
+                }}
             >
                 <Box sx={{
                     display: 'flex',
                     flexDirection: 'column',
-                    alignItems: 'center',
+                    alignItems: 'stretch',
                     px: { xs: 1.5, md: 3 },
                     pb: 5,
                     mt: { xs: 8, md: 10 },

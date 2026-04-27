@@ -1,19 +1,14 @@
+// RESTYLED: Perplexity-style
 import * as React from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import MuiAvatar from '@mui/material/Avatar';
 import MuiListItemAvatar from '@mui/material/ListItemAvatar';
-import MenuItem from '@mui/material/MenuItem';
-import ListItemText from '@mui/material/ListItemText';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import ListSubheader from '@mui/material/ListSubheader';
-import Select, { SelectChangeEvent, selectClasses } from '@mui/material/Select';
 import Divider from '@mui/material/Divider';
+import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
-import AutorenewRoundedIcon from '@mui/icons-material/AutorenewRounded';
-import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
 import { useLocation } from 'react-router-dom';
@@ -35,22 +30,9 @@ const ListItemAvatar = styled(MuiListItemAvatar)({
 
 export default function SelectContent() {
   const location = useLocation();
-  const { shop, loading, ownedShops, shopsLoading, refreshOwnedShops, selectOwnedShop } = useShop();
+  const { shop, loading } = useShop();
   const { user, logout } = useAuth();
-  const [company, setCompany] = React.useState('');
   const isEmployee = user?.role === 'employee' || location.pathname.startsWith('/employee-dashboard');
-
-  React.useEffect(() => {
-    if (shop) {
-      setCompany(shop.id.toString());
-    }
-  }, [shop]);
-
-  React.useEffect(() => {
-    if (!loading && !shop && user?.role === 'shop_owner' && !isEmployee) {
-      void refreshOwnedShops();
-    }
-  }, [loading, shop, user?.role, refreshOwnedShops, isEmployee]);
 
   if (isEmployee) {
     return (
@@ -97,117 +79,44 @@ export default function SelectContent() {
     );
   }
 
-  const handleChange = (event: SelectChangeEvent) => {
-    const nextShopId = Number(event.target.value as string);
-    setCompany(String(nextShopId));
-    selectOwnedShop(nextShopId);
-  };
-
-  const resolveShopLogoSrc = () => {
-    if (!shop?.id || !shop?.logo_url) return undefined;
-    return `/api/shops/${shop.id}/logo`;
-  };
-
   return (
-    <Box
-      sx={{
-        width: '100%',
-        bgcolor: 'var(--owner-glass-bg)',
-        backdropFilter: 'blur(18px)',
-        borderRadius: 3,
-        boxShadow: 'var(--owner-glass-shadow)',
-        border: '1px solid var(--owner-glass-border)',
-        p: 1.25,
-      }}
-    >
-      <Stack spacing={1.25}>
-        <Stack direction="row" spacing={1.25} alignItems="center">
-          <Avatar alt={user?.username || shop?.name || 'Owner'} src={resolveShopLogoSrc()} sx={{ width: 36, height: 36 }}>
-            {user ? <PersonRoundedIcon sx={{ fontSize: '1rem' }} /> : <DevicesRoundedIcon sx={{ fontSize: '1rem' }} />}
-          </Avatar>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
-              {user?.username || 'Shop Owner'}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {user?.email || shop?.name || 'No shop selected'}
-            </Typography>
-          </Box>
-        </Stack>
-
-        <Divider />
-
-        <Box>
-          <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 700, px: 0.25 }}>
-            Active Shop
-          </Typography>
-          <Select
-            labelId="company-select"
-            id="company-simple-select"
-            value={company}
-            onChange={handleChange}
-            displayEmpty
-            inputProps={{ 'aria-label': 'Select company' }}
-            fullWidth
-            size="small"
+    <Box sx={{ width: '100%' }}>
+      <Box sx={{ px: 1.5, py: 1.5, mb: 0.5 }}>
+        {loading || !shop ? (
+          <Skeleton variant="text" width={140} height={22} />
+        ) : (
+          <Typography
             sx={{
-              mt: 0.5,
-              '& .MuiOutlinedInput-notchedOutline': {
-                borderColor: 'var(--owner-glass-border)',
-              },
-              [`& .${selectClasses.select}`]: {
-                display: 'flex',
-                alignItems: 'center',
-                gap: '2px',
-                pl: 1,
-              },
+              fontSize: '0.9375rem',
+              fontWeight: 600,
+              letterSpacing: '-0.01em',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '188px',
+              color: 'text.primary',
             }}
           >
-            <ListSubheader sx={{ pt: 0 }}>My Shops</ListSubheader>
-            {ownedShops.map((ownedShop) => (
-              <MenuItem key={ownedShop.id} value={ownedShop.id.toString()}>
-                <ListItemAvatar>
-                  <Avatar alt={ownedShop.name} sx={{ width: 30, height: 30 }}>
-                    <DevicesRoundedIcon sx={{ fontSize: '0.95rem' }} />
-                  </Avatar>
-                </ListItemAvatar>
-                <ListItemText
-                  primary={ownedShop.name}
-                  primaryTypographyProps={{ variant: 'body2', fontWeight: 600, noWrap: true }}
-                />
-              </MenuItem>
-            ))}
-            {!shop && !loading && ownedShops.length === 0 && (
-              <MenuItem value="">
-                <ListItemText primary="No Shop Selected" />
-              </MenuItem>
-            )}
-          </Select>
-        </Box>
+            {shop.name}
+          </Typography>
+        )}
+      </Box>
 
-        <Stack direction="row" spacing={1}>
-          <Button
-            variant="outlined"
-            fullWidth
-            size="small"
-            onClick={() => void refreshOwnedShops()}
-            disabled={shopsLoading}
-            startIcon={<AutorenewRoundedIcon />}
-          >
-            Refresh
-          </Button>
-          <Button
-            variant="outlined"
-            color="inherit"
-            fullWidth
-            size="small"
-            onClick={logout}
-            startIcon={<LogoutRoundedIcon />}
-          >
-            Logout
-          </Button>
-        </Stack>
-      </Stack>
+      <Button
+        variant="text"
+        color="inherit"
+        size="small"
+        onClick={logout}
+        startIcon={<LogoutRoundedIcon />}
+        sx={{
+          justifyContent: 'flex-start',
+          px: 1.5,
+          minHeight: 32,
+          color: 'text.secondary',
+        }}
+      >
+        Logout
+      </Button>
     </Box>
   );
 }

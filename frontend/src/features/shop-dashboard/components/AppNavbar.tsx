@@ -1,3 +1,4 @@
+// RESTYLED: Perplexity-style
 import * as React from 'react';
 import { styled } from '@mui/material/styles';
 import AppBar from '@mui/material/AppBar';
@@ -27,11 +28,11 @@ const drawerWidth = 240;
 
 const Toolbar = styled(MuiToolbar)({
   width: '100%',
-  padding: '12px',
+  padding: '10px 16px',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  gap: '12px',
+  gap: '10px',
   flexShrink: 0,
   [`& ${tabsClasses.flexContainer}`]: {
     gap: '8px',
@@ -67,12 +68,11 @@ export default function AppNavbar() {
       position="fixed"
       sx={{
         display: 'block',
-        boxShadow: 'var(--owner-glass-shadow)',
-        bgcolor: 'var(--owner-glass-bg-strong)',
-        backdropFilter: 'blur(20px)',
+        boxShadow: 'none',
+        bgcolor: 'background.paper',
         backgroundImage: 'none',
         borderBottom: '1px solid',
-        borderColor: 'var(--owner-glass-border)',
+        borderColor: 'divider',
         top: 'var(--template-frame-height, 0px)',
         width: { md: `calc(100% - ${drawerWidth}px)` },
         ml: { md: `${drawerWidth}px` },
@@ -97,11 +97,12 @@ export default function AppNavbar() {
               alt={shop?.name || 'Active shop'}
               src={logoSrc}
               sx={{
-                width: { xs: 36, md: 42 },
-                height: { xs: 36, md: 42 },
-                bgcolor: 'var(--owner-primary)',
-                color: '#fff',
-                boxShadow: 'var(--owner-glass-shadow)',
+                width: { xs: 32, md: 36 },
+                height: { xs: 32, md: 36 },
+                bgcolor: 'background.default',
+                color: 'text.secondary',
+                border: '1px solid',
+                borderColor: 'divider',
               }}
             >
               <BusinessRoundedIcon fontSize="small" />
@@ -110,12 +111,12 @@ export default function AppNavbar() {
               <Typography
                 variant={shop?.name ? 'subtitle1' : 'body1'}
                 component="h1"
-                sx={{ color: 'text.primary', fontWeight: 800, lineHeight: 1.15 }}
+                sx={{ color: 'text.primary', fontWeight: 600, lineHeight: 1.15 }}
                 noWrap
               >
                 {shop?.name || 'Shop Dashboard'}
               </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} noWrap>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }} noWrap>
                 {subtitle}
               </Typography>
             </Box>
@@ -123,7 +124,7 @@ export default function AppNavbar() {
 
           <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: 'none', md: 'flex' } }}>
             {!isEmployee && ownedShops.length > 1 && (
-              <FormControl size="small" sx={{ minWidth: 220 }}>
+              <FormControl size="small" sx={{ minWidth: 200 }}>
                 <InputLabel id="desktop-shop-select-label">Shop</InputLabel>
                 <Select
                   labelId="desktop-shop-select-label"
@@ -131,11 +132,10 @@ export default function AppNavbar() {
                   value={shop?.id ? String(shop.id) : ''}
                   onChange={handleShopChange}
                   sx={{
-                    bgcolor: 'var(--owner-glass-bg)',
-                    backdropFilter: 'blur(18px)',
+                    bgcolor: 'background.paper',
                     borderRadius: 2,
                     '& .MuiOutlinedInput-notchedOutline': {
-                      borderColor: 'var(--owner-glass-border)',
+                      borderColor: 'divider',
                     },
                   }}
                 >
@@ -150,7 +150,11 @@ export default function AppNavbar() {
             {!isEmployee && (
               <Tooltip title="Refresh shop list">
                 <span>
-                  <IconButton onClick={() => void refreshOwnedShops()} disabled={shopsLoading}>
+                  <IconButton
+                    onClick={() => void refreshOwnedShops()}
+                    disabled={shopsLoading}
+                    sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}
+                  >
                     {shopsLoading ? <CircularProgress size={18} /> : <AutorenewRoundedIcon />}
                   </IconButton>
                 </span>

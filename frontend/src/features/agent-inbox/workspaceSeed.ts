@@ -100,6 +100,10 @@ export const createWorkspaceInsightSeed = (
         id: `${seedPrefix}_operations_chart_data`,
         title: "Operational Load",
         chartType: "bar",
+        xKey: "label",
+        series: [{ key: "value", label: "Volume" }],
+        showLegend: false,
+        showGrid: true,
         data: [
           { label: "Waiting", value: briefing.metrics.queue_length },
           { label: "Serving", value: briefing.metrics.people_being_served },

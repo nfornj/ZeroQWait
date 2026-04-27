@@ -1,6 +1,8 @@
+// RESTYLED: Perplexity-style
 import { styled } from '@mui/material/styles';
 import MuiDrawer, { drawerClasses } from '@mui/material/Drawer';
 import Box from '@mui/material/Box';
+import SelectContent from './SelectContent';
 import MenuContent from './MenuContent';
 import CardAlert from './CardAlert';
 import OwnerAccountPanel from './OwnerAccountPanel';
@@ -25,10 +27,11 @@ export default function SideMenu() {
       sx={{
         display: { xs: 'none', md: 'block' },
         [`& .${drawerClasses.paper}`]: {
-          backgroundColor: 'var(--owner-glass-bg-strong)',
-          backdropFilter: 'blur(24px)',
-          borderRight: '1px solid var(--owner-glass-border)',
-          boxShadow: 'var(--owner-glass-shadow)',
+          backgroundColor: 'background.paper',
+          backdropFilter: 'none',
+          borderRight: '1px solid',
+          borderColor: 'divider',
+          boxShadow: 'none',
         },
       }}
     >
@@ -41,6 +44,9 @@ export default function SideMenu() {
           mt: 'calc(var(--template-frame-height, 0px) + 4px)',
         }}
       >
+        <Box sx={{ p: 1.25, pb: 0 }}>
+          <SelectContent />
+        </Box>
         <MenuContent />
         <CardAlert />
         <Box sx={{ p: 1.25, pt: 0, mt: 'auto' }}>

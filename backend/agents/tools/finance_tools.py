@@ -22,6 +22,42 @@ _MONTHS = {
     "dec": 12, "december": 12,
 }
 
+_SIMPLE_NUMBER_WORDS = {
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+}
+
+_TENS_NUMBER_WORDS = {
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+}
+
+_NUMBER_WORD_PATTERN = r"\d{1,3}|[a-z]+(?:[ -][a-z]+){0,3}"
+
 _TIME_WINDOW_KEYWORDS = [
     "today", "daily", "day", "trend", "yesterday",
     "this", "last", "previous", "past", "over", "in",
@@ -130,6 +166,78 @@ def extract_requested_date(query: str, now: Optional[datetime] = None) -> Option
             return None
 
     return None
+
+
+def _parse_relative_window_count(value: Optional[str]) -> Optional[int]:
+    if value is None:
+        return None
+
+    token = str(value).strip().lower()
+    if not token:
+        return None
+    if token.isdigit():
+        return int(token)
+
+    token = token.replace("-", " ")
+    parts = [part for part in token.split() if part and part != "and"]
+    if not parts:
+        return None
+
+    total = 0
+    current = 0
+    for part in parts:
+        if part in _SIMPLE_NUMBER_WORDS:
+            current += _SIMPLE_NUMBER_WORDS[part]
+            continue
+        if part in _TENS_NUMBER_WORDS:
+            current += _TENS_NUMBER_WORDS[part]
+            continue
+        if part == "hundred":
+            current = max(current, 1) * 100
+            continue
+        return None
+
+    total += current
+    return total if total > 0 else None
+
+
+def _describe_time_window(label: str, start_dt: datetime, end_dt: datetime, granularity: str) -> str:
+    month_match = re.fullmatch(r"month_(\d{4})_(\d{2})", str(label or ""))
+    if month_match:
+        year = int(month_match.group(1))
+        month = int(month_match.group(2))
+        return datetime(year, month, 1).strftime("%B %Y")
+
+    if label == "specific_day":
+        return start_dt.strftime("%b %-d, %Y")
+
+    if label == "today":
+        return "today"
+    if label == "yesterday":
+        return "yesterday"
+    if label == "this_week":
+        return "this week"
+    if label == "last_week":
+        return "last week"
+    if label == "this_month":
+        return "this month"
+    if label == "last_month":
+        return "last month"
+    if label == "this_quarter":
+        return "this quarter"
+    if label == "this_year":
+        return "this year"
+    if label == "last_year":
+        return "last year"
+    if label == "past_year":
+        return "past year"
+
+    if str(label or "").startswith("last_"):
+        return str(label).replace("_", " ")
+
+    if granularity == "month":
+        return f"{start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}"
+    return f"{start_dt.strftime('%b %-d, %Y')} to {end_dt.strftime('%b %-d, %Y')}"
 
 
 def _local_daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
@@ -254,11 +362,11 @@ def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
         return start_dt, end_dt, granularity, label
 
     relative_months_match = re.search(
-        r"\b(?:last|past|previous)\s+(\d{1,2})\s+months?\b",
+        rf"\b(?:last|past|previous)\s+({_NUMBER_WORD_PATTERN})\s+months?\b",
         q,
     )
     if relative_months_match:
-        months = int(relative_months_match.group(1))
+        months = _parse_relative_window_count(relative_months_match.group(1)) or 0
         if months > 0:
             anchor_month = now.month - (months - 1)
             anchor_year = now.year
@@ -273,11 +381,11 @@ def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
             return start_dt, end_dt, granularity, label
 
     relative_days_match = re.search(
-        r"\b(?:last|past|previous)\s+(\d{1,3})\s+days?\b",
+        rf"\b(?:last|past|previous)\s+({_NUMBER_WORD_PATTERN})\s+days?\b",
         q,
     )
     if relative_days_match:
-        days = int(relative_days_match.group(1))
+        days = _parse_relative_window_count(relative_days_match.group(1)) or 0
         if days > 0:
             start_dt = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
             end_dt = now
@@ -286,16 +394,29 @@ def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
             return start_dt, end_dt, granularity, label
 
     relative_weeks_match = re.search(
-        r"\b(?:last|past|previous)\s+(\d{1,2})\s+weeks?\b",
+        rf"\b(?:last|past|previous)\s+({_NUMBER_WORD_PATTERN})\s+weeks?\b",
         q,
     )
     if relative_weeks_match:
-        weeks = int(relative_weeks_match.group(1))
+        weeks = _parse_relative_window_count(relative_weeks_match.group(1)) or 0
         if weeks > 0:
             start_dt = (now - timedelta(days=(weeks * 7) - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
             end_dt = now
             granularity = "day" if weeks <= 4 else "week"
             label = f"last_{weeks}_weeks"
+            return start_dt, end_dt, granularity, label
+
+    relative_years_match = re.search(
+        rf"\b(?:last|past|previous)\s+({_NUMBER_WORD_PATTERN})\s+years?\b",
+        q,
+    )
+    if relative_years_match:
+        years = _parse_relative_window_count(relative_years_match.group(1)) or 0
+        if years > 0:
+            start_dt = now - timedelta(days=365 * years)
+            end_dt = now
+            granularity = "month"
+            label = f"last_{years}_years"
             return start_dt, end_dt, granularity, label
 
     if any(token in q for token in ["today", "daily", "day trend"]):
@@ -491,6 +612,7 @@ def _local_trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
         return {
             "shop_id": shop_id,
             "window": window,
+            "window_display": _describe_time_window(window, start_dt, end_dt, granularity),
             "granularity": granularity,
             "query": query,
             "range_start": start_dt.strftime("%Y-%m-%d"),
