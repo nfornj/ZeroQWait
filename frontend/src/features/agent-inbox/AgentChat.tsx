@@ -11,11 +11,9 @@ import {
 } from "@mui/material";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
-import CreateNewFolderRoundedIcon from "@mui/icons-material/CreateNewFolderRounded";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import MicNoneRoundedIcon from "@mui/icons-material/MicNoneRounded";
-import NorthRoundedIcon from "@mui/icons-material/NorthRounded";
 import NavigateBeforeRoundedIcon from "@mui/icons-material/NavigateBeforeRounded";
 import NavigateNextRoundedIcon from "@mui/icons-material/NavigateNextRounded";
 import PsychologyAltOutlinedIcon from "@mui/icons-material/PsychologyAltOutlined";
@@ -60,6 +58,7 @@ import {
   ComposerAttachments,
   UserMessageAttachments,
 } from "../../components/assistant-ui/attachment";
+import { Composer } from "../../components/assistant-ui/thread";
 import { resolveAgentChart } from "./types";
 import type { AgentChart, AgentFile, AgentTable, ChatMessage, ResolvedAgentChart } from "./types";
 import { useShop } from "../../contexts/ShopContext";
@@ -1573,162 +1572,18 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                   padding: 0,
                 }}
               >
-                <ComposerPrimitive.Root
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 0,
-                    padding: 0,
-                    border: `1px solid ${
-                      muiTheme.palette.mode === "dark"
-                        ? alpha("#f5f3ef", 0.08)
-                        : alpha("#1f1d1a", 0.08)
-                    }`,
-                    borderRadius: 24,
-                    background:
-                      muiTheme.palette.mode === "dark"
-                        ? alpha("#17181b", 0.98)
-                        : alpha("#fcfbf9", 0.98),
-                    boxShadow:
-                      muiTheme.palette.mode === "dark"
-                        ? "0 10px 28px rgba(0, 0, 0, 0.22)"
-                        : "0 8px 24px rgba(28, 23, 16, 0.06)",
-                    overflow: "hidden",
-                  }}
-                >
-                  <Box
-                    sx={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 0.75,
-                      px: 1.25,
-                      pt: 1,
-                      "&:empty": {
-                        display: "none",
-                      },
-                    }}
-                  >
-                    <ComposerAttachments />
-                  </Box>
-
-                  <ComposerPrimitive.Input asChild>
-                    <textarea
-                      placeholder="Ask a follow-up"
-                      disabled={isStreaming || isUploading}
-                      rows={1}
-                      style={{
-                        flex: 1,
-                        minHeight: 40,
-                        maxHeight: 220,
-                        border: "none",
-                        outline: "none",
-                        resize: "none",
-                        background: "transparent",
-                        color: muiTheme.palette.text.primary,
-                        fontFamily: "inherit",
-                        fontSize: "1rem",
-                        lineHeight: 1.45,
-                        padding: "12px 14px 10px",
-                        letterSpacing: "0.01em",
-                      }}
+                <Composer
+                  placeholder="Ask a follow-up"
+                  disabled={isUploading || isStreaming}
+                  isRunning={isStreaming}
+                  onOpenFolderPicker={openFolderPicker}
+                  dictationControl={
+                    <ComposerDictationButton
+                      disabled={isUploading || isStreaming}
+                      supported={hasDictation}
                     />
-                  </ComposerPrimitive.Input>
-
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 1,
-                      px: 0.75,
-                      py: 0.5,
-                      borderTop: "1px solid",
-                      borderColor:
-                        muiTheme.palette.mode === "dark"
-                          ? alpha("#f5f3ef", 0.08)
-                          : alpha("#1f1d1a", 0.08),
-                      backgroundColor:
-                        muiTheme.palette.mode === "dark"
-                          ? alpha("#ffffff", 0.02)
-                          : alpha("#1f1d1a", 0.015),
-                    }}
-                  >
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
-                      <ComposerAddAttachment disabled={isUploading || isStreaming} />
-
-                      <IconButton
-                        size="small"
-                        disabled={isUploading || isStreaming}
-                        onClick={openFolderPicker}
-                        sx={{
-                          width: 34,
-                          height: 34,
-                          color: muiTheme.palette.mode === "dark" ? alpha("#f5f3ef", 0.82) : "#6f6a63",
-                          borderRadius: 2.5,
-                          "&:hover": {
-                            backgroundColor:
-                              muiTheme.palette.mode === "dark"
-                                ? alpha("#f5f3ef", 0.08)
-                                : alpha("#1f1d1a", 0.06),
-                          },
-                          "&.Mui-disabled": {
-                            color: alpha(muiTheme.palette.text.secondary, 0.4),
-                          },
-                        }}
-                      >
-                        <CreateNewFolderRoundedIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-
-                    <Box sx={{ flex: 1 }} />
-
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
-                      <ComposerDictationButton disabled={isUploading || isStreaming} supported={hasDictation} />
-
-                      {isStreaming ? (
-                        <ComposerPrimitive.Cancel asChild>
-                          <IconButton
-                            size="small"
-                            sx={{
-                              width: 34,
-                              height: 34,
-                              bgcolor: muiTheme.palette.mode === "dark" ? "#f5f3ef" : "#5f5a53",
-                              color: muiTheme.palette.mode === "dark" ? "#1f1f21" : "#ffffff",
-                              boxShadow: "none",
-                              "&:hover": {
-                                bgcolor: muiTheme.palette.mode === "dark" ? "#ffffff" : "#4f4a43",
-                              },
-                            }}
-                          >
-                            <StopRoundedIcon sx={{ fontSize: 18 }} />
-                          </IconButton>
-                        </ComposerPrimitive.Cancel>
-                      ) : (
-                        <ComposerPrimitive.Send asChild>
-                          <IconButton
-                            size="small"
-                            sx={{
-                              width: 34,
-                              height: 34,
-                              bgcolor: muiTheme.palette.mode === "dark" ? "#f5f3ef" : "#5f5a53",
-                              color: muiTheme.palette.mode === "dark" ? "#1f1f21" : "#ffffff",
-                              boxShadow: "none",
-                              "&:hover": {
-                                bgcolor: muiTheme.palette.mode === "dark" ? "#ffffff" : "#4f4a43",
-                              },
-                              "&.Mui-disabled": {
-                                bgcolor: muiTheme.palette.mode === "dark" ? alpha("#f5f3ef", 0.22) : "#c9c3ba",
-                                color: muiTheme.palette.mode === "dark" ? alpha("#1f1f21", 0.55) : "#f7f4ef",
-                              },
-                            }}
-                          >
-                            <NorthRoundedIcon sx={{ fontSize: 18 }} />
-                          </IconButton>
-                        </ComposerPrimitive.Send>
-                      )}
-                    </Box>
-                  </Box>
-                </ComposerPrimitive.Root>
+                  }
+                />
               </ThreadPrimitive.ViewportFooter>
             </Box>
           </ThreadPrimitive.Root>
