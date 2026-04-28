@@ -225,6 +225,80 @@ async def _invoke_supervisor_sync(initial_state: AgentState, checkpoint_config: 
     }
 
 
+_DOCUMENT_REFERENCE_TERMS = (
+    "attachment",
+    "csv",
+    "document",
+    "file",
+    "json",
+    "markdown",
+    "spreadsheet",
+    "text file",
+    "upload",
+    "uploaded",
+)
+
+
+def _query_mentions_document(query_text: str) -> bool:
+    lowered = str(query_text or "").lower()
+    return any(term in lowered for term in _DOCUMENT_REFERENCE_TERMS)
+
+
+def _select_document_reference_memories(
+    shop_id: int,
+    user_id: int,
+    query_text: str,
+    limit: int = 6,
+) -> List[Dict[str, Any]]:
+    """Resolve referential document prompts to the most relevant uploaded document chunks."""
+    document_memories = db_interface.get_agent_memories(
+        shop_id=shop_id,
+        memory_type="document",
+        user_id=user_id,
+        limit=24,
+    )
+    if not document_memories:
+        return []
+
+    lowered_query = str(query_text or "").lower()
+    target_document_id: Optional[int] = None
+
+    for memory in document_memories:
+        memory_meta = memory.get("memory_meta") if isinstance(memory.get("memory_meta"), dict) else {}
+        document_id = memory_meta.get("document_id")
+        source_candidates = [
+            str(memory.get("source") or "").lower(),
+            str(memory_meta.get("filename") or "").lower(),
+            str(memory_meta.get("relative_path") or "").lower(),
+        ]
+        if any(candidate and candidate in lowered_query for candidate in source_candidates):
+            if isinstance(document_id, int):
+                target_document_id = document_id
+                break
+
+    if target_document_id is None:
+        first_meta = document_memories[0].get("memory_meta")
+        if isinstance(first_meta, dict) and isinstance(first_meta.get("document_id"), int):
+            target_document_id = first_meta.get("document_id")
+
+    if target_document_id is None:
+        return document_memories[:limit]
+
+    selected = [
+        memory
+        for memory in document_memories
+        if isinstance(memory.get("memory_meta"), dict)
+        and memory["memory_meta"].get("document_id") == target_document_id
+    ]
+    selected.sort(
+        key=lambda memory: (
+            int(memory.get("memory_meta", {}).get("chunk_index") or 0),
+            str(memory.get("created_at") or ""),
+        )
+    )
+    return selected[:limit]
+
+
 def _reset_checkpoint_thread_if_idle(shop_id: int, user_id: int) -> None:
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
     snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
@@ -1065,6 +1139,11 @@ def _build_memory_context(shop_id: int, user_id: int, query_text: str) -> str:
             limit=8,
         )
         selected = merge_and_rank_memories(relevant, recent, max_items=8)
+
+        if _query_mentions_document(query_text):
+            document_memories = _select_document_reference_memories(shop_id, user_id, query_text)
+            if document_memories:
+                selected = merge_and_rank_memories(document_memories, selected, max_items=8)
 
         # Touch selected memories for recency tracking.
         for memory in selected:

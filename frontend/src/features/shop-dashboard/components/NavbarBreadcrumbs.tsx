@@ -18,17 +18,29 @@ const StyledBreadcrumbs = styled(Breadcrumbs)(({ theme }) => ({
 
 const routeNameMap: { [key: string]: string } = {
   '/dashboard': 'Agent',
+  '/overview': 'Overview',
+  '/services': 'Services',
+  '/appointments': 'Appointments',
   '/queues': 'Queues',
   '/agent-inbox': 'Agent Inbox',
   '/employees': 'Team',
+  '/employee-dashboard': 'Employee Dashboard',
   '/analytics': 'Analytics',
   '/settings': 'Settings',
 };
 
+function resolvePageName(pathname: string) {
+  if (pathname.startsWith('/queues/')) {
+    return 'Queue Details';
+  }
+
+  return routeNameMap[pathname] || 'Overview';
+}
+
 export default function NavbarBreadcrumbs() {
   const location = useLocation();
   const currentPath = location.pathname;
-  const pageName = routeNameMap[currentPath] || 'Overview';
+  const pageName = resolvePageName(currentPath);
 
   return (
     <StyledBreadcrumbs

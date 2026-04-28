@@ -3,6 +3,7 @@ import "@testing-library/jest-dom";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { CompleteAttachment } from "@assistant-ui/react";
 
 import AgentInbox from "./AgentInbox";
 import AgentChat from "./AgentChat";
@@ -14,6 +15,15 @@ jest.mock("@assistant-ui/react", () => {
 
   const RuntimeContext = React.createContext(null);
   const MessageContext = React.createContext(null);
+  const AttachmentContext = React.createContext(null);
+  const AuiContext = React.createContext({
+    interactables: () => ({
+      setPersistenceAdapter: jest.fn(),
+      importState: jest.fn(),
+      flush: jest.fn(async () => undefined),
+    }),
+    subscribe: () => () => undefined,
+  });
 
   const renderAsChild = (children: React.ReactNode, props: Record<string, unknown>) => {
     if (React.isValidElement(children)) {
@@ -27,15 +37,56 @@ jest.mock("@assistant-ui/react", () => {
 
   return {
     __esModule: true,
-    AssistantRuntimeProvider: ({ runtime, children }: { runtime: any; children?: React.ReactNode }) =>
-      React.createElement(RuntimeContext.Provider, { value: runtime }, children),
+    AuiIf: ({ condition, children }: { condition: ((state: any) => boolean) | boolean; children?: React.ReactNode }) => {
+      const runtime = React.useContext(RuntimeContext);
+      const visible = typeof condition === "function" ? condition({ composer: { dictation: runtime?.composer?.dictation ?? null } }) : Boolean(condition);
+      return visible ? React.createElement(React.Fragment, null, children) : null;
+    },
+    CompositeAttachmentAdapter: class CompositeAttachmentAdapter {
+      adapters: any[];
+
+      constructor(adapters: any[]) {
+        this.adapters = adapters;
+      }
+    },
+    WebSpeechDictationAdapter: class WebSpeechDictationAdapter {
+      static isSupported() {
+        return true;
+      }
+
+      constructor(_options?: any) {}
+    },
+    AssistantRuntimeProvider: ({ runtime, aui, children }: { runtime: any; aui?: any; children?: React.ReactNode }) =>
+      React.createElement(
+        AuiContext.Provider,
+        { value: aui || React.useContext(AuiContext) },
+        React.createElement(RuntimeContext.Provider, { value: runtime }, children),
+      ),
+    useAui: () => React.useContext(AuiContext),
+    Interactables: () => ({}),
+    useAssistantInteractable: (_name: string, config: { id?: string }) => config.id || "mock-task-board",
+    useInteractableState: (_id: string, fallback: any) => React.useState(fallback),
     useExternalStoreRuntime: ({ messages, convertMessage }: { messages: any[]; convertMessage: (message: any) => any }) => ({
       messages: messages.map((message) => ({ ...convertMessage(message), __externalMessage: message })),
-      composer: { setText: jest.fn() },
+      composer: { setText: jest.fn(), addAttachment: jest.fn(), dictation: null },
     }),
     useThreadRuntime: () => React.useContext(RuntimeContext),
     useThreadComposer: (selector: (state: { text: string }) => unknown) => selector({ text: "" }),
+    useAttachment: () => React.useContext(AttachmentContext),
     getExternalStoreMessages: (message: any) => [message.__externalMessage || message],
+    AttachmentPrimitive: {
+      Root: passthrough,
+      Name: () => {
+        const attachment = React.useContext(AttachmentContext);
+        return React.createElement(React.Fragment, null, attachment?.name || "");
+      },
+      unstable_Thumb: () => {
+        const attachment = React.useContext(AttachmentContext);
+        const ext = attachment?.name?.split(".").pop() || "file";
+        return React.createElement(React.Fragment, null, `.${ext}`);
+      },
+      Remove: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+    },
     ActionBarPrimitive: {
       Root: passthrough,
       Edit: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
@@ -74,11 +125,35 @@ jest.mock("@assistant-ui/react", () => {
     ComposerPrimitive: {
       Root: passthrough,
       Input: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+      AddAttachment: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+      Attachments: () => null,
+      Dictate: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
+      StopDictation: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
       Cancel: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
       Send: ({ asChild, children, ...props }: any) => (asChild ? renderAsChild(children, props) : passthrough({ children })),
     },
     MessagePrimitive: {
       Root: passthrough,
+      Attachments: ({ children }: any) => {
+        const message = React.useContext(MessageContext);
+        const attachments = message?.__externalMessage?.attachments || message?.attachments || [];
+
+        if (typeof children !== "function") {
+          return null;
+        }
+
+        return React.createElement(
+          React.Fragment,
+          null,
+          attachments.map((attachment: any, index: number) =>
+            React.createElement(
+              AttachmentContext.Provider,
+              { key: attachment.id || index, value: attachment },
+              children({ attachment }),
+            ),
+          ),
+        );
+      },
       Parts: ({ components }: any) => {
         const message = React.useContext(MessageContext);
         const parts = Array.isArray(message?.content) ? message.content : [];
@@ -356,7 +431,6 @@ const renderChat = (messages: React.ComponentProps<typeof AgentChat>["messages"]
         messages={messages}
         isStreaming={false}
         onSend={jest.fn(async () => undefined)}
-        onUpload={jest.fn(async () => undefined)}
       />
     </ThemeProvider>
   );
@@ -635,5 +709,36 @@ describe("AgentInbox", () => {
     expect(screen.getByText(
       "The user is asking about staffing gaps, so I need today's shifts before I can assess coverage.",
     )).toBeInTheDocument();
+  });
+
+  it("renders sent user attachments in the chat thread", () => {
+    const attachment: CompleteAttachment = {
+      id: "attachment_finance_csv",
+      type: "document",
+      name: "finance_trend.csv",
+      contentType: "text/csv",
+      status: { type: "complete" },
+      content: [
+        {
+          type: "data",
+          name: "attachment",
+          data: { filename: "finance_trend.csv" },
+        },
+      ],
+    };
+
+    renderChat([
+      {
+        id: "msg_user_attachment",
+        role: "user",
+        content: "Please summarize this file.",
+        status: "done",
+        timestamp: new Date().toISOString(),
+        attachments: [attachment],
+      },
+    ]);
+
+    expect(screen.getByText("finance_trend.csv")).toBeInTheDocument();
+    expect(screen.getByText("Please summarize this file.")).toBeInTheDocument();
   });
 });

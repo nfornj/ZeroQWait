@@ -1,19 +1,14 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   alpha,
   Avatar,
   Box,
   Button,
   IconButton,
-  ListItemIcon,
-  ListItemText,
-  Menu,
-  MenuItem,
   Stack,
   Typography,
   useTheme,
 } from "@mui/material";
-import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import CreateNewFolderRoundedIcon from "@mui/icons-material/CreateNewFolderRounded";
@@ -29,20 +24,28 @@ import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import BuildCircleOutlinedIcon from "@mui/icons-material/BuildCircleOutlined";
 import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import {
+  AuiIf,
   ActionBarPrimitive,
   AssistantRuntimeProvider,
   BranchPickerPrimitive,
   ChainOfThoughtPrimitive,
   ComposerPrimitive,
+  Interactables,
   MessagePrimitive,
   ThreadPrimitive,
+  CompositeAttachmentAdapter,
+  WebSpeechDictationAdapter,
   getExternalStoreMessages,
   type AppendMessage,
+  type AttachmentAdapter,
+  type AssistantClient,
+  type CompleteAttachment,
   type MessageStatus,
   type TextMessagePartProps,
   type ThreadMessage,
   type ThreadMessageLike,
   useExternalStoreRuntime,
+  useAui,
   useThreadComposer,
   useThreadRuntime,
 } from "@assistant-ui/react";
@@ -52,6 +55,11 @@ import { PieChart } from "@mui/x-charts/PieChart";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
 import ReactMarkdown from "react-markdown";
 import DataTable from "../../components/DataTable";
+import {
+  ComposerAddAttachment,
+  ComposerAttachments,
+  UserMessageAttachments,
+} from "../../components/assistant-ui/attachment";
 import { resolveAgentChart } from "./types";
 import type { AgentChart, AgentFile, AgentTable, ChatMessage, ResolvedAgentChart } from "./types";
 import { useShop } from "../../contexts/ShopContext";
@@ -73,63 +81,172 @@ export interface AgentChatSummaryChip {
   label: string;
 }
 
+export interface AgentChatSendPayload {
+  text: string;
+  attachments?: readonly CompleteAttachment[];
+}
+
 interface AgentChatProps {
   messages: ChatMessage[];
   isStreaming: boolean;
   isUploading?: boolean;
-  onSend: (message: string) => Promise<void>;
-  onUpload: (files: File[]) => Promise<void>;
+  onSend: (payload: AgentChatSendPayload) => Promise<void>;
   title?: string;
   subtitle?: string;
   summaryChips?: AgentChatSummaryChip[];
   promptSections?: AgentChatPromptSection[];
+  header?: React.ReactNode;
+  sidebar?: React.ReactNode;
+  interactablesStorageKey?: string;
 }
 
 type AgentChatInnerProps = Omit<AgentChatProps, "messages" | "onSend"> & {
   brandPrimary: string;
   brandSecondary: string;
+  hasDictation: boolean;
   messageCount: number;
+  sidebar?: React.ReactNode;
 };
 
 type MutableThreadPart = Exclude<ThreadMessageLike["content"], string>[number];
 
-const CHAIN_OF_THOUGHT_PARENT_SUFFIX = "cot";
+type PersistedInteractablesState = Record<string, { name: string; state: unknown }>;
 
-const GENERIC_REASONING_PREFIXES = [
-  "classified ",
-  "routing ",
-  "running ",
-  "completed ",
-];
-
-const formatAgentName = (agent?: string) => {
-  if (!agent) return "Supervisor";
-
-  return agent
-    .split(/[_-]/g)
-    .filter(Boolean)
-    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-    .join(" ");
+type InteractablesMethods = {
+  setPersistenceAdapter: (
+    adapter:
+      | {
+          save: (state: PersistedInteractablesState) => void | Promise<void>;
+        }
+      | undefined,
+  ) => void;
+  importState: (saved: PersistedInteractablesState) => void;
+  flush: () => Promise<void>;
 };
 
-const formatAssistantLabel = (agent?: string) => {
-  if (!agent) return "AI Assistant";
+type InteractablesAuiClient = AssistantClient & {
+  interactables: () => InteractablesMethods;
+};
 
-  const normalized = agent.trim().toLowerCase();
-  if (!normalized || normalized === "supervisor") {
-    return "Supervisor";
+const CHAIN_OF_THOUGHT_PARENT_SUFFIX = "reasoning";
+
+const GENERIC_REASONING_PREFIXES = [
+  "thinking",
+  "analyzing",
+  "reviewing",
+  "checking",
+  "gathering",
+  "working",
+  "planning",
+];
+
+const DOCUMENT_ATTACHMENT_ACCEPT = [
+  ".txt",
+  ".md",
+  ".markdown",
+  ".csv",
+  ".json",
+  ".html",
+  ".htm",
+  ".xml",
+  ".yml",
+  ".yaml",
+  ".tsv",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "application/json",
+  "text/html",
+  "text/xml",
+  "application/xml",
+].join(",");
+
+const ComposerDictationButton: React.FC<{ disabled?: boolean; supported: boolean }> = ({ disabled = false, supported }) => {
+  const muiTheme = useTheme();
+  const getDictationState = (state: unknown) =>
+    ((state as { composer?: { dictation?: unknown } } | null)?.composer?.dictation ?? null);
+
+  const baseSx = {
+    width: 34,
+    height: 34,
+    borderRadius: 2.5,
+    color: muiTheme.palette.mode === "dark" ? alpha("#f5f3ef", 0.82) : "#6f6a63",
+    "&:hover": {
+      backgroundColor:
+        muiTheme.palette.mode === "dark"
+          ? alpha("#f5f3ef", 0.08)
+          : alpha("#1f1d1a", 0.06),
+    },
+    "&.Mui-disabled": {
+      color: alpha(muiTheme.palette.text.secondary, 0.4),
+    },
+  } as const;
+
+  if (!supported) {
+    return (
+      <IconButton size="small" disabled sx={baseSx} aria-label="Dictation unavailable">
+        <MicNoneRoundedIcon fontSize="small" />
+      </IconButton>
+    );
   }
 
-  return `${formatAgentName(agent)} Assistant`;
+  return (
+    <>
+      <AuiIf condition={(s) => getDictationState(s) == null}>
+        <ComposerPrimitive.Dictate asChild>
+          <IconButton size="small" disabled={disabled} sx={baseSx} aria-label="Start dictation">
+            <MicNoneRoundedIcon fontSize="small" />
+          </IconButton>
+        </ComposerPrimitive.Dictate>
+      </AuiIf>
+
+      <AuiIf condition={(s) => getDictationState(s) != null}>
+        <ComposerPrimitive.StopDictation asChild>
+          <IconButton
+            size="small"
+            disabled={disabled}
+            aria-label="Stop dictation"
+            sx={{
+              ...baseSx,
+              color: muiTheme.palette.mode === "dark" ? "#f5f3ef" : muiTheme.palette.error.main,
+            }}
+          >
+            <StopRoundedIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </ComposerPrimitive.StopDictation>
+      </AuiIf>
+    </>
+  );
+};
+
+const formatAgentName = (value: string) => {
+  return value
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const formatAssistantLabel = (agent?: string | null) => {
+  if (!agent?.trim()) {
+    return "Assistant";
+  }
+
+  const formatted = formatAgentName(agent);
+
+  if (/assistant$/i.test(formatted)) {
+    return formatted;
+  }
+
+  return `${formatted} Assistant`;
 };
 
 const getAgentInitials = (label: string) => {
   const initials = label
     .split(/\s+/)
     .filter(Boolean)
-    .map((token) => token[0]?.toUpperCase() || "")
-    .join("")
-    .slice(0, 2);
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 
   return initials || "AI";
 };
@@ -265,6 +382,45 @@ const hasChainOfThoughtParts = (message?: ThreadMessage) => {
   return message.content.some((part) => part.type === "reasoning" || part.type === "tool-call");
 };
 
+class KnowledgeBaseAttachmentAdapter implements AttachmentAdapter {
+  accept = DOCUMENT_ATTACHMENT_ACCEPT;
+
+  async add({ file }: { file: File }) {
+    return {
+      id: `${file.name}_${file.lastModified}_${file.size}`,
+      type: "document" as const,
+      name: file.name,
+      contentType: file.type,
+      file,
+      status: { type: "requires-action", reason: "composer-send" } as const,
+    };
+  }
+
+  async send(attachment: Awaited<ReturnType<KnowledgeBaseAttachmentAdapter["add"]>>) {
+    return {
+      ...attachment,
+      status: { type: "complete" } as const,
+      content: [
+        {
+          type: "data" as const,
+          name: "attachment",
+          data: {
+            filename: attachment.name,
+            contentType: attachment.contentType || null,
+            sizeBytes: attachment.file.size,
+          },
+        },
+      ],
+    };
+  }
+
+  async remove() {
+    return;
+  }
+}
+
+const attachmentAdapter = new CompositeAttachmentAdapter([new KnowledgeBaseAttachmentAdapter()]);
+
 const buildThreadMessage = (message: ChatMessage): ThreadMessageLike => {
   const content: MutableThreadPart[] = [...buildChainOfThoughtParts(message)];
   const renderableText = message.role === "assistant" ? getRenderableMessageText(message) : message.content;
@@ -308,6 +464,7 @@ const buildThreadMessage = (message: ChatMessage): ThreadMessageLike => {
     id: message.id,
     role: message.role,
     content,
+    attachments: message.role === "user" ? message.attachments || [] : undefined,
     createdAt: new Date(message.timestamp),
     status: message.role === "assistant" ? mapMessageStatus(message.status) : undefined,
     metadata:
@@ -327,6 +484,10 @@ const getAppendMessageText = (message: AppendMessage) => {
   );
 
   return textPart?.text.trim() || "";
+};
+
+const getAppendMessageAttachments = (message: AppendMessage) => {
+  return message.role === "user" ? message.attachments || [] : [];
 };
 
 const buildChartPalette = (chart: ResolvedAgentChart, accent: string, fallbackColors: string[]) => {
@@ -557,7 +718,7 @@ const MessageChainOfThought: React.FC<{ brandPrimary: string }> = ({ brandPrimar
       </ChainOfThoughtPrimitive.AccordionTrigger>
       {isExpanded ? (
         <ChainOfThoughtPrimitive.Parts>
-          {({ part }) => {
+          {({ part }: { part: ThreadMessage["content"][number] }) => {
             if (part.type === "reasoning") {
               const text = typeof part.text === "string" ? part.text.trim() : "";
               if (!text) {
@@ -903,6 +1064,8 @@ const UserThreadMessage: React.FC<{
   externalMessage?: ChatMessage;
 }> = ({ brandPrimary, externalMessage }) => {
   const muiTheme = useTheme();
+  const hasText = Boolean(externalMessage?.content.trim());
+  const hasAttachments = Boolean(externalMessage?.attachments?.length);
 
   return (
     <MessagePrimitive.Root>
@@ -931,9 +1094,15 @@ const UserThreadMessage: React.FC<{
               borderRadius: "22px 22px 8px 22px",
               bgcolor: brandPrimary,
               color: muiTheme.palette.getContrastText(brandPrimary),
+              display: "flex",
+              flexDirection: "column",
+              gap: hasAttachments && hasText ? 1 : 0.25,
             }}
           >
-            <MessageRichContent accent={brandPrimary} role="user" externalMessage={externalMessage} />
+            {hasAttachments ? (
+              <UserMessageAttachments />
+            ) : null}
+            {hasText ? <MessageRichContent accent={brandPrimary} role="user" externalMessage={externalMessage} /> : null}
           </Box>
           {externalMessage?.timestamp && (
             <Typography variant="caption" sx={{ color: alpha(muiTheme.palette.text.secondary, 0.84) }}>
@@ -1090,17 +1259,15 @@ const SystemThreadMessage: React.FC<{
 const AgentChatInner: React.FC<AgentChatInnerProps> = ({
   isStreaming,
   isUploading = false,
-  onUpload,
   title = "Hello there!",
   subtitle = "How can I help you today?",
   promptSections = [],
   brandPrimary,
   brandSecondary,
+  hasDictation,
   messageCount,
 }) => {
   const muiTheme = useTheme();
-  const [uploadMenuAnchor, setUploadMenuAnchor] = useState<HTMLElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const threadRuntime = useThreadRuntime();
   const composerText = useThreadComposer((state) => state.text);
@@ -1162,36 +1329,32 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
     [composerText, threadRuntime],
   );
 
-  const closeUploadMenu = useCallback(() => {
-    setUploadMenuAnchor(null);
-  }, []);
-
-  const handleUploadSelection = useCallback(
+  const handleFolderSelection = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const selectedFiles = Array.from(event.target.files || []);
       event.target.value = "";
-      closeUploadMenu();
-      if (selectedFiles.length === 0 || isUploading) {
+      if (selectedFiles.length === 0 || isUploading || isStreaming) {
         return;
       }
-      await onUpload(selectedFiles);
+
+      for (const file of selectedFiles) {
+        try {
+          await threadRuntime.composer.addAttachment(file);
+        } catch {
+          continue;
+        }
+      }
     },
-    [closeUploadMenu, isUploading, onUpload],
+    [isStreaming, isUploading, threadRuntime],
   );
 
-  const openFilePicker = useCallback(() => {
-    closeUploadMenu();
-    fileInputRef.current?.click();
-  }, [closeUploadMenu]);
-
   const openFolderPicker = useCallback(() => {
-    closeUploadMenu();
     if (folderInputRef.current) {
       folderInputRef.current.setAttribute("webkitdirectory", "");
       folderInputRef.current.setAttribute("directory", "");
       folderInputRef.current.click();
     }
-  }, [closeUploadMenu]);
+  }, []);
 
   return (
     <Box
@@ -1202,7 +1365,7 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
         height: "100%",
         minHeight: 0,
         px: { xs: 1, md: 2 },
-        pb: { xs: 1, md: 1.5 },
+        pb: 0,
         "@keyframes agent-status-pulse": {
           "0%, 100%": {
             opacity: 0.26,
@@ -1228,14 +1391,13 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
         }}
       >
           <input
-            ref={fileInputRef}
+            ref={folderInputRef}
             type="file"
             hidden
             multiple
-            accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.xml,.yml,.yaml,.tsv,text/plain,text/markdown,text/csv,application/json,text/html,text/xml,application/xml,text/yaml,application/x-yaml"
-            onChange={handleUploadSelection}
+            accept={DOCUMENT_ATTACHMENT_ACCEPT}
+            onChange={handleFolderSelection}
           />
-          <input ref={folderInputRef} type="file" hidden multiple onChange={handleUploadSelection} />
 
           <ThreadPrimitive.Root
             style={{
@@ -1264,14 +1426,15 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                   sx={{
                     minHeight: "100%",
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
+                    alignItems: "stretch",
+                    justifyContent: "flex-start",
                     px: { xs: 1, md: 1.5 },
-                    py: { xs: 3, md: 4 },
+                    pt: { xs: 1.5, md: 2 },
+                    pb: { xs: 1, md: 1.5 },
                   }}
                 >
-                  <Stack spacing={3.5} sx={{ width: "100%", maxWidth: 720, mx: "auto" }}>
-                    <Stack spacing={0.75}>
+                  <Stack spacing={2.5} sx={{ width: "100%", maxWidth: 720, mx: "auto" }}>
+                    <Stack spacing={0.5}>
                       <Typography
                         variant="h2"
                         sx={{
@@ -1310,7 +1473,7 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                           onClick={() => insertPrompt(prompt.prompt)}
                           disabled={isStreaming || isUploading}
                           sx={{
-                            p: 2,
+                            p: 1.75,
                             borderRadius: 3,
                             border: "1px solid",
                             borderColor: alpha(brandPrimary, 0.14),
@@ -1390,35 +1553,64 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                 width: "100%",
                 maxWidth: 760,
                 mx: "auto",
-                pt: 0.75,
-                pb: 0.25,
+                mt: "auto",
+                pt: 1,
+                pb: { xs: 0.75, md: 1 },
+                borderTop: "1px solid",
+                borderColor:
+                  muiTheme.palette.mode === "dark"
+                    ? alpha(muiTheme.palette.common.white, 0.08)
+                    : alpha(muiTheme.palette.text.primary, 0.08),
+                background:
+                  muiTheme.palette.mode === "dark"
+                    ? `linear-gradient(180deg, ${alpha("#111214", 0)} 0%, ${alpha("#111214", 0.92)} 22%)`
+                    : `linear-gradient(180deg, ${alpha("#ffffff", 0)} 0%, ${alpha("#faf8f5", 0.98)} 22%)`,
               }}
             >
               <ThreadPrimitive.ViewportFooter
                 style={{
                   width: "100%",
-                  padding: 8,
-                  paddingTop: 6,
+                  padding: 0,
                 }}
               >
                 <ComposerPrimitive.Root
                   style={{
                     display: "flex",
                     flexDirection: "column",
-                    gap: 4,
-                    padding: 8,
-                    border: "none",
-                    borderRadius: 20,
+                    gap: 0,
+                    padding: 0,
+                    border: `1px solid ${
+                      muiTheme.palette.mode === "dark"
+                        ? alpha("#f5f3ef", 0.08)
+                        : alpha("#1f1d1a", 0.08)
+                    }`,
+                    borderRadius: 24,
                     background:
                       muiTheme.palette.mode === "dark"
-                        ? alpha("#1f1f21", 0.96)
-                        : "#fcfbf9",
+                        ? alpha("#17181b", 0.98)
+                        : alpha("#fcfbf9", 0.98),
                     boxShadow:
                       muiTheme.palette.mode === "dark"
-                        ? "0 18px 40px rgba(0, 0, 0, 0.26)"
-                        : "0 6px 24px rgba(28, 23, 16, 0.08)",
+                        ? "0 10px 28px rgba(0, 0, 0, 0.22)"
+                        : "0 8px 24px rgba(28, 23, 16, 0.06)",
+                    overflow: "hidden",
                   }}
                 >
+                  <Box
+                    sx={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 0.75,
+                      px: 1.25,
+                      pt: 1,
+                      "&:empty": {
+                        display: "none",
+                      },
+                    }}
+                  >
+                    <ComposerAttachments />
+                  </Box>
+
                   <ComposerPrimitive.Input asChild>
                     <textarea
                       placeholder="Ask a follow-up"
@@ -1426,7 +1618,7 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                       rows={1}
                       style={{
                         flex: 1,
-                        minHeight: 44,
+                        minHeight: 40,
                         maxHeight: 220,
                         border: "none",
                         outline: "none",
@@ -1434,9 +1626,9 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                         background: "transparent",
                         color: muiTheme.palette.text.primary,
                         fontFamily: "inherit",
-                        fontSize: "1.05rem",
+                        fontSize: "1rem",
                         lineHeight: 1.45,
-                        padding: "10px 14px 8px",
+                        padding: "12px 14px 10px",
                         letterSpacing: "0.01em",
                       }}
                     />
@@ -1448,48 +1640,50 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                       alignItems: "center",
                       justifyContent: "space-between",
                       gap: 1,
-                      px: 0.5,
-                      pb: 0.25,
+                      px: 0.75,
+                      py: 0.5,
+                      borderTop: "1px solid",
+                      borderColor:
+                        muiTheme.palette.mode === "dark"
+                          ? alpha("#f5f3ef", 0.08)
+                          : alpha("#1f1d1a", 0.08),
+                      backgroundColor:
+                        muiTheme.palette.mode === "dark"
+                          ? alpha("#ffffff", 0.02)
+                          : alpha("#1f1d1a", 0.015),
                     }}
                   >
-                    <IconButton
-                      size="small"
-                      disabled={isUploading}
-                      onClick={(event) => setUploadMenuAnchor(event.currentTarget)}
-                      sx={{
-                        width: 34,
-                        height: 34,
-                        color: muiTheme.palette.mode === "dark" ? alpha("#f5f3ef", 0.82) : "#6f6a63",
-                        borderRadius: 2.5,
-                        "&:hover": {
-                          backgroundColor:
-                            muiTheme.palette.mode === "dark"
-                              ? alpha("#f5f3ef", 0.08)
-                              : alpha("#1f1d1a", 0.06),
-                        },
-                        "&.Mui-disabled": {
-                          color: alpha(muiTheme.palette.text.secondary, 0.4),
-                        },
-                      }}
-                    >
-                      <AddRoundedIcon fontSize="small" />
-                    </IconButton>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+                      <ComposerAddAttachment disabled={isUploading || isStreaming} />
+
+                      <IconButton
+                        size="small"
+                        disabled={isUploading || isStreaming}
+                        onClick={openFolderPicker}
+                        sx={{
+                          width: 34,
+                          height: 34,
+                          color: muiTheme.palette.mode === "dark" ? alpha("#f5f3ef", 0.82) : "#6f6a63",
+                          borderRadius: 2.5,
+                          "&:hover": {
+                            backgroundColor:
+                              muiTheme.palette.mode === "dark"
+                                ? alpha("#f5f3ef", 0.08)
+                                : alpha("#1f1d1a", 0.06),
+                          },
+                          "&.Mui-disabled": {
+                            color: alpha(muiTheme.palette.text.secondary, 0.4),
+                          },
+                        }}
+                      >
+                        <CreateNewFolderRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
 
                     <Box sx={{ flex: 1 }} />
 
                     <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
-                      <IconButton
-                        size="small"
-                        disabled
-                        sx={{
-                          width: 34,
-                          height: 34,
-                          color: muiTheme.palette.mode === "dark" ? alpha("#f5f3ef", 0.55) : "#8b857d",
-                          borderRadius: 2.5,
-                        }}
-                      >
-                        <MicNoneRoundedIcon fontSize="small" />
-                      </IconButton>
+                      <ComposerDictationButton disabled={isUploading || isStreaming} supported={hasDictation} />
 
                       {isStreaming ? (
                         <ComposerPrimitive.Cancel asChild>
@@ -1535,27 +1729,6 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                     </Box>
                   </Box>
                 </ComposerPrimitive.Root>
-
-                <Menu
-                  anchorEl={uploadMenuAnchor}
-                  open={Boolean(uploadMenuAnchor)}
-                  onClose={closeUploadMenu}
-                  anchorOrigin={{ vertical: "top", horizontal: "left" }}
-                  transformOrigin={{ vertical: "bottom", horizontal: "left" }}
-                >
-                  <MenuItem onClick={openFilePicker}>
-                    <ListItemIcon>
-                      <UploadFileRoundedIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText primary="Upload files" secondary="Text, markdown, CSV, JSON, HTML, XML, YAML" />
-                  </MenuItem>
-                  <MenuItem onClick={openFolderPicker}>
-                    <ListItemIcon>
-                      <CreateNewFolderRoundedIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText primary="Upload folder" secondary="Imports supported documents from a selected folder" />
-                  </MenuItem>
-                </Menu>
               </ThreadPrimitive.ViewportFooter>
             </Box>
           </ThreadPrimitive.Root>
@@ -1569,28 +1742,44 @@ const AgentChat: React.FC<AgentChatProps> = ({
   isStreaming,
   isUploading = false,
   onSend,
-  onUpload,
   title = "Hello there!",
   subtitle = "How can I help you today?",
   summaryChips = [],
   promptSections = [],
+  header,
+  sidebar,
+  interactablesStorageKey,
 }) => {
   const muiTheme = useTheme();
   const { shop } = useShop();
+  const aui = useAui({ interactables: Interactables() } as any) as InteractablesAuiClient;
+  const lastInteractablesStorageKeyRef = useRef<string | null>(null);
   const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
   const brandSecondary = shop?.secondary_color || brandPrimary;
+  const dictationAdapter = useMemo(
+    () =>
+      WebSpeechDictationAdapter.isSupported()
+        ? new WebSpeechDictationAdapter({
+            language: "en-US",
+            continuous: true,
+            interimResults: true,
+          })
+        : undefined,
+    [],
+  );
 
   const convertMessage = useCallback((message: ChatMessage) => buildThreadMessage(message), []);
 
   const handleNewMessage = useCallback(
     async (message: AppendMessage) => {
       const trimmed = getAppendMessageText(message);
+      const attachments = getAppendMessageAttachments(message);
 
-      if (!trimmed || isStreaming || isUploading) {
+      if ((!trimmed && attachments.length === 0) || isStreaming || isUploading) {
         return;
       }
 
-      await onSend(trimmed);
+      await onSend({ text: trimmed, attachments });
     },
     [isStreaming, isUploading, onSend],
   );
@@ -1598,12 +1787,13 @@ const AgentChat: React.FC<AgentChatProps> = ({
   const handleEditMessage = useCallback(
     async (message: AppendMessage) => {
       const trimmed = getAppendMessageText(message);
+      const attachments = getAppendMessageAttachments(message);
 
-      if (!trimmed || isStreaming || isUploading) {
+      if ((!trimmed && attachments.length === 0) || isStreaming || isUploading) {
         return;
       }
 
-      await onSend(trimmed);
+      await onSend({ text: trimmed, attachments });
     },
     [isStreaming, isUploading, onSend],
   );
@@ -1629,7 +1819,7 @@ const AgentChat: React.FC<AgentChatProps> = ({
         return;
       }
 
-      await onSend(retryText.trim());
+      await onSend({ text: retryText.trim() });
     },
     [isStreaming, isUploading, messages, onSend],
   );
@@ -1641,22 +1831,100 @@ const AgentChat: React.FC<AgentChatProps> = ({
     onEdit: handleEditMessage,
     onReload: handleReloadMessage,
     isDisabled: isStreaming || isUploading,
+    adapters: {
+      attachments: attachmentAdapter,
+      dictation: dictationAdapter,
+    },
   });
 
+  useEffect(() => {
+    if (!interactablesStorageKey || typeof window === "undefined") {
+      aui.interactables().setPersistenceAdapter(undefined);
+      return;
+    }
+
+    aui.interactables().setPersistenceAdapter({
+      save: async (state: PersistedInteractablesState) => {
+        window.localStorage.setItem(interactablesStorageKey, JSON.stringify(state));
+      },
+    });
+
+    if (lastInteractablesStorageKeyRef.current !== interactablesStorageKey) {
+      const savedState = window.localStorage.getItem(interactablesStorageKey);
+
+      if (savedState) {
+        try {
+          aui.interactables().importState(JSON.parse(savedState));
+        } catch {
+          window.localStorage.removeItem(interactablesStorageKey);
+        }
+      }
+
+      lastInteractablesStorageKeyRef.current = interactablesStorageKey;
+    }
+
+    return () => {
+      void aui.interactables().flush();
+    };
+  }, [aui, interactablesStorageKey]);
+
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      <AgentChatInner
-        isStreaming={isStreaming}
-        isUploading={isUploading}
-        onUpload={onUpload}
-        title={title}
-        subtitle={subtitle}
-        summaryChips={summaryChips}
-        promptSections={promptSections}
-        brandPrimary={brandPrimary}
-        brandSecondary={brandSecondary}
-        messageCount={messages.length}
-      />
+    <AssistantRuntimeProvider runtime={runtime} aui={aui}>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", xl: "row" },
+          gap: { xs: 1.5, xl: 2 },
+          flex: 1,
+          minHeight: 0,
+          width: "100%",
+        }}
+      >
+        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          {header ? (
+            <Box
+              sx={{
+                px: { xs: 1, md: 2 },
+                pt: { xs: 1, md: 1.25 },
+                pb: { xs: 0.5, md: 0.75 },
+                flexShrink: 0,
+              }}
+            >
+              {header}
+            </Box>
+          ) : null}
+
+          <Box sx={{ flex: 1, minHeight: 0 }}>
+            <AgentChatInner
+              isStreaming={isStreaming}
+              isUploading={isUploading}
+              title={title}
+              subtitle={subtitle}
+              summaryChips={summaryChips}
+              promptSections={promptSections}
+              brandPrimary={brandPrimary}
+              brandSecondary={brandSecondary}
+              hasDictation={Boolean(dictationAdapter)}
+              messageCount={messages.length}
+            />
+          </Box>
+        </Box>
+
+        {sidebar ? (
+          <Box
+            sx={{
+              width: { xs: "100%", xl: 360 },
+              minWidth: { xl: 320 },
+              maxWidth: { xl: 400 },
+              flexShrink: 0,
+              minHeight: { xs: 320, xl: 0 },
+              display: "flex",
+            }}
+          >
+            {sidebar}
+          </Box>
+        ) : null}
+      </Box>
     </AssistantRuntimeProvider>
   );
 };

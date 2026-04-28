@@ -61,11 +61,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Check token expiration on mount and periodically
   useEffect(() => {
+    const currentPath = window.location.pathname;
+    const isPasswordResetRoute = currentPath === "/reset-password";
+
     // Check for token in URL (passed from cross-domain redirect)
     const params = new URLSearchParams(window.location.search);
     const urlToken = params.get("token");
 
-    if (urlToken) {
+    if (urlToken && !isPasswordResetRoute) {
       console.log("[AuthContext] Token found in URL, saving to localStorage");
       localStorage.setItem("token", urlToken);
       setToken(urlToken);
@@ -152,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           // Only redirect to /login when the user is on a protected page.
           // Never redirect if already on /login, / (landing), or /signin to
           // avoid the redirect loop that causes root-URL jitter.
-          const publicPaths = ['/', '/login', '/signup'];
+          const publicPaths = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
           const isPublic = publicPaths.some(p => window.location.pathname === p || window.location.pathname.startsWith('/shop-ai') || window.location.pathname.startsWith('/queue/'));
           if (!isPublic) {
             window.location.href = '/login';

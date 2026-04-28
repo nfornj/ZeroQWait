@@ -1223,6 +1223,64 @@ def test_history_route_falls_back_to_stored_conversation_when_checkpoint_empty()
     ]
 
 
+def test_build_memory_context_uses_latest_uploaded_document_for_referential_prompt():
+    agent_v2 = _load_agent_v2_module()
+
+    latest_document_memories = [
+        {
+            "id": 401,
+            "memory_type": "document",
+            "content": "From finance_trend_41_this_month.csv (chunk 1/2): month,revenue\n2026-04,6400",
+            "source": "finance_trend_41_this_month.csv",
+            "memory_meta": {
+                "document_id": 22,
+                "filename": "finance_trend_41_this_month.csv",
+                "relative_path": "finance_trend_41_this_month.csv",
+                "chunk_index": 1,
+            },
+            "created_at": "2026-04-27T02:10:00",
+        },
+        {
+            "id": 402,
+            "memory_type": "document",
+            "content": "From finance_trend_41_this_month.csv (chunk 2/2): 2026-05,7100",
+            "source": "finance_trend_41_this_month.csv",
+            "memory_meta": {
+                "document_id": 22,
+                "filename": "finance_trend_41_this_month.csv",
+                "relative_path": "finance_trend_41_this_month.csv",
+                "chunk_index": 2,
+            },
+            "created_at": "2026-04-27T02:10:01",
+        },
+        {
+            "id": 301,
+            "memory_type": "document",
+            "content": "From older_report.csv (chunk 1/1): old data",
+            "source": "older_report.csv",
+            "memory_meta": {
+                "document_id": 11,
+                "filename": "older_report.csv",
+                "relative_path": "older_report.csv",
+                "chunk_index": 1,
+            },
+            "created_at": "2026-04-20T02:10:00",
+        },
+    ]
+
+    with (
+        patch.object(agent_v2.db_interface, "search_agent_memories", return_value=[]),
+        patch.object(agent_v2.db_interface, "get_agent_memories", side_effect=[[], latest_document_memories]),
+        patch.object(agent_v2.db_interface, "touch_agent_memory") as mock_touch,
+    ):
+        context = agent_v2._build_memory_context(41, 17, "summarize the document")
+
+    assert "finance_trend_41_this_month.csv" in context
+    assert "older_report.csv" not in context
+    assert "month,revenue" in context
+    assert [call.args for call in mock_touch.call_args_list] == [(401,), (402,)]
+
+
 def test_pending_route_falls_back_to_persisted_approval_requests_when_checkpoint_empty():
     agent_v2, client = _build_test_app_with_real_graph()
 

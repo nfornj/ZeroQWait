@@ -1,5 +1,6 @@
 // RESTYLED: Perplexity-style
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import { Outlet } from 'react-router-dom';
 import { Box, CssBaseline, alpha, useTheme } from '@mui/material';
 import AppNavbar from '../features/shop-dashboard/components/AppNavbar';
@@ -14,9 +15,11 @@ declare module '@mui/material/styles' {
 
 const ShopLayout: React.FC = () => {
     const theme = useTheme();
+    const location = useLocation();
     const ownerBrand = useOwnerBrand();
     const brandPrimary = ownerBrand.primary;
     const brandSecondary = ownerBrand.secondary;
+    const isAgentRoute = location.pathname === '/dashboard';
 
     return (
         <Box
@@ -75,18 +78,21 @@ const ShopLayout: React.FC = () => {
                 sx={{
                     flexGrow: 1,
                     backgroundColor: theme.palette.background.default,
-                    overflow: 'auto',
+                    overflow: isAgentRoute ? 'hidden' : 'auto',
                     minHeight: '100vh',
+                    height: isAgentRoute ? '100vh' : 'auto',
                 }}
             >
                 <Box sx={{
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'stretch',
-                    px: { xs: 1.5, md: 3 },
-                    pb: 5,
+                    px: isAgentRoute ? 0 : { xs: 1.5, md: 3 },
+                    pb: isAgentRoute ? 0 : 5,
                     mt: { xs: 8, md: 10 },
-                    height: '100%',
+                    height: isAgentRoute ? { xs: 'calc(100vh - 64px)', md: 'calc(100vh - 80px)' } : '100%',
+                    minHeight: 0,
+                    overflow: isAgentRoute ? 'hidden' : 'visible',
                     width: '100%',
                 }}>
                     <Outlet />

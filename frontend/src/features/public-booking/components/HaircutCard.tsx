@@ -13,15 +13,12 @@ import {
   Alert,
 } from "@mui/material";
 import {
-  Favorite as FavoriteIcon,
-  FavoriteBorder as FavoriteBorderIcon,
   Phone as PhoneIcon,
   Language as LanguageIcon,
   ExpandMore as ExpandMoreIcon,
 } from "@mui/icons-material";
 import { styled } from "@mui/material/styles";
-import { HaircutService, addFavorite, removeFavorite } from "../../../services/api";
-import { useAuth } from "../../../contexts/AuthContext";
+import { HaircutService } from "../../../services/api";
 
 interface HaircutCardProps {
   haircut: HaircutService;
@@ -43,35 +40,9 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
   onFavoriteRemoved,
 }) => {
   const [expanded, setExpanded] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const { isAuthenticated } = useAuth();
 
   const handleExpandClick = () => {
     setExpanded(!expanded);
-  };
-
-  const handleFavoriteClick = async () => {
-    if (!isAuthenticated) {
-      setError("Please log in to save favorites");
-      return;
-    }
-
-    try {
-      setError(null);
-      if (isFavorite) {
-        await removeFavorite(haircut.id);
-        setIsFavorite(false);
-        if (onFavoriteRemoved) {
-          onFavoriteRemoved(haircut.id);
-        }
-      } else {
-        await addFavorite(haircut.id);
-        setIsFavorite(true);
-      }
-    } catch (err) {
-      setError("Failed to update favorite status");
-    }
   };
 
   return (
@@ -91,7 +62,7 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
         },
       }}
     >
-      {/* Header with favorite button */}
+      {/* Header */}
       <Box
         sx={{
           position: 'relative',
@@ -103,7 +74,6 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
         <Box
           sx={{
             display: 'flex',
-            justifyContent: 'space-between',
             alignItems: 'flex-start',
             mb: 2
           }}
@@ -121,39 +91,7 @@ const HaircutCard: React.FC<HaircutCardProps> = ({
           >
             {haircut.name}
           </Typography>
-          <IconButton
-            onClick={handleFavoriteClick}
-            size="small"
-            sx={{
-              bgcolor: 'white',
-              boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-              '&:hover': {
-                bgcolor: 'white',
-                transform: 'scale(1.1)'
-              },
-              transition: 'all 0.2s ease-in-out'
-            }}
-          >
-            {isFavorite ? (
-              <FavoriteIcon sx={{ color: 'primary.main', fontSize: 20 }} />
-            ) : (
-              <FavoriteBorderIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
-            )}
-          </IconButton>
         </Box>
-
-        {error && (
-          <Alert
-            severity="error"
-            sx={{
-              mt: 1,
-              mb: 2,
-              fontSize: '0.875rem'
-            }}
-          >
-            {error}
-          </Alert>
-        )}
 
         {/* Rating and Price */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>

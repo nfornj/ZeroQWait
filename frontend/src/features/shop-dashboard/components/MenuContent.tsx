@@ -12,8 +12,6 @@ import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded';
 import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded';
-import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
-import HelpRoundedIcon from '@mui/icons-material/HelpRounded';
 import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -29,11 +27,6 @@ const managementListItems = [
   { text: 'Queues', icon: <QueueRoundedIcon />, path: '/queues' },
   { text: 'Shop Setup', icon: <SettingsRoundedIcon />, path: '/settings' },
   { text: 'Team', icon: <PeopleRoundedIcon />, path: '/employees' },
-];
-
-const secondaryListItems = [
-  { text: 'About', icon: <InfoRoundedIcon />, path: '/about' },
-  { text: 'Feedback', icon: <HelpRoundedIcon />, path: '/feedback' },
 ];
 
 const activeItemSx = {
@@ -55,7 +48,6 @@ export default function MenuContent() {
     ? [{ text: 'Queue', icon: <QueueRoundedIcon />, path: '/employee-dashboard' }]
     : primaryListItems;
   const visibleManagementItems = isEmployee ? [] : managementListItems;
-  const visibleSecondaryItems = isEmployee ? [] : secondaryListItems;
   const itemButtonSx = {
     borderRadius: 2,
     mb: 0.5,
@@ -100,25 +92,6 @@ export default function MenuContent() {
             </ListItem>
           ))}
         </List>
-      )}
-      {visibleSecondaryItems.length > 0 && (
-      <List dense sx={{ p: 0 }}>
-        <Typography variant="overline" sx={{ px: 1.5, color: 'text.secondary', fontWeight: 700 }}>
-          Support
-        </Typography>
-        {visibleSecondaryItems.map((item, index) => (
-          <ListItem key={index} disablePadding sx={{ display: 'block', mt: index === 0 ? 0.5 : 0 }}>
-            <ListItemButton
-              selected={isSelected(item.path)}
-              onClick={() => navigate(item.path)}
-              sx={itemButtonSx}
-            >
-              <ListItemIcon sx={{ minWidth: 36 }}>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.text} />
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
       )}
     </Stack>
   );

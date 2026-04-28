@@ -62,6 +62,8 @@ function App() {
           {/* Auth Pages (No Navbar) */}
           <Route path="/login" element={<SignInSide />} />
           <Route path="/signup" element={<ShopOwnerSignUp />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           <Route path="/" element={<SubdomainHandler />} />
           <Route path="/ai" element={<Navigate to="/" replace />} />
@@ -73,8 +75,6 @@ function App() {
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>
             <Route path="/home" element={<Navigate to="/" replace />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/search" element={<SearchPage />} />
           </Route>

@@ -1,3 +1,5 @@
+import type { CompleteAttachment } from "@assistant-ui/react";
+
 export interface ThinkingStep {
   id: string;
   label: string;
@@ -104,6 +106,7 @@ export interface ChatMessage {
   timestamp: string;
   agent?: string;
   retryMessage?: string;
+  attachments?: readonly CompleteAttachment[];
   pendingAction?: PendingApproval;
   thinkingSteps?: ThinkingStep[];
   thinkingComplete?: boolean;

@@ -11,8 +11,12 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { useShop } from "../../../contexts/ShopContext";
 import api from "../../../services/api";
 import AgentChat, {
+  AgentChatSendPayload,
   AgentChatPromptSection,
 } from "../../agent-inbox/AgentChat";
+import AgentTaskBoard, {
+  AgentTaskBoardExternalTask,
+} from "../../agent-inbox/AgentTaskBoard";
 import {
   ownerDashboardKeys,
   useOwnerBriefingQuery,
@@ -28,8 +32,8 @@ import type {
   AgentFile,
   AgentTable,
   ChatMessage,
-  ThinkingStep,
   PendingApproval,
+  ThinkingStep,
 } from "../../agent-inbox/types";
 import Header from "../components/Header";
 
@@ -169,6 +173,24 @@ const getErrorDetail = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const FALLBACK_TASK_TIMESTAMP = "1970-01-01T00:00:00.000Z";
+
+const formatTaskActionLabel = (value?: string | null): string => {
+  if (!value) {
+    return "Agent task";
+  }
+
+  return value
+    .split(/[_-]/g)
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+};
+
+const getAttachmentFiles = (attachments: AgentChatSendPayload["attachments"]): File[] => {
+  return (attachments || []).flatMap((attachment) => (attachment.file instanceof File ? [attachment.file] : []));
+};
+
 const STREAM_INTERRUPTED_MESSAGE = "The response stream was interrupted before completion. Partial output may be shown below.";
 const STREAM_RETRY_MESSAGE = "The response was interrupted before it finished. Please try again.";
 
@@ -249,105 +271,74 @@ const OwnerDashboardPage: React.FC = () => {
     }, {});
   }, [policiesQuery.data]);
 
-  const handleUploadDocuments = useCallback(
+  const uploadDocumentsToKnowledgeBase = useCallback(
     async (selectedFiles: File[]) => {
       if (!shop?.id) {
-        setDashboardError("No active shop selected for document upload.");
-        return;
+        throw new Error("No active shop selected for document upload.");
       }
       if (selectedFiles.length === 0) {
-        return;
+        return null;
       }
 
       setDashboardError(null);
-      setIsUploadingDocuments(true);
+      const formData = new FormData();
+      formData.append("shop_id", String(shop.id));
 
-      try {
-        const formData = new FormData();
-        formData.append("shop_id", String(shop.id));
+      selectedFiles.forEach((file) => {
+        formData.append("files", file);
+        formData.append(
+          "relative_paths",
+          ((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name),
+        );
+      });
 
-        selectedFiles.forEach((file) => {
-          formData.append("files", file);
-          formData.append(
-            "relative_paths",
-            ((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name),
-          );
-        });
+      const response = await api.post<{
+        message: string;
+        ingested_chunks: number;
+        documents: Array<{
+          id: number;
+          filename: string;
+          relative_path?: string | null;
+          chunk_count: number;
+          duplicate: boolean;
+        }>;
+      }>("/v2/agent/documents/upload", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
 
-        const response = await api.post<{
-          message: string;
-          ingested_chunks: number;
-          documents: Array<{
-            id: number;
-            filename: string;
-            relative_path?: string | null;
-            chunk_count: number;
-            duplicate: boolean;
-          }>;
-        }>("/v2/agent/documents/upload", formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        });
+      addFeedEvent({
+        type: "system",
+        title: "Knowledge base updated",
+        description: response.data.message,
+        payload: response.data.documents,
+      });
 
-        const uploadedCount = response.data.documents.length;
-        const duplicateCount = response.data.documents.filter((document) => document.duplicate).length;
-        const newDocumentCount = uploadedCount - duplicateCount;
-        const uploadedNames = response.data.documents
-          .slice(0, 3)
-          .map((document) => document.relative_path || document.filename)
-          .join(", ");
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: toId("msg_system"),
-            role: "system",
-            content:
-              duplicateCount > 0
-                ? `Added ${newDocumentCount} new document${newDocumentCount === 1 ? "" : "s"} to the knowledge base and skipped ${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"}. ${uploadedNames ? `Latest files: ${uploadedNames}.` : ""}`
-                : `Added ${uploadedCount} document${uploadedCount === 1 ? "" : "s"} to the knowledge base. ${uploadedNames ? `Latest files: ${uploadedNames}.` : ""}`,
-            status: "done",
-            timestamp: nowIso(),
-            agent: "system",
-          },
-        ]);
-
-        addFeedEvent({
-          type: "system",
-          title: "Knowledge base updated",
-          description: response.data.message,
-          payload: response.data.documents,
-        });
-
-        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
-      } catch (error) {
-        const detail = getErrorDetail(error, "Failed to upload documents");
-        setDashboardError(detail);
-        addFeedEvent({
-          type: "error",
-          title: "Document upload failed",
-          description: detail,
-        });
-      } finally {
-        setIsUploadingDocuments(false);
-      }
+      await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
+      return response.data;
     },
     [addFeedEvent, queryClient, shop?.id],
   );
 
 
   const handleSend = useCallback(
-    async (messageText: string) => {
+    async ({ text, attachments = [] }: AgentChatSendPayload) => {
       if (!shop?.id) {
         setDashboardError("No active shop selected for the owner dashboard.");
         return;
       }
 
-      setDashboardError(null);
-      setIsStreaming(true);
+      const messageText = text.trim();
+      const attachmentFiles = getAttachmentFiles(attachments);
 
-      const assistantMessageId = toId("msg_assistant");
+      if (!messageText && attachmentFiles.length === 0) {
+        return;
+      }
+
+      setDashboardError(null);
+      const shouldRequestAssistantResponse = Boolean(messageText);
+      const assistantMessageId = shouldRequestAssistantResponse ? toId("msg_assistant") : null;
 
       setMessages((prev) => [
         ...prev,
@@ -357,24 +348,72 @@ const OwnerDashboardPage: React.FC = () => {
           content: messageText,
           status: "done",
           timestamp: nowIso(),
+          attachments,
         },
-        {
-          id: assistantMessageId,
-          role: "assistant",
-          content: "",
-          status: "streaming",
-          timestamp: nowIso(),
-          retryMessage: messageText,
-          thinkingSteps: [],
-          thinkingComplete: false,
-        },
+        ...(assistantMessageId
+          ? [
+              {
+                id: assistantMessageId,
+                role: "assistant" as const,
+                content: "",
+                status: "streaming" as const,
+                timestamp: nowIso(),
+                retryMessage: messageText,
+                thinkingSteps: [],
+                thinkingComplete: false,
+              },
+            ]
+          : []),
       ]);
 
       addFeedEvent({
         type: "chat",
-        title: "Owner message sent",
-        description: messageText,
+        title: attachmentFiles.length > 0 && !messageText ? "Documents attached" : "Owner message sent",
+        description:
+          messageText ||
+          `Attached ${attachmentFiles.length} document${attachmentFiles.length === 1 ? "" : "s"} to the conversation.`,
       });
+
+      if (attachmentFiles.length > 0) {
+        setIsUploadingDocuments(true);
+
+        try {
+          await uploadDocumentsToKnowledgeBase(attachmentFiles);
+        } catch (error) {
+          const detail = getErrorDetail(error, "Failed to upload documents");
+          setDashboardError(detail);
+          addFeedEvent({
+            type: "error",
+            title: "Document upload failed",
+            description: detail,
+          });
+
+          if (assistantMessageId) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId
+                  ? {
+                      ...message,
+                      content: detail,
+                      status: "error",
+                      thinkingComplete: true,
+                    }
+                  : message,
+              ),
+            );
+          }
+
+          return;
+        } finally {
+          setIsUploadingDocuments(false);
+        }
+      }
+
+      if (!assistantMessageId) {
+        return;
+      }
+
+      setIsStreaming(true);
 
       let streamEndedWithDone = false;
       let streamTerminalStatus: "completed" | "error" | null = null;
@@ -751,7 +790,7 @@ const OwnerDashboardPage: React.FC = () => {
         setIsStreaming(false);
       }
     },
-    [addFeedEvent, queryClient, shop?.id, token]
+    [addFeedEvent, queryClient, shop?.id, token, uploadDocumentsToKnowledgeBase]
   );
 
   const contextPromptSections = useMemo<AgentChatPromptSection[]>(() => {
@@ -887,11 +926,112 @@ const OwnerDashboardPage: React.FC = () => {
     policySummary,
   ]);
 
-  return (
-    <Box sx={{ width: "100%", maxWidth: { sm: "100%", md: "1680px" }, mx: "auto" }}>
-      <Header />
+  const taskBoardTasks = useMemo<AgentTaskBoardExternalTask[]>(() => {
+    const tasks = new Map<string, AgentTaskBoardExternalTask>();
+    const briefingActions = briefingQuery.data?.actions || [];
 
-      <Stack spacing={2}>
+    pendingApprovals.forEach((approval, index) => {
+      const matchingEvent = approval.action_id
+        ? displayedFeedEvents.find((event) => {
+            if (event.type !== "approval_required") {
+              return false;
+            }
+
+            const payload =
+              event.payload && typeof event.payload === "object"
+                ? (event.payload as Record<string, unknown>)
+                : null;
+
+            return payload?.action_id === approval.action_id;
+          })
+        : undefined;
+
+      const taskId =
+        approval.action_id || `approval_task_${shop?.id || "owner"}_${approval.action}_${index}`;
+
+      tasks.set(taskId, {
+        id: taskId,
+        title: approval.title || formatTaskActionLabel(approval.action),
+        description:
+          approval.summary ||
+          approval.reason ||
+          `Action '${formatTaskActionLabel(approval.action)}' is waiting for owner approval.`,
+        source: "approval",
+        assignee: "Owner",
+        createdAt: matchingEvent?.timestamp || briefingQuery.data?.generated_at || FALLBACK_TASK_TIMESTAMP,
+        actionId: approval.action_id,
+      });
+    });
+
+    displayedFeedEvents.forEach((event, index) => {
+      if (event.type !== "approval_required") {
+        return;
+      }
+
+      const payload =
+        event.payload && typeof event.payload === "object"
+          ? (event.payload as Record<string, unknown>)
+          : {};
+      const actionId = typeof payload.action_id === "string" ? payload.action_id : undefined;
+      const taskId = actionId || `feed_task_${event.id || index}`;
+
+      if (tasks.has(taskId)) {
+        return;
+      }
+
+      tasks.set(taskId, {
+        id: taskId,
+        title:
+          (typeof payload.title === "string" && payload.title.trim()) ||
+          event.title ||
+          "Approval task",
+        description:
+          (typeof payload.summary === "string" && payload.summary.trim()) ||
+          event.description ||
+          "Agent approval task",
+        source: "agent",
+        assignee: "Owner",
+        createdAt: event.timestamp || briefingQuery.data?.generated_at || FALLBACK_TASK_TIMESTAMP,
+        actionId,
+      });
+    });
+
+    briefingActions.forEach((action, index) => {
+      const taskId = `briefing_task_${shop?.id || "owner"}_${index}_${action.label
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_|_$/g, "")}`;
+
+      if (tasks.has(taskId)) {
+        return;
+      }
+
+      tasks.set(taskId, {
+        id: taskId,
+        title: action.label,
+        description: action.description || action.payload,
+        source: "agent",
+        assignee: "Owner",
+        createdAt: briefingQuery.data?.generated_at || FALLBACK_TASK_TIMESTAMP,
+      });
+    });
+
+    return Array.from(tasks.values()).sort(
+      (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    );
+  }, [briefingQuery.data?.actions, briefingQuery.data?.generated_at, displayedFeedEvents, pendingApprovals, shop?.id]);
+
+  return (
+    <Box
+      sx={{
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        minHeight: 0,
+      }}
+    >
+      <Stack spacing={2} sx={{ flex: 1, minHeight: 0 }}>
         {dashboardError && <Alert severity="error">{dashboardError}</Alert>}
 
         {!shop?.id && (
@@ -902,9 +1042,9 @@ const OwnerDashboardPage: React.FC = () => {
 
         <Box
           sx={{
-            height: { xs: 620, lg: "calc(100vh - 210px)" },
-            minHeight: { xs: 620, lg: "calc(100vh - 210px)" },
             display: "flex",
+            flex: 1,
+            minHeight: 0,
           }}
         >
           <AgentChat
@@ -912,10 +1052,17 @@ const OwnerDashboardPage: React.FC = () => {
             isStreaming={isStreaming}
             isUploading={isUploadingDocuments}
             onSend={handleSend}
-            onUpload={handleUploadDocuments}
             title="Hello there!"
             subtitle="How can I help you today?"
             promptSections={contextPromptSections}
+            header={<Header />}
+            interactablesStorageKey={shop?.id ? `owner-dashboard-task-board:${shop.id}` : undefined}
+            sidebar={
+              <AgentTaskBoard
+                interactableId={`owner-task-board-${shop?.id || "default"}`}
+                externalTasks={taskBoardTasks}
+              />
+            }
           />
         </Box>
       </Stack>
