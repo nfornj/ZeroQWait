@@ -1873,8 +1873,8 @@ const AgentChat: React.FC<AgentChatProps> = ({
       <Box
         sx={{
           display: "flex",
-          flexDirection: { xs: "column", xl: "row" },
-          gap: { xs: 1.5, xl: 2 },
+          flexDirection: { xs: "column", md: "row" },
+          gap: { xs: 1.5, md: 0 },
           flex: 1,
           minHeight: 0,
           width: "100%",
@@ -1913,11 +1913,11 @@ const AgentChat: React.FC<AgentChatProps> = ({
         {sidebar ? (
           <Box
             sx={{
-              width: { xs: "100%", xl: 360 },
-              minWidth: { xl: 320 },
-              maxWidth: { xl: 400 },
+              width: { xs: "100%", md: 360 },
+              minWidth: { md: 320 },
+              maxWidth: { md: 400 },
               flexShrink: 0,
-              minHeight: { xs: 320, xl: 0 },
+              minHeight: { xs: 320, md: 0 },
               display: "flex",
             }}
           >

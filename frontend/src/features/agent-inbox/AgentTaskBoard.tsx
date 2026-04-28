@@ -185,7 +185,7 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
       sx={{
         width: "100%",
         height: "100%",
-        minHeight: { xs: 320, xl: 0 },
+        minHeight: { xs: 320, md: 0 },
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
@@ -201,7 +201,7 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
         alignItems="center"
         direction="row"
         spacing={1}
-        sx={{ px: 2, py: 1.5, borderBottom: "1px solid", borderColor: "divider" }}
+        sx={{ px: 1.25, pt: 0.25, pb: 0.75, borderBottom: "1px solid", borderColor: "divider" }}
       >
         <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flex: 1 }}>
           <ChecklistRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
@@ -230,7 +230,7 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
         ) : null}
       </Stack>
 
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 1.5, py: 1.5 }}>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 0.75, pt: 0.125, pb: 0.75 }}>
         {error ? (
           <Alert severity="error" sx={{ mb: 1.5 }}>
             Failed to sync task board state.
@@ -273,7 +273,7 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
                 component="li"
                 key={task.id}
                 sx={{
-                  mb: 0.75,
+                  mb: 0.5,
                 }}
               >
                 <ButtonBase
@@ -284,8 +284,8 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
                     alignItems: "center",
                     gap: 1.25,
                     borderRadius: 2,
-                    px: 1.5,
-                    py: 1.25,
+                    px: 1,
+                    py: 0.75,
                     textAlign: "left",
                     opacity: task.done ? 0.56 : 1,
                     transition: theme.transitions.create(["background-color", "opacity"], {
