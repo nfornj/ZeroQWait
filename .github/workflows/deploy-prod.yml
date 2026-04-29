@@ -9,6 +9,9 @@ on:
 jobs:
   deploy-prod:
     runs-on: self-hosted
+    permissions:
+      contents: read
+      packages: write
     env:
       SKIP_TESTS: "true"
       # Fixed path prevents run-<id> directory buildup across prod deploys.
