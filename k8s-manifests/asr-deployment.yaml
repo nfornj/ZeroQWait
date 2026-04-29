@@ -16,7 +16,7 @@ spec:
       priorityClassName: voice-critical
       containers:
         - name: asr-service
-          image: localhost:5000/prod/asr-service:latest
+          image: localhost:5000/prod/asr-service:v20260429092027-30a8ac4
           imagePullPolicy: Always
           env:
             - name: MODEL_SIZE

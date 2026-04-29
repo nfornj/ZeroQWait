@@ -23,7 +23,7 @@ spec:
       runtimeClassName: nvidia
       containers:
         - name: tts-service
-          image: localhost:5000/prod/tts-service:latest
+          image: localhost:5000/prod/tts-service:v20260429092027-30a8ac4
           imagePullPolicy: Always
           ports:
             - containerPort: 8880
