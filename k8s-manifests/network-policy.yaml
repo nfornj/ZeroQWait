@@ -1,5 +1,6 @@
 # NetworkPolicies for data-tier isolation.
-# Only the backend pod may initiate connections to PostgreSQL (5432) and Redis (6379).
+# Backend and MCP pods may connect to PostgreSQL (5432).
+# Only backend may connect to Redis (6379).
 # All other ingress to these pods is denied by default once a NetworkPolicy selects them.
 
 ---
@@ -19,6 +20,15 @@ spec:
         - podSelector:
             matchLabels:
               app: backend
+        - podSelector:
+            matchLabels:
+              app: hr-mcp
+        - podSelector:
+            matchLabels:
+              app: booking-mcp
+        - podSelector:
+            matchLabels:
+              app: finance-mcp
       ports:
         - protocol: TCP
           port: 5432
