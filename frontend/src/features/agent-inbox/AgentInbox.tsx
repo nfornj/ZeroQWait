@@ -46,9 +46,9 @@ import {
 
 const AgentInbox: React.FC = () => {
   const queryClient = useQueryClient();
-  const { shop } = useShop();
+  const { shop, loading: shopLoading } = useShop();
 
-  const [persistedFeedEvents, setPersistedFeedEvents] = useState<AgentFeedEvent[]>([]);
+  const [persistedFeedEvents, setPersistedFeedEvents] = useState<AgentFeedEvent[]>([]);;
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [policies, setPolicies] = useState<ShopPolicy[]>([]);
   const [briefing, setBriefing] = useState<OwnerBriefingData | null>(null);
@@ -328,7 +328,7 @@ const AgentInbox: React.FC = () => {
       <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 0 }}>
         {error && <Alert severity="error">{error}</Alert>}
 
-        {!shop?.id && (
+        {!shop?.id && !shopLoading && (
           <Alert severity="warning">
             No active shop selected. Refresh the shop workspace or choose an active shop from the top bar if you manage more than one location.
           </Alert>

@@ -212,7 +212,7 @@ const normalizeStreamErrorDetail = (error: unknown, fallback: string) => {
 
 const OwnerDashboardPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const { shop } = useShop();
+  const { shop, loading: shopLoading } = useShop();
   const { token } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [localFeedEvents, setLocalFeedEvents] = useState<AgentFeedEvent[]>([]);
@@ -1034,7 +1034,7 @@ const OwnerDashboardPage: React.FC = () => {
       <Stack spacing={2} sx={{ flex: 1, minHeight: 0 }}>
         {dashboardError && <Alert severity="error">{dashboardError}</Alert>}
 
-        {!shop?.id && (
+        {!shop?.id && !shopLoading && (
           <Alert severity="warning">
             No active shop selected. Choose a shop from the owner navigation bar before using the dashboard.
           </Alert>
