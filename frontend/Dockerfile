@@ -1,5 +1,5 @@
 # Build stage
-FROM node:18-alpine as build
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
@@ -8,7 +8,7 @@ ARG REACT_APP_API_URL=/api
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 
 # Copy package files
-COPY package*.json ./
+COPY package*.json .npmrc ./
 
 # Set memory limit for node process to avoid OOM
 ENV NODE_OPTIONS="--max-old-space-size=4096"
@@ -16,7 +16,7 @@ ENV GENERATE_SOURCEMAP=false
 ENV DISABLE_ESLINT_PLUGIN=true
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy source code
 COPY . .

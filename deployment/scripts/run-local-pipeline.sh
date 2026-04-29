@@ -9,7 +9,7 @@ set -euo pipefail
 # 5) optionally sync Argo CD app
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-REGISTRY="${REGISTRY:-localhost:5000}"
+REGISTRY="${REGISTRY:-ghcr.io/nfornj}"
 VERSION_TAG="${VERSION_TAG:-v$(date +%Y%m%d%H%M%S)-$(git -C "${PROJECT_ROOT}" rev-parse --short HEAD)}"
 AUTO_COMMIT="${AUTO_COMMIT:-true}"
 ARGOCD_SYNC="${ARGOCD_SYNC:-false}"
@@ -93,7 +93,10 @@ update_manifest_tag() {
   local file="$1"
   local image_name="$2"
   local target_repo="$3"
-  sed -i -E "s#image: ${REGISTRY}/([[:alnum:]_.-]+/)*${image_name}:[^[:space:]]+#image: ${REGISTRY}/${target_repo}:${VERSION_TAG}#g" "${file}"
+  # Escape dots in REGISTRY for use as a sed regex (e.g. ghcr.io → ghcr\.io)
+  local escaped_registry
+  escaped_registry="${REGISTRY//./\\.}"
+  sed -i -E "s#image: ${escaped_registry}/([[:alnum:]_.-]+/)*${image_name}:[^[:space:]]+#image: ${REGISTRY}/${target_repo}:${VERSION_TAG}#g" "${file}"
 }
 
 should_build() {

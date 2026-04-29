@@ -36,8 +36,6 @@ Login URL: [https://zeroqwait.com/login](https://zeroqwait.com/login)
 |---|---|---|
 | Jeffrey Holmes | `emp_461_1_jeffrey_holmes` | `ZQTest2026!` |
 
-> **Note:** The other employees at this shop (Joseph Kim, Brian Baker, Christopher Hudson, Christopher Anderson) have randomly generated passwords from the seed run that were not exported. Use Jeffrey Holmes for employee testing.
-
 **Access:** Employee Dashboard, Queue Management, Call Next Customer, Service Tracking
 
 ---

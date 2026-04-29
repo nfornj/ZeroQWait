@@ -1,165 +1,151 @@
-# Environment Configuration Summary
+# Environment Setup
 
-## ✅ What's Been Configured
+This document describes the active environment model for ZeroQwait.
 
-Your application now automatically works in both **local** and **production** environments!
+## Current Environment Sources
 
-## 📁 Environment Files Created
+### Backend
 
-### Frontend (`frontend/`)
-- **`.env.development`** → `http://localhost:8000/api` (for local dev)
-- **`.env.production`** → `https://nowait-backend.fly.dev/api` (for production)
-- **`.env.local`** → `http://localhost:8000/api` (local overrides, not committed)
+Primary local source of truth:
 
-### How It Works
-React automatically picks the right `.env` file based on the command:
-- `npm start` → uses `.env.development`
-- `npm run build` → uses `.env.production`
-- `.env.local` → always overrides (useful for testing)
+- `backend/.env`
 
-## 🚀 Local Development
+Primary configuration groups:
 
-```bash
-# Start everything
-docker-compose up --build
+- database connection
+- Redis connection
+- Ollama and model selection
+- TTS service URL
+- MCP service URLs
+- Odoo connection settings
+- frontend origin
 
-# Or start individually
-# Backend
-cd backend && pdm run start
+### Frontend
 
-# Frontend (in another terminal)
-cd frontend && npm start
+Primary runtime setting:
+
+- `REACT_APP_API_URL`
+
+Common values:
+
+- source-run local frontend: `http://localhost:8000/api`
+- containerized frontend behind nginx: `/api`
+
+## Recommended Local Setup
+
+### Backend `.env`
+
+Use values that match the root `docker-compose.yml` and your local runtime:
+
+```env
+DB_HOST=db
+DB_PORT=5432
+DB_NAME=zeroqwait
+DB_USER=postgres
+DB_PASSWORD=zeroqwait_dev
+REDIS_HOST=redis
+REDIS_PORT=6379
+OLLAMA_URL=http://192.168.2.134:30002/v1
+MODEL_NAME=qwen3:14b-q4_K_M
+TTS_SERVICE_URL=http://192.168.2.134:30880
+BOOKING_MCP_URL=http://booking-mcp:8890
+FINANCE_MCP_URL=http://finance-mcp:8891
+HR_MCP_URL=http://hr-mcp:8892
+ODOO_URL=http://odoo:8069
+ODOO_DB=odoo
+ODOO_USER=admin
+ODOO_PASSWORD=admin
+FRONTEND_URL=http://localhost:3000
 ```
 
-**Frontend**: http://localhost:3000  
-**Backend API**: http://localhost:8000  
-**API Docs**: http://localhost:8000/docs
+### Source-Run Workflow
 
-## 🌐 Production Deployment
+Support services:
 
-### For Fly.io (or similar)
+```bash
+docker compose up -d db redis booking-mcp finance-mcp hr-mcp odoo
+```
 
-**Backend:**
+Backend:
+
 ```bash
 cd backend
-fly deploy
+uv sync --dev
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Frontend:**
+Frontend:
+
 ```bash
 cd frontend
-# .env.production already has the right URL
-npm run build
-fly deploy
+REACT_APP_API_URL=http://localhost:8000/api npm start
 ```
 
-### For Custom Domain
+### Full Test Deployment
 
-Update `frontend/.env.production`:
-```
-REACT_APP_API_URL=https://your-api-domain.com/api
-```
+Use the repo’s authoritative non-prod flow when you want the full Docker Compose stack:
 
-Then build:
 ```bash
-cd frontend
-npm run build
-# Deploy the 'build' folder
+bash deployment/scripts/deploy-test.sh
 ```
 
-## 🔧 Configuration Files
+That publishes:
 
-### `docker-compose.yml`
-```yaml
-frontend:
-  build:
-    context: ./frontend
-  environment:
-    - REACT_APP_API_URL=http://localhost:8000/api  # Local dev
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000`
+
+## Production Configuration Model
+
+Production configuration comes from:
+
+- K8s manifests under `k8s-manifests/`
+- backend environment variables injected through deployment config
+- frontend container config and nginx proxying
+
+This project uses Compose for local and non-prod flows and K3s for production.
+
+## Frontend API Routing Rules
+
+### Source-Run Frontend
+
+Use:
+
+```env
+REACT_APP_API_URL=http://localhost:8000/api
 ```
 
-### `frontend/src/index.tsx`
-```typescript
-import axios from 'axios';
+This is required because auth and owner-agent routes are mounted under `/api`.
 
-// Automatically uses the right API URL based on environment
-axios.defaults.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+### Containerized Frontend
+
+Use:
+
+```env
+REACT_APP_API_URL=/api
 ```
 
-### `backend/main.py`
-```python
-allowed_origins = [
-    "http://localhost:3000",        # Local frontend
-    "https://nowait.fly.dev",       # Production frontend
-]
-```
+The containerized frontend expects nginx or ingress to proxy `/api` to the backend.
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### Login not working?
-1. **Hard refresh**: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows)
-2. **Check console**: DevTools → Network tab → Look at request URL
-3. **Verify API URL**: Should be `http://localhost:8000/api/auth/token`
+### Login or API calls fail from the frontend
 
-### Wrong API URL?
-```bash
-# Check which URL is compiled in the build
-docker-compose exec frontend sh -c 'grep -o "localhost:8000\|nowait-backend" /usr/share/nginx/html/static/js/*.js | head -3'
+- verify `REACT_APP_API_URL`
+- verify backend is listening on `http://localhost:8000`
+- verify frontend is on `http://localhost:3000`
 
-# Should show: localhost:8000
-```
+### Backend starts but cannot reach dependencies
 
-### After changing environment files:
-```bash
-# Must rebuild for changes to take effect
-docker-compose up --build frontend
-```
+- check `backend/.env`
+- confirm `db`, `redis`, MCP services, and `odoo` are up
+- confirm `OLLAMA_URL` and `TTS_SERVICE_URL` point at reachable services
 
-## 📝 Adding a New Environment Variable
+### Docs show unexpected variables
 
-1. **Add to `.env.development` and `.env.production`**:
-```
-REACT_APP_NEW_VAR=value
-```
+Validate them against `README.md`, `deployment/docs/README.md`, and `claude.md`.
 
-2. **Use in code** (must start with `REACT_APP_`):
-```typescript
-const newVar = process.env.REACT_APP_NEW_VAR;
-```
+## Security Notes
 
-3. **Rebuild**:
-```bash
-docker-compose up --build frontend
-```
-
-## 🔐 Security Notes
-
-- ✅ `.env.local` is in `.gitignore` (safe for local secrets)
-- ✅ Production secrets should be set via your hosting platform
-- ✅ Never commit API keys or passwords to git
-- ✅ Backend uses CORS to restrict which domains can access it
-
-## 📚 Full Documentation
-
-See `DEPLOYMENT_GUIDE.md` for complete deployment instructions.
-
-## Quick Test
-
-### Verify Local Setup
-```bash
-# Terminal
-curl http://localhost:8000/api/
-
-# Should return: {"message":"Welcome to Universal Queue System API"}
-```
-
-### Verify Frontend API URL
-```javascript
-// Browser console (on http://localhost:3000)
-console.log(process.env.REACT_APP_API_URL)
-// Should show: http://localhost:8000/api
-```
-
----
-
-**✅ You're all set!** The application will automatically use the correct API URL for each environment.
+- never commit real secrets
+- keep `backend/.env` local or managed through deployment secrets
+- keep frontend environment values limited to public-safe configuration such as API base URL

@@ -278,10 +278,10 @@ curl -s https://zeroqwait.com/api/feedback/stats | jq .
 | Role | Username | Email | Password |
 |------|----------|-------|----------|
 | Owner | donna_sanchez_421 | donna_sanchez_421@zeroqwait.com | TempPassword!0fed01f36 |
-| Employee #1 | emp_samuel_james_421_0 | — | EmpPassword!9e969c7a7b |
-| Employee #2 | emp_alexander_ruiz_421_1 | — | EmpPassword!463fa91ddc |
-| Employee #3 | emp_robert_castillo_421_2 | — | EmpPassword!ee79a90807 |
-| Employee #4 | emp_william_long_421_3 | — | EmpPassword!81f62de4f4 |
+| Employee #1 | test_bulk_emp_0_0_8410 | — | password123 |
+| Employee #2 | test_bulk_emp_0_1_3676 | — | password123 |
+
+Note: for current local same-shop E2E on shop 41, use the `test_bulk_emp_*` accounts above. The older `emp_samuel_james_421_0` demo credential is stale for the active local seed.
 
 ---
 

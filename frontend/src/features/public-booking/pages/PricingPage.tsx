@@ -23,14 +23,15 @@ const PricingPage: React.FC = () => {
             period: "forever",
             features: [
                 "Up to 1 shop",
-                "50 customers per queue",
-                "Basic queue management",
-                "Shared database (multi-tenant)",
+                "AI Receptionist for customer chats",
+                "Live queue join page",
+                "Appointment booking flow",
+                "Shared tenant environment",
                 "Email support",
-                "Mobile-friendly interface",
+                "Mobile-friendly customer pages",
             ],
             cta: "Get Started",
-            to: "/register/shop-owner",
+            to: "/signup",
             highlighted: false,
             color: "primary",
         },
@@ -40,18 +41,34 @@ const PricingPage: React.FC = () => {
             period: "per month",
             features: [
                 "Up to 5 shops",
-                "200 customers per queue",
-                "🔒 Dedicated database (isolated data)",
-                "Advanced analytics & reports",
-                "Priority support (24/7)",
+                "Full AI agent team (Receptionist, Finance, HR)",
+                "Human-in-the-Loop approvals",
+                "Advanced analytics and revenue reports",
                 "Custom branding & colors",
-                "SMS notifications",
-                "Automatic backups",
+                "Priority support",
+                "Owner agent inbox workspace",
             ],
             cta: "Start Free Trial",
-            to: "/register/shop-owner",
+            to: "/signup",
             highlighted: true,
             color: "secondary",
+        },
+        {
+            name: "Enterprise",
+            price: "Custom",
+            period: "contact us",
+            features: [
+                "Unlimited shops",
+                "Dedicated onboarding",
+                "Custom support SLA",
+                "Private deployment planning",
+                "Dedicated account manager",
+                "Multi-location rollout support",
+            ],
+            cta: "Contact Us",
+            to: "/signup",
+            highlighted: false,
+            color: "primary",
         },
     ];
 
@@ -62,7 +79,7 @@ const PricingPage: React.FC = () => {
                     Choose Your Plan
                 </Typography>
                 <Typography variant="h6" color="text.secondary" paragraph>
-                    Start free, upgrade when you need more capacity
+                    Start with an AI receptionist, then expand into a full AI operating team for your shop.
                 </Typography>
             </Box>
 
@@ -158,10 +175,10 @@ const PricingPage: React.FC = () => {
                 </Typography>
                 <Box display="flex" flexWrap="wrap" gap={2} sx={{ mt: 2, justifyContent: "center" }}>
                     {[
-                        "Real-time queue tracking",
-                        "Customer notifications",
-                        "Wait time estimates",
-                        "Mobile responsive",
+                        "Public shop page",
+                        "Live queue status",
+                        "Appointment booking flow",
+                        "Mobile-friendly customer experience",
                         "No setup fees",
                         "Cancel anytime",
                     ].map((feature) => (
@@ -177,7 +194,7 @@ const PricingPage: React.FC = () => {
 
             <Box sx={{ mt: 6, textAlign: "center" }}>
                 <Typography variant="body2" color="text.secondary">
-                    Need a custom plan? <Link to="/register/shop-owner">Contact us</Link> for enterprise pricing
+                    Need a custom plan? <Link to="/signup">Contact us</Link> for enterprise pricing
                 </Typography>
             </Box>
         </Container>

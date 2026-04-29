@@ -53,6 +53,35 @@ const shopTypes = [
   { value: 'other', label: 'Other' },
 ];
 
+const formatApiError = (detail: unknown) => {
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail;
+  }
+
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail
+      .map((entry) => {
+        if (typeof entry === 'string') {
+          return entry;
+        }
+
+        if (entry && typeof entry === 'object' && 'msg' in entry && typeof entry.msg === 'string') {
+          return entry.msg;
+        }
+
+        return null;
+      })
+      .filter((entry): entry is string => Boolean(entry))
+      .join(', ');
+  }
+
+  if (detail && typeof detail === 'object' && 'msg' in detail && typeof detail.msg === 'string') {
+    return detail.msg;
+  }
+
+  return 'Registration failed. Please try again.';
+};
+
 export default function ShopOwnerSignUp() {
   const navigate = useNavigate();
   const [loading, setLoading] = React.useState(false);
@@ -142,7 +171,7 @@ export default function ShopOwnerSignUp() {
       // Success! Redirect to dashboard
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Registration failed. Please try again.');
+      setError(formatApiError(err.response?.data?.detail));
     } finally {
       setLoading(false);
     }

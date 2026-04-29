@@ -10,15 +10,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup local registry on SSD
-        env:
-          REGISTRY_DATA_PATH: /media/neekrishrichu/One Touch/projects/zeroqwait
+      - name: Login to GHCR
         run: |
-          chmod +x deployment/scripts/setup-local-registry.sh
-          ./deployment/scripts/setup-local-registry.sh
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Run local CI/CD pipeline
         env:
+          REGISTRY: ghcr.io/nfornj
           AUTO_COMMIT: "false"
           ARGOCD_SYNC: "false"
         run: |

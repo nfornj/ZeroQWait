@@ -8,9 +8,49 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import LinkedInIcon from '@mui/icons-material/LinkedIn';
-import TwitterIcon from '@mui/icons-material/X';
+import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
+import EmailRoundedIcon from '@mui/icons-material/EmailRounded';
 import ZeroQwaitLogo from './ZeroQwaitLogo';
+
+interface FooterLinkItem {
+  label: string;
+  href: string;
+  external?: boolean;
+}
+
+interface FooterSection {
+  title: string;
+  links: FooterLinkItem[];
+}
+
+const footerSections: FooterSection[] = [
+  {
+    title: 'Product',
+    links: [
+      { label: 'Features', href: '#features' },
+      { label: 'Testimonials', href: '#testimonials' },
+      { label: 'Highlights', href: '#highlights' },
+      { label: 'Pricing', href: '#pricing' },
+      { label: 'FAQ', href: '#faq' },
+    ],
+  },
+  {
+    title: 'Get Started',
+    links: [
+      { label: 'Search Shops', href: '/search' },
+      { label: 'Register a Shop', href: '/signup' },
+      { label: 'Owner Login', href: '/login' },
+    ],
+  },
+  {
+    title: 'Resources',
+    links: [
+      { label: 'API Docs', href: 'https://zeroqwait.com/docs', external: true },
+      { label: 'Support', href: 'mailto:support@zeroqwait.com', external: true },
+      { label: 'GitHub', href: 'https://github.com/nfornj/FastCuts.git', external: true },
+    ],
+  },
+];
 
 function Copyright() {
   return (
@@ -90,76 +130,39 @@ export default function Footer() {
             </Stack>
           </Box>
         </Box>
-        <Box
-          sx={{
-            display: { xs: 'none', sm: 'flex' },
-            flexDirection: 'column',
-            gap: 1,
-          }}
-        >
-          <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-            Product
-          </Typography>
-          <Link color="text.secondary" variant="body2" href="#">
-            Features
-          </Link>
-          <Link color="text.secondary" variant="body2" href="#">
-            Testimonials
-          </Link>
-          <Link color="text.secondary" variant="body2" href="#">
-            Highlights
-          </Link>
-          <Link color="text.secondary" variant="body2" href="#">
-            Pricing
-          </Link>
-          <Link color="text.secondary" variant="body2" href="#">
-            FAQs
-          </Link>
-        </Box>
-        <Box
-          sx={{
-            display: { xs: 'none', sm: 'flex' },
-            flexDirection: 'column',
-            gap: 1,
-          }}
-        >
-          <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-            Company
-          </Typography>
-          <Link color="text.secondary" variant="body2" href="#">
-            About us
-          </Link>
-          <Link color="text.secondary" variant="body2" href="#">
-            Careers
-          </Link>
-          <Link color="text.secondary" variant="body2" href="#">
-            Press
-          </Link>
-        </Box>
-        <Box
-          sx={{
-            display: { xs: 'none', sm: 'flex' },
-            flexDirection: 'column',
-            gap: 1,
-          }}
-        >
-          <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-            Legal
-          </Typography>
-          <Link color="text.secondary" variant="body2" href="#">
-            Terms
-          </Link>
-          <Link color="text.secondary" variant="body2" href="#">
-            Privacy
-          </Link>
-          <Link color="text.secondary" variant="body2" href="#">
-            Contact
-          </Link>
-        </Box>
+        {footerSections.map((section) => (
+          <Box
+            key={section.title}
+            sx={{
+              display: { xs: 'none', sm: 'flex' },
+              flexDirection: 'column',
+              gap: 1,
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+              {section.title}
+            </Typography>
+            {section.links.map((item) => (
+              <Link
+                key={item.label}
+                color="text.secondary"
+                variant="body2"
+                href={item.href}
+                target={item.external ? '_blank' : undefined}
+                rel={item.external ? 'noreferrer' : undefined}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </Box>
+        ))}
       </Box>
       <Box
         sx={{
           display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          gap: 2,
+          alignItems: { xs: 'flex-start', sm: 'center' },
           justifyContent: 'space-between',
           pt: { xs: 4, sm: 8 },
           width: '100%',
@@ -168,14 +171,14 @@ export default function Footer() {
         }}
       >
         <div>
-          <Link color="text.secondary" variant="body2" href="#">
-            Privacy Policy
+          <Link color="text.secondary" variant="body2" href="mailto:support@zeroqwait.com">
+            support@zeroqwait.com
           </Link>
           <Typography sx={{ display: 'inline', mx: 0.5, opacity: 0.5 }}>
             &nbsp;•&nbsp;
           </Typography>
-          <Link color="text.secondary" variant="body2" href="#">
-            Terms of Service
+          <Link color="text.secondary" variant="body2" href="https://zeroqwait.com/docs" target="_blank" rel="noreferrer">
+            API Docs
           </Link>
           <Copyright />
         </div>
@@ -188,7 +191,9 @@ export default function Footer() {
           <IconButton
             color="inherit"
             size="small"
-            href="#"
+            href="https://github.com/nfornj/FastCuts.git"
+            target="_blank"
+            rel="noreferrer"
             aria-label="GitHub"
             sx={{ alignSelf: 'center' }}
           >
@@ -197,20 +202,22 @@ export default function Footer() {
           <IconButton
             color="inherit"
             size="small"
-            href="#"
-            aria-label="X"
+            href="https://zeroqwait.com/docs"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Docs"
             sx={{ alignSelf: 'center' }}
           >
-            <TwitterIcon />
+            <DescriptionRoundedIcon />
           </IconButton>
           <IconButton
             color="inherit"
             size="small"
-            href="#"
-            aria-label="LinkedIn"
+            href="mailto:support@zeroqwait.com"
+            aria-label="Support"
             sx={{ alignSelf: 'center' }}
           >
-            <LinkedInIcon />
+            <EmailRoundedIcon />
           </IconButton>
         </Stack>
       </Box>

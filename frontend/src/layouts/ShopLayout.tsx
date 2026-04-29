@@ -1,36 +1,39 @@
+// RESTYLED: Perplexity-style
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import { Outlet } from 'react-router-dom';
 import { Box, CssBaseline, alpha, useTheme } from '@mui/material';
 import AppNavbar from '../features/shop-dashboard/components/AppNavbar';
 import SideMenu from '../features/shop-dashboard/components/SideMenu';
-import { useShop } from '../contexts/ShopContext';
+
+declare module '@mui/material/styles' {
+    interface Theme {
+        ownerBrand: import('../hooks/useOwnerBrand').OwnerBrandTokens;
+    }
+}
 
 const ShopLayout: React.FC = () => {
     const theme = useTheme();
-    const { shop } = useShop();
-    const brandPrimary = shop?.primary_color || theme.palette.primary.main;
-    const brandSecondary = shop?.secondary_color || shop?.primary_color || theme.palette.secondary.main;
-    const glassBg = theme.palette.mode === 'dark'
-        ? 'rgba(255,255,255,0.05)'
-        : alpha('#ffffff', 0.68);
-    const glassBgStrong = theme.palette.mode === 'dark'
-        ? 'rgba(15,18,28,0.82)'
-        : alpha('#ffffff', 0.82);
-    const glassBorder = theme.palette.mode === 'dark'
-        ? alpha(brandPrimary, 0.24)
-        : alpha(brandPrimary, 0.16);
-    const glassShadow = `0 18px 60px ${alpha(brandPrimary, theme.palette.mode === 'dark' ? 0.18 : 0.10)}`;
+    const location = useLocation();
+    const ownerBrand = theme.ownerBrand;
+    const brandPrimary = ownerBrand.primary;
+    const brandSecondary = ownerBrand.secondary;
+    const isAgentRoute = location.pathname === '/dashboard';
 
     return (
         <Box
             sx={{
                 display: 'flex',
+                '--navbar-h': '57px',
+                '@media (min-width: 600px)': {
+                    '--navbar-h': '65px',
+                },
                 '--owner-primary': brandPrimary,
                 '--owner-secondary': brandSecondary,
-                '--owner-glass-bg': glassBg,
-                '--owner-glass-bg-strong': glassBgStrong,
-                '--owner-glass-border': glassBorder,
-                '--owner-glass-shadow': glassShadow,
+                '--owner-glass-bg': ownerBrand.glass.bg,
+                '--owner-glass-bg-strong': ownerBrand.glass.bgStrong,
+                '--owner-glass-border': ownerBrand.glass.border,
+                '--owner-glass-shadow': ownerBrand.glass.shadow,
                 '& .MuiButton-containedPrimary': {
                     backgroundColor: 'var(--owner-primary)',
                     color: '#fff',
@@ -66,7 +69,7 @@ const ShopLayout: React.FC = () => {
                 '& .MuiSvgIcon-colorSecondary': {
                     color: 'var(--owner-secondary)',
                 },
-            } as any}
+            }}
         >
             <CssBaseline enableColorScheme />
             <SideMenu />
@@ -75,27 +78,25 @@ const ShopLayout: React.FC = () => {
             {/* Main Content */}
             <Box
                 component="main"
-                sx={(theme) => ({
+                sx={{
                     flexGrow: 1,
-                    backgroundColor: theme.vars
-                        ? `rgba(${theme.vars.palette.background.defaultChannel} / 1)`
-                        : alpha(theme.palette.background.default, 1),
-                    backgroundImage:
-                        theme.palette.mode === 'light'
-                            ? `radial-gradient(circle at 15% 20%, ${alpha(brandPrimary, 0.16)}, transparent 36%), radial-gradient(circle at 85% 0%, ${alpha(brandSecondary, 0.12)}, transparent 35%), linear-gradient(180deg, ${alpha('#ffffff', 0.94)}, ${alpha('#f8fbff', 0.98)})`
-                            : `radial-gradient(circle at 15% 20%, ${alpha(brandPrimary, 0.24)}, transparent 36%), radial-gradient(circle at 85% 0%, ${alpha(brandSecondary, 0.18)}, transparent 35%), linear-gradient(180deg, rgba(8,10,18,0.98), rgba(10,12,22,0.98))`,
-                    overflow: 'auto',
+                    backgroundColor: theme.palette.background.default,
+                    overflow: isAgentRoute ? 'hidden' : 'auto',
                     minHeight: '100vh',
-                })}
+                    height: isAgentRoute ? '100vh' : 'auto',
+                }}
             >
                 <Box sx={{
                     display: 'flex',
                     flexDirection: 'column',
-                    alignItems: 'center',
-                    px: { xs: 1.5, md: 3 },
-                    pb: 5,
-                    mt: { xs: 8, md: 10 },
-                    height: '100%',
+                    alignItems: 'stretch',
+                    px: isAgentRoute ? 0 : { xs: 1.5, md: 3 },
+                    pb: isAgentRoute ? 0 : 5,
+                    mt: 0,
+                    pt: 'var(--navbar-h)',
+                    height: isAgentRoute ? 'calc(100dvh - var(--navbar-h))' : '100%',
+                    minHeight: 0,
+                    overflow: isAgentRoute ? 'hidden' : 'visible',
                     width: '100%',
                 }}>
                     <Outlet />

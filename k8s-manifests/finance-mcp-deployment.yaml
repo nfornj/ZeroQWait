@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finance-mcp
+  namespace: zeroqwait
+  labels:
+    app: finance-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: finance-mcp
+  template:
+    metadata:
+      labels:
+        app: finance-mcp
+    spec:
+      priorityClassName: app-critical
+      tolerations:
+        - key: "workload-pool"
+          operator: "Equal"
+          value: "core-cpu"
+          effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: zeroqwait.io/node-pool
+                    operator: In
+                    values: ["core-cpu"]
+      imagePullSecrets:
+      - name: ghcr-pull-secret
+      containers:
+        - name: finance-mcp
+          image: ghcr.io/nfornj/prod/finance-mcp:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8891
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secret
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8891"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8891
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8891
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finance-mcp
+  namespace: zeroqwait
+  labels:
+    app: finance-mcp
+spec:
+  type: ClusterIP
+  selector:
+    app: finance-mcp
+  ports:
+    - name: http
+      port: 8891
+      targetPort: 8891
+      protocol: TCP

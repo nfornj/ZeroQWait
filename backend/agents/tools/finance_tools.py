@@ -2,7 +2,9 @@ from typing import Any, Dict, Optional, Tuple
 from datetime import datetime, timedelta
 import re
 import difflib
+
 from db_interface import db_interface
+from integrations.finance_mcp_client import FinanceMCPClient
 
 
 _MONTHS = {
@@ -20,12 +22,57 @@ _MONTHS = {
     "dec": 12, "december": 12,
 }
 
+_SIMPLE_NUMBER_WORDS = {
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+}
+
+_TENS_NUMBER_WORDS = {
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+}
+
+_NUMBER_WORD_PATTERN = r"\d{1,3}|[a-z]+(?:[ -][a-z]+){0,3}"
+
 _TIME_WINDOW_KEYWORDS = [
     "today", "daily", "day", "trend", "yesterday",
     "this", "last", "previous", "past", "over", "in",
     "week", "weekly", "month", "monthly", "quarter", "quarterly",
     "year", "yearly", "annual", "months", "years",
 ]
+
+_finance_mcp_client: Optional[FinanceMCPClient] = None
+
+
+def _get_finance_client() -> FinanceMCPClient:
+    global _finance_mcp_client
+    if _finance_mcp_client is None:
+        _finance_mcp_client = FinanceMCPClient()
+    return _finance_mcp_client
 
 
 def _normalize_window_query(query: str) -> str:
@@ -121,7 +168,79 @@ def extract_requested_date(query: str, now: Optional[datetime] = None) -> Option
     return None
 
 
-def daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
+def _parse_relative_window_count(value: Optional[str]) -> Optional[int]:
+    if value is None:
+        return None
+
+    token = str(value).strip().lower()
+    if not token:
+        return None
+    if token.isdigit():
+        return int(token)
+
+    token = token.replace("-", " ")
+    parts = [part for part in token.split() if part and part != "and"]
+    if not parts:
+        return None
+
+    total = 0
+    current = 0
+    for part in parts:
+        if part in _SIMPLE_NUMBER_WORDS:
+            current += _SIMPLE_NUMBER_WORDS[part]
+            continue
+        if part in _TENS_NUMBER_WORDS:
+            current += _TENS_NUMBER_WORDS[part]
+            continue
+        if part == "hundred":
+            current = max(current, 1) * 100
+            continue
+        return None
+
+    total += current
+    return total if total > 0 else None
+
+
+def _describe_time_window(label: str, start_dt: datetime, end_dt: datetime, granularity: str) -> str:
+    month_match = re.fullmatch(r"month_(\d{4})_(\d{2})", str(label or ""))
+    if month_match:
+        year = int(month_match.group(1))
+        month = int(month_match.group(2))
+        return datetime(year, month, 1).strftime("%B %Y")
+
+    if label == "specific_day":
+        return start_dt.strftime("%b %-d, %Y")
+
+    if label == "today":
+        return "today"
+    if label == "yesterday":
+        return "yesterday"
+    if label == "this_week":
+        return "this week"
+    if label == "last_week":
+        return "last week"
+    if label == "this_month":
+        return "this month"
+    if label == "last_month":
+        return "last month"
+    if label == "this_quarter":
+        return "this quarter"
+    if label == "this_year":
+        return "this year"
+    if label == "last_year":
+        return "last year"
+    if label == "past_year":
+        return "past year"
+
+    if str(label or "").startswith("last_"):
+        return str(label).replace("_", " ")
+
+    if granularity == "month":
+        return f"{start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}"
+    return f"{start_dt.strftime('%b %-d, %Y')} to {end_dt.strftime('%b %-d, %Y')}"
+
+
+def _local_daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
     """Get daily revenue via db_interface.
     
     For today's date, queries queue_items in real-time (daily_analytics
@@ -243,11 +362,11 @@ def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
         return start_dt, end_dt, granularity, label
 
     relative_months_match = re.search(
-        r"\b(?:last|past|previous)\s+(\d{1,2})\s+months?\b",
+        rf"\b(?:last|past|previous)\s+({_NUMBER_WORD_PATTERN})\s+months?\b",
         q,
     )
     if relative_months_match:
-        months = int(relative_months_match.group(1))
+        months = _parse_relative_window_count(relative_months_match.group(1)) or 0
         if months > 0:
             anchor_month = now.month - (months - 1)
             anchor_year = now.year
@@ -262,11 +381,11 @@ def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
             return start_dt, end_dt, granularity, label
 
     relative_days_match = re.search(
-        r"\b(?:last|past|previous)\s+(\d{1,3})\s+days?\b",
+        rf"\b(?:last|past|previous)\s+({_NUMBER_WORD_PATTERN})\s+days?\b",
         q,
     )
     if relative_days_match:
-        days = int(relative_days_match.group(1))
+        days = _parse_relative_window_count(relative_days_match.group(1)) or 0
         if days > 0:
             start_dt = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
             end_dt = now
@@ -275,16 +394,29 @@ def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
             return start_dt, end_dt, granularity, label
 
     relative_weeks_match = re.search(
-        r"\b(?:last|past|previous)\s+(\d{1,2})\s+weeks?\b",
+        rf"\b(?:last|past|previous)\s+({_NUMBER_WORD_PATTERN})\s+weeks?\b",
         q,
     )
     if relative_weeks_match:
-        weeks = int(relative_weeks_match.group(1))
+        weeks = _parse_relative_window_count(relative_weeks_match.group(1)) or 0
         if weeks > 0:
             start_dt = (now - timedelta(days=(weeks * 7) - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
             end_dt = now
             granularity = "day" if weeks <= 4 else "week"
             label = f"last_{weeks}_weeks"
+            return start_dt, end_dt, granularity, label
+
+    relative_years_match = re.search(
+        rf"\b(?:last|past|previous)\s+({_NUMBER_WORD_PATTERN})\s+years?\b",
+        q,
+    )
+    if relative_years_match:
+        years = _parse_relative_window_count(relative_years_match.group(1)) or 0
+        if years > 0:
+            start_dt = now - timedelta(days=365 * years)
+            end_dt = now
+            granularity = "month"
+            label = f"last_{years}_years"
             return start_dt, end_dt, granularity, label
 
     if any(token in q for token in ["today", "daily", "day trend"]):
@@ -365,7 +497,7 @@ def _bucket_key(dt_value: datetime, granularity: str) -> str:
     return dt_value.strftime("%Y-%m-%d")
 
 
-def trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
+def _local_trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
     """Dynamic finance trend query backed by DailyAnalytics aggregation.
     
     For windows that include today, supplements batch daily_analytics
@@ -480,6 +612,7 @@ def trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
         return {
             "shop_id": shop_id,
             "window": window,
+            "window_display": _describe_time_window(window, start_dt, end_dt, granularity),
             "granularity": granularity,
             "query": query,
             "range_start": start_dt.strftime("%Y-%m-%d"),
@@ -496,7 +629,7 @@ def trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, Any]:
+def _local_weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, Any]:
     """Get weekly revenue summary.
     
     Supplements batch daily_analytics with real-time queue_items
@@ -519,10 +652,14 @@ def weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, 
         total_completed = 0
         best_day = None
         best_day_revenue = 0.0
+        points = []
         
         for i in range(7):
             loop_date = (start_date + timedelta(days=i)).date()
             date_str = loop_date.strftime("%Y-%m-%d")
+            day_revenue = 0.0
+            day_customers = 0
+            day_completed_count = 0
 
             if loop_date == today:
                 # Real-time from queue_items
@@ -536,11 +673,13 @@ def weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, 
                     )
                     .all()
                 )
-                day_completed = [i for i in today_items if i.status == QueueStatus.COMPLETED]
-                day_revenue = sum(float(i.service_cost or 0.0) for i in day_completed)
+                day_completed_items = [item for item in today_items if getattr(item, "status", None) == QueueStatus.COMPLETED]
+                day_revenue = sum(float(getattr(item, "service_cost", 0.0) or 0.0) for item in day_completed_items)
+                day_customers = len(today_items)
+                day_completed_count = len(day_completed_items)
                 total_revenue += day_revenue
-                total_customers += len(today_items)
-                total_completed += len(day_completed)
+                total_customers += day_customers
+                total_completed += day_completed_count
             elif loop_date > today:
                 continue  # Future dates — skip
             else:
@@ -549,18 +688,30 @@ def weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, 
                     DailyAnalytics.shop_id == shop_id,
                     DailyAnalytics.date == date_str
                 ).all()
-                
-                day_revenue = 0.0
+
                 for record in day_records:
                     rev = getattr(record, 'total_revenue', 0.0)
                     day_revenue += rev
                     total_revenue += rev
-                    total_customers += getattr(record, 'total_customers', 0)
-                    total_completed += getattr(record, 'completed_services', 0)
+                    customers = int(getattr(record, 'total_customers', 0) or 0)
+                    completed = int(getattr(record, 'completed_services', 0) or 0)
+                    day_customers += customers
+                    day_completed_count += completed
+                    total_customers += customers
+                    total_completed += completed
             
             if day_revenue > best_day_revenue:
                 best_day_revenue = day_revenue
                 best_day = date_str
+
+            points.append(
+                {
+                    "period": date_str,
+                    "revenue": round(float(day_revenue), 2),
+                    "customers": day_customers,
+                    "completed_services": day_completed_count,
+                }
+            )
         
         session.close()
         
@@ -573,13 +724,18 @@ def weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, 
             "best_day": best_day,
             "total_customers": total_customers,
             "week_start": start_date.strftime("%Y-%m-%d"),
-            "shop_id": shop_id
+            "shop_id": shop_id,
+            "window": f"week_of_{start_date.strftime('%Y-%m-%d')}",
+            "granularity": "day",
+            "range_start": start_date.strftime("%Y-%m-%d"),
+            "range_end": min((start_date + timedelta(days=6)).date(), today).strftime("%Y-%m-%d"),
+            "points": points,
         }
     except Exception as e:
         return {"error": str(e)}
 
 
-def top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
+def _local_top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
     """Get top services by revenue."""
     try:
         services = db_interface.get_shop_services(shop_id, include_inactive=False)
@@ -593,7 +749,7 @@ def top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
+def _local_customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
     """Get customer metrics for a parsed time window.
     
     Uses real-time queue_items data when the window includes today
@@ -698,7 +854,7 @@ def customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any
             session.close()
 
 
-def export_report(shop_id: int, format: str = "csv") -> Dict[str, Any]:
+def _local_export_report(shop_id: int, format: str = "csv") -> Dict[str, Any]:
     """Export analytics report."""
     try:
         return {
@@ -711,7 +867,7 @@ def export_report(shop_id: int, format: str = "csv") -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def create_invoice(
+def _local_create_invoice(
     shop_id: int,
     service_name: str,
     unit_price: float,
@@ -738,7 +894,7 @@ def create_invoice(
         return {"error": str(e)}
 
 
-def record_payment(
+def _local_record_payment(
     shop_id: int,
     amount: float,
     method: str = "cash",
@@ -776,7 +932,44 @@ def record_payment(
         return {"error": str(e)}
 
 
-def list_invoices(
+def _local_process_refund(
+    shop_id: int,
+    payment_id: int,
+    refund_amount: Optional[float] = None,
+    reason: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Refund a completed payment for a shop."""
+    try:
+        from agents.tools import payment_tools
+
+        result = payment_tools.process_refund(
+            shop_id=shop_id,
+            payment_id=payment_id,
+            refund_amount=refund_amount,
+            reason=reason,
+        )
+        if result.get("error"):
+            return result
+
+        refunded_amount = result.get("refund_amount")
+        if refunded_amount in (None, ""):
+            refunded_amount = refund_amount
+
+        if refunded_amount not in (None, ""):
+            amount_text = f"${float(refunded_amount):.2f}"
+        else:
+            amount_text = "the requested amount"
+
+        payment_status = str(result.get("status") or "refunded").replace("_", " ")
+        return {
+            **result,
+            "message": f"Refunded payment {payment_id} for {amount_text}. Payment is now {payment_status}.",
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _local_list_invoices(
     shop_id: int,
     status: Optional[str] = None,
     limit: int = 20,
@@ -792,7 +985,7 @@ def list_invoices(
         return {"error": str(e)}
 
 
-def get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
+def _local_get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
     """Get POS (point of sale) summary for a given day."""
     try:
         from modules.payments.models import Payment, PaymentStatus
@@ -832,3 +1025,109 @@ def get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
             session.close()
     except Exception as e:
         return {"error": str(e)}
+
+
+def daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
+    return _get_finance_client().daily_revenue(shop_id, date)
+
+
+def weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dict[str, Any]:
+    return _get_finance_client().weekly_summary(shop_id, week_start)
+
+
+def trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
+    return _get_finance_client().trend_summary(shop_id, query)
+
+
+def top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
+    return _get_finance_client().top_services(shop_id, limit)
+
+
+def customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
+    return _get_finance_client().customer_metrics(shop_id, query=query)
+
+
+def export_report(shop_id: int, format: str = "csv") -> Dict[str, Any]:
+    return _get_finance_client().export_report(shop_id, format)
+
+
+def create_invoice(
+    shop_id: int,
+    service_name: str,
+    unit_price: float,
+    quantity: int = 1,
+    customer_id: Optional[int] = None,
+    tax_rate: float = 0.0,
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    return _get_finance_client().create_invoice(
+        shop_id,
+        service_name,
+        unit_price,
+        quantity=quantity,
+        customer_id=customer_id,
+        tax_rate=tax_rate,
+        notes=notes,
+    )
+
+
+def record_payment(
+    shop_id: int,
+    amount: float,
+    method: str = "cash",
+    invoice_id: Optional[int] = None,
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    return _get_finance_client().record_payment(
+        shop_id,
+        amount,
+        method=method,
+        invoice_id=invoice_id,
+        notes=notes,
+    )
+
+
+def process_refund(
+    shop_id: int,
+    payment_id: int,
+    refund_amount: Optional[float] = None,
+    reason: Optional[str] = None,
+) -> Dict[str, Any]:
+    return _get_finance_client().process_refund(
+        shop_id,
+        payment_id,
+        refund_amount=refund_amount,
+        reason=reason,
+    )
+
+
+def list_invoices(
+    shop_id: int,
+    status: Optional[str] = None,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    return _get_finance_client().list_invoices(shop_id, status=status, limit=limit)
+
+
+def get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
+    return _get_finance_client().get_pos_summary(shop_id, date=date)
+
+
+def get_inactive_clients(shop_id: int, days_threshold: int = 45) -> Dict[str, Any]:
+    return _get_finance_client().get_inactive_clients(shop_id, days_threshold=days_threshold)
+
+
+def get_top_clients(shop_id: int, limit: int = 10) -> Dict[str, Any]:
+    return _get_finance_client().get_top_clients(shop_id, limit=limit)
+
+
+def get_visit_frequency_summary(shop_id: int) -> Dict[str, Any]:
+    return _get_finance_client().get_visit_frequency_summary(shop_id)
+
+
+def get_client_profile(shop_id: int, client_id: int) -> Dict[str, Any]:
+    return _get_finance_client().get_client_profile(shop_id, client_id)
+
+
+def search_clients(shop_id: int, name: str) -> Dict[str, Any]:
+    return _get_finance_client().search_clients(shop_id, name)

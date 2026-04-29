@@ -32,10 +32,15 @@ const OrbWrapper = styled(Box)(({ theme }) => ({
             opacity: 1,
             transform: 'translateY(-10px)',
         }
-    }
+    },
+    [theme.breakpoints.down('sm')]: {
+        width: '112px',
+        height: '112px',
+        filter: 'drop-shadow(0 0 16px rgba(168, 85, 247, 0.24))',
+    },
 }));
 
-const GlowEffect = styled(Box)({
+const GlowEffect = styled(Box)(({ theme }) => ({
     position: 'absolute',
     width: '140px',
     height: '140px',
@@ -43,9 +48,13 @@ const GlowEffect = styled(Box)({
     background: 'radial-gradient(circle, rgba(168, 85, 247, 0.2) 0%, transparent 70%)',
     animation: `${pulse} 4s infinite`,
     pointerEvents: 'none',
-});
+    [theme.breakpoints.down('sm')]: {
+        width: '92px',
+        height: '92px',
+    },
+}));
 
-const Label = styled(Typography)({
+const Label = styled(Typography)(({ theme }) => ({
     position: 'absolute',
     top: '-75px',
     color: '#A855F7',
@@ -58,7 +67,13 @@ const Label = styled(Typography)({
     textAlign: 'center',
     whiteSpace: 'nowrap',
     textShadow: '0 0 10px rgba(168, 85, 247, 0.2)',
-});
+    [theme.breakpoints.down('sm')]: {
+        top: '-34px',
+        opacity: 1,
+        fontSize: '0.72rem',
+        letterSpacing: '0.14em',
+    },
+}));
 
 const FloatingAIOrb: React.FC = () => {
     const [isHovered, setIsHovered] = useState(false);
@@ -75,7 +90,7 @@ const FloatingAIOrb: React.FC = () => {
             onClick={handleClick}
         >
             <GlowEffect />
-            <Box sx={{ transform: 'scale(0.45)', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Box sx={{ transform: { xs: 'scale(0.32)', sm: 'scale(0.45)' }, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <ParticleSphere volume={isHovered ? 0.1 : 0.05} isListening={false} color="#D8B4FE" />
             </Box>
             <Label className="orb-label">

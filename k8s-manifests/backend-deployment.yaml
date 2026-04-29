@@ -41,9 +41,9 @@ spec:
         command: ['sh', '-c', 'until nc -z postgres.zeroqwait.svc.cluster.local 5432; do echo waiting for postgres; sleep 2; done;']
       containers:
       - name: backend
-        # Image built by CI and pushed to the local registry (localhost:5000).
+        # Image built by CI and pushed to GHCR.
         # The run-local-pipeline.sh sed step replaces the tag on every prod deploy.
-        image: localhost:5000/prod/backend:latest
+        image: ghcr.io/nfornj/prod/backend:latest
         ports:
         - containerPort: 8000
         envFrom:

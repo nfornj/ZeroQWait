@@ -5,8 +5,11 @@ Endpoints:
 - POST /api/v2/agent/chat - Synchronous chat
 - POST /api/v2/agent/chat/stream - SSE streaming chat
 - POST /api/v2/agent/approve - Approve/reject HITL action
+- POST /api/v2/agent/notifications/{notification_id}/read - Mark notification as read
+- POST /api/v2/agent/notifications/read-all - Mark all notifications as read
 - GET /api/v2/agent/history - Get conversation history
 - GET /api/v2/agent/pending - Get pending approvals
+- GET /api/v2/agent/feed - Get persisted feed events
 - GET /api/v2/agent/health - Health check
 
 Authentication:
@@ -25,22 +28,67 @@ Streaming (SSE):
 - [DONE] marks end of stream
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from typing import Dict, Any, cast, Optional
+from typing import Dict, Any, cast, Optional, List
 import asyncio
 import base64
+from datetime import datetime
+import hashlib
 import json
 import logging
-from langchain_core.messages import HumanMessage, SystemMessage
+import os
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from sqlalchemy import text
+
+from redis_client import redis_client as _redis
 from langgraph.types import Command
 
+from agents import approval_policy
 from agents.supervisor import create_supervisor_runnable
-from agents.memory_context import merge_and_rank_memories, format_memory_context
+from agents.briefings import (
+    build_owner_briefing,
+    enrich_pending_approval_payload,
+    get_cached_shop_briefing_snapshot,
+    get_shop_alert_history,
+    refresh_shop_briefing_cache,
+)
+from agents.memory_context import (
+    format_memory_context,
+    merge_and_rank_memories,
+)
 from agents.state import AgentState
 from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_saver
+from agents.chat_service import (
+    _build_pending_approval_block_message,
+    _create_chat_work_context,
+    _finalize_chat_work_context,
+    _get_current_pending_approval,
+    _get_pending_approval_payload,
+    _persist_chat_turn_memory,
+    _record_approval_decision,
+    _resume_persisted_approval,
+    _state_last_text,
+)
+from agents.document_store import (
+    _OWNER_DOCUMENT_ALLOWED_EXTENSIONS,
+    _OWNER_DOCUMENT_ALLOWED_MIME_TYPES,
+    _OWNER_DOCUMENT_MAX_BYTES,
+    _OWNER_DOCUMENT_MAX_FILES,
+    _chunk_owner_document_text,
+    _document_memory_query,
+    _extract_owner_document_text,
+    _get_owner_document_or_404,
+    _reindex_owner_document_in_session,
+    _sanitize_document_name,
+    _sanitize_relative_document_path,
+    _serialize_owner_document,
+)
 from shared.auth_utils import get_current_user
 from db_interface import DatabaseInterface
+from database import SessionLocal
+from modules.agent.models import AgentDocument, AgentMemory, ApprovalStatus, GoalSource, GoalStatus, PolicyMode, RunStatus
+from modules.agent.work_repository import AgentWorkRepository
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +101,7 @@ db_interface = DatabaseInterface()
 
 # LangGraph node names that are surfaced as visible pipeline steps in the UI.
 _THINKING_NODES: frozenset = frozenset(
-    {"classify_intent", "route_to_agent", "execute_plan", "synthesize_response"}
+    {"classify_intent", "plan_and_route", "execute_plan", "synthesize_response"}
 )
 
 _AGENT_DISPLAY_LABELS: Dict[str, str] = {
@@ -70,7 +118,7 @@ def _thinking_label_active(node: str, routed_agent: Optional[str]) -> str:
     agent_name = _AGENT_DISPLAY_LABELS.get(routed_agent or "", "Specialist")
     return {
         "classify_intent": "Classifying your request",
-        "route_to_agent": f"Routing to {agent_name}" if has_agent else "Routing request",
+        "plan_and_route": f"Routing to {agent_name}" if has_agent else "Routing request",
         "execute_plan": f"Running {agent_name}" if has_agent else "Processing request",
         "synthesize_response": "Generating response",
     }.get(node, node)
@@ -81,7 +129,7 @@ def _thinking_label_done(node: str, routed_agent: Optional[str]) -> str:
     agent_name = _AGENT_DISPLAY_LABELS.get(routed_agent or "", "Specialist")
     return {
         "classify_intent": f"Classified {agent_name}" if has_agent else "Classified General",
-        "route_to_agent": f"{agent_name}" if has_agent else "Supervisor",
+        "plan_and_route": f"{agent_name}" if has_agent else "Supervisor",
         "execute_plan": f"{agent_name} complete" if has_agent else "Processing complete",
         "synthesize_response": "Response ready",
     }.get(node, f"{node} complete")
@@ -95,6 +143,203 @@ def _extract_current_agent_from_output(out: Any) -> Optional[str]:
     if hasattr(out, "update") and isinstance(getattr(out, "update", None), dict):
         return out.update.get("current_agent") or None
     return None
+
+
+def _extract_metadata_from_output(out: Any) -> Dict[str, Any]:
+    """Extract metadata from a node output — handles both plain dict and LangGraph Command."""
+    if isinstance(out, dict):
+        metadata = out.get("metadata")
+        return metadata if isinstance(metadata, dict) else {}
+    if hasattr(out, "update") and isinstance(getattr(out, "update", None), dict):
+        metadata = out.update.get("metadata")
+        return metadata if isinstance(metadata, dict) else {}
+    return {}
+
+
+def _normalize_reasoning_events(value: Any) -> list[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    events: list[Dict[str, Any]] = []
+    for item in value:
+        if isinstance(item, dict) and isinstance(item.get("text"), str) and item.get("text", "").strip():
+            events.append(item)
+    return events
+
+
+def _checkpoint_thread_id(shop_id: int, user_id: int) -> str:
+    return f"tenant_{shop_id}_{user_id}"
+
+
+def _sync_chat_timeout_seconds() -> float:
+    raw_value = os.getenv("AGENT_SYNC_TIMEOUT_SECONDS", "50")
+    try:
+        return max(float(raw_value), 1.0)
+    except (TypeError, ValueError):
+        return 50.0
+
+
+async def _invoke_supervisor_sync(initial_state: AgentState, checkpoint_config: Any) -> Dict[str, Any]:
+    runnable = _SUPERVISOR_RUNNABLE
+    routed_agent: Optional[str] = None
+    final_response_text = ""
+    final_tool_results: Dict[str, Any] = {}
+    pending_action: Optional[Dict[str, Any]] = None
+
+    def _consume_updates() -> None:
+        nonlocal routed_agent, final_response_text, final_tool_results
+
+        try:
+            update_iter = runnable.stream(
+                initial_state,
+                config=checkpoint_config,
+                stream_mode="updates",
+            )
+
+            for update in update_iter:
+                if not isinstance(update, dict):
+                    continue
+
+                for raw_node_name, out in update.items():
+                    lg_node = _resolve_thinking_node({"name": raw_node_name})
+
+                    ca = _extract_current_agent_from_output(out)
+                    if ca and ca not in ("supervisor", "general", "", None):
+                        routed_agent = ca
+
+                    if lg_node == "synthesize_response" and isinstance(out, dict):
+                        msgs = out.get("messages") or []
+                        if msgs:
+                            final_response_text = getattr(msgs[-1], "content", "") or ""
+
+                    if isinstance(out, dict) and isinstance(out.get("tool_results"), dict):
+                        final_tool_results = out.get("tool_results") or final_tool_results
+
+        except Exception as stream_exc:
+            exc_name = type(stream_exc).__name__
+            if "interrupt" not in exc_name.lower():
+                raise
+
+    await asyncio.wait_for(
+        asyncio.to_thread(_consume_updates),
+        timeout=_sync_chat_timeout_seconds(),
+    )
+
+    snapshot = await asyncio.to_thread(runnable.get_state, checkpoint_config)
+    if snapshot and snapshot.values:
+        state_vals = dict(snapshot.values)
+        if not final_response_text:
+            final_response_text = _state_last_text(state_vals)
+        if isinstance(state_vals.get("tool_results"), dict):
+            final_tool_results = state_vals.get("tool_results") or final_tool_results
+        if snapshot.next:
+            pending_action = _extract_pending_action(
+                {
+                    **state_vals,
+                    "__interrupt__": snapshot.interrupts,
+                }
+            )
+
+    return {
+        "messages": [AIMessage(content=final_response_text)] if final_response_text else [],
+        "current_agent": routed_agent or "supervisor",
+        "tool_results": final_tool_results,
+        "pending_action": pending_action,
+        "needs_human_input": pending_action is not None,
+    }
+
+
+_DOCUMENT_REFERENCE_TERMS = (
+    "attachment",
+    "csv",
+    "document",
+    "file",
+    "json",
+    "markdown",
+    "spreadsheet",
+    "text file",
+    "upload",
+    "uploaded",
+)
+
+
+def _query_mentions_document(query_text: str) -> bool:
+    lowered = str(query_text or "").lower()
+    return any(term in lowered for term in _DOCUMENT_REFERENCE_TERMS)
+
+
+def _select_document_reference_memories(
+    shop_id: int,
+    user_id: int,
+    query_text: str,
+    limit: int = 6,
+) -> List[Dict[str, Any]]:
+    """Resolve referential document prompts to the most relevant uploaded document chunks."""
+    document_memories = db_interface.get_agent_memories(
+        shop_id=shop_id,
+        memory_type="document",
+        user_id=user_id,
+        limit=24,
+    )
+    if not document_memories:
+        return []
+
+    lowered_query = str(query_text or "").lower()
+    target_document_id: Optional[int] = None
+
+    for memory in document_memories:
+        memory_meta = memory.get("memory_meta") if isinstance(memory.get("memory_meta"), dict) else {}
+        document_id = memory_meta.get("document_id")
+        source_candidates = [
+            str(memory.get("source") or "").lower(),
+            str(memory_meta.get("filename") or "").lower(),
+            str(memory_meta.get("relative_path") or "").lower(),
+        ]
+        if any(candidate and candidate in lowered_query for candidate in source_candidates):
+            if isinstance(document_id, int):
+                target_document_id = document_id
+                break
+
+    if target_document_id is None:
+        first_meta = document_memories[0].get("memory_meta")
+        if isinstance(first_meta, dict) and isinstance(first_meta.get("document_id"), int):
+            target_document_id = first_meta.get("document_id")
+
+    if target_document_id is None:
+        return document_memories[:limit]
+
+    selected = [
+        memory
+        for memory in document_memories
+        if isinstance(memory.get("memory_meta"), dict)
+        and memory["memory_meta"].get("document_id") == target_document_id
+    ]
+    selected.sort(
+        key=lambda memory: (
+            int(memory.get("memory_meta", {}).get("chunk_index") or 0),
+            str(memory.get("created_at") or ""),
+        )
+    )
+    return selected[:limit]
+
+
+def _reset_checkpoint_thread_if_idle(shop_id: int, user_id: int) -> None:
+    checkpoint_config = build_checkpoint_config(shop_id, user_id)
+    snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
+    if snapshot and snapshot.interrupts:
+        return
+
+    thread_id = _checkpoint_thread_id(shop_id, user_id)
+    db = SessionLocal()
+    try:
+        db.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :thread_id"), {"thread_id": thread_id})
+        db.execute(text("DELETE FROM checkpoints WHERE thread_id = :thread_id"), {"thread_id": thread_id})
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Unable to clear idle checkpoint thread %s: %s", thread_id, exc)
+    finally:
+        db.close()
 
 
 # Agent-specific follow-up suggestion pools
@@ -198,12 +443,73 @@ def _extract_pending_action(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-def _state_last_text(state_values: Dict[str, Any]) -> str:
-    messages = state_values.get("messages") or []
-    if not messages:
-        return ""
-    final_message = messages[-1]
-    return getattr(final_message, "content", str(final_message))
+def _serialize_checkpoint_messages(state_values: Dict[str, Any]) -> list[Dict[str, Any]]:
+    """Serialize checkpoint messages for the owner-facing history endpoint."""
+    serialized: list[Dict[str, Any]] = []
+    for message in state_values.get("messages") or []:
+        msg_type = getattr(message, "type", None)
+        if msg_type == "system":
+            continue
+        role = "assistant"
+        if msg_type == "human":
+            role = "user"
+        elif msg_type == "ai":
+            role = "assistant"
+        serialized.append(
+            {
+                "role": role,
+                "content": str(getattr(message, "content", "")),
+            }
+        )
+    return serialized
+
+
+def _notification_feed_type(notification_type: str, severity: str, title: str, message: str) -> str:
+    haystack = " ".join([notification_type, severity, title, message]).lower()
+    if "error" in haystack:
+        return "error"
+    if "approval" in haystack or "policy" in haystack:
+        return "approval_decision"
+    if "queue" in haystack:
+        return "queue_update"
+    return "system"
+
+
+def _serialize_notification_feed_event(notification: Any) -> Dict[str, Any]:
+    payload = dict(getattr(notification, "payload", None) or {})
+    notification_type = str(getattr(notification, "notification_type", "system") or "system")
+    severity = str(getattr(notification, "severity", "info") or "info")
+    created_at = getattr(notification, "created_at", None)
+    return {
+        "id": f"notification_{getattr(notification, 'id', 'unknown')}",
+        "type": _notification_feed_type(
+            notification_type,
+            severity,
+            str(getattr(notification, "title", "")),
+            str(getattr(notification, "message", "")),
+        ),
+        "title": str(getattr(notification, "title", "Agent notification")),
+        "description": str(getattr(notification, "message", "")),
+        "timestamp": created_at.isoformat() if created_at is not None else datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "severity": severity,
+        "status": str(getattr(notification, "status", "unread")),
+        "notification_type": notification_type,
+        "notification_id": getattr(notification, "id", None),
+        "payload": payload,
+    }
+
+
+def _get_notification_feed_payload(shop_id: int, limit: int = 25) -> list[Dict[str, Any]]:
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        notifications = repo.list_recent_notifications(shop_id, limit=limit)
+        return [_serialize_notification_feed_event(item) for item in notifications]
+    except Exception as exc:
+        logger.warning("Unable to load persisted agent notifications for shop %s: %s", shop_id, exc)
+        return []
+    finally:
+        db.close()
 
 
 def _normalize_shop_ids(raw_ids: Any) -> list[int]:
@@ -249,36 +555,67 @@ def _get_owned_shop_ids(current_user: Dict[str, Any]) -> list[int]:
         db.close()
 
 
-def _persist_chat_turn_memory(
+def _require_owner_shop_access(shop_id: Any, current_user: Dict[str, Any]) -> tuple[int, int]:
+    user_id = _extract_user_id(current_user)
+    user_shops = _get_owned_shop_ids(current_user)
+
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authenticated user_id missing")
+
+    try:
+        normalized_shop_id = int(shop_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="shop_id must be an integer")
+
+    if normalized_shop_id not in user_shops:
+        raise HTTPException(status_code=403, detail="Not owner of this shop")
+
+    return int(user_id), normalized_shop_id
+
+
+def _list_policy_payload(shop_id: int) -> list[Dict[str, Any]]:
+    return approval_policy.list_shop_policies(shop_id)
+
+
+def _upsert_policy_payload(
     *,
     shop_id: int,
-    user_id: int,
-    user_message: str,
-    assistant_response: str,
-    route: str,
-) -> None:
-    """Best-effort persistence for tenant-scoped owner chat memory."""
+    policy_key: str,
+    mode: str,
+    policy_value: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    definition = approval_policy.get_policy_definition(policy_key)
+    if definition is None:
+        raise HTTPException(status_code=404, detail="Unknown policy_key")
+
+    normalized_mode = str(mode or "").strip().lower()
+    supported_modes = set(approval_policy.SUPPORTED_POLICY_MODES)
+    if normalized_mode not in supported_modes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"mode must be one of: {', '.join(sorted(supported_modes))}",
+        )
+
+    db = SessionLocal()
     try:
-        db_interface.add_agent_memory(
+        repo = AgentWorkRepository(db)
+        repo.upsert_shop_policy(
             shop_id=shop_id,
-            user_id=user_id,
-            memory_type="chat_user",
-            content=user_message,
-            source=route,
-            importance_score=0.6,
-            memory_meta={"role": "user"},
+            policy_key=policy_key,
+            category=str(definition["category"]),
+            mode=PolicyMode(normalized_mode),
+            enabled=True,
+            policy_value=policy_value,
+            config=config,
         )
-        db_interface.add_agent_memory(
-            shop_id=shop_id,
-            user_id=user_id,
-            memory_type="chat_assistant",
-            content=assistant_response,
-            source=route,
-            importance_score=0.7,
-            memory_meta={"role": "assistant"},
-        )
-    except Exception as e:
-        logger.warning("Agent memory persistence failed (non-fatal): %s", str(e))
+    finally:
+        db.close()
+
+    for item in _list_policy_payload(shop_id):
+        if item["policy_key"] == policy_key:
+            return item
+    raise HTTPException(status_code=500, detail="Failed to load updated policy")
 
 
 def _build_memory_context(shop_id: int, user_id: int, query_text: str) -> str:
@@ -297,6 +634,11 @@ def _build_memory_context(shop_id: int, user_id: int, query_text: str) -> str:
         )
         selected = merge_and_rank_memories(relevant, recent, max_items=8)
 
+        if _query_mentions_document(query_text):
+            document_memories = _select_document_reference_memories(shop_id, user_id, query_text)
+            if document_memories:
+                selected = merge_and_rank_memories(document_memories, selected, max_items=8)
+
         # Touch selected memories for recency tracking.
         for memory in selected:
             memory_id = memory.get("id")
@@ -307,6 +649,275 @@ def _build_memory_context(shop_id: int, user_id: int, query_text: str) -> str:
     except Exception as e:
         logger.warning("Agent memory retrieval failed (non-fatal): %s", str(e))
         return ""
+
+
+@router.get("/documents")
+async def list_owner_documents(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id, normalized_shop_id = _require_owner_shop_access(shop_id, current_user)
+
+    db = SessionLocal()
+    try:
+        documents = (
+            db.query(AgentDocument)
+            .filter(AgentDocument.shop_id == normalized_shop_id)
+            .order_by(AgentDocument.updated_at.desc(), AgentDocument.id.desc())
+            .all()
+        )
+        return {
+            "shop_id": normalized_shop_id,
+            "user_id": user_id,
+            "documents": [_serialize_owner_document(document) for document in documents],
+        }
+    finally:
+        db.close()
+
+
+@router.delete("/documents/{document_id}")
+async def delete_owner_document(
+    document_id: int,
+    shop_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id, normalized_shop_id = _require_owner_shop_access(shop_id, current_user)
+
+    db = SessionLocal()
+    try:
+        document = _get_owner_document_or_404(db, shop_id=normalized_shop_id, document_id=document_id)
+        deleted_chunks = _document_memory_query(db, shop_id=normalized_shop_id, document_id=document.id).delete(
+            synchronize_session=False
+        )
+        filename = document.relative_path or document.filename
+        db.delete(document)
+        db.commit()
+        return {
+            "shop_id": normalized_shop_id,
+            "user_id": user_id,
+            "document_id": document_id,
+            "deleted_memory_chunks": deleted_chunks,
+            "message": f"Removed '{filename}' from secure storage and the knowledge base.",
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Owner document delete failed")
+        raise HTTPException(status_code=500, detail=f"Failed to delete document: {exc}")
+    finally:
+        db.close()
+
+
+@router.post("/documents/{document_id}/reindex")
+async def reindex_owner_document(
+    document_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+
+    user_id, normalized_shop_id = _require_owner_shop_access(body.get("shop_id"), current_user)
+
+    db = SessionLocal()
+    try:
+        document = _get_owner_document_or_404(db, shop_id=normalized_shop_id, document_id=document_id)
+        indexed_chunks = _reindex_owner_document_in_session(
+            db,
+            document=document,
+            shop_id=normalized_shop_id,
+        )
+        db.commit()
+        db.refresh(document)
+        return {
+            "shop_id": normalized_shop_id,
+            "user_id": user_id,
+            "indexed_chunks": indexed_chunks,
+            "document": _serialize_owner_document(document),
+            "message": f"Re-indexed '{document.relative_path or document.filename}' into {indexed_chunks} knowledge chunk(s).",
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Owner document re-index failed")
+        raise HTTPException(status_code=500, detail=f"Failed to re-index document: {exc}")
+    finally:
+        db.close()
+
+
+@router.post("/documents/upload")
+async def upload_owner_documents(
+    shop_id: int = Form(...),
+    files: List[UploadFile] = File(...),
+    relative_paths: Optional[List[str]] = Form(None),
+    current_user: dict = Depends(get_current_user),
+):
+    user_id, normalized_shop_id = _require_owner_shop_access(shop_id, current_user)
+
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one file is required")
+    if len(files) > _OWNER_DOCUMENT_MAX_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"You can upload up to {_OWNER_DOCUMENT_MAX_FILES} files at once",
+        )
+    if relative_paths and len(relative_paths) != len(files):
+        raise HTTPException(status_code=400, detail="relative_paths must match the files array")
+
+    db = SessionLocal()
+    uploaded_documents: List[Dict[str, Any]] = []
+    total_chunks_created = 0
+    duplicate_count = 0
+
+    try:
+        for index, upload in enumerate(files):
+            safe_name = _sanitize_document_name(upload.filename)
+            safe_relative_path = _sanitize_relative_document_path(
+                relative_paths[index] if relative_paths else upload.filename,
+                safe_name,
+            )
+            file_bytes = await upload.read()
+            if len(file_bytes) > _OWNER_DOCUMENT_MAX_BYTES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{safe_name}: exceeds the {_OWNER_DOCUMENT_MAX_BYTES // (1024 * 1024)} MB limit",
+                )
+
+            extracted_text = _extract_owner_document_text(
+                file_bytes,
+                filename=safe_name,
+                content_type=upload.content_type or "text/plain",
+            )
+            checksum = hashlib.sha256(file_bytes).hexdigest()
+
+            existing = (
+                db.query(AgentDocument)
+                .filter(
+                    AgentDocument.shop_id == normalized_shop_id,
+                    AgentDocument.checksum == checksum,
+                )
+                .first()
+            )
+            if existing:
+                duplicate_count += 1
+                uploaded_documents.append(_serialize_owner_document(existing, duplicate=True))
+                continue
+
+            chunks = _chunk_owner_document_text(extracted_text)
+            document = AgentDocument(
+                shop_id=normalized_shop_id,
+                uploaded_by_user_id=user_id,
+                filename=safe_name,
+                relative_path=safe_relative_path,
+                content_type=(upload.content_type or "text/plain"),
+                size_bytes=len(file_bytes),
+                checksum=checksum,
+                file_blob=file_bytes,
+                extracted_text=extracted_text,
+                knowledge_status="indexed",
+                chunk_count=len(chunks),
+            )
+            db.add(document)
+            db.flush()
+
+            for chunk_index, chunk in enumerate(chunks, start=1):
+                db.add(
+                    AgentMemory(
+                        shop_id=normalized_shop_id,
+                        user_id=None,
+                        memory_type="document",
+                        content=f"From {safe_relative_path} (chunk {chunk_index}/{len(chunks)}): {chunk}",
+                        source=safe_relative_path,
+                        importance_score=0.82,
+                        memory_meta={
+                            "document_id": document.id,
+                            "filename": safe_name,
+                            "relative_path": safe_relative_path,
+                            "chunk_index": chunk_index,
+                            "chunk_count": len(chunks),
+                            "checksum": checksum,
+                        },
+                        is_active=True,
+                        created_at=datetime.utcnow(),
+                    )
+                )
+
+            uploaded_documents.append(
+                _serialize_owner_document(document)
+            )
+            total_chunks_created += len(chunks)
+
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Owner document upload failed")
+        raise HTTPException(status_code=500, detail=f"Failed to ingest uploaded documents: {exc}")
+    finally:
+        db.close()
+
+    return {
+        "shop_id": normalized_shop_id,
+        "user_id": user_id,
+        "documents": uploaded_documents,
+        "ingested_chunks": total_chunks_created,
+        "duplicate_documents": duplicate_count,
+        "message": (
+            f"Stored {len(uploaded_documents) - duplicate_count} new document(s) securely, skipped {duplicate_count} duplicate(s), and indexed {total_chunks_created} knowledge chunk(s)."
+        ),
+    }
+
+
+# ============================================================================
+# Policy Management
+# ============================================================================
+
+
+@router.get("/policies")
+async def list_policies(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id, normalized_shop_id = _require_owner_shop_access(shop_id, current_user)
+    return {
+        "shop_id": normalized_shop_id,
+        "user_id": user_id,
+        "policies": _list_policy_payload(normalized_shop_id),
+    }
+
+
+@router.put("/policies/{policy_key}")
+async def update_policy(
+    policy_key: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+
+    user_id, shop_id = _require_owner_shop_access(body.get("shop_id"), current_user)
+    policy = _upsert_policy_payload(
+        shop_id=shop_id,
+        policy_key=policy_key,
+        mode=body.get("mode"),
+        policy_value=body.get("policy_value"),
+        config=body.get("config") if isinstance(body.get("config"), dict) else None,
+    )
+    return {
+        "shop_id": shop_id,
+        "user_id": user_id,
+        "policy": policy,
+    }
 
 
 # ============================================================================
@@ -336,6 +947,10 @@ async def chat_sync(
         "metadata": {...}
     }
     """
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not _redis.check_rate_limit(client_ip, limit=20, window=60):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again in a minute.")
     
     try:
         body = await request.json()
@@ -371,9 +986,22 @@ async def chat_sync(
 
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
+
+    existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
+    if existing_pending is not None:
+        return {
+            "response": _build_pending_approval_block_message(existing_pending),
+            "agent": "supervisor",
+            "approval_required": True,
+            "pending_action": existing_pending,
+            "metadata": {"pending_conflict": True},
+        }
+
+    _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
     
     # Build checkpoint config for this tenant
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
+    work_context = _create_chat_work_context(shop_id, int(user_id), message)
     
     # Create initial state
     memory_context = _build_memory_context(shop_id, int(user_id), message)
@@ -387,19 +1015,29 @@ async def chat_sync(
         "tenant_id": shop_id,
         "user_id": int(user_id),
         "current_agent": "supervisor",
+        "active_goal_id": work_context["goal_id"],
+        "active_task_id": None,
+        "execution_mode": work_context["execution_mode"],
+        "autonomy_policy": None,
+        "event_context": work_context["event_context"],
+        "proposed_actions": [],
+        "run_summary": {"run_id": work_context["run_id"], "status": "running"},
         "pending_approval": None,
         "needs_human_input": False,
         "tool_results": None,
-        "metadata": {"shop_id": shop_id, "user_id": user_id}
+        "metadata": {"shop_id": shop_id, "user_id": user_id, "goal_id": work_context["goal_id"], "run_id": work_context["run_id"]}
     }
     
     # Run supervisor graph
     try:
-        runnable = _SUPERVISOR_RUNNABLE
-        
-        # Sync invoke (Phase 1 - simple version)
-        result = cast(Dict[str, Any], runnable.invoke(initial_state, checkpoint_config))
-        pending_action = _extract_pending_action(result)
+        result = await _invoke_supervisor_sync(initial_state, checkpoint_config)
+        pending_action = cast(Optional[Dict[str, Any]], result.get("pending_action"))
+        if pending_action:
+            pending_action["shop_id"] = shop_id
+            pending_action = enrich_pending_approval_payload(
+                pending_action,
+                metrics=db_interface.get_shop_live_wait_metrics(shop_id) or {},
+            )
         approval_required = bool((result.get("__interrupt__") or []) or result.get("needs_human_input", False))
         
         # Extract final response
@@ -409,6 +1047,18 @@ async def chat_sync(
             response_text = getattr(final_message, "content", str(final_message))
         else:
             response_text = "No response"
+
+        pending_action = _finalize_chat_work_context(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            goal_id=work_context["goal_id"],
+            run_id=work_context["run_id"],
+            routed_agent=result.get("current_agent", "supervisor"),
+            response_text=response_text,
+            tool_results=cast(Optional[Dict[str, Any]], result.get("tool_results")),
+            approval_required=approval_required,
+            pending_action=pending_action,
+        )
 
         _persist_chat_turn_memory(
             shop_id=shop_id,
@@ -423,8 +1073,24 @@ async def chat_sync(
             "agent": result.get("current_agent", "supervisor"),
             "approval_required": approval_required,
             "pending_action": pending_action,
-            "metadata": result.get("metadata", {})
+            "metadata": {
+                **(result.get("metadata", {}) or {}),
+                "goal_id": work_context["goal_id"],
+                "run_id": work_context["run_id"],
+            }
         }
+
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Sync chat timed out for shop_id=%s user_id=%s after %.1fs",
+            shop_id,
+            user_id,
+            _sync_chat_timeout_seconds(),
+        )
+        raise HTTPException(
+            status_code=504,
+            detail="Sync agent request timed out. Use /api/v2/agent/chat/stream for long-running requests.",
+        )
     
     except Exception as e:
         logger.error(f"Supervisor graph error: {str(e)}", exc_info=True)
@@ -451,10 +1117,15 @@ async def chat_stream(
     - {type: 'approval_required', action: '...', details: {...}} - HITL breakpoint
     - {type: 'actions', actions: [...]} - quick-action buttons
     - {type: 'sentence', text: '...', audio: 'base64...'} - paired TTS
+    - {type: 'stream_status', status: 'completed'|'error', ...} - terminal stream telemetry
     - [DONE] - stream complete
     
     Request body same as /chat endpoint.
     """
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not _redis.check_rate_limit(client_ip, limit=20, window=60):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again in a minute.")
     
     try:
         body = await request.json()
@@ -491,8 +1162,20 @@ async def chat_stream(
     # Create streaming generator
     async def event_generator():
         try:
+            existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
+            if existing_pending is not None:
+                block_message = _build_pending_approval_block_message(existing_pending)
+                yield f"data: {json.dumps({'type': 'approval_required', 'action': existing_pending.get('action'), 'details': existing_pending})}\n\n"
+                for char in block_message:
+                    yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
+
             # Build checkpoint config
             checkpoint_config = build_checkpoint_config(shop_id, user_id)
+            work_context = _create_chat_work_context(shop_id, int(user_id), message, is_voice=bool(is_voice))
 
             # Create initial state
             memory_context = _build_memory_context(shop_id, int(user_id), message)
@@ -506,16 +1189,25 @@ async def chat_stream(
                 "tenant_id": shop_id,
                 "user_id": int(user_id),
                 "current_agent": "supervisor",
+                "active_goal_id": work_context["goal_id"],
+                "active_task_id": None,
+                "execution_mode": work_context["execution_mode"],
+                "autonomy_policy": None,
+                "event_context": work_context["event_context"],
+                "proposed_actions": [],
+                "run_summary": {"run_id": work_context["run_id"], "status": "running"},
                 "pending_approval": None,
                 "needs_human_input": False,
                 "tool_results": None,
-                "metadata": {"shop_id": shop_id, "user_id": user_id, "is_voice": is_voice},
+                "metadata": {"shop_id": shop_id, "user_id": user_id, "is_voice": is_voice, "goal_id": work_context["goal_id"], "run_id": work_context["run_id"]},
             }
 
             runnable = _SUPERVISOR_RUNNABLE
             routed_agent: Optional[str] = None
             final_response_text = ""
             final_tool_results: Dict[str, Any] = {}
+            final_metadata: Dict[str, Any] = {}
+            pending_action: Optional[Dict[str, Any]] = None
 
             # ----------------------------------------------------------------
             # Stream graph execution node-by-node via sync stream updates.
@@ -541,13 +1233,33 @@ async def chat_stream(
                         if not lg_node:
                             continue
 
+                        metadata_out = _extract_metadata_from_output(out)
+                        if metadata_out:
+                            final_metadata = dict(metadata_out)
+
                         # Emit active first for visual progression.
                         start_label = _thinking_label_active(lg_node, routed_agent)
                         yield f"data: {json.dumps({'type': 'thinking_step', 'step': lg_node, 'label': start_label, 'status': 'active', 'agent': routed_agent})}\n\n"
 
                         ca = _extract_current_agent_from_output(out)
                         if ca and ca not in ("supervisor", "general", "", None):
+                            if ca != routed_agent:
+                                yield f"data: {json.dumps({'type': 'agent_switch', 'agent': ca})}\n\n"
                             routed_agent = ca
+
+                        if lg_node == "classify_intent":
+                            reasoning_text = metadata_out.get("routing_reasoning")
+                            if isinstance(reasoning_text, str) and reasoning_text.strip():
+                                yield f"data: {json.dumps({'type': 'reasoning', 'step': lg_node, 'id': 'supervisor_route', 'text': reasoning_text.strip(), 'agent': routed_agent or 'supervisor'})}\n\n"
+
+                        for reasoning_event in _normalize_reasoning_events(metadata_out.get("reasoning_events")):
+                            yield f"data: {json.dumps({'type': 'reasoning', 'step': lg_node, 'id': reasoning_event.get('id') or f'{lg_node}_reasoning', 'text': str(reasoning_event.get('text')).strip(), 'agent': routed_agent or metadata_out.get('execution_target') or metadata_out.get('route', {}).get('to') or 'supervisor', 'tool': reasoning_event.get('tool')})}\n\n"
+
+                        if lg_node == "execute_plan":
+                            execution_target = metadata_out.get("execution_target") or routed_agent
+                            specialist_operation = metadata_out.get("specialist_operation") or execution_target
+                            if execution_target in {"receptionist", "finance", "hr", "crm"}:
+                                yield f"data: {json.dumps({'type': 'tool_call', 'tool': specialist_operation, 'agent': execution_target, 'label': _thinking_label_active(lg_node, execution_target)})}\n\n"
 
                         # Capture final synthesized text when available.
                         if lg_node == "synthesize_response" and isinstance(out, dict):
@@ -581,13 +1293,40 @@ async def chat_stream(
                         final_response_text = _state_last_text(state_vals)
                         if isinstance(state_vals.get("tool_results"), dict):
                             final_tool_results = state_vals.get("tool_results") or final_tool_results
+                            if isinstance(state_vals.get("metadata"), dict):
+                                final_metadata = dict(state_vals.get("metadata") or final_metadata)
                         if snapshot.next:
                             # Graph is paused at a breakpoint (approval required).
-                            pending_action = _extract_pending_action(state_vals)
+                            pending_action = _extract_pending_action(
+                                {
+                                    **state_vals,
+                                    "__interrupt__": snapshot.interrupts,
+                                }
+                            )
                             if pending_action:
-                                yield f"data: {json.dumps({'type': 'approval_required', 'action': pending_action.get('action'), 'details': pending_action})}\n\n"
+                                pending_action["shop_id"] = shop_id
+                                pending_action = enrich_pending_approval_payload(
+                                    pending_action,
+                                    metrics=db_interface.get_shop_live_wait_metrics(shop_id) or {},
+                                )
                 except Exception as state_exc:
                     logger.warning("Could not retrieve final checkpoint state: %s", state_exc)
+
+            approval_required = pending_action is not None
+            pending_action = _finalize_chat_work_context(
+                shop_id=shop_id,
+                user_id=int(user_id),
+                goal_id=work_context["goal_id"],
+                run_id=work_context["run_id"],
+                routed_agent=routed_agent or "supervisor",
+                response_text=final_response_text,
+                tool_results=final_tool_results,
+                approval_required=approval_required,
+                pending_action=pending_action,
+            )
+
+            if pending_action:
+                yield f"data: {json.dumps({'type': 'approval_required', 'action': pending_action.get('action'), 'details': pending_action})}\n\n"
 
             _persist_chat_turn_memory(
                 shop_id=shop_id,
@@ -597,6 +1336,9 @@ async def chat_stream(
                 route="/api/v2/agent/chat/stream",
             )
 
+            if isinstance(final_tool_results, dict) and final_tool_results:
+                yield f"data: {json.dumps({'type': 'tool_result', 'tool': final_metadata.get('specialist_operation') or final_tool_results.get('tool') or routed_agent or 'operation', 'result': final_tool_results, 'agent': routed_agent})}\n\n"
+
             # Stream response text character-by-character.
             for char in (final_response_text or ""):
                 yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
@@ -604,29 +1346,145 @@ async def chat_stream(
             # Emit structured chart/file payloads for frontend insights panel and inline attachments.
             if routed_agent == "finance" and isinstance(final_tool_results, dict):
                 points = final_tool_results.get("points")
+                services = final_tool_results.get("services")
+                preferred_presentation = str(final_tool_results.get("preferred_presentation") or "").lower()
                 if isinstance(points, list) and points:
                     chart_points = []
+                    table_rows = []
                     for row in points[:60]:
                         try:
+                            revenue = float(row.get("revenue", 0.0) or 0.0)
+                            customers = int(row.get("customers", 0) or 0)
+                            completed_services = int(row.get("completed_services", 0) or 0)
+                            average_ticket = revenue / completed_services if completed_services else 0.0
                             chart_points.append(
                                 {
                                     "label": str(row.get("period", "")),
-                                    "value": float(row.get("revenue", 0.0) or 0.0),
+                                    "revenue": revenue,
+                                    "customers": customers,
+                                }
+                            )
+                            table_rows.append(
+                                {
+                                    "period": str(row.get("period", "")),
+                                    "revenue": revenue,
+                                    "completedServices": completed_services,
+                                    "customers": customers,
+                                    "averageTicket": average_ticket,
                                 }
                             )
                         except (TypeError, ValueError):
                             continue
 
-                    if chart_points:
+                    if table_rows and preferred_presentation == "table":
+                        table_event = {
+                            "type": "table",
+                            "title": f"Revenue by Day ({final_tool_results.get('window', 'custom').replace('_', ' ')})",
+                            "rowIdKey": "period",
+                            "columns": [
+                                {"key": "period", "label": "Date", "priority": "primary"},
+                                {
+                                    "key": "revenue",
+                                    "label": "Revenue",
+                                    "align": "right",
+                                    "priority": "primary",
+                                    "format": {"kind": "currency", "currency": "USD", "decimals": 2},
+                                },
+                                {
+                                    "key": "completedServices",
+                                    "label": "Services",
+                                    "align": "right",
+                                    "priority": "secondary",
+                                    "format": {"kind": "number", "decimals": 0},
+                                },
+                                {
+                                    "key": "customers",
+                                    "label": "Customers",
+                                    "align": "right",
+                                    "priority": "secondary",
+                                    "format": {"kind": "number", "decimals": 0},
+                                },
+                                {
+                                    "key": "averageTicket",
+                                    "label": "Avg Ticket",
+                                    "align": "right",
+                                    "priority": "secondary",
+                                    "format": {"kind": "currency", "currency": "USD", "decimals": 2},
+                                },
+                            ],
+                            "data": table_rows,
+                        }
+                        yield f"data: {json.dumps(table_event)}\n\n"
+
+                    if chart_points and preferred_presentation != "table":
+                        chart_window = str(
+                            final_tool_results.get("window_display")
+                            or final_tool_results.get("window")
+                            or "custom"
+                        ).replace("_", " ")
                         chart_event = {
                             "type": "chart",
-                            "title": f"Revenue Trend ({final_tool_results.get('window', 'custom').replace('_', ' ')})",
+                            "title": f"Revenue Trend ({chart_window})",
+                            "description": "Revenue and customers by period.",
                             "chartType": "line" if len(chart_points) > 2 else "bar",
                             "data": chart_points,
                             "xKey": "label",
-                            "yKey": "value",
+                            "series": [
+                                {"key": "revenue", "label": "Revenue"},
+                                {"key": "customers", "label": "Customers"},
+                            ],
+                            "showLegend": True,
+                            "showGrid": True,
                         }
                         yield f"data: {json.dumps(chart_event)}\n\n"
+
+                if preferred_presentation == "table" and isinstance(services, list) and services:
+                    service_rows = []
+                    for index, service in enumerate(services[:60], start=1):
+                        try:
+                            service_rows.append(
+                                {
+                                    "rank": index,
+                                    "name": str(service.get("name", "")),
+                                    "price": float(service.get("cost", 0.0) or 0.0),
+                                    "durationMinutes": int(service.get("duration_minutes", 0) or 0),
+                                }
+                            )
+                        except (TypeError, ValueError):
+                            continue
+
+                    if service_rows:
+                        table_event = {
+                            "type": "table",
+                            "title": "Services",
+                            "rowIdKey": "rank",
+                            "columns": [
+                                {
+                                    "key": "rank",
+                                    "label": "#",
+                                    "align": "right",
+                                    "priority": "secondary",
+                                    "format": {"kind": "number", "decimals": 0},
+                                },
+                                {"key": "name", "label": "Service", "priority": "primary"},
+                                {
+                                    "key": "price",
+                                    "label": "Price",
+                                    "align": "right",
+                                    "priority": "primary",
+                                    "format": {"kind": "currency", "currency": "USD", "decimals": 2},
+                                },
+                                {
+                                    "key": "durationMinutes",
+                                    "label": "Minutes",
+                                    "align": "right",
+                                    "priority": "secondary",
+                                    "format": {"kind": "number", "decimals": 0},
+                                },
+                            ],
+                            "data": service_rows,
+                        }
+                        yield f"data: {json.dumps(table_event)}\n\n"
 
                 csv_content = final_tool_results.get("csv_content")
                 if isinstance(csv_content, str) and csv_content.strip():
@@ -643,12 +1501,25 @@ async def chat_stream(
             if follow_ups:
                 yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': follow_ups})}\n\n"
 
+            completion_event = {
+                "type": "stream_status",
+                "status": "completed",
+                "agent": routed_agent or "supervisor",
+                "has_text": bool(final_response_text),
+                "has_tool_results": bool(final_tool_results),
+                "approval_required": approval_required,
+            }
+            yield f"data: {json.dumps(completion_event)}\n\n"
             yield "data: [DONE]\n\n"
 
         except Exception as e:
             logger.error(f"Stream error: {str(e)}", exc_info=True)
-            error_event = {"type": "error", "message": str(e)}
+            error_message = str(e) or "Unexpected stream error"
+            status_event = {"type": "stream_status", "status": "error", "message": error_message}
+            error_event = {"type": "error", "message": error_message}
+            yield f"data: {json.dumps(status_event)}\n\n"
             yield f"data: {json.dumps(error_event)}\n\n"
+            yield "data: [DONE]\n\n"
     
     return StreamingResponse(
         event_generator(),
@@ -720,9 +1591,36 @@ async def approve_action(
 
     interrupts = list(snapshot.interrupts or ())
     if not interrupts:
-        raise HTTPException(status_code=409, detail="No pending approval found for this thread")
+        resumed = _resume_persisted_approval(
+            shop_id=shop_id,
+            action_id=str(action_id or "").strip() or None,
+            approved=bool(approved),
+            reason=reason,
+            user_id=int(user_id),
+        )
+        if resumed is None:
+            raise HTTPException(status_code=409, detail="No pending approval found for this thread")
+
+        _record_approval_decision(
+            shop_id=shop_id,
+            action_id=str(action_id or "").strip() or None,
+            pending_action=None,
+            approved=bool(approved),
+            reason=reason,
+            user_id=int(user_id),
+            resumed=resumed,
+        )
+
+        return {
+            "status": "approved" if approved else "rejected",
+            "message": _state_last_text(resumed),
+            "agent": resumed.get("current_agent", "supervisor"),
+            "tool_results": resumed.get("tool_results"),
+        }
 
     current_interrupt_id = getattr(interrupts[0], "id", None)
+    snapshot_values = cast(Dict[str, Any], snapshot.values or {}) if snapshot else {}
+    current_pending_action = cast(Optional[Dict[str, Any]], snapshot_values.get("pending_approval"))
     if action_id and current_interrupt_id and action_id != current_interrupt_id:
         raise HTTPException(status_code=409, detail="action_id does not match the current pending approval")
 
@@ -732,6 +1630,16 @@ async def approve_action(
             Command(resume={"approved": bool(approved), "reason": reason}),
             checkpoint_config,
         ),
+    )
+
+    _record_approval_decision(
+        shop_id=shop_id,
+        action_id=current_interrupt_id,
+        pending_action=current_pending_action,
+        approved=bool(approved),
+        reason=reason,
+        user_id=int(user_id),
+        resumed=resumed,
     )
 
     return {
@@ -779,12 +1687,15 @@ async def get_history(
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
     
-    # TODO: Load checkpoint history from PostgreSQL
-    # For now, return placeholder
+    checkpoint_config = build_checkpoint_config(shop_id, user_id)
+    snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
+    values = cast(Dict[str, Any], snapshot.values or {}) if snapshot else {}
+    checkpoint_messages = _serialize_checkpoint_messages(values)
+
     return {
-        "messages": [],
+        "messages": checkpoint_messages,
         "checkpoint_id": f"tenant_{shop_id}_{user_id}",
-        "note": "[Phase 1] History loading not yet implemented"
+        "pending": _get_pending_approval_payload(shop_id, user_id, runnable=_SUPERVISOR_RUNNABLE),
     }
 
 
@@ -824,24 +1735,145 @@ async def get_pending_approvals(
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
 
-    checkpoint_config = build_checkpoint_config(shop_id, user_id)
-    runnable = _SUPERVISOR_RUNNABLE
-    snapshot = runnable.get_state(checkpoint_config)
+    metrics = db_interface.get_shop_live_wait_metrics(shop_id) or {}
+    return {"pending": _get_pending_approval_payload(shop_id, user_id, metrics, runnable=_SUPERVISOR_RUNNABLE)}
 
-    pending = []
-    if snapshot and snapshot.interrupts:
-        values = cast(Dict[str, Any], snapshot.values or {})
-        pending_approval = values.get("pending_approval")
-        interrupt_id = getattr(snapshot.interrupts[0], "id", None)
-        if pending_approval:
-            pending.append({
-                "action_id": interrupt_id,
-                "action": pending_approval.get("action"),
-                "details": pending_approval.get("details", {}),
-                "shop_id": pending_approval.get("shop_id", shop_id),
-            })
 
-    return {"pending": pending}
+@router.get("/briefing")
+async def get_owner_briefing(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Return a lightweight operational briefing for the owner inbox."""
+    user_id = _extract_user_id(current_user)
+    user_shops = _get_owned_shop_ids(current_user)
+
+    try:
+        shop_id = int(shop_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="shop_id must be an integer")
+
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authenticated user_id missing")
+
+    if shop_id not in user_shops:
+        raise HTTPException(status_code=403, detail="Not owner of this shop")
+
+    shop = db_interface.get_shop_by_id(shop_id)
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    cached_snapshot = get_cached_shop_briefing_snapshot(shop_id)
+    if not cached_snapshot:
+        cached_snapshot = refresh_shop_briefing_cache(shop_id, shop.get("name"))
+
+    metrics = dict((cached_snapshot or {}).get("metrics") or {})
+    live_metrics = db_interface.get_shop_live_wait_metrics(shop_id) or {}
+    metrics.update({key: value for key, value in live_metrics.items() if value is not None})
+
+    if not metrics.get("active_services"):
+        services = db_interface.get_shop_services(shop_id, include_inactive=False) or []
+        metrics["active_services"] = len(services)
+    if not metrics.get("active_employees"):
+        employees = db_interface.get_shop_employees(shop_id, is_active=True) or []
+        metrics["active_employees"] = len(employees)
+
+    pending = _get_pending_approval_payload(shop_id, user_id, live_metrics or metrics, runnable=_SUPERVISOR_RUNNABLE)
+
+    active_services = int(metrics.get("active_services", 0) or 0)
+    active_employees = int(metrics.get("active_employees", 0) or 0)
+    pending_count = len(pending)
+    queue_length = int(metrics.get("queue_length", 0) or 0)
+    wait_minutes = int(metrics.get("estimated_wait_minutes", 0) or 0)
+    serving_count = int(metrics.get("people_being_served", 0) or 0)
+    today_total_revenue = float(metrics.get("today_revenue", 0.0) or 0.0)
+    today_transactions = int(metrics.get("today_transactions", 0) or 0)
+    weekly_total_revenue = float(metrics.get("weekly_revenue", 0.0) or 0.0)
+
+    briefing = build_owner_briefing(
+        shop_id=shop_id,
+        shop_name=shop.get("name", "Your shop"),
+        metrics={
+            **metrics,
+            "queue_length": queue_length,
+            "estimated_wait_minutes": wait_minutes,
+            "people_being_served": serving_count,
+            "active_employees": active_employees,
+        },
+        active_services=active_services,
+        active_employees=active_employees,
+        pending_count=pending_count,
+        today_revenue=today_total_revenue,
+        today_transactions=today_transactions,
+        weekly_revenue=weekly_total_revenue,
+        alert_history=get_shop_alert_history(shop_id),
+        generated_at=(cached_snapshot or {}).get("generated_at") or datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        source=str((cached_snapshot or {}).get("source") or "live"),
+    )
+    briefing["pending"] = pending
+    briefing["recent_notifications"] = _get_notification_feed_payload(shop_id, limit=10)
+    return briefing
+
+
+@router.get("/feed")
+async def get_feed(
+    shop_id: int,
+    limit: int = 25,
+    current_user: dict = Depends(get_current_user),
+):
+    """Return persisted owner-facing feed events sourced from agent_notifications."""
+    user_id, shop_id = _require_owner_shop_access(shop_id, current_user)
+    del user_id
+
+    normalized_limit = max(1, min(int(limit), 100))
+    return {"events": _get_notification_feed_payload(shop_id, limit=normalized_limit)}
+
+
+@router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Mark a persisted owner-facing notification as read."""
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON request body") from exc
+
+    _, shop_id = _require_owner_shop_access(body.get("shop_id"), current_user)
+
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        notification = repo.mark_notification_read_for_shop(notification_id, shop_id)
+        if notification is None:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        return {"notification": _serialize_notification_feed_event(notification)}
+    finally:
+        db.close()
+
+
+@router.post("/notifications/read-all")
+async def mark_all_notifications_read(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Mark all persisted owner-facing notifications for a shop as read."""
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON request body") from exc
+
+    _, shop_id = _require_owner_shop_access(body.get("shop_id"), current_user)
+
+    db = SessionLocal()
+    try:
+        repo = AgentWorkRepository(db)
+        updated = repo.mark_all_notifications_read(shop_id)
+        return {"updated": updated}
+    finally:
+        db.close()
 
 
 # ============================================================================

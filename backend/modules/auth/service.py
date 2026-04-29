@@ -83,4 +83,19 @@ class AuthService:
         finally:
             db.close()
 
+    def update_user_password(self, user_id: int, new_password: str) -> bool:
+        db = self.get_db()
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                return False
+            user.hashed_password = get_password_hash(new_password)
+            db.commit()
+            return True
+        except Exception:
+            db.rollback()
+            return False
+        finally:
+            db.close()
+
 auth_service = AuthService()

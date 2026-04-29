@@ -1,69 +1,61 @@
 import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Chip from '@mui/material/Chip';
+import Container from '@mui/material/Container';
+import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Grid from '@mui/material/Grid';
-import { useColorScheme } from '@mui/material/styles';
+import { alpha } from '@mui/material/styles';
 
-const darkModeLogos = [
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560628e8573c43893fe0ace_Sydney-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f4d520d0517ae8e8ddf13_Bern-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f46794c159024c1af6d44_Montreal-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/61f12e891fa22f89efd7477a_TerraLight.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560a09d1f6337b1dfed14ab_colorado-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f5caa77bf7d69fb78792e_Ankara-white.svg',
+const sectors = [
+  { name: 'Barbershops', detail: 'Walk-ins, fades, chair turnover', metric: 'Queue + appointments' },
+  { name: 'Salons', detail: 'Longer sessions, multi-service visits', metric: 'Staff + booking coordination' },
+  { name: 'Clinics', detail: 'Approval-sensitive front desk flow', metric: 'Patient wait visibility' },
+  { name: 'Repair Shops', detail: 'Drop-offs, diagnostics, pickup updates', metric: 'Status and follow-ups' },
+  { name: 'Auto Service', detail: 'Bay scheduling and service windows', metric: 'Ops inbox + approvals' },
+  { name: 'Multi-location Groups', detail: 'Shared policy with local autonomy', metric: 'Finance and HR oversight' },
 ];
-
-const lightModeLogos = [
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560628889c3bdf1129952dc_Sydney-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f4d4d8b829a89976a419c_Bern-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f467502f091ccb929529d_Montreal-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/61f12e911fa22f2203d7514c_TerraDark.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560a0990f3717787fd49245_colorado-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f5ca4e548b0deb1041c33_Ankara-black.svg',
-];
-
-const logoStyle = {
-  width: '100px',
-  height: '80px',
-  margin: '0 32px',
-  opacity: 0.7,
-};
 
 export default function PartnersList() {
-  const { mode, systemMode } = useColorScheme();
-  let logos: string[] = darkModeLogos; // Default to dark mode logos
-  if (mode === 'system') {
-    if (systemMode === 'light') {
-      logos = lightModeLogos;
-    } else {
-      logos = darkModeLogos;
-    }
-  } else if (mode === 'light') {
-    logos = lightModeLogos;
-  } else {
-    logos = darkModeLogos;
-  }
-
   return (
-    <Box id="logoCollection" sx={{ py: 4 }}>
-      <Typography
-        component="p"
-        variant="subtitle2"
-        align="center"
-        sx={{ color: 'text.secondary' }}
-      >
-        Trusted by the best companies
-      </Typography>
-      <Grid container sx={{ justifyContent: 'center', mt: 0.5, opacity: 0.6 }}>
-        {logos.map((logo, index) => (
-          <Grid key={index}>
-            <img
-              src={logo}
-              alt={`Fake company number ${index + 1}`}
-              style={logoStyle}
-            />
+    <Container id="logoCollection" sx={{ py: { xs: 5, md: 7 } }}>
+      <Stack spacing={1.5} sx={{ mb: 3.5, textAlign: { xs: 'left', md: 'center' } }}>
+        <Typography component="p" variant="overline" sx={{ color: 'text.secondary', letterSpacing: '0.18em' }}>
+          BUILT FOR THE FRONT DESK
+        </Typography>
+        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.04em' }}>
+          One product, tuned for the service businesses that live on queue flow.
+        </Typography>
+        <Typography sx={{ color: 'text.secondary', maxWidth: 760, mx: { md: 'auto' } }}>
+          ZeroQwait is designed for operators who need customer-facing AI, owner approvals, and live operational visibility in the same system.
+        </Typography>
+      </Stack>
+
+      <Grid container spacing={2}>
+        {sectors.map((sector) => (
+          <Grid key={sector.name} size={{ xs: 12, sm: 6, md: 4 }}>
+            <Card
+              variant="outlined"
+              sx={{
+                height: '100%',
+                p: 2.25,
+                borderRadius: 5,
+                background: (theme) => `linear-gradient(180deg, ${alpha(theme.palette.background.paper, 0.96)} 0%, ${alpha(theme.palette.background.default, 0.92)} 100%)`,
+              }}
+            >
+              <Stack spacing={1.5}>
+                <Chip label={sector.metric} sx={{ alignSelf: 'flex-start', borderRadius: 999, fontWeight: 700 }} />
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                  {sector.name}
+                </Typography>
+                <Typography color="text.secondary">
+                  {sector.detail}
+                </Typography>
+              </Stack>
+            </Card>
           </Grid>
         ))}
       </Grid>
-    </Box>
+    </Container>
   );
 }

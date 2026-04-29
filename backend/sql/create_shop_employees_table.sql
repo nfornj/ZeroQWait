@@ -1,5 +1,5 @@
 -- Create shop_employees table for employee management
--- Run this in Supabase SQL Editor
+-- Run this against the current PostgreSQL database
 
 CREATE TABLE IF NOT EXISTS shop_employees (
   id SERIAL PRIMARY KEY,

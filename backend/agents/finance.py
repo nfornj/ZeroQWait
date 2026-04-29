@@ -1,1312 +1,677 @@
-"""
-Finance Sub-Agent - Handles revenue, analytics, and financial reporting.
+"""Finance specialist graph with explicit planner and executor nodes."""
 
-Responsibilities:
-- Daily/weekly/monthly revenue summaries
-- Service breakdown (which services make the most)
-- Customer metrics (total customers, repeat customers, LTV)
-- Financial reports and exports
-- Pricing analysis and recommendations
-
-Phase 2: Placeholder implementation
-Phase 3: Wire to FinanceMCP server
-
-Tools called:
-- daily_revenue(shop_id, date=None) → revenue amount
-- weekly_summary(shop_id, week=None) → revenue + metrics
-- top_services(shop_id, limit=5) → services by revenue
-- customer_metrics(shop_id) → customer stats
-- export_report(shop_id, format='csv') → file path
-
-Data sources:
-- daily_analytics table (pre-computed daily snapshots)
-- queues table (transaction history)
-- shop_services table (service definitions)
-"""
-
-from typing import Any, Dict, List, Optional
-import difflib
-import json as _json
-import os
-import re
 from datetime import datetime, timedelta
+import logging
+import re
+from typing import Any, Dict, Optional, Sequence
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langchain_ollama import ChatOllama
-from langgraph.graph import StateGraph, END
+from langchain_core.messages import BaseMessage
 
-from .state import AgentState
-from .tools import client_insights_tools, finance_tools
+from .specialist_graph import build_specialist_runnable
+from .tools import finance_tools
 
+logger = logging.getLogger(__name__)
 
-TIMEFRAME_HINTS = [
-    "today", "yesterday", "day", "daily", "week", "weekly", "month", "monthly",
-    "quarter", "year", "yearly", "last", "this", "trend", "30 days", "7 days",
-    "jan", "january", "feb", "february", "mar", "march", "apr", "april", "may",
-    "jun", "june", "jul", "july", "aug", "august", "sep", "sept", "september",
-    "oct", "october", "nov", "november", "dec", "december",
+OPERATION_ALIASES = {
+    "analyze": "trend_summary",
+    "analyse": "trend_summary",
+    "review": "trend_summary",
+    "revenue_trend_analysis": "trend_summary",
+    "revenue_analysis": "trend_summary",
+    "sales_analysis": "trend_summary",
+}
+
+SUPPORTED_OPERATIONS = [
+    "daily_revenue",
+    "weekly_summary",
+    "trend_summary",
+    "top_services",
+    "customer_metrics",
+    "export_report",
+    "create_invoice",
+    "record_payment",
+    "process_refund",
+    "list_invoices",
+    "get_pos_summary",
+    "get_inactive_clients",
+    "get_top_clients",
+    "get_visit_frequency_summary",
+    "get_client_profile",
+    "search_clients",
 ]
 
-FINANCE_HINTS = [
-    "revenue", "sales", "income", "profit", "finance", "financial", "analytics", "transaction",
-]
-
-NORMALIZATION_KEYWORDS = sorted(
-    set(
-        TIMEFRAME_HINTS
-        + FINANCE_HINTS
-        + [
-            "export", "download", "csv", "excel", "report", "file",
-            "each", "every", "all", "date", "day", "dates", "days",
-            "largest", "highest", "maximum", "max", "best", "peak",
-            "when", "which", "what", "tell", "past", "year", "month", "week",
-        ]
-    ),
-    key=len,
-    reverse=True,
-)
-
-CLIENT_HINTS = [
-    "client", "clients", "customer", "customers", "who hasn't",
-    "inactive", "lapsed", "top client", "top clients", "frequent", "loyalty",
-    "hasn't visited", "not been in", "profile", "visit history", "at risk",
-    "regulars", "loyal", "inactive clients",
-]
-
-CLIENT_PHRASES = [
-    "who hasn't", "hasn't visited", "not been in", "top client", "top clients",
-    "visit frequency", "visit history", "client profile", "customer profile",
-    "at risk", "inactive clients", "inactive customers",
-]
+PLANNER_INSTRUCTIONS = """\
+- daily_revenue: use for a single concrete date when you know the date.
+- weekly_summary: use for a weekly summary when the owner asks about this week or a named week start.
+- trend_summary: use for natural-language ranges like yesterday, last month, last 30 days, february, quarterly trends.
+- top_services: use for best-selling or most popular services; arguments: limit(optional).
+- customer_metrics: use for customer counts, repeat rate, new vs repeat.
+- export_report: use when the owner asks for CSV or export; arguments: format(optional, usually csv).
+- create_invoice: use when the owner asks to create an invoice; arguments: service_name, unit_price, quantity(optional), customer_id(optional), tax_rate(optional).
+- record_payment: use when the owner asks to record a payment; arguments: amount, method(optional), invoice_id(optional).
+- process_refund: use when the owner asks to refund a payment; arguments: payment_id, refund_amount(optional), reason(optional).
+- list_invoices: use to list invoices; arguments: status(optional), limit(optional).
+- get_pos_summary: use for cash/card breakdowns by date.
+- get_inactive_clients: use for lapsed or inactive clients; arguments: days_threshold(optional).
+- get_top_clients: use for best clients or most frequent clients; arguments: limit(optional).
+- get_visit_frequency_summary: use for regulars, at-risk, and lapsed client mix.
+- get_client_profile: use when a specific client id is already known.
+- search_clients: use when the owner gives a client name rather than an id.
+- Never output analyze, analyse, answer, respond, summarize, or review as the operation. Pick the closest supported operation instead.
+"""
 
 
-def _tokenize_text(text: str) -> List[str]:
-    return re.findall(r"[a-z0-9]+", (text or "").lower())
+def _optional_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
-def _best_fuzzy_keyword(token: str) -> str:
-    if not token:
-        return token
-    if token in NORMALIZATION_KEYWORDS:
-        return token
-
-    best_keyword = token
-    best_ratio = 0.0
-    for keyword in NORMALIZATION_KEYWORDS:
-        if abs(len(token) - len(keyword)) > 2:
-            continue
-        ratio = difflib.SequenceMatcher(a=token, b=keyword).ratio()
-        if ratio > best_ratio:
-            best_ratio = ratio
-            best_keyword = keyword
-
-    if best_ratio >= 0.82:
-        return best_keyword
-    return token
-
-
-def _normalize_for_matching(text: str) -> str:
-    tokens = _tokenize_text(text)
-    normalized = [_best_fuzzy_keyword(token) for token in tokens]
-    return " ".join(normalized)
-
-
-def _is_client_specific_query(text: str) -> bool:
-    lowered = (text or "").lower()
-    if any(phrase in lowered for phrase in CLIENT_PHRASES):
-        return True
-    normalized = _normalize_for_matching(text)
-    return any(token in normalized for token in CLIENT_HINTS)
-
-
-def _extract_client_search_name(text: str) -> Optional[str]:
-    patterns = [
-        r"(?:profile|history|details|search|find|show)\s+(?:for\s+|of\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})",
-        r"(?:client|customer)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            return match.group(1).strip()
-    return None
-
-
-def _extract_client_id(text: str) -> Optional[int]:
-    match = re.search(r"(?:client|customer)\s+#?(\d+)", text.lower())
-    if match:
-        return int(match.group(1))
-    return None
-
-
-def _extract_invoice_request(text: str) -> tuple[str, float]:
-    """Extract service description and amount from invoice creation requests."""
-    raw = (text or "").strip()
-    lower = raw.lower()
-
-    amount_match = re.search(r"\$\s*([\d,]+(?:\.\d+)?)", raw)
-    if amount_match:
-        amount = float(amount_match.group(1).replace(",", ""))
-    else:
-        number_match = re.search(r"\b([\d,]+(?:\.\d+)?)\b", raw)
-        amount = float(number_match.group(1).replace(",", "")) if number_match else 0.0
-
-    service_name = "Service"
-    service_match = re.search(
-        r"invoice\s+for\s+(?:an?\s+)?(.+?)(?:\s+service)?(?:\s*,|\s+cost|\s+for\s+\$|\s*\$|$)",
-        lower,
-    )
-    if service_match:
-        candidate = service_match.group(1).strip(" .,")
-        if candidate:
-            service_name = candidate.title()
-
-    return service_name, amount
-
-
-def _format_client_list(items: List[Dict[str, Any]], intro: str, include_contact: bool = False, include_last_service: bool = False) -> str:
-    if not items:
-        return intro + " None found."
-
-    lines = [intro]
-    for item in items:
-        parts = [item.get("name") or "Unknown"]
-        if item.get("visit_count") is not None:
-            parts.append(f"{int(item['visit_count'])} visits")
-        if item.get("days_inactive") is not None:
-            parts.append(f"inactive {int(item['days_inactive'])} days")
-        if item.get("days_since_last_visit") is not None:
-            parts.append(f"last seen {int(item['days_since_last_visit'])} days ago")
-        if item.get("last_visit"):
-            parts.append(f"last visit {item['last_visit']}")
-        if include_contact and item.get("contact"):
-            parts.append(str(item["contact"]))
-        if include_last_service and item.get("last_service"):
-            parts.append(f"last service: {item['last_service']}")
-        lines.append("- " + " | ".join(parts))
-    return "\n".join(lines)
-
-
-def _format_visit_frequency_summary(result: Dict[str, Any]) -> str:
-    total = int(result.get("total_clients") or 0)
-    if total == 0:
-        return "No client records were found for this shop yet."
-    regulars = result.get("regulars", {})
-    at_risk = result.get("at_risk", {})
-    lapsed = result.get("lapsed", {})
-    new = result.get("new", {})
-    return (
-        f"Client visit frequency summary across {total} clients:\n"
-        f"- Regulars: {regulars.get('count', 0)} ({regulars.get('percentage', 0)}%)\n"
-        f"- At risk: {at_risk.get('count', 0)} ({at_risk.get('percentage', 0)}%)\n"
-        f"- Lapsed: {lapsed.get('count', 0)} ({lapsed.get('percentage', 0)}%)\n"
-        f"- New: {new.get('count', 0)} ({new.get('percentage', 0)}%)"
-    )
-
-
-def _latest_user_text(state: AgentState) -> str:
-    messages = state.get("messages", [])
-    if not messages:
-        return ""
-    latest = messages[-1]
-    return str(latest.content) if isinstance(latest, BaseMessage) else str(latest)
-
-
-def _has_time_or_finance_hints(text: str) -> bool:
-    normalized = _normalize_for_matching(text)
-    return any(token in normalized for token in TIMEFRAME_HINTS + FINANCE_HINTS)
-
-
-def _is_followup_transform_request(text: str) -> bool:
-    normalized = _normalize_for_matching(text)
-    return any(token in normalized for token in [
-        "csv", "excel", "export", "download", "file",
-        "dates only", "date only", "list dates", "only dates",
-        "only revenue", "revenue only", "just dates", "just revenue",
-    ])
-
-
-def _find_previous_finance_query(state: AgentState) -> Optional[str]:
-    """Find latest prior user message that contains finance/timeframe intent."""
-    messages = state.get("messages", [])
-    if not messages:
+def _to_int(value: Any) -> Optional[int]:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
         return None
 
-    # Walk backwards, skip the latest message (current turn).
-    for msg in reversed(messages[:-1]):
-        if isinstance(msg, HumanMessage):
-            content = str(msg.content)
-            if _has_time_or_finance_hints(content):
-                return content
-    return None
 
-
-def _resolve_finance_query(state: AgentState) -> str:
-    """Resolve effective query for this turn, using prior context for follow-ups."""
-    current = _latest_user_text(state)
-    if _has_time_or_finance_hints(current):
-        return current
-
-    prev = _find_previous_finance_query(state)
-    if prev:
-        return prev
-    return current
-
-
-def _wants_day_by_day_output(text: str) -> bool:
-    normalized = _normalize_for_matching(text)
-    return any(token in normalized for token in [
-        "for each day",
-        "each day",
-        "for each date",
-        "each date",
-        "every date",
-        "all dates",
-        "date wise",
-        "date-wise",
-        "all 30 days",
-        "every day",
-        "day by day",
-        "per day",
-        "daily breakdown",
-    ])
-
-
-def _wants_period_list_output(text: str) -> bool:
-    normalized = _normalize_for_matching(text)
-    return any(token in normalized for token in [
-        "list",
-        "each month",
-        "for each month",
-        "per month",
-        "month wise",
-        "month-wise",
-        "monthly breakdown",
-        "each week",
-        "for each week",
-        "per week",
-        "week wise",
-        "week-wise",
-        "each day",
-        "for each day",
-        "each date",
-        "for each date",
-    ])
-
-
-def _requested_specific_date(state: AgentState) -> Optional[str]:
-    query = _resolve_finance_query(state)
-    return finance_tools.extract_requested_date(query)
-
-
-def _requested_week_start(state: AgentState) -> tuple[Optional[str], str]:
-    """Resolve weekly window from query text; defaults to current week."""
-    query = _resolve_finance_query(state)
-    normalized = _normalize_for_matching(query)
-    now = datetime.now()
-    this_week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-
-    if any(token in normalized for token in ["last week", "previous week"]):
-        last_week_start = this_week_start - timedelta(days=7)
-        return last_week_start.strftime("%Y-%m-%d"), "last week"
-
-    if any(token in normalized for token in ["this week", "weekly", "week"]):
-        return this_week_start.strftime("%Y-%m-%d"), "this week"
-
-    return None, "this week"
-
-
-def _ollama_base_url() -> str:
-    base_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1").rstrip("/")
-    if base_url.endswith("/v1"):
-        return base_url[:-3]
-    return base_url
-
-
-def _llm_plan_finance_intent(query: str, today_str: str) -> dict:
-    """
-    Ask the LLM to parse the user's message and return a structured finance intent plan.
-
-    Returns a dict with keys: intent, time_window, date, week_start, confidence.
-    Returns {} on any LLM or parse failure (callers fall back to heuristics).
-    """
-    ollama_url = _ollama_base_url()
-    model_name = os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M")
-    llm = ChatOllama(model=model_name, base_url=ollama_url, temperature=0.0, format="json", num_gpu=-1)
-
-    system_prompt = (
-        f"You are a finance query analyzer for a shop management system. Today is {today_str}.\n"
-        "Analyze the user message and return ONLY this JSON (no explanation, no markdown):\n"
-        '{\n'
-        '  "intent": "<daily_revenue|weekly_summary|trend_summary|services_breakdown|customer_metrics|export|create_invoice|other>",\n'
-        '  "time_window": "<today|yesterday|this_week|last_week|this_month|last_month|this_year|last_year|custom|null>",\n'
-        '  "date": "<YYYY-MM-DD for a specific single-day query, otherwise null>",\n'
-        '  "week_start": "<YYYY-MM-DD Monday of the target week for weekly queries, otherwise null>",\n'
-        '  "confidence": <0.0 to 1.0>\n'
-        '}\n\n'
-        "Intent rules:\n"
-        "- daily_revenue: single day revenue (today, yesterday, a specific date)\n"
-        "- weekly_summary: total/summary for a full week period\n"
-        "- trend_summary: trends, day-by-day, best day, peak revenue, monthly/yearly overview, forecasts\n"
-        "- services_breakdown: which services generate the most revenue\n"
-        "- customer_metrics: customer counts, repeat visits, lifetime value\n"
-        "- export: export/download/CSV/PDF/report file\n"
-        "- create_invoice: create/make/add/generate an invoice\n"
-        "- other: unclear or general\n\n"
-        f"Date computation rules (today = {today_str}):\n"
-        "- 'yesterday' → date = yesterday in YYYY-MM-DD\n"
-        "- 'last week' / 'previous week' → week_start = Monday of the week before the current week\n"
-        "- 'this week' / 'current week' → week_start = Monday of the current week\n"
-        "- Named dates like 'April 10' → compute the closest past occurrence as YYYY-MM-DD\n"
-        "- 'last 7 days', 'past 7 days' → time_window = custom, intent = trend_summary\n"
-    )
-
+def _to_float(value: Any) -> Optional[float]:
+    if value in (None, ""):
+        return None
     try:
-        result = llm.invoke([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": query},
-        ])
-        raw = result.content if hasattr(result, "content") else str(result)
-        if isinstance(raw, list):
-            raw = " ".join(str(chunk) for chunk in raw)
-        raw = str(raw)
-        # Strip any accidental markdown fences
-        raw = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
-        plan = _json.loads(raw)
-        if "intent" not in plan:
-            return {}
-        plan["confidence"] = float(plan.get("confidence", 0.5))
-        return plan
-    except Exception:
-        return {}
-
-
-def _asks_for_peak_revenue_period(text: str) -> bool:
-    normalized = _normalize_for_matching(text)
-    has_revenue = any(token in normalized for token in ["revenue", "sales", "income", "profit"])
-    has_peak = any(token in normalized for token in ["largest", "highest", "max", "maximum", "best", "peak"])
-    asks_for_period = any(token in normalized for token in [
-        "when", "which day", "what day", "which date", "what date", "date", "day", "tell me",
-    ])
-    asks_for_window = any(token in normalized for token in [
-        "this month", "last month", "this week", "last week", "this year", "last year", "quarter", "period",
-        "month", "week", "year",
-    ])
-    return has_revenue and has_peak and (asks_for_period or asks_for_window)
-
-
-def _wants_concise_period_summary(text: str) -> bool:
-    normalized = _normalize_for_matching(text)
-    asks_total_revenue = any(token in normalized for token in [
-        "total revenue", "revenue", "sales", "income", "profit",
-    ])
-    asks_period = any(token in normalized for token in [
-        "last", "past", "previous", "this", "month", "months", "year", "week", "quarter",
-        "january", "february", "march", "april", "may", "june", "july", "august",
-        "september", "october", "november", "december",
-        "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
-    ])
-    wants_detail = any(token in normalized for token in [
-        "trend", "points", "breakdown", "day by day", "each day", "each date", "for each date", "per day", "date wise", "date-wise", "each month", "for each month", "per month", "month wise", "month-wise", "forecast", "chart",
-    ])
-    return asks_total_revenue and asks_period and not wants_detail
-
-
-def _format_window_label(result: dict) -> str:
-    window = str(result.get("window", "custom"))
-    range_start = result.get("range_start")
-
-    if window.startswith("month_") and range_start:
-        try:
-            return datetime.strptime(str(range_start), "%Y-%m-%d").strftime("%B %Y")
-        except ValueError:
-            return window.replace("_", " ")
-
-    match = re.match(r"last_(\d+)_months", window)
-    if match:
-        return f"the last {int(match.group(1))} months"
-
-    friendly = {
-        "this_week": "this week",
-        "last_week": "last week",
-        "this_month": "this month",
-        "last_month": "last month",
-        "this_year": "this year",
-        "last_year": "last year",
-        "past_year": "the past year",
-        "last_30_days": "the last 30 days",
-        "specific_day": "that day",
-    }
-    return friendly.get(window, window.replace("_", " "))
-
-
-def _points_to_csv(points: List[dict]) -> str:
-    lines = ["period,revenue,customers,completed_services"]
-    for p in points:
-        lines.append(
-            f"{p.get('period')},{float(p.get('revenue', 0.0)):.2f},{int(p.get('customers', 0))},{int(p.get('completed_services', 0))}"
-        )
-    return "\n".join(lines)
-
-
-def _format_currency(value: Any) -> str:
-    try:
-        return f"${float(value or 0.0):.2f}"
+        return float(value)
     except (TypeError, ValueError):
-        return "$0.00"
+        return None
 
 
-def _format_trend_points(points: List[dict]) -> str:
-    return "; ".join(
-        f"{p.get('period')}: {_format_currency(p.get('revenue'))}"
-        for p in points
+def _flatten_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return " ".join(_flatten_text(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_flatten_text(item) for item in value)
+    return str(value)
+
+
+def _recent_conversation_text(messages: Sequence[BaseMessage]) -> str:
+    recent_messages = list(messages or [])[-6:]
+    parts = []
+    for message in recent_messages:
+        parts.append(_flatten_text(getattr(message, "content", None)))
+        additional_kwargs = getattr(message, "additional_kwargs", None)
+        if additional_kwargs:
+            parts.append(_flatten_text(additional_kwargs))
+    return " ".join(part for part in parts if part).strip()
+
+
+def _latest_user_text(messages: Sequence[BaseMessage]) -> str:
+    for message in reversed(list(messages or [])):
+        if getattr(message, "type", None) == "human":
+            return _flatten_text(getattr(message, "content", None)).strip()
+    return ""
+
+
+def _humanize_window_label(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "the requested period"
+    return text.replace("_", " ")
+
+
+def _requests_finance_trend(text: str) -> bool:
+    prompt = str(text or "").lower()
+    if not prompt:
+        return False
+
+    trend_markers = (
+        "trend",
+        "graph",
+        "chart",
+        "over time",
+        "for each day",
+        "for each date",
+        "by day",
+        "daily breakdown",
+        "line",
+        "plot",
+    )
+    if any(marker in prompt for marker in trend_markers):
+        return True
+
+    return bool(
+        re.search(r"\b(?:last|past|previous)\s+\d{1,3}\s+days?\b", prompt)
+        or re.search(r"\b(?:last|past|previous)\s+\d{1,2}\s+weeks?\b", prompt)
+        or re.search(r"\b(?:last|past|previous)\s+\d{1,2}\s+months?\b", prompt)
     )
 
 
-def _deterministic_finance_response(
-    state: AgentState,
-    response_type: str,
-    result: Dict[str, Any],
-) -> Optional[str]:
-    query = _latest_user_text(state)
-    points = result.get("points") or []
-    total_revenue = _format_currency(result.get("total_revenue"))
-    avg_transaction = _format_currency(result.get("average_transaction"))
-    best_period = result.get("best_period") or "the strongest period"
-    best_period_revenue = _format_currency(result.get("best_period_revenue"))
-    window_label = _format_window_label(result)
+def _prefers_weekly_summary(text: str) -> bool:
+    prompt = str(text or "").lower()
+    return any(phrase in prompt for phrase in ("this week", "weekly", "week start", "week starting"))
 
-    if response_type == "daily_revenue":
-        target_date = result.get("date") or result.get("range_start") or "that day"
-        completed = int(result.get("completed_services") or 0)
-        return (
-            f"On {target_date}, total revenue was {total_revenue}. "
-            f"That came from {completed} completed services with an average ticket of {avg_transaction}."
+
+def _prefers_structured_table(text: str) -> bool:
+    prompt = str(text or "").lower()
+    return any(
+        phrase in prompt
+        for phrase in (
+            "as a list",
+            "in a list",
+            "show a list",
+            "show me a list",
+            "table",
+            "tabular",
+            "sortable",
+            "for each day",
+            "for each date",
+            "by day",
+            "by date",
+            "daily breakdown",
         )
+    )
 
-    if response_type == "weekly_summary":
-        week_label = result.get("week_label") or window_label
-        best_day = result.get("best_day") or result.get("best_period")
-        best_day_text = f" Best day was {best_day}." if best_day else ""
-        return (
-            f"For {week_label}, total revenue was {total_revenue}. "
-            f"Average ticket was {avg_transaction}.{best_day_text}"
+
+def _looks_like_top_services_request(text: str) -> bool:
+    prompt = str(text or "").lower()
+    if not prompt:
+        return False
+
+    has_service_subject = any(keyword in prompt for keyword in ("service", "services"))
+    has_ranking_language = any(
+        phrase in prompt
+        for phrase in (
+            "top",
+            "best-selling",
+            "best selling",
+            "most popular",
+            "popular services",
         )
+    )
+    return has_service_subject and has_ranking_language
 
-    if response_type == "trend_peak_period":
-        return (
-            f"The highest revenue in {window_label} was on {best_period} at {best_period_revenue}."
+
+def _looks_like_customer_metrics_request(text: str) -> bool:
+    prompt = str(text or "").lower()
+    if not prompt:
+        return False
+
+    return any(
+        phrase in prompt
+        for phrase in (
+            "customer metrics",
+            "client metrics",
+            "repeat rate",
+            "new vs repeat",
+            "repeat customer",
+            "repeat customers",
+            "top clients",
+            "best clients",
+            "inactive clients",
+            "lapsed clients",
+            "visit frequency",
+            "client profile",
         )
+    )
 
-    if response_type == "trend_concise_period_summary":
-        return (
-            f"For {window_label}, total revenue was {total_revenue}. "
-            f"Average ticket was {avg_transaction}, and the strongest period was {best_period} at {best_period_revenue}."
-        )
 
-    if response_type == "trend_detailed":
-        if (_wants_day_by_day_output(query) or _wants_period_list_output(query)) and points:
-            return (
-                f"For {window_label}, total revenue was {total_revenue}. "
-                f"All points: {_format_trend_points(points)}."
-            )
-        return (
-            f"For {window_label}, total revenue was {total_revenue}. "
-            f"The strongest period was {best_period} at {best_period_revenue}, with an average ticket of {avg_transaction}."
-        )
+def _looks_like_weekly_revenue_breakdown_request(text: str) -> bool:
+    prompt = str(text or "").lower()
+    if not prompt or not _prefers_weekly_summary(prompt):
+        return False
 
-    if response_type == "services_breakdown":
-        services = result.get("services") or result.get("top_services") or []
-        if services:
-            ranked = ", ".join(
-                f"{row.get('service_name') or row.get('name')}: {_format_currency(row.get('revenue'))}"
-                for row in services[:5]
-            )
-            return f"Your top revenue-generating services are {ranked}."
-        return "I couldn't find service-level revenue rows for this shop yet."
+    has_revenue_subject = any(
+        keyword in prompt for keyword in ("revenue", "sales", "average ticket", "avg ticket")
+    )
+    has_explicit_trend_language = any(
+        keyword in prompt for keyword in ("trend", "graph", "chart", "plot", "line", "over time")
+    )
+    wants_breakdown = _prefers_structured_table(prompt) or any(
+        keyword in prompt for keyword in ("average ticket", "avg ticket", "customers")
+    )
 
-    if response_type == "customer_metrics":
-        total_customers = result.get("total_customers") or 0
-        repeat_customers = result.get("repeat_customers")
-        avg_ltv = result.get("average_ltv")
-        parts = [f"You had {int(total_customers)} customers in the requested period."]
-        if repeat_customers is not None:
-            parts.append(f"Repeat customers: {int(repeat_customers)}.")
-        if avg_ltv is not None:
-            parts.append(f"Average customer LTV is {_format_currency(avg_ltv)}.")
-        return " ".join(parts)
+    return has_revenue_subject and wants_breakdown and not has_explicit_trend_language
 
-    if response_type == "export_csv":
-        return (
-            f"I prepared {result.get('filename', 'the CSV export')} with {int(result.get('row_count') or 0)} rows "
-            f"covering {result.get('range_start')} to {result.get('range_end')}."
-        )
 
-    if response_type == "export_dates_only":
-        values = result.get("values") or []
-        return "Dates: " + ", ".join(str(v) for v in values)
+def _extract_requested_limit(text: str) -> Optional[int]:
+    prompt = str(text or "").lower()
+    if not prompt:
+        return None
 
-    if response_type == "export_revenue_only":
-        values = result.get("points") or []
-        return "Revenue values: " + "; ".join(
-            f"{row.get('period')}: {_format_currency(row.get('revenue'))}" for row in values
-        )
+    match = re.search(r"\btop\s+(\d{1,2})\b", prompt)
+    if not match:
+        return None
+
+    try:
+        requested_limit = int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+    if requested_limit <= 0:
+        return None
+    return min(requested_limit, 25)
+
+
+def _resolve_obvious_daily_date(text: str) -> Optional[str]:
+    prompt = str(text or "").lower().strip()
+    if not prompt:
+        return None
+
+    explicit_date = finance_tools.extract_requested_date(prompt)
+    if explicit_date:
+        return explicit_date
+
+    now = datetime.now()
+    if "yesterday" in prompt:
+        return (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    if "today" in prompt:
+        return now.strftime("%Y-%m-%d")
 
     return None
 
 
-def _get_finance_writer_llm() -> ChatOllama:
-    ollama_url = _ollama_base_url()
-    model_name = os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M")
-    return ChatOllama(
-        model=model_name,
-        base_url=ollama_url,
-        temperature=0.2,
-        top_p=0.9,
-        num_gpu=-1,
-    )
+def _build_finance_fast_plan(messages: Sequence[BaseMessage]) -> Optional[Dict[str, Any]]:
+    latest_user_text = _latest_user_text(messages)
+    if not latest_user_text:
+        return None
 
-
-def _prompt_facts_for_llm(result: Dict[str, Any]) -> Dict[str, Any]:
-    facts = dict(result)
-    points = facts.get("points")
-    if isinstance(points, list) and len(points) > 12:
-        facts["points_preview"] = points[:3] + points[-3:]
-        facts["points_count"] = len(points)
-        del facts["points"]
-    return facts
-
-
-def _generate_finance_response(
-    state: AgentState,
-    response_type: str,
-    result: Dict[str, Any],
-    *,
-    extra_instructions: str = "",
-) -> str:
-    # Use deterministic templates for known response types.
-    # Falls through to LLM only when the template returns None (unknown type).
-    deterministic = _deterministic_finance_response(state, response_type, result)
-    if deterministic:
-        return deterministic
-
-    query = _latest_user_text(state)
-    llm = _get_finance_writer_llm()
-    prompt_facts = _prompt_facts_for_llm(result)
-    wants_list = _wants_day_by_day_output(query) or any(
-        token in query.lower()
-        for token in ["list", "dates only", "date only", "revenue only", "breakdown", "top services", "csv", "export"]
-    )
-    style_rules = [
-        "You are the finance manager for a shop owner.",
-        "Write the final reply naturally, as if a person is answering from the business dashboard.",
-        "Default to executive style: crisp, direct, and decision-ready.",
-        "Use only the facts provided in the FACTS JSON. Never invent numbers, dates, trends, or causes.",
-        "If information is missing, say that plainly instead of guessing.",
-        "Answer the user's actual question first, in the first sentence.",
-        "Do not mention internal field names, JSON, tools, routing, or shop_id unless the user asked for that.",
-        "Do not use emojis.",
-        "Do not use generic headings like 'Finance Trend' or 'Revenue Summary'.",
-    ]
-    if wants_list:
-        style_rules.append("A list is allowed when the user asked for a list, breakdown, export, or date-by-date output.")
-    else:
-        style_rules.append("Prefer short prose over bullets unless bullets are clearly necessary.")
-        style_rules.append("Target 2-4 sentences unless the user explicitly asks for full detail.")
-    if extra_instructions:
-        style_rules.append(extra_instructions)
-
-    writer_prompt = (
-        "\n".join(style_rules)
-        + f"\n\nRESPONSE_TYPE: {response_type}"
-        + f"\nUSER_QUESTION: {_json.dumps(query)}"
-        + f"\nFACTS_JSON: {_json.dumps(prompt_facts, default=str)}"
-        + "\n\nReturn only the owner-facing reply text."
-    )
-
-    response = llm.invoke([HumanMessage(content=writer_prompt)])
-    content = response.content if hasattr(response, "content") else str(response)
-    if isinstance(content, list):
-        content = " ".join(str(chunk) for chunk in content)
-    text = str(content).strip()
-    text = re.sub(r"^```(?:text|markdown)?\s*", "", text).rstrip("`").strip()
-    if not text:
-        raise RuntimeError(f"LLM returned empty response for finance {response_type}")
-    return text
-
-
-def classify_entry(state: AgentState) -> dict:
-    """
-    LLM planning node — calls the LLM to produce a structured finance intent plan
-    and stores it in tool_results['llm_plan'].  Handlers downstream read from this
-    plan instead of re-parsing the query with heuristics.
-    """
-    query = _resolve_finance_query(state)
-    heuristic_intent = _heuristic_intent_classifier(state)
-    if heuristic_intent != "other":
-        heuristic_plan = {
-            "intent": heuristic_intent,
-            "confidence": 1.0,
-        }
-        requested_date = finance_tools.extract_requested_date(query)
-        if requested_date:
-            heuristic_plan["date"] = requested_date
-        if heuristic_intent == "weekly_summary":
-            week_start, week_label = _requested_week_start(state)
-            if week_start:
-                heuristic_plan["week_start"] = week_start
-            heuristic_plan["time_window"] = week_label.replace(" ", "_")
-
-        existing = dict(state.get("tool_results") or {})
-        existing["llm_plan"] = heuristic_plan
-        return {"tool_results": existing}
-
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    plan = _llm_plan_finance_intent(query, today_str)
-    existing = dict(state.get("tool_results") or {})
-    existing["llm_plan"] = plan
-    return {"tool_results": existing}
-
-
-def finance_intent_classifier(state: AgentState) -> str:
-    """Compatibility wrapper for tests and callers expecting a public classifier."""
-    return _heuristic_intent_classifier(state)
-
-
-def _heuristic_intent_classifier(state: AgentState) -> str:
-    """
-    Keyword-based fallback classifier used when the LLM plan is missing or low-confidence.
-    """
-    
-    messages = state.get("messages", [])
-    if not messages:
-        return "other"
-    
-    latest = messages[-1]
-    if isinstance(latest, BaseMessage):
-        content_raw = str(latest.content)
-    else:
-        content_raw = str(latest)
-    content = _normalize_for_matching(content_raw)
-    
-    # Follow-up transform requests should preserve previous finance context.
-    if _is_followup_transform_request(content):
-        return "export"
-
-    if all(token in content for token in ["create", "invoice"]):
-        return "create_invoice"
-
-    if any(word in content for word in ["record", "cash", "paid", "pay"]) and any(word in content for word in ["payment", "invoice"]):
-        return "record_payment"
-
-    if any(word in content for word in ["pos", "point of sale", "transaction"]):
-        return "pos_summary"
-
-    if any(word in content for word in ["list", "show", "all"]) and any(word in content for word in ["invoice", "invoices"]):
-        return "list_invoices"
-
-    requested_date = finance_tools.extract_requested_date(content_raw)
-
-    # Date-specific asks are usually a single-day revenue question.
-    if requested_date and any(word in content for word in ["revenue", "sales", "income", "profit", "finance", "financial", "analytics"]):
-        return "daily_revenue"
-
-    if _is_client_specific_query(content_raw):
-        return "customer_metrics"
-
-    # Keyword matching for Phase 2
-    if any(word in content for word in ["today", "today's", "daily"]):
-        return "daily_revenue"
-    elif any(word in content for word in ["trend", "forecast"]):
-        return "trend_summary"
-    elif any(word in content for word in ["week", "weekly"]):
-        return "weekly_summary"
-    elif any(word in content for word in ["month", "monthly", "year", "yearly", "quarter"]):
-        return "trend_summary"
-    elif any(word in content for word in ["service", "top", "which", "breakdown"]):
-        return "services_breakdown"
-    elif any(word in content for word in ["customer", "repeat", "ltv", "metrics", "growth"]):
-        return "customer_metrics"
-    elif any(word in content for word in ["export", "download", "report", "pdf", "csv"]):
-        return "export"
-    elif "invoice" in content and any(word in content for word in ["create", "make", "add", "new", "generate"]):
-        return "create_invoice"
-    elif any(word in content for word in ["record", "cash", "paid", "pay"]) and any(word in content for word in ["payment", "invoice"]):
-        return "record_payment"
-    elif any(word in content for word in ["pos", "point of sale", "transaction"]):
-        return "pos_summary"
-    elif any(word in content for word in ["list", "show", "all"]) and any(word in content for word in ["invoice", "invoices"]):
-        return "list_invoices"
-    elif any(word in content for word in ["revenue", "sales", "income", "profit", "finance", "financial", "analytics"]):
-        return "trend_summary"
-    else:
-        return "other"
-
-
-def finance_route(state: AgentState) -> str:
-    """
-    Routing function for the classify conditional edge.
-
-    Uses the LLM plan stored by classify_entry if present and confident (>= 0.5).
-    Falls back to the heuristic classifier when the plan is absent or low-confidence.
-    """
-    plan = (state.get("tool_results") or {}).get("llm_plan", {})
-    intent = plan.get("intent", "")
-    confidence = float(plan.get("confidence", 0.0))
-
-    valid_intents = {
-        "daily_revenue", "weekly_summary", "trend_summary",
-        "services_breakdown", "customer_metrics", "export",
-        "create_invoice", "record_payment", "list_invoices", "pos_summary", "other",
-    }
-
-    if intent in valid_intents and confidence >= 0.5:
-        return intent
-
-    # LLM was unavailable, returned garbage, or was not confident — fall back.
-    return _heuristic_intent_classifier(state)
-
-
-def handle_create_invoice(state: AgentState) -> dict:
-    """Create an invoice in the local payments module for finance workflows."""
-    shop_id = state["tenant_id"]
-    query = _latest_user_text(state)
-    service_name, amount = _extract_invoice_request(query)
-
-    result = finance_tools.create_invoice(
-        shop_id=shop_id,
-        service_name=service_name,
-        unit_price=amount,
-        quantity=1,
-        notes=f"Created by finance agent from request: {query[:160]}",
-    )
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't create the invoice: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    invoice_number = result.get("invoice_number") or f"#{result.get('id')}"
-    total = result.get("total", amount)
-    response = AIMessage(content=f"Invoice {invoice_number} created for {service_name} at {_format_currency(total)}.")
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": result,
-    }
-
-
-def handle_trend_summary(state: AgentState) -> dict:
-    """Answer dynamic daily/weekly/monthly/yearly trend queries from backend data."""
-
-    shop_id = state["tenant_id"]
-    query = _resolve_finance_query(state)
-
-    result = finance_tools.trend_summary(shop_id, query)
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't load the requested trend right now: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    points = result.get("points", [])
-    if not points:
-        response = AIMessage(
-            content=(
-                f"I found no finance records for that time window ({result.get('range_start')} to {result.get('range_end')}). "
-                "Try asking for a broader range like 'this year trend'."
-            )
-        )
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    query_lower = query.lower()
-    if _asks_for_peak_revenue_period(query_lower):
-        response = AIMessage(
-            content=_generate_finance_response(
-                state,
-                "trend_peak_period",
-                result,
-                extra_instructions=(
-                    "The user wants the strongest revenue period in the requested window. "
-                    "State that period and the corresponding revenue directly."
-                ),
-            )
-        )
+    prompt = latest_user_text.lower()
+    if _looks_like_top_services_request(latest_user_text):
         return {
-            "messages": list(state["messages"]) + [response],
-            "tool_results": result,
+            "operation": "top_services",
+            "arguments": {"limit": _extract_requested_limit(latest_user_text) or 5},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched an obvious service ranking request.",
         }
 
-    if _wants_concise_period_summary(query_lower):
-        response = AIMessage(
-            content=_generate_finance_response(
-                state,
-                "trend_concise_period_summary",
-                result,
-                extra_instructions=(
-                    "The user wants a direct period summary. "
-                    "Include the date range and total revenue in the first sentence. "
-                    "Then mention only the most relevant supporting facts, usually completed services, average ticket, and strongest period."
-                ),
-            )
-        )
+    revenue_subject_signals = any(
+        keyword in prompt
+        for keyword in ("revenue", "sales", "trend", "performance", "average ticket", "avg ticket")
+    )
+
+    if not revenue_subject_signals or _looks_like_customer_metrics_request(latest_user_text):
+        return None
+
+    if _looks_like_weekly_revenue_breakdown_request(latest_user_text):
         return {
-            "messages": list(state["messages"]) + [response],
-            "tool_results": result,
+            "operation": "weekly_summary",
+            "arguments": {},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched a weekly revenue breakdown request.",
         }
 
-    response = AIMessage(
-        content=_generate_finance_response(
-            state,
-            "trend_detailed",
-            result,
-            extra_instructions=(
-                "Summarize the requested trend in a natural way. "
-                "If the user asked for daily or date-by-date detail, include a compact list based on the provided points. "
-                "Otherwise keep it concise and mention the strongest period and any notable directional pattern only if it is directly supported by the facts."
-            ),
-        )
+    if _requests_finance_trend(latest_user_text):
+        return {
+            "operation": "trend_summary",
+            "arguments": {"query": latest_user_text},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched an obvious trend request.",
+        }
+
+    specific_date = _resolve_obvious_daily_date(latest_user_text)
+    if specific_date:
+        return {
+            "operation": "daily_revenue",
+            "arguments": {"date": specific_date},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched an obvious single-day revenue request.",
+        }
+
+    if _prefers_weekly_summary(latest_user_text):
+        return {
+            "operation": "weekly_summary",
+            "arguments": {},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched an obvious weekly summary request.",
+        }
+
+    return None
+
+
+def _normalize_finance_operation(operation: str, plan: Dict[str, Any], messages: Sequence[BaseMessage]) -> str:
+    normalized_operation = str(operation or "").strip().lower()
+    if normalized_operation in OPERATION_ALIASES:
+        normalized_operation = OPERATION_ALIASES[normalized_operation]
+
+    plan_text = _flatten_text(plan).lower()
+    conversation_text = _recent_conversation_text(messages).lower()
+    latest_user_text = _latest_user_text(messages).lower()
+    prompt_text = f"{conversation_text} {plan_text}".strip()
+    combined_text = f"{normalized_operation} {prompt_text}".strip()
+    generic_operations = {"answer", "respond", "summarize", "summary", "lookup", "analyze", "analyse", "review"}
+
+    revenue_signals = any(
+        keyword in prompt_text
+        for keyword in ("revenue", "sales", "trend", "performance", "week", "month", "quarter", "year", "yesterday", "today")
+    )
+    customer_signals = any(
+        keyword in prompt_text
+        for keyword in ("customer", "customers", "client", "clients", "repeat rate", "new vs repeat")
+    )
+    user_revenue_signals = any(
+        keyword in latest_user_text
+        for keyword in ("revenue", "sales", "trend", "performance", "week", "month", "quarter", "year", "yesterday", "today")
+    )
+    user_customer_signals = any(
+        keyword in latest_user_text
+        for keyword in ("customer", "customers", "client", "clients", "repeat rate", "new vs repeat")
     )
 
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": result,
-    }
+    def _latest_user_operation() -> Optional[str]:
+        if user_revenue_signals and not user_customer_signals:
+            if _requests_finance_trend(latest_user_text):
+                return "trend_summary"
+            if finance_tools.extract_requested_date(latest_user_text):
+                return "daily_revenue"
+            if _prefers_weekly_summary(latest_user_text):
+                return "weekly_summary"
+            return "trend_summary"
+        if user_customer_signals and not user_revenue_signals:
+            return "customer_metrics"
+        return None
+
+    latest_user_operation = _latest_user_operation()
+
+    if normalized_operation == "customer_metrics" and (
+        (user_revenue_signals and not user_customer_signals) or (revenue_signals and not customer_signals)
+    ):
+        if _requests_finance_trend(combined_text):
+            return "trend_summary"
+        if finance_tools.extract_requested_date(combined_text):
+            return "daily_revenue"
+        if _prefers_weekly_summary(combined_text):
+            return "weekly_summary"
+        return "trend_summary"
+
+    if normalized_operation == "daily_revenue" and _requests_finance_trend(combined_text):
+        return "trend_summary"
+
+    if normalized_operation == "weekly_summary" and _requests_finance_trend(combined_text):
+        return "trend_summary"
+
+    if normalized_operation in generic_operations or normalized_operation not in SUPPORTED_OPERATIONS:
+        if any(keyword in combined_text for keyword in ("invoice", "invoices")):
+            return "list_invoices"
+        if latest_user_operation is not None:
+            return latest_user_operation
+        if any(keyword in combined_text for keyword in ("customer", "customers", "client", "clients", "repeat rate", "new vs repeat")):
+            return "customer_metrics"
+        if any(keyword in combined_text for keyword in ("service", "services", "best-selling", "most popular")):
+            return "top_services"
+        if any(keyword in combined_text for keyword in ("revenue", "sales", "trend", "performance", "week", "month", "quarter", "year", "yesterday", "today")):
+            if _requests_finance_trend(combined_text):
+                return "trend_summary"
+            if finance_tools.extract_requested_date(combined_text):
+                return "daily_revenue"
+            if _prefers_weekly_summary(combined_text):
+                return "weekly_summary"
+            return "trend_summary"
+
+    if normalized_operation == "trend_summary":
+        if _requests_finance_trend(combined_text):
+            return "trend_summary"
+        if finance_tools.extract_requested_date(combined_text):
+            return "daily_revenue"
+        if _prefers_weekly_summary(combined_text):
+            return "weekly_summary"
+
+    return normalized_operation or str(operation or "").strip()
 
 
-def handle_daily_revenue(state: AgentState) -> dict:
-    """Get revenue summary for a requested date (defaults to today)."""
+def _build_finance_executor(shop_id: int):
+    def executor(operation: str, arguments: Dict[str, Any], messages: Sequence[BaseMessage]) -> Dict[str, Any]:
+        user_text = ""
+        for message in reversed(list(messages)):
+            if hasattr(message, "content"):
+                user_text = str(message.content)
+                break
 
-    shop_id = state["tenant_id"]
-    # Prefer LLM-resolved date; fall back to heuristic extractor.
-    plan = (state.get("tool_results") or {}).get("llm_plan", {})
-    requested_date = plan.get("date") or _requested_specific_date(state)
-    result = finance_tools.daily_revenue(shop_id, date=requested_date)
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't load the revenue summary: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    response = AIMessage(
-        content=_generate_finance_response(
-            state,
-            "daily_revenue",
-            result,
-            extra_instructions=(
-                "Answer as a single-day revenue summary. "
-                "Include the target date and the revenue in the first sentence."
-            ),
-        )
-    )
-    
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": result
-    }
-
-
-def handle_weekly_summary(state: AgentState) -> dict:
-    """Get weekly revenue and metrics."""
-
-    shop_id = state["tenant_id"]
-    # Prefer LLM-resolved week_start and time_window label.
-    plan = (state.get("tool_results") or {}).get("llm_plan", {})
-    week_start = plan.get("week_start")
-    week_label = (plan.get("time_window") or "this_week").replace("_", " ")
-    if not week_start:
-        # LLM plan absent or unusable — fall back to heuristic.
-        week_start, week_label = _requested_week_start(state)
-    result = finance_tools.weekly_summary(shop_id, week_start=week_start)
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't load the {week_label} summary: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    weekly_result = {**result, "week_label": week_label}
-    response = AIMessage(
-        content=_generate_finance_response(
-            state,
-            "weekly_summary",
-            weekly_result,
-            extra_instructions=(
-                "Answer as a weekly business summary. "
-                "Mention the week label, total revenue, and best day if available."
-            ),
-        )
-    )
-    
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": result
-    }
-
-
-def handle_services_breakdown(state: AgentState) -> dict:
-    """Show revenue breakdown by service."""
-    
-    shop_id = state["tenant_id"]
-    result = finance_tools.top_services(shop_id)
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't load the service breakdown: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    response = AIMessage(
-        content=_generate_finance_response(
-            state,
-            "services_breakdown",
-            result,
-            extra_instructions=(
-                "The user wants service-level revenue contribution. "
-                "If service rows are available, name the strongest services in ranked order. "
-                "If no services are available, say that plainly."
-            ),
-        )
-    )
-    
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": result
-    }
-
-
-def handle_customer_metrics(state: AgentState) -> dict:
-    """Get customer analytics."""
-
-    shop_id = state["tenant_id"]
-    query = _resolve_finance_query(state)
-    original_query = _latest_user_text(state)
-
-    # Aggregate count questions ("how many customers served today") should use
-    # daily_analytics, not the client insights path which checks individual profiles.
-    is_aggregate_count = bool(re.search(
-        r"how many\s+(customer|client|people)",
-        original_query.lower(),
-    )) or any(w in original_query.lower() for w in ["served", "total customer", "customer count"])
-
-    if not is_aggregate_count and _is_client_specific_query(original_query):
-        try:
-            lower_query = original_query.lower()
-            result: Dict[str, Any]
-
-            if any(token in lower_query for token in ["who hasn't", "inactive", "hasn't visited", "not been in", "lapsed"]):
-                result = {
-                    "client_insight_type": "inactive_clients",
-                    "items": client_insights_tools.get_inactive_clients(shop_id),
-                }
-                response_text = _format_client_list(
-                    result["items"],
-                    "Inactive clients:",
-                    include_contact=True,
-                )
-            elif any(token in lower_query for token in ["top client", "top clients", "frequent", "loyal"]):
-                result = {
-                    "client_insight_type": "top_clients",
-                    "items": client_insights_tools.get_top_clients(shop_id),
-                }
-                response_text = _format_client_list(result["items"], "Top clients:")
-            elif any(token in lower_query for token in ["regulars", "at risk", "lapsed", "visit frequency", "loyalty"]):
-                result = client_insights_tools.get_visit_frequency_summary(shop_id)
-                result["client_insight_type"] = "visit_frequency_summary"
-                response_text = _format_visit_frequency_summary(result)
-            else:
-                client_id = _extract_client_id(original_query)
-                if client_id is not None:
-                    result = client_insights_tools.get_client_profile(shop_id, client_id)
-                    result["client_insight_type"] = "client_profile"
-                    if result.get("error"):
-                        response_text = result["error"]
-                    else:
-                        response_text = result.get("summary") or "Client profile loaded."
-                else:
-                    search_name = _extract_client_search_name(original_query)
-                    if search_name:
-                        matches = client_insights_tools.get_client_search(shop_id, search_name)
-                        if len(matches) == 1:
-                            result = client_insights_tools.get_client_profile(shop_id, int(matches[0]["id"]))
-                            result["client_insight_type"] = "client_profile"
-                            response_text = result.get("summary") or "Client profile loaded."
-                        else:
-                            result = {
-                                "client_insight_type": "client_search",
-                                "name": search_name,
-                                "items": matches,
-                            }
-                            response_text = _format_client_list(
-                                matches,
-                                f"Client search results for {search_name}:",
-                                include_last_service=True,
-                            )
-                    else:
-                        result = client_insights_tools.get_visit_frequency_summary(shop_id)
-                        result["client_insight_type"] = "visit_frequency_summary"
-                        response_text = _format_visit_frequency_summary(result)
-
-            response = AIMessage(content=response_text)
+        if operation == "daily_revenue":
+            return finance_tools.daily_revenue(shop_id, _optional_str(arguments.get("date")))
+        if operation == "weekly_summary":
+            result = finance_tools.weekly_summary(shop_id, _optional_str(arguments.get("week_start")))
+            if _prefers_structured_table(user_text):
+                result = dict(result)
+                result["preferred_presentation"] = "table"
+            return result
+        if operation == "trend_summary":
+            query = _optional_str(arguments.get("query")) or user_text
+            result = finance_tools.trend_summary(shop_id, query)
+            if _prefers_structured_table(query):
+                result = dict(result)
+                result["preferred_presentation"] = "table"
+            return result
+        if operation == "top_services":
+            result = finance_tools.top_services(shop_id, _to_int(arguments.get("limit")) or 5)
+            if _prefers_structured_table(user_text):
+                result = dict(result)
+                result["preferred_presentation"] = "table"
+            return result
+        if operation == "customer_metrics":
+            return finance_tools.customer_metrics(shop_id, _optional_str(arguments.get("query")) or user_text)
+        if operation == "export_report":
+            return finance_tools.export_report(shop_id, _optional_str(arguments.get("format")) or "csv")
+        if operation == "create_invoice":
+            service_name = _optional_str(arguments.get("service_name") or arguments.get("description"))
+            unit_price = _to_float(arguments.get("unit_price") or arguments.get("amount"))
+            if not service_name or unit_price is None:
+                return {"error": "create_invoice requires service_name and unit_price"}
+            quantity = _to_int(arguments.get("quantity")) or 1
+            customer_id = _to_int(arguments.get("customer_id"))
+            tax_rate = _to_float(arguments.get("tax_rate")) or 0.0
+            notes = _optional_str(arguments.get("notes"))
             return {
-                "messages": list(state["messages"]) + [response],
-                "tool_results": result,
+                "requires_approval": True,
+                "action": "create_invoice",
+                "details": {
+                    "service_name": service_name,
+                    "unit_price": unit_price,
+                    "quantity": quantity,
+                    "customer_id": customer_id,
+                    "tax_rate": tax_rate,
+                    "notes": notes,
+                },
+                "message": f"Creating an invoice for {service_name} at ${unit_price:.2f} has been submitted for owner approval.",
             }
-        except Exception as e:
-            response = AIMessage(content=f"I couldn't load client insights: {e}")
-            return {"messages": list(state["messages"]) + [response], "tool_results": {"error": str(e)}}
+        if operation == "record_payment":
+            amount = _to_float(arguments.get("amount"))
+            if amount is None:
+                return {"error": "record_payment requires amount"}
+            method = _optional_str(arguments.get("method")) or "cash"
+            invoice_id = _to_int(arguments.get("invoice_id"))
+            notes = _optional_str(arguments.get("notes"))
+            return {
+                "requires_approval": True,
+                "action": "record_payment",
+                "details": {
+                    "amount": amount,
+                    "method": method,
+                    "invoice_id": invoice_id,
+                    "notes": notes,
+                },
+                "message": f"Recording a {method} payment of ${amount:.2f} has been submitted for owner approval.",
+            }
+        if operation == "process_refund":
+            payment_id = _to_int(arguments.get("payment_id"))
+            if payment_id is None:
+                return {"error": "process_refund requires payment_id"}
+            refund_amount = _to_float(arguments.get("refund_amount") or arguments.get("amount"))
+            reason = _optional_str(arguments.get("reason") or arguments.get("notes"))
+            message = f"Refunding payment {payment_id}"
+            if refund_amount is not None:
+                message += f" for ${refund_amount:.2f}"
+            message += " has been submitted for owner approval."
+            return {
+                "requires_approval": True,
+                "action": "process_refund",
+                "details": {
+                    "payment_id": payment_id,
+                    "refund_amount": refund_amount,
+                    "reason": reason,
+                },
+                "message": message,
+            }
+        if operation == "list_invoices":
+            return finance_tools.list_invoices(
+                shop_id,
+                status=_optional_str(arguments.get("status")),
+                limit=_to_int(arguments.get("limit")) or 20,
+            )
+        if operation == "get_pos_summary":
+            return finance_tools.get_pos_summary(shop_id, _optional_str(arguments.get("date")))
+        if operation == "get_inactive_clients":
+            return finance_tools.get_inactive_clients(shop_id, _to_int(arguments.get("days_threshold")) or 45)
+        if operation == "get_top_clients":
+            return finance_tools.get_top_clients(shop_id, _to_int(arguments.get("limit")) or 10)
+        if operation == "get_visit_frequency_summary":
+            return finance_tools.get_visit_frequency_summary(shop_id)
+        if operation == "get_client_profile":
+            client_id = _to_int(arguments.get("client_id"))
+            if client_id is None:
+                return {"error": "get_client_profile requires client_id"}
+            return finance_tools.get_client_profile(shop_id, client_id)
+        if operation == "search_clients":
+            name = _optional_str(arguments.get("name") or arguments.get("query"))
+            if not name:
+                return {"error": "search_clients requires a client name"}
+            return finance_tools.search_clients(shop_id, name)
+        return {"error": f"Unsupported finance operation: {operation}"}
 
-    result = finance_tools.customer_metrics(shop_id, query=query)
+    return executor
+
+
+def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
     if result.get("error"):
-        response = AIMessage(content=f"I couldn't load customer metrics: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    response = AIMessage(
-        content=_generate_finance_response(
-            state,
-            "customer_metrics",
-            result,
-            extra_instructions=(
-                "Summarize customer metrics naturally. "
-                "Mention total customers, repeat customers or repeat rate, and average LTV when available."
-                "If profile_signal_limited is true, do not infer new vs repeat behavior; state that repeat/new split is unavailable from profile data."
-            ),
-        )
-    )
-    
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": result
-    }
-
-
-def handle_export_report(state: AgentState) -> dict:
-    """Prepare contextual finance export/transform (CSV, dates-only, revenue-only)."""
-
-    shop_id = state["tenant_id"]
-    current_text = _latest_user_text(state).lower()
-    query = _resolve_finance_query(state)
-
-    # Reuse the same dynamic backend query path as trend requests.
-    trend = finance_tools.trend_summary(shop_id, query)
-    if trend.get("error"):
-        response = AIMessage(content=f"I couldn't prepare the export right now: {trend['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": trend}
-
-    points = trend.get("points", [])
-    if not points:
-        response = AIMessage(
-            content=(
-                f"I found no records to export for {trend.get('range_start')} to {trend.get('range_end')}. "
-                "Try a broader time range first."
+        return f"I couldn't complete that finance task: {result['error']}"
+    if operation == "daily_revenue":
+        completed_services = int(result.get('completed_services', 0) or 0)
+        total_revenue = float(result.get('total_revenue', 0.0) or 0.0)
+        if completed_services == 0 and total_revenue <= 0:
+            return (
+                f"I don't see any completed services or recorded revenue for {result.get('date')} yet. "
+                "That usually means no services were closed out that day, or the shop data has not been backfilled yet."
             )
+        return (
+            f"Revenue for {result.get('date')} was ${total_revenue:.2f} "
+            f"across {completed_services} completed services. "
+            f"Average transaction was ${float(result.get('average_transaction', 0.0) or 0.0):.2f}."
         )
-        return {"messages": list(state["messages"]) + [response], "tool_results": trend}
-
-    # Transform output based on follow-up instruction.
-    if any(token in current_text for token in ["dates only", "date only", "list dates", "only dates", "just dates"]):
-        dates = [str(p.get("period")) for p in points]
-        transformed = {**trend, "transform": "dates_only", "values": dates}
-        response = AIMessage(
-            content=_generate_finance_response(
-                state,
-                "export_dates_only",
-                transformed,
-                extra_instructions="Return the dates as a clean list, with no extra commentary beyond a brief lead-in.",
+    if operation == "weekly_summary":
+        completed_services = int(result.get('completed_services', 0) or 0)
+        total_revenue = float(result.get('total_revenue', 0.0) or 0.0)
+        total_customers = int(result.get('total_customers', 0) or 0)
+        if completed_services == 0 and total_revenue <= 0:
+            return (
+                f"I don't see any completed services or recorded revenue for the week starting {result.get('week_start')} yet. "
+                "That usually means this week's services have not been closed out yet, or daily analytics have not been populated for these dates."
             )
+        if str(result.get("preferred_presentation") or "").lower() == "table":
+            return f"Here is the day-by-day revenue table for the week starting {result.get('week_start')}."
+        return (
+            f"Week starting {result.get('week_start')} generated ${total_revenue:.2f} from {completed_services} completed services "
+            f"and {total_customers} customer visit{'s' if total_customers != 1 else ''}. "
+            f"Best day: {result.get('best_day') or 'not available'}. "
+            f"Average ticket: ${float(result.get('average_transaction', 0.0) or 0.0):.2f}."
         )
-        return {
-            "messages": list(state["messages"]) + [response],
-            "tool_results": transformed,
-        }
-
-    if any(token in current_text for token in ["revenue only", "only revenue", "just revenue"]):
-        transformed = {**trend, "transform": "revenue_only"}
-        response = AIMessage(
-            content=_generate_finance_response(
-                state,
-                "export_revenue_only",
-                transformed,
-                extra_instructions="Return the period-by-period revenue values as a clean list, with no extra commentary beyond a brief lead-in.",
+    if operation == "trend_summary":
+        completed_services = int(result.get('completed_services', 0) or 0)
+        total_revenue = float(result.get('total_revenue', 0.0) or 0.0)
+        window_label = _humanize_window_label(result.get('window_display') or result.get('window'))
+        if completed_services == 0 and total_revenue <= 0:
+            return (
+                f"I don't see any completed services or recorded revenue for {window_label} yet. "
+                "If you expected activity, the underlying analytics for that range may still need to be populated."
             )
+        if str(result.get("preferred_presentation") or "").lower() == "table":
+            return f"Here is the day-by-day revenue table for {window_label}."
+        return (
+            f"For {window_label}, total revenue was ${total_revenue:.2f} "
+            f"from {completed_services} completed services. "
+            f"Best period: {result.get('best_period') or 'not available'} at ${float(result.get('best_period_revenue', 0.0) or 0.0):.2f}."
         )
-        return {
-            "messages": list(state["messages"]) + [response],
-            "tool_results": transformed,
-        }
-
-    csv_content = _points_to_csv(points)
-    filename = f"finance_trend_{shop_id}_{trend.get('window', 'custom')}.csv"
-    result = {
-        **trend,
-        "format": "csv",
-        "filename": filename,
-        "row_count": len(points),
-        "csv_content": csv_content,
-    }
-
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't prepare the export: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    response = AIMessage(
-        content=_generate_finance_response(
-            state,
-            "export_csv",
-            result,
-            extra_instructions=(
-                "Explain that a CSV-style export is prepared, include filename, row count, and date range, "
-                "and briefly preview the contents if useful."
-            ),
+    if operation == "top_services":
+        services = list(result.get("services") or [])
+        if not services:
+            return "I couldn't find any active services to rank right now."
+        if str(result.get("preferred_presentation") or "").lower() == "table":
+            return "Here is the service table I found for the current catalog."
+        lines = []
+        for service in services[:8]:
+            lines.append(f"- {service.get('name')} — ${float(service.get('cost', 0.0) or 0.0):.2f}")
+        return "Top services:\n" + "\n".join(lines)
+    if operation == "customer_metrics":
+        total_customers = int(result.get('total_customers', 0) or 0)
+        new_customers = int(result.get('new_customers', 0) or 0)
+        repeat_customers = int(result.get('repeat_customers', 0) or 0)
+        window_label = _humanize_window_label(result.get('window_display') or result.get('window'))
+        if total_customers == 0 and new_customers == 0 and repeat_customers == 0:
+            return (
+                f"I don't see any customer activity recorded for {window_label} yet. "
+                "That usually means there were no completed visits in that window, or customer profiles have not been built up for this shop yet."
+            )
+        return (
+            f"Customer metrics for {window_label}: {total_customers} total customers, "
+            f"{new_customers} new, {repeat_customers} repeat. "
+            f"Repeat rate: {round(float(result.get('repeat_rate', 0.0) or 0.0) * 100, 1)}%."
         )
-    )
-    
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": result
-    }
+    if operation in {"get_inactive_clients", "get_top_clients", "search_clients"}:
+        clients = list(result.get("clients") or [])
+        if not clients:
+            return "I couldn't find any matching clients."
+        lines = []
+        for client in clients[:8]:
+            lines.append(f"- #{client.get('id')}: {client.get('name')} — {client.get('visit_count', client.get('days_inactive', 'n/a'))}")
+        return f"I found {len(clients)} client(s):\n" + "\n".join(lines)
+    if operation == "get_visit_frequency_summary":
+        return (
+            f"Client mix: {int(result.get('total_clients', 0) or 0)} total clients, "
+            f"{int((result.get('regulars') or {}).get('count', 0) or 0)} regulars, "
+            f"{int((result.get('at_risk') or {}).get('count', 0) or 0)} at risk, and "
+            f"{int((result.get('lapsed') or {}).get('count', 0) or 0)} lapsed."
+        )
+    if operation == "get_client_profile":
+        return str(result.get("summary") or f"Client #{result.get('id')} profile loaded.")
+    if operation == "get_pos_summary":
+        return (
+            f"POS summary for {result.get('date')}: ${float(result.get('total_amount', 0.0) or 0.0):.2f} "
+            f"across {int(result.get('total_transactions', 0) or 0)} transactions."
+        )
+    if operation == "list_invoices":
+        invoices = list(result.get("invoices") or [])
+        if not invoices:
+            return "There are no invoices matching that filter right now."
+        return f"I found {len(invoices)} invoice(s)."
+    if operation == "export_report":
+        return f"Report prepared: {result.get('filename')} ({result.get('format')})."
+    if result.get("message"):
+        return str(result["message"])
+    return f"The finance specialist completed {operation.replace('_', ' ')}."
 
+def create_finance_runnable(shop_id: int | None = None):
+    if not shop_id:
+        raise ValueError("shop_id is required — cannot build the finance graph without it")
 
-def handle_other(state: AgentState) -> dict:
-    """Generic finance response."""
-    
-    # Fallback to dynamic trend query instead of generic canned response.
-    return handle_trend_summary(state)
-
-
-def handle_record_payment(state: AgentState) -> dict:
-    """Record a payment for a shop invoice."""
-    shop_id = state["tenant_id"]
-    query = _latest_user_text(state)
-
-    # Extract amount from user text
-    amount_match = re.search(r"\$\s*([\d,]+(?:\.\d+)?)", query)
-    if amount_match:
-        amount = float(amount_match.group(1).replace(",", ""))
-    else:
-        number_match = re.search(r"\b([\d,]+(?:\.\d+)?)\b", query)
-        amount = float(number_match.group(1).replace(",", "")) if number_match else 0.0
-
-    # Detect payment method
-    method = "cash"
-    lower = query.lower()
-    if any(w in lower for w in ["card", "credit", "debit"]):
-        method = "card"
-    elif "transfer" in lower or "bank" in lower:
-        method = "bank_transfer"
-
-    result = finance_tools.record_payment(
+    return build_specialist_runnable(
+        agent_name="finance",
         shop_id=shop_id,
-        amount=amount,
-        method=method,
-        notes=f"Recorded by finance agent: {query[:160]}",
+        temperature=0.2,
+        planner_instructions=PLANNER_INSTRUCTIONS,
+        supported_operations=SUPPORTED_OPERATIONS,
+        operation_aliases=OPERATION_ALIASES,
+        operation_normalizer=_normalize_finance_operation,
+        fast_plan_builder=_build_finance_fast_plan,
+        executor=_build_finance_executor(shop_id),
+        formatter=_format_finance_response,
     )
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't record the payment: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    payment_id = result.get("id", "?")
-    response = AIMessage(content=f"Payment of ${amount:.2f} ({method}) recorded successfully (ID: {payment_id}).")
-    return {"messages": list(state["messages"]) + [response], "tool_results": result}
 
 
-def handle_list_invoices(state: AgentState) -> dict:
-    """List invoices for the shop."""
-    shop_id = state["tenant_id"]
-    result = finance_tools.list_invoices(shop_id=shop_id)
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't load invoices: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    invoices = result.get("invoices", [])
-    count = result.get("count", 0)
-    if count == 0:
-        response = AIMessage(content="No invoices found for your shop.")
-    else:
-        lines = [f"Found {count} invoice(s):"]
-        for inv in invoices[:10]:
-            lines.append(f"- {inv.get('invoice_number', '?')} | ${inv.get('total', 0):.2f} | {inv.get('status', '?')}")
-        if count > 10:
-            lines.append(f"...and {count - 10} more.")
-        response = AIMessage(content="\n".join(lines))
-    return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-
-def handle_pos_summary(state: AgentState) -> dict:
-    """Show POS / transaction summary for a date."""
-    shop_id = state["tenant_id"]
-    query = _latest_user_text(state)
-    requested_date = finance_tools.extract_requested_date(query)
-    result = finance_tools.get_pos_summary(shop_id=shop_id, date=requested_date)
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't load the POS summary: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    total = result.get("total_amount", 0)
-    count = result.get("total_transactions", 0)
-    date_str = result.get("date", "today")
-    if count == 0:
-        response = AIMessage(content=f"No POS transactions recorded for {date_str}.")
-    else:
-        by_method = result.get("by_method", {})
-        method_lines = [f"  {m}: {d['count']} txn(s), ${d['total']:.2f}" for m, d in by_method.items()]
-        response = AIMessage(
-            content=f"POS summary for {date_str}: {count} transaction(s) totaling ${total:.2f}.\n" + "\n".join(method_lines)
-        )
-    return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-
-def build_finance_graph():
-    """
-    Build the LangGraph StateGraph for the Finance sub-agent.
-    
-    Flow:
-    1. classify - determine finance query type
-    2. route to handler (daily, weekly, services, customers, export, other)
-    3. END
-    """
-    
-    graph = StateGraph(AgentState)
-    
-    # Nodes
-    graph.add_node("classify", classify_entry)
-    graph.add_node("daily_revenue", handle_daily_revenue)
-    graph.add_node("weekly_summary", handle_weekly_summary)
-    graph.add_node("trend_summary", handle_trend_summary)
-    graph.add_node("services_breakdown", handle_services_breakdown)
-    graph.add_node("customer_metrics", handle_customer_metrics)
-    graph.add_node("export", handle_export_report)
-    graph.add_node("create_invoice", handle_create_invoice)
-    graph.add_node("record_payment", handle_record_payment)
-    graph.add_node("list_invoices", handle_list_invoices)
-    graph.add_node("pos_summary", handle_pos_summary)
-    graph.add_node("other", handle_other)
-    
-    # Edges — conditional routing uses finance_route() which reads from the LLM plan
-    graph.add_conditional_edges(
-        "classify",
-        lambda state: finance_route(state),
-        {
-            "daily_revenue": "daily_revenue",
-            "weekly_summary": "weekly_summary",
-            "trend_summary": "trend_summary",
-            "services_breakdown": "services_breakdown",
-            "customer_metrics": "customer_metrics",
-            "export": "export",
-            "create_invoice": "create_invoice",
-            "record_payment": "record_payment",
-            "list_invoices": "list_invoices",
-            "pos_summary": "pos_summary",
-            "other": "other"
-        }
-    )
-    
-    # All handlers end
-    for node in ["daily_revenue", "weekly_summary", "trend_summary", "services_breakdown",
-                  "customer_metrics", "export", "create_invoice", "record_payment",
-                  "list_invoices", "pos_summary", "other"]:
-        graph.add_edge(node, END)
-    
-    # Entry point
-    graph.set_entry_point("classify")
-    
-    return graph
-
-
-def create_finance_runnable():
-    """Compile the Finance graph into an executable runnable."""
-    graph = build_finance_graph()
-    return graph.compile()
-
-
-__all__ = [
-    "build_finance_graph",
-    "create_finance_runnable",
-    "finance_intent_classifier",
-]
+__all__ = ["create_finance_runnable"]

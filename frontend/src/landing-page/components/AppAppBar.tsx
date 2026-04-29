@@ -30,7 +30,7 @@ const StyledToolbar = styled(Toolbar)(({ theme }) => ({
     ? `rgba(${theme.vars.palette.background.defaultChannel} / 0.4)`
     : alpha(theme.palette.background.default, 0.4),
   boxShadow: (theme.vars || theme).shadows[1],
-  padding: '8px 12px',
+  padding: '10px 14px',
 }));
 
 export default function AppAppBar() {
@@ -158,30 +158,46 @@ export default function AppAppBar() {
             {/* Logo wrapper to allow scroll to top */}
             <Box
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              sx={{ cursor: 'pointer', display: 'flex', alignItems: 'center', mr: 2 }}
+              sx={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1.25, mr: 2.5 }}
             >
-              <Typography variant="h6" sx={{ color: 'text.primary', fontWeight: 'bold' }}>
-                ZeroQwait
-              </Typography>
+              <Box
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '12px',
+                  display: 'grid',
+                  placeItems: 'center',
+                  color: 'common.white',
+                  background: 'linear-gradient(135deg, #ff6b57 0%, #1e88e5 100%)',
+                  boxShadow: '0 10px 24px rgba(30, 136, 229, 0.24)',
+                }}
+              >
+                <SmartToyIcon sx={{ fontSize: 20 }} />
+              </Box>
+              <Box>
+                <Typography variant="h6" sx={{ color: 'text.primary', fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1 }}>
+                  ZeroQwait
+                </Typography>
+                <Typography sx={{ fontSize: '0.72rem', color: 'text.secondary', letterSpacing: '0.14em' }}>
+                  AI AGENT OPS
+                </Typography>
+              </Box>
             </Box>
-            <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
-              <Button variant="text" color="info" size="small" onClick={() => scrollToSection('features')}>
+            <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 0.5 }}>
+              <Button variant="text" color="info" size="small" sx={{ borderRadius: 999, px: 1.5 }} onClick={() => scrollToSection('features')}>
                 Features
               </Button>
-              <Button variant="text" color="info" size="small" onClick={() => scrollToSection('testimonials')}>
+              <Button variant="text" color="info" size="small" sx={{ borderRadius: 999, px: 1.5 }} onClick={() => scrollToSection('testimonials')}>
                 Testimonials
               </Button>
-              <Button variant="text" color="info" size="small" onClick={() => scrollToSection('highlights')}>
+              <Button variant="text" color="info" size="small" sx={{ borderRadius: 999, px: 1.5 }} onClick={() => scrollToSection('highlights')}>
                 Highlights
               </Button>
-              <Button variant="text" color="info" size="small" onClick={() => scrollToSection('pricing')}>
+              <Button variant="text" color="info" size="small" sx={{ borderRadius: 999, px: 1.5 }} onClick={() => scrollToSection('pricing')}>
                 Pricing
               </Button>
-              <Button variant="text" color="info" size="small" onClick={() => scrollToSection('faq')} sx={{ minWidth: 0 }}>
+              <Button variant="text" color="info" size="small" sx={{ minWidth: 0, borderRadius: 999, px: 1.5 }} onClick={() => scrollToSection('faq')}>
                 FAQ
-              </Button>
-              <Button variant="text" color="info" size="small" sx={{ minWidth: 0 }}>
-                Blog
               </Button>
             </Box>
           </Box>
@@ -192,11 +208,11 @@ export default function AppAppBar() {
               alignItems: 'center',
             }}
           >
-            <Button color="primary" variant="text" size="small" onClick={handleSignIn}>
+            <Button color="primary" variant="text" size="small" sx={{ borderRadius: 999, px: 1.5 }} onClick={handleSignIn}>
               Sign in
             </Button>
-            <Button color="primary" variant="contained" size="small" onClick={handleSignUp}>
-              Sign up
+            <Button color="primary" variant="contained" size="small" sx={{ borderRadius: 999, px: 2 }} onClick={handleSignUp}>
+              Start free
             </Button>
             <ColorModeIconDropdown />
           </Box>
@@ -231,7 +247,6 @@ export default function AppAppBar() {
                 <MenuItem onClick={() => scrollToSection('highlights')}>Highlights</MenuItem>
                 <MenuItem onClick={() => scrollToSection('pricing')}>Pricing</MenuItem>
                 <MenuItem onClick={() => scrollToSection('faq')}>FAQ</MenuItem>
-                <MenuItem>Blog</MenuItem>
                 <Divider sx={{ my: 3 }} />
                 <MenuItem>
                   <Button color="primary" variant="contained" fullWidth onClick={handleSignUp}>

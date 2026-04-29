@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from typing import List, Optional, Dict
 from modules.queues import schemas
 from modules.queues.service import queue_service
@@ -10,6 +10,7 @@ from shared.auth_utils import get_current_user, get_current_user_optional
 from permissions import check_shop_access
 from redis_client import redis_client
 from database import SessionLocal
+from audit_logger import audit
 from datetime import datetime, timedelta
 import random
 
@@ -265,8 +266,22 @@ def get_active_queue(
 @router.post("/shop/{shop_id}/join", response_model=schemas.QueueItem)
 async def join_queue(
     shop_id: int,
-    queue_item: schemas.QueueItemCreate
+    queue_item: schemas.QueueItemCreate,
+    request: Request,
 ):
+    client_ip = request.client.host if request.client else "unknown"
+    # Rate-limit: max 10 join attempts per IP per minute to prevent queue flooding
+    if not redis_client.check_rate_limit(client_ip, limit=10, window=60):
+        await audit(
+            action="QUEUE",
+            detail="queue_join_rate_limited",
+            shop_id=shop_id,
+            ip_address=client_ip,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests. Please wait before joining again.",
+        )
     try:
         shop = shop_service.get_shop(shop_id)
         if not shop:
@@ -295,8 +310,17 @@ async def join_queue(
             active_items = [i for i in all_items if i.status in [QUEUE_STATUS_WAITING, QUEUE_STATUS_BEING_SERVED]]
             new_item.position = len(active_items)
             await _broadcast_shop_live_snapshot(shop_id)
+            await audit(
+                action="QUEUE",
+                detail="queue_join",
+                shop_id=shop_id,
+                ip_address=client_ip,
+                metadata={"customer_name": queue_item.customer_name, "queue_item_id": new_item.id},
+            )
             return new_item
         raise HTTPException(status_code=500, detail="Failed to join queue")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to join queue: {str(e)}")
 

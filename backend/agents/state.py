@@ -22,6 +22,13 @@ class AgentState(TypedDict):
     - tenant_id: Shop ID (immutable, injected at entry point)
     - user_id: Authenticated owner's user ID
     - current_agent: Name of active agent ("supervisor", "receptionist", "finance", "hr")
+    - active_goal_id: Durable goal currently being worked
+    - active_task_id: Durable task currently being worked
+    - execution_mode: Interactive chat vs background/autonomous execution mode
+    - autonomy_policy: Current policy mode or policy bundle being applied
+    - event_context: Trigger metadata for scheduled jobs, anomalies, reminders, etc.
+    - proposed_actions: Structured actions under consideration before execution
+    - run_summary: Summary of the current run for notifications/history
     - pending_approval: High-impact action awaiting owner approval (dict or None)
     - tool_results: Latest tool execution results (dict or None)
     - needs_human_input: True when at interrupt_before breakpoint
@@ -37,6 +44,13 @@ class AgentState(TypedDict):
     
     # Agent routing & state
     current_agent: str
+    active_goal_id: Optional[int]
+    active_task_id: Optional[int]
+    execution_mode: Optional[str]
+    autonomy_policy: Optional[dict]
+    event_context: Optional[dict]
+    proposed_actions: Optional[list[dict[str, Any]]]
+    run_summary: Optional[dict]
     
     # Human-in-the-Loop (HITL) breakpoints
     pending_approval: Optional[dict]

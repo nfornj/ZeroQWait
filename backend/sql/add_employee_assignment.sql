@@ -1,5 +1,5 @@
 -- Add employee assignment to queue items
--- Run this in Supabase SQL Editor
+-- Run this against the current PostgreSQL database
 
 -- Add assigned_employee_id column to queue_items table
 ALTER TABLE queue_items 

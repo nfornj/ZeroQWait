@@ -1,20 +1,21 @@
 # Email Configuration Setup
 
 ## Current Status
-✅ Email utility code is implemented  
-✅ Gmail SMTP configuration is in place  
-⚠️ Gmail app password needs verification  
+
+- Email utility code is implemented
+- SMTP-based password reset flow exists
+- Email credentials must come from local or deployment-managed secrets
 
 ## Gmail SMTP Configuration
 
-The backend is configured to send emails via Gmail SMTP. Configuration is in `backend/.env`:
+The backend can send email via Gmail SMTP. Configuration belongs in `backend/.env` or deployment-managed secrets:
 
 ```env
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
-EMAIL_USER=usvisachat@gmail.com
-EMAIL_PASSWORD=toqjbrhokvnpiwwa
-EMAIL_FROM=NoWait <usvisachat@gmail.com>
+EMAIL_USER=your-email@example.com
+EMAIL_PASSWORD=your-app-password
+EMAIL_FROM=ZeroQwait <your-email@example.com>
 FRONTEND_URL=http://localhost:3000
 ```
 
@@ -37,15 +38,15 @@ Gmail is rejecting the app password with error:
 5. Create a new app password:
    - Select app: "Mail"
    - Select device: "Other (Custom name)"
-   - Enter name: "NoWait"
+   - Enter name: "ZeroQwait"
 6. Copy the 16-character password (it will have spaces)
-7. Update `backend/.env` with the password (remove all spaces):
+7. Update `backend/.env` with the password and keep it out of version control:
    ```env
    EMAIL_PASSWORD=abcdabcdabcdabcd
    ```
 8. Restart backend:
    ```bash
-   docker-compose restart backend
+   docker compose restart backend
    ```
 
 ### Option 2: Use Different Email Service
@@ -85,7 +86,7 @@ curl -X POST "http://localhost:8000/api/auth/forgot-password?email=test@example.
 
 ### Check Logs
 ```bash
-docker-compose logs backend --tail=20
+docker compose logs backend --tail=20
 ```
 
 ## Email Features Implemented
@@ -130,7 +131,7 @@ For a real app, you'll hit these quickly. Use a dedicated service instead.
 ## Code Location
 
 - Email utility: `backend/email_utils.py`
-- Usage in auth: `backend/routers/auth.py` (line 56)
+- Usage in auth: `backend/routers/auth.py`
 - Configuration: `backend/.env`
 
 ## Next Steps

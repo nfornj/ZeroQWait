@@ -1,289 +1,194 @@
 # Authorization Quick Reference Guide
 
-## For Developers: How to Add Authorization to New Endpoints
+## Purpose
 
-### Step 1: Choose Authentication Type
+Use this guide when adding or reviewing protected backend endpoints.
 
-#### Required Authentication (most endpoints)
+The current authorization model is application-level and shop-scoped:
+
+- JWT authentication establishes the current user
+- permission helpers enforce owner or employee access
+- public endpoints may use optional auth and sanitize data for non-staff users
+
+## Step 1: Choose Authentication Type
+
+### Required Authentication
+
 ```python
 from fastapi import Depends
 from auth_utils import get_current_user
 
 @router.get("/protected-endpoint")
 def my_endpoint(current_user: dict = Depends(get_current_user)):
-    # User must be authenticated
-    # current_user will never be None
-    pass
+    return {"user_id": current_user["id"]}
 ```
 
-#### Optional Authentication (public endpoints that show different data based on auth)
+Use this for owner workspaces, employee tools, analytics, approvals, and any write endpoint that should not be public.
+
+### Optional Authentication
+
 ```python
-from fastapi import Depends
 from typing import Optional
+from fastapi import Depends
 from auth_utils import get_current_user_optional
 
 @router.get("/public-endpoint")
 def my_endpoint(current_user: Optional[dict] = Depends(get_current_user_optional)):
-    # current_user can be None (unauthenticated)
-    # Check if current_user is not None before using
-    pass
+    if current_user:
+        return {"authenticated": True, "user_id": current_user["id"]}
+    return {"authenticated": False}
 ```
 
-### Step 2: Add Authorization Check
+Use this for public shop or queue views where authenticated staff may see more detail than customers or anonymous visitors.
 
-#### For Shop-Related Endpoints
+## Step 2: Add Shop Authorization
+
+### Owner-Only Shop Operation
+
 ```python
 from permissions import check_shop_access
 
-@router.put("/shops/{shop_id}/update")
-def update_shop(
+@router.put("/shops/{shop_id}/settings")
+def update_shop_settings(
     shop_id: int,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
-    # Only shop owner can update
     check_shop_access(shop_id, current_user, require_owner=True)
-    
-    # Your logic here
-    pass
+    return {"ok": True}
 ```
 
-#### For Queue Management Endpoints
+Use for:
+
+- shop settings
+- employee management
+- owner analytics
+- approval-gated owner actions
+
+### Owner Or Employee Operation
+
 ```python
 from permissions import check_shop_access
+from db_interface import db_interface
 
 @router.post("/queues/{queue_id}/call-next")
 def call_next(
     queue_id: int,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
-    # Get shop_id from queue
-    queue = supabase.table("queues").select("shop_id").eq("id", queue_id).execute()
-    shop_id = queue.data[0]["shop_id"]
-    
-    # Owner OR employee can call next
-    check_shop_access(shop_id, current_user, require_owner=False)
-    
-    # Your logic here
-    pass
+    queue = db_interface.get_queue_by_id(queue_id)
+    check_shop_access(queue["shop_id"], current_user, require_owner=False)
+    return {"ok": True}
 ```
 
-#### For Queue Item Endpoints (Alternative Helper)
+Use for:
+
+- queue serving actions
+- employee shift operations tied to a shop
+- staff-facing queue views
+
+### Queue Item Access Helper
+
 ```python
 from permissions import verify_queue_item_access
 
-@router.put("/queue-items/{item_id}/status")
+@router.patch("/queues/items/{item_id}/status")
 def update_status(
     item_id: int,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
-    # Automatically traces item → queue → shop and checks access
     access_data = verify_queue_item_access(item_id, current_user, require_owner=False)
-    
-    # access_data contains: queue_item, queue, shop_id
     queue_item = access_data["queue_item"]
-    
-    # Your logic here
-    pass
+    return {"item_id": queue_item["id"]}
 ```
 
-### Step 3: Sanitize Public Data (if needed)
+Use this when the request starts from a queue item and the permission check needs to trace back to the shop.
 
-#### For Endpoints That Return Shop/Queue Data
+## Step 3: Sanitize Public Data
+
 ```python
 from typing import Optional
 from fastapi import Depends
 from auth_utils import get_current_user_optional
 from permissions import sanitize_queue_data_for_public
 
-@router.get("/shops/{shop_id}")
-def get_shop(
+@router.get("/shops/{shop_id}/public-queue")
+def get_public_queue(
     shop_id: int,
-    current_user: Optional[dict] = Depends(get_current_user_optional)
+    current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
-    # Fetch shop data
-    shop = supabase.table("shops").select("*").eq("id", shop_id).execute().data[0]
-    
-    # Fetch queues with items
-    queues = supabase.table("queues").select("*").eq("shop_id", shop_id).execute().data
-    
-    for queue in queues:
-        # Fetch items
-        items = supabase.table("queue_items").select("*").eq("queue_id", queue["id"]).execute().data
-        queue["queue_items"] = items
-        
-        # Sanitize employee data for non-staff users
-        queue = sanitize_queue_data_for_public(queue, current_user, shop_id)
-    
-    shop["queues"] = queues
-    return shop
+    queue = {"queue_items": []}
+    return sanitize_queue_data_for_public(queue, current_user, shop_id)
 ```
 
-## Common Authorization Patterns
+Use this when returning queue or staffing-adjacent data to public or customer-facing surfaces.
 
-### Pattern: Owner-Only Operation
-```python
-check_shop_access(shop_id, current_user, require_owner=True)
-```
+The helper removes employee assignment details unless the current user is authenticated staff for that shop.
 
-**Use for**:
-- Creating/deleting shops
-- Adding/removing employees
-- Modifying shop settings
-- Viewing analytics
+## Common Patterns
 
-### Pattern: Owner OR Employee Operation
-```python
-check_shop_access(shop_id, current_user, require_owner=False)
-```
+### Role-Specific Check
 
-**Use for**:
-- Managing queue items
-- Calling next customer
-- Viewing queue details
-- Serving customers
-
-### Pattern: Role-Based Check
-```python
-if current_user.get("role") != "shop_owner":
-    raise HTTPException(status_code=403, detail="Shop owners only")
-```
-
-**Use for**:
-- Creating shops (shop_owner role required)
-- Clock in/out (employee role required)
-
-## Error Handling
-
-### Authorization Errors
 ```python
 from fastapi import HTTPException, status
 
-# 401 Unauthorized - User not authenticated
-raise HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Authentication required"
-)
-
-# 403 Forbidden - User authenticated but lacks permission
-raise HTTPException(
-    status_code=status.HTTP_403_FORBIDDEN,
-    detail="Access denied"
-)
-
-# 404 Not Found - Resource doesn't exist OR user doesn't have access
-raise HTTPException(
-    status_code=status.HTTP_404_NOT_FOUND,
-    detail="Shop not found"
-)
+if current_user.get("role") != "employee":
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Employees only",
+    )
 ```
 
-### Best Practice: Let Helpers Handle Errors
+Use role checks only when the action is not fundamentally shop-scoped, or when a specific actor type is required in addition to shop access.
+
+### Preferred Error Handling
+
+Let helpers raise the correct errors whenever possible.
+
 ```python
-# ✅ GOOD - helper raises appropriate exceptions
 check_shop_access(shop_id, current_user, require_owner=True)
-
-# ❌ BAD - manual checks are error-prone
-shop = supabase.table("shops").select("*").eq("id", shop_id).execute()
-if shop.data[0]["owner_id"] != current_user["id"]:
-    raise HTTPException(status_code=403, detail="Access denied")
 ```
 
-## Testing Authorization
+Avoid duplicating manual ownership checks in every route.
 
-### Test Template
+## Test Guidance
+
+When adding a new protected endpoint, cover at least these cases:
+
+- unauthenticated access returns `401` when auth is required
+- wrong owner or unrelated employee returns `403` or `404`, depending on endpoint behavior
+- valid owner succeeds
+- valid assigned employee succeeds when employee access is intended
+- public output is sanitized when employee data should be hidden
+
+Example test shape:
+
 ```python
-def test_unauthorized_access():
-    # Setup: Create shop owned by owner_a
-    shop_a = create_test_shop(owner_a["id"])
-    
-    # Test: Try to access as owner_b
-    headers = {"Authorization": f"Bearer {owner_b_token}"}
-    response = client.put(f"/api/shops/{shop_a['id']}", json={"name": "Hacked"}, headers=headers)
-    
-    # Assert: Should be denied
+def test_other_owner_cannot_update_shop(client, owner_b_token, shop_a):
+    response = client.put(
+        f"/api/shops/{shop_a['id']}",
+        json={"name": "Blocked"},
+        headers={"Authorization": f"Bearer {owner_b_token}"},
+    )
     assert response.status_code == 403
 ```
 
-## Quick Checklist for New Endpoints
+## Common Mistakes To Avoid
 
-- [ ] Does this endpoint need authentication?
-  - Yes → Use `get_current_user`
-  - No/Optional → Use `get_current_user_optional`
+- Do not trust client-provided user identifiers for authorization.
+- Do not skip shop access checks on shop-owned resources.
+- Do not return internal staffing data from public endpoints without sanitization.
 
-- [ ] Does this endpoint access shop data?
-  - Yes → Add `check_shop_access()` call
-  - Owner only? → `require_owner=True`
-  - Owner or employee? → `require_owner=False`
+## Quick Checklist
 
-- [ ] Does this endpoint return employee data?
-  - Yes → Use `sanitize_queue_data_for_public()`
-  - Show to staff only, hide from public
+- [ ] Does the endpoint require auth or optional auth?
+- [ ] Is the action shop-scoped?
+- [ ] Should it be owner-only or owner-plus-employee?
+- [ ] Does the response expose employee or internal staffing data?
+- [ ] Is there a focused authorization test for the new behavior?
 
-- [ ] Have you written tests?
-  - Test as shop owner (should succeed)
-  - Test as different shop owner (should fail)
-  - Test as employee (should succeed/fail based on logic)
-  - Test as unauthenticated user (should fail or show public data)
+## Related Files
 
-## Common Mistakes to Avoid
-
-### ❌ Don't: Trust client-provided user_id
-```python
-def bad_endpoint(user_id: int):
-    # User can pass any user_id!
-    pass
-```
-
-### ✅ Do: Use authenticated user from token
-```python
-def good_endpoint(current_user: dict = Depends(get_current_user)):
-    user_id = current_user["id"]
-    # user_id is verified from JWT
-    pass
-```
-
-### ❌ Don't: Forget to check shop ownership
-```python
-def bad_endpoint(shop_id: int, current_user: dict = Depends(get_current_user)):
-    # Missing authorization check!
-    shop = supabase.table("shops").select("*").eq("id", shop_id).execute()
-    return shop
-```
-
-### ✅ Do: Always verify access
-```python
-def good_endpoint(shop_id: int, current_user: dict = Depends(get_current_user)):
-    check_shop_access(shop_id, current_user, require_owner=True)
-    shop = supabase.table("shops").select("*").eq("id", shop_id).execute()
-    return shop
-```
-
-### ❌ Don't: Expose sensitive data in public endpoints
-```python
-def bad_endpoint(shop_id: int):
-    # Returns employee names, photos, etc. to anyone!
-    return supabase.table("shops").select("*, queues(*, queue_items(*))").execute()
-```
-
-### ✅ Do: Sanitize public data
-```python
-def good_endpoint(shop_id: int, current_user: Optional[dict] = Depends(get_current_user_optional)):
-    shop = fetch_shop_with_queues(shop_id)
-    for queue in shop["queues"]:
-        queue = sanitize_queue_data_for_public(queue, current_user, shop_id)
-    return shop
-```
-
-## Additional Resources
-
-- **Full documentation**: `SECURITY_IMPROVEMENTS.md`
-- **Integration tests**: `backend/tests/test_multi_tenancy.py`
-- **Helper functions**: `backend/permissions.py`
-- **Auth utilities**: `backend/auth_utils.py`
-
-## Questions?
-
-Review the existing endpoints in:
-- `backend/routers/shops.py` - Shop authorization examples
-- `backend/routers/queues.py` - Queue authorization examples
-- `backend/routers/employees.py` - Employee authorization examples
+- `permissions.py`
+- `auth_utils.py`
+- `db_interface.py`
+- `tests/test_multi_tenancy.py`

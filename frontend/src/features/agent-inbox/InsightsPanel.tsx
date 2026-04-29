@@ -13,11 +13,13 @@ import {
 } from "@mui/material";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { PieChart } from "@mui/x-charts/PieChart";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
-import type { InsightItem, AgentChart, AgentFile } from "./types";
+import { resolveAgentChart } from "./types";
+import type { InsightItem, AgentChart, AgentFile, ResolvedAgentChart } from "./types";
 import { useShop } from "../../contexts/ShopContext";
 
 interface InsightsPanelProps {
@@ -38,38 +40,72 @@ const downloadFile = (file: AgentFile) => {
   document.body.removeChild(link);
 };
 
-const MiniChart: React.FC<{ chart: AgentChart; accent: string }> = ({ chart, accent }) => {
-  const labels = chart.data.map((d) => d.label);
-  const values = chart.data.map((d) => d.value);
+const buildChartPalette = (chart: ResolvedAgentChart, accent: string) => {
+  const explicit = Array.isArray(chart.colors) ? chart.colors.filter((value) => typeof value === "string" && value.trim()) : [];
+  return explicit.length > 0 ? explicit : [accent, "#0284c7", "#0f766e", "#ca8a04"];
+};
 
-  if (chart.chartType === "sparkline") {
+const toChartSeries = (chart: ResolvedAgentChart, palette: string[]) =>
+  chart.series.map((series, index) => ({
+    data: chart.data.map((point) => {
+      const rawValue = point[series.key];
+      return typeof rawValue === "number" ? rawValue : Number(rawValue ?? 0);
+    }),
+    label: series.label,
+    color: series.color || palette[index % palette.length],
+  }));
+
+const MiniChart: React.FC<{ chart: AgentChart; accent: string }> = ({ chart, accent }) => {
+  const resolvedChart = resolveAgentChart(chart);
+
+  if (!resolvedChart) {
+    return null;
+  }
+
+  const labels = resolvedChart.data.map((point) => String(point[resolvedChart.xKey] ?? ""));
+  const palette = buildChartPalette(resolvedChart, accent);
+  const chartSeries = toChartSeries(resolvedChart, palette);
+  const primarySeries = chartSeries[0];
+
+  if (resolvedChart.chartType === "sparkline" && primarySeries) {
     return (
       <SparkLineChart
-        data={values}
+        data={primarySeries.data}
         height={48}
         curve="natural"
         area
-        color={accent}
+        color={primarySeries.color}
       />
     );
   }
 
-  if (chart.chartType === "pie") {
+  if (resolvedChart.chartType === "pie" && primarySeries) {
     return (
       <PieChart
-        series={[{ data: chart.data.map((d, i) => ({ id: i, value: d.value, label: d.label })) }]}
+        series={[
+          {
+            data: resolvedChart.data.map((point, index) => ({
+              id: index,
+              value: primarySeries.data[index] ?? 0,
+              label: String(point[resolvedChart.xKey] ?? ""),
+            })),
+          },
+        ]}
         height={120}
+        hideLegend={!resolvedChart.showLegend}
       />
     );
   }
 
-  if (chart.chartType === "line") {
+  if (resolvedChart.chartType === "line") {
     return (
       <LineChart
         xAxis={[{ data: labels, scaleType: "band" }]}
-        series={[{ data: values, color: accent }]}
+        series={chartSeries}
         height={120}
         margin={{ top: 8, right: 8, bottom: 24, left: 36 }}
+        hideLegend={!resolvedChart.showLegend}
+        grid={{ horizontal: resolvedChart.showGrid, vertical: false }}
       />
     );
   }
@@ -78,9 +114,11 @@ const MiniChart: React.FC<{ chart: AgentChart; accent: string }> = ({ chart, acc
   return (
     <BarChart
       xAxis={[{ data: labels, scaleType: "band" }]}
-      series={[{ data: values, color: accent }]}
+      series={chartSeries}
       height={120}
       margin={{ top: 8, right: 8, bottom: 24, left: 36 }}
+      hideLegend={!resolvedChart.showLegend}
+      grid={{ horizontal: resolvedChart.showGrid, vertical: false }}
     />
   );
 };
@@ -159,12 +197,49 @@ const InsightsPanel: React.FC<InsightsPanelProps> = ({ items }) => {
                   <>
                     <Stack direction="row" spacing={0.75} alignItems="center" mb={0.5}>
                       <BarChartRoundedIcon sx={{ fontSize: 16, color: brandPrimary }} />
-                      <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                        {item.chart.title}
-                      </Typography>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                          {item.chart.title}
+                        </Typography>
+                        {item.chart.description ? (
+                          <Typography variant="caption" color="text.secondary">
+                            {item.chart.description}
+                          </Typography>
+                        ) : null}
+                      </Box>
                     </Stack>
                     <MiniChart chart={item.chart} accent={brandPrimary} />
                   </>
+                )}
+
+                {item.type === "summary" && item.summary && (
+                  <Stack spacing={1}>
+                    <Stack direction="row" spacing={0.75} alignItems="center">
+                      <WarningAmberRoundedIcon sx={{ fontSize: 16, color: brandPrimary }} />
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                        {item.summary.title}
+                      </Typography>
+                    </Stack>
+                    <Typography variant="body2" color="text.secondary">
+                      {item.summary.body}
+                    </Typography>
+                    {!!item.summary.chips?.length && (
+                      <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                        {item.summary.chips.map((chip) => (
+                          <Chip
+                            key={`${item.id}_${chip}`}
+                            size="small"
+                            label={chip}
+                            sx={{
+                              bgcolor: alpha(brandPrimary, 0.1),
+                              color: brandPrimary,
+                              border: `1px solid ${alpha(brandPrimary, 0.18)}`,
+                            }}
+                          />
+                        ))}
+                      </Stack>
+                    )}
+                  </Stack>
                 )}
 
                 {item.type === "file" && item.file && (

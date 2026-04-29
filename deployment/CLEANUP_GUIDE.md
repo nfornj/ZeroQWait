@@ -11,7 +11,7 @@ These files are outdated or have been reorganized into the `/deployment` folder:
 ❌ deploy-local.sh        → See deployment/scripts/deploy-local.sh
 ❌ deploy-k8s.sh          → See deployment/scripts/deploy-k8s.sh
 ❌ deploy-github.sh       → Legacy, use GitHub Actions instead
-❌ deploy-pi.sh           → Legacy Raspberry Pi script
+❌ deploy-pi.sh           → Legacy host-specific script
 ❌ deploy_to_pi.sh        → Legacy, replaced by deployment folder
 ❌ build-and-push.sh      → Legacy, use Docker directly
 ❌ complete-deployment.sh → Legacy, outdated

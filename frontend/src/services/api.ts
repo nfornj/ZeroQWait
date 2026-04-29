@@ -1,5 +1,42 @@
 import axios from 'axios';
 
+// Centralized API client with auth interceptor
+const api = axios.create({
+  baseURL: process.env.REACT_APP_API_URL || '/api',
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      // Only redirect to /login from protected pages — never from public pages
+      // like the landing page (/) which would cause the root-URL jitter.
+      const publicPaths = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
+      const isPublic = publicPaths.some(
+        (p) =>
+          window.location.pathname === p ||
+          window.location.pathname.startsWith('/shop-ai') ||
+          window.location.pathname.startsWith('/queue/')
+      );
+      if (!isPublic) {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default api;
+
 // Types
 export interface HaircutService {
   id: number;

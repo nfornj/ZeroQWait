@@ -1,6 +1,8 @@
+// RESTYLED: Perplexity-style
 import React, { createContext, useState, useContext, useEffect, useMemo } from 'react';
-import { ThemeProvider as MUIThemeProvider, createTheme, Theme } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
+import { ThemeProvider as MUIThemeProvider, createTheme } from '@mui/material/styles';
+
+import { createOwnerBrandTokens } from '../hooks/useOwnerBrand';
 
 // Define available themes
 export type ThemePreset = 'default' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'corporate';
@@ -104,39 +106,75 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const theme = useMemo(() => {
-        // ... (theme creation logic) ...
-        // We can inject the gradient into the theme if we want, but keeping it separate is also fine
+        const palettePrimary = themePalettes[themePreset].primary;
+        const paletteSecondary = themePalettes[themePreset].secondary;
+
         return createTheme({
-            // ... (existing theme config) ...
             palette: {
                 mode,
                 primary: {
-                    main: themePalettes[themePreset].primary,
+                    main: palettePrimary,
                 },
                 secondary: {
-                    main: themePalettes[themePreset].secondary,
+                    main: paletteSecondary,
                 },
-                // ...
             },
+            ownerBrand: createOwnerBrandTokens(mode, palettePrimary, palettePrimary, paletteSecondary),
+            shape: { borderRadius: 10 },
             typography: {
                 fontFamily: appFontFamily,
-                h1: { fontWeight: 700, letterSpacing: '-0.02em' },
-                h2: { fontWeight: 700, letterSpacing: '-0.02em' },
-                h3: { fontWeight: 700, letterSpacing: '-0.015em' },
-                h4: { fontWeight: 700, letterSpacing: '-0.01em' },
-                h5: { fontWeight: 650 },
-                h6: { fontWeight: 650 },
-                subtitle1: { fontWeight: 600 },
-                subtitle2: { fontWeight: 600 },
-                body1: { fontWeight: 500 },
-                body2: { fontWeight: 500 },
+                fontSize: 14,
+                fontWeightLight: 300,
+                fontWeightRegular: 400,
+                fontWeightMedium: 500,
+                fontWeightBold: 600,
+                body1: { fontSize: '0.875rem', fontWeight: 400, lineHeight: 1.5 },
+                body2: { fontSize: '0.8125rem', fontWeight: 400, lineHeight: 1.5 },
+                subtitle1: { fontSize: '0.875rem', fontWeight: 500 },
+                subtitle2: { fontSize: '0.8125rem', fontWeight: 500 },
+                h6: { fontSize: '1rem', fontWeight: 600, letterSpacing: '-0.01em' },
+                h5: { fontSize: '1rem', fontWeight: 600, letterSpacing: '-0.01em' },
+                h4: { fontSize: '1.125rem', fontWeight: 600, letterSpacing: '-0.01em' },
+                h3: { fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.015em' },
+                h2: { fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.02em' },
+                h1: { fontSize: '2rem', fontWeight: 700, letterSpacing: '-0.02em' },
                 button: {
-                    fontWeight: 600,
-                    letterSpacing: '0.01em',
+                    fontSize: '0.875rem',
+                    fontWeight: 500,
                     textTransform: 'none',
+                    letterSpacing: '0em',
+                },
+                caption: { fontSize: '0.75rem', fontWeight: 400 },
+                overline: {
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                    lineHeight: 1.6,
                 },
             },
-            // ...
+            components: {
+                MuiCard: {
+                    defaultProps: {
+                        elevation: 0,
+                    },
+                },
+                MuiButton: {
+                    styleOverrides: {
+                        root: {
+                            textTransform: 'none',
+                            borderRadius: 10,
+                        },
+                    },
+                },
+                MuiChip: {
+                    styleOverrides: {
+                        root: {
+                            borderRadius: 8,
+                        },
+                    },
+                },
+            },
         });
     }, [mode, themePreset]); // Re-create theme only when these change
 
@@ -151,7 +189,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return (
         <ThemeContext.Provider value={{ mode, toggleMode, themePreset, setThemePreset, dashboardGradient, setDashboardGradient, timeZone, setTimeZone }}>
             <MUIThemeProvider theme={theme}>
-                <CssBaseline />
                 {children}
             </MUIThemeProvider>
         </ThemeContext.Provider>

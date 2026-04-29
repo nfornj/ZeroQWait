@@ -35,11 +35,11 @@ const ShopDashboardPage: React.FC = () => {
                                     <Chip icon={<AutoAwesomeRoundedIcon />} label="MUI Widgets" color="primary" variant="outlined" />
                                     <Button
                                         component={RouterLink}
-                                        to="/agent-inbox"
+                                        to="/dashboard"
                                         variant="contained"
                                         endIcon={<OpenInNewRoundedIcon />}
                                     >
-                                        Open Agent Inbox
+                                        Open Live Dashboard
                                     </Button>
                                 </Stack>
                             </Stack>
@@ -49,7 +49,7 @@ const ShopDashboardPage: React.FC = () => {
 
                 <Grid size={{ xs: 12, md: 4 }}>
                     <Alert severity="info" sx={{ borderRadius: 3, height: '100%' }}>
-                        Tip: Use Agent Inbox for approvals and orchestration chat, and use dashboard widgets for performance monitoring.
+                        Tip: Use the live dashboard for today view, operations summaries, and agent orchestration. This page remains the historical analytics workspace.
                     </Alert>
                 </Grid>
             </Grid>

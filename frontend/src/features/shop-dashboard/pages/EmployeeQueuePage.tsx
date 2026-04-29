@@ -21,6 +21,7 @@ import {
     TextField,
     Paper,
     Tooltip,
+    Skeleton,
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -38,7 +39,8 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
-import axios from 'axios';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import api from '../../../services/api';
 import { useAuth } from '../../../contexts/AuthContext';
 import ProfilePhotoUploader from '../../../components/ProfilePhotoUploader';
 import { useShop } from '../../../contexts/ShopContext';
@@ -78,12 +80,14 @@ const EmployeeQueuePage: React.FC = () => {
     const [selectedCustomer, setSelectedCustomer] = useState<QueueItem | null>(null);
     const [removeReason, setRemoveReason] = useState('');
 
-    // Add Walk-in State
     const [addDialogOpen, setAddDialogOpen] = useState(false);
     const [newCustomerName, setNewCustomerName] = useState('');
     const [newCustomerPhone, setNewCustomerPhone] = useState('');
     const [services, setServices] = useState<any[]>([]);
     const [selectedServiceId, setSelectedServiceId] = useState<number | ''>('');
+    const [connectionLost, setConnectionLost] = useState(false);
+    const [serveConfirmCustomer, setServeConfirmCustomer] = useState<QueueItem | null>(null);
+    const [queueLoading, setQueueLoading] = useState(false);
 
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -104,18 +108,13 @@ const EmployeeQueuePage: React.FC = () => {
     const fetchInitialData = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
 
             // Fetch shops
-            const shopsResponse = await axios.get(`/employees/my-shops`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const shopsResponse = await api.get(`/employees/my-shops`);
             setShops(shopsResponse.data);
 
             // Fetch current shift
-            const shiftResponse = await axios.get(`/current-shift`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const shiftResponse = await api.get(`/current-shift`);
 
             if (shiftResponse.data) {
                 setCurrentShift(shiftResponse.data);
@@ -133,9 +132,7 @@ const EmployeeQueuePage: React.FC = () => {
 
                     // Fetch services
                     try {
-                        const servicesRes = await axios.get(`/shops/${currentShop.id}/services`, {
-                            headers: { Authorization: `Bearer ${token}` }
-                        });
+                        const servicesRes = await api.get(`/shops/${currentShop.id}/services`);
                         setServices(servicesRes.data.filter((s: any) => s.is_active));
                     } catch (e) {
                         console.error("Failed to fetch services", e);
@@ -153,24 +150,22 @@ const EmployeeQueuePage: React.FC = () => {
         const id = shopId || selectedShop?.id;
         if (!id) return;
 
+        setQueueLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`/queues/shop/${id}/active`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/queues/shop/${id}/active`);
             setQueue(response.data.queue_items || []);
+            setConnectionLost(false);
         } catch (err) {
-            // Silently fail - retry on next interval
+            setConnectionLost(true);
+        } finally {
+            setQueueLoading(false);
         }
     };
 
     const handleClockIn = async (shopId: number) => {
         try {
             setError(null);
-            const token = localStorage.getItem('token');
-            await axios.post(`/clock-in/${shopId}`, {}, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.post(`/clock-in/${shopId}`, {});
             setSuccess('Clocked in successfully!');
             await fetchInitialData();
         } catch (err: any) {
@@ -181,10 +176,7 @@ const EmployeeQueuePage: React.FC = () => {
     const handleClockOut = async () => {
         try {
             setError(null);
-            const token = localStorage.getItem('token');
-            await axios.post(`/clock-out`, {}, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.post(`/clock-out`, {});
             setSuccess('Clocked out successfully!');
             setCurrentShift(null);
             setSelectedShop(null);
@@ -200,17 +192,9 @@ const EmployeeQueuePage: React.FC = () => {
 
         try {
             setError(null);
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`/queues/shop/${selectedShop.id}/active`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-
+            const response = await api.get(`/queues/shop/${selectedShop.id}/active`);
             const queueId = response.data.id;
-
-            await axios.post(`/queues/${queueId}/call-next`, {}, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-
+            await api.post(`/queues/${queueId}/call-next`, {});
             setSuccess('Called next customer!');
             fetchQueue();
         } catch (err: any) {
@@ -223,9 +207,7 @@ const EmployeeQueuePage: React.FC = () => {
 
         try {
             setError(null);
-            const token = localStorage.getItem('token');
-            await axios.delete(`/queues/items/${selectedCustomer.id}`, {
-                headers: { Authorization: `Bearer ${token}` },
+            await api.delete(`/queues/items/${selectedCustomer.id}`, {
                 params: { reason: removeReason }
             });
             setSuccess('Customer removed from queue');
@@ -238,15 +220,17 @@ const EmployeeQueuePage: React.FC = () => {
         }
     };
 
-    const handleServeSpecific = async (customer: QueueItem) => {
-        if (!window.confirm(`Serve ${customer.customer_name} now (skip the queue)?`)) return;
+    const handleServeSpecific = (customer: QueueItem) => {
+        setServeConfirmCustomer(customer);
+    };
 
+    const confirmServeSpecific = async () => {
+        if (!serveConfirmCustomer) return;
+        const customer = serveConfirmCustomer;
+        setServeConfirmCustomer(null);
         try {
             setError(null);
-            const token = localStorage.getItem('token');
-            await axios.post(`/queues/items/${customer.id}/serve`, {}, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.post(`/queues/items/${customer.id}/serve`, {});
             setSuccess(`Now serving ${customer.customer_name}`);
             await fetchQueue();
         } catch (err: any) {
@@ -257,10 +241,7 @@ const EmployeeQueuePage: React.FC = () => {
     const handleCompleteCustomer = async (customer: QueueItem) => {
         try {
             setError(null);
-            const token = localStorage.getItem('token');
-            await axios.patch(`/queues/items/${customer.id}/status?new_status=completed`, {}, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.patch(`/queues/items/${customer.id}/status?new_status=completed`, {});
             setSuccess(`Completed service for ${customer.customer_name}`);
             await fetchQueue();
         } catch (err: any) {
@@ -270,16 +251,9 @@ const EmployeeQueuePage: React.FC = () => {
 
     const handleUploadPhoto = async (photoDataUrl: string) => {
         try {
-            const token = localStorage.getItem('token');
-            await axios.post(`/upload-profile-photo`,
+            await api.post(`/upload-profile-photo`,
                 { photo_url: photoDataUrl },
-                {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    params: { photo_url: photoDataUrl }
-                }
+                { params: { photo_url: photoDataUrl } }
             );
             setSuccess('Profile photo updated!');
         } catch (err: any) {
@@ -293,7 +267,7 @@ const EmployeeQueuePage: React.FC = () => {
         try {
             setError(null);
 
-            await axios.post(`/queues/shop/${selectedShop.id}/join`, {
+            await api.post(`/queues/shop/${selectedShop.id}/join`, {
                 customer_name: newCustomerName,
                 customer_phone: newCustomerPhone,
                 service_id: selectedServiceId || undefined,
@@ -519,6 +493,9 @@ const EmployeeQueuePage: React.FC = () => {
                                         <Typography variant="h6" fontWeight={700}>
                                             Waiting Queue ({waitingCustomers.length})
                                         </Typography>
+                                        {connectionLost && (
+                                            <Chip icon={<WarningAmberIcon />} label="Connection lost" color="warning" size="small" />
+                                        )}
                                     </Stack>
                                     <Button
                                         variant="outlined"
@@ -529,7 +506,13 @@ const EmployeeQueuePage: React.FC = () => {
                                     >
                                         Add Walk-in Customer
                                     </Button>
-                                    {waitingCustomers.length === 0 ? (
+                                    {queueLoading && waitingCustomers.length === 0 ? (
+                                        <Stack spacing={1}>
+                                            {[1, 2, 3].map(i => (
+                                                <Skeleton key={i} variant="rectangular" height={56} sx={{ borderRadius: 1 }} />
+                                            ))}
+                                        </Stack>
+                                    ) : waitingCustomers.length === 0 ? (
                                         <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
                                             No customers waiting
                                         </Typography>
@@ -674,6 +657,22 @@ const EmployeeQueuePage: React.FC = () => {
                         sx={{ borderRadius: 3 }}
                     >
                         Remove
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Serve Customer Confirmation Dialog */}
+            <Dialog open={serveConfirmCustomer !== null} onClose={() => setServeConfirmCustomer(null)} PaperProps={{ sx: { borderRadius: 3 } }}>
+                <DialogTitle>Serve Customer Out of Order</DialogTitle>
+                <DialogContent>
+                    <Typography>
+                        Serve <strong>{serveConfirmCustomer?.customer_name}</strong> now, skipping ahead in the queue?
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setServeConfirmCustomer(null)}>Cancel</Button>
+                    <Button variant="contained" onClick={confirmServeSpecific} sx={{ borderRadius: 3 }}>
+                        Serve Now
                     </Button>
                 </DialogActions>
             </Dialog>

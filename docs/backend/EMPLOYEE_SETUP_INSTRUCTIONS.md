@@ -1,86 +1,70 @@
-# Employee Management System - Setup Instructions
+# Employee Management Setup
 
-## ✅ What's Been Implemented
+This document reflects the current employee-management surface in ZeroQwait.
 
-1. **Database Schema** - SQL script created
-2. **Backend Schemas** - Employee role and schemas added
-3. **Permissions System** - Role-based access control module
-4. **Employee API Endpoints** - Full CRUD for employee management
-5. **Router Integration** - Employees router added to main app
+## Overview
 
-## 🔧 What You Need to Do
+Employee management is part of the active backend and does not require an external SQL-editor workflow.
 
-### Step 1: Create Database Table in Supabase
+Current employee-related behavior includes:
 
-1. Go to your Supabase dashboard: https://supabase.com/dashboard
-2. Select your project (`yuxfpspyzyhesfuspjns`)
-3. Go to **SQL Editor** in the left sidebar
-4. Copy and paste the SQL from `backend/sql/create_shop_employees_table.sql`:
+- shop owners adding and removing employees from a shop
+- employees viewing assigned shops
+- employee shift clock-in and clock-out
+- employee profile photo updates
+- owner and employee permission boundaries enforced through the backend permission layer
 
-```sql
-CREATE TABLE IF NOT EXISTS shop_employees (
-  id SERIAL PRIMARY KEY,
-  shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  created_by INTEGER REFERENCES users(id),
-  is_active BOOLEAN DEFAULT TRUE,
-  UNIQUE(shop_id, user_id)
-);
+## Current Endpoints
 
-CREATE INDEX idx_shop_employees_shop_id ON shop_employees(shop_id);
-CREATE INDEX idx_shop_employees_user_id ON shop_employees(user_id);
-CREATE INDEX idx_shop_employees_is_active ON shop_employees(is_active);
-```
+### Owner-Only Employee Management
 
-5. Click **Run** to execute
-6. Verify the table was created in the **Table Editor**
+- `POST /api/shops/{shop_id}/employees`
+- `GET /api/shops/{shop_id}/employees`
+- `DELETE /api/shops/{shop_id}/employees/{employee_id}`
+- `PUT /api/shops/{shop_id}/employees/{employee_id}/reactivate`
 
-### Step 2: Rebuild and Restart Backend
+### Employee Dashboard And Shift Endpoints
+
+- `GET /api/employees/my-shops`
+- `GET /api/current-shift`
+- `POST /api/clock-in/{shop_id}`
+- `POST /api/clock-out`
+- `POST /api/upload-profile-photo`
+
+These routes are implemented in `backend/modules/employees/router.py`.
+
+## Local Setup
+
+1. Start the support services:
 
 ```bash
-cd /Users/neekrish/FastCuts
-docker-compose down backend
-docker-compose build --no-cache backend
-docker-compose up -d backend
+docker compose up -d db redis booking-mcp finance-mcp hr-mcp odoo
 ```
 
-### Step 3: Test the New Endpoints
+2. Start the backend:
 
-Visit http://localhost:8000/docs to see the new Employee endpoints:
-
-#### New API Endpoints
-
-**Employee Management** (Owner only):
-- `POST /api/shops/{shop_id}/employees` - Add employee
-- `GET /api/shops/{shop_id}/employees` - List employees
-- `DELETE /api/shops/{shop_id}/employees/{employee_id}` - Remove employee
-- `PUT /api/shops/{shop_id}/employees/{employee_id}/reactivate` - Reactivate employee
-
-**Employee Dashboard**:
-- `GET /api/employees/my-shops` - Get shops for current employee
-
-## 📋 Testing Checklist
-
-### Test 1: Create a Shop (if you don't have one)
 ```bash
-curl -X POST "http://localhost:8000/api/shops/" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Test Barber Shop",
-    "description": "Test shop for employee management",
-    "shop_type": "barbershop",
-    "address": "123 Main St",
-    "city": "New York",
-    "state": "NY",
-    "zip_code": "10001",
-    "country": "United States",
-    "phone": "555-1234"
-  }'
+cd backend
+uv sync --dev
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Test 2: Add an Employee
+3. Open the API docs:
+
+- `http://localhost:8000/docs`
+
+## Manual Validation Flow
+
+### 1. Create or use a shop-owner account
+
+Authenticate through:
+
+```text
+POST /api/auth/token
+```
+
+### 2. Add an employee to a shop
+
 ```bash
 curl -X POST "http://localhost:8000/api/shops/1/employees" \
   -H "Authorization: Bearer YOUR_OWNER_TOKEN" \
@@ -88,96 +72,80 @@ curl -X POST "http://localhost:8000/api/shops/1/employees" \
   -d '{
     "username": "employee1",
     "email": "employee1@test.com",
-    "password": "employeepass123"
+    "password": "employeepass123",
+    "role": "employee"
   }'
 ```
 
-### Test 3: List Employees
+### 3. List shop employees
+
 ```bash
 curl -X GET "http://localhost:8000/api/shops/1/employees" \
   -H "Authorization: Bearer YOUR_OWNER_TOKEN"
 ```
 
-### Test 4: Employee Login
+### 4. Sign in as the employee
+
 ```bash
 curl -X POST "http://localhost:8000/api/auth/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=employee1&password=employeepass123"
 ```
 
-### Test 5: Employee Access Their Shops
+### 5. Verify employee shop access
+
 ```bash
 curl -X GET "http://localhost:8000/api/employees/my-shops" \
   -H "Authorization: Bearer EMPLOYEE_TOKEN"
 ```
 
-## 🔐 Permission System
+### 6. Verify shift actions
 
-### Role Hierarchy
+```bash
+curl -X POST "http://localhost:8000/api/clock-in/1" \
+  -H "Authorization: Bearer EMPLOYEE_TOKEN"
+```
 
-**Shop Owner**:
-- ✅ Full access to their shops
-- ✅ Can add/remove employees
-- ✅ Can manage queues
-- ✅ Can modify shop settings
-- ✅ Can view analytics
+```bash
+curl -X POST "http://localhost:8000/api/clock-out" \
+  -H "Authorization: Bearer EMPLOYEE_TOKEN"
+```
 
-**Employee**:
-- ✅ Can view assigned shop details
-- ✅ Can manage queue items (serve customers)
-- ❌ Cannot add/remove employees
-- ❌ Cannot modify shop settings
-- ❌ Cannot view analytics
-- ❌ Cannot access other shops
+## Permission Model
 
-**Customer**:
-- ✅ Can join queues
-- ❌ Cannot manage queues
-- ❌ Cannot access shop management
+### Shop Owners
 
-## 🚀 Next Steps (Queue Permissions Update)
+- can add, list, remove, and reactivate employees for their own shops
+- can access owner-only operational and analytics surfaces
 
-The queue endpoints still need to be updated to use the new permission system. This is next on the todo list.
+### Employees
 
-After that's done, employees will be able to:
-1. Call the next customer in queue
-2. Update queue item status (waiting → being_served → completed)
-3. View all queue items
+- can access only assigned shops
+- can use employee-facing shift and profile actions
+- cannot perform owner-only shop administration
 
-But employees will NOT be able to:
-1. Create/delete queues
-2. Modify shop settings
-3. View analytics
+### Customers And Public Users
 
-## 📝 Frontend Integration (Coming Soon)
+- cannot access employee management endpoints
 
-Once backend is tested, you'll need to:
-1. Create EmployeeManagementPage for shop owners
-2. Add employee list/add/remove UI
-3. Create simplified employee dashboard
-4. Add role-based navigation
+## Agent Context
 
-## 🐛 Troubleshooting
+Employee and staffing workflows also appear in the owner-facing agent experience through the HR specialist. That path is complementary to the direct REST endpoints above.
 
-### Table creation fails
-- Check that shops and users tables exist first
-- Verify you're using the service_role key, not anon key
-- Check Supabase logs for errors
+## Troubleshooting
 
 ### Employee creation fails
-- Check that shop_employees table was created
-- Verify the shop owner is authenticated
-- Check backend logs: `docker-compose logs backend`
 
-### Permission errors
-- Make sure the shop_employees link exists and is_active=true
-- Verify the employee is using the correct shop_id
-- Check that the user role is set to "employee"
+- verify the owner token belongs to the target shop owner
+- verify the username and email are not already taken
+- check backend logs for service-level errors
 
-## 📚 API Documentation
+### Employee cannot access a shop
 
-After restarting, visit:
-- API Docs: http://localhost:8000/docs
-- OpenAPI Schema: http://localhost:8000/openapi.json
+- verify the employee is linked to that shop and marked active
+- verify the employee is using the correct token
 
-The new Employee section will appear with all endpoints documented.
+### Shift endpoints fail
+
+- verify the user role is `employee`
+- verify the employee is assigned to the shop before clock-in

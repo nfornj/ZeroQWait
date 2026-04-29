@@ -138,10 +138,26 @@ echo "==> Waiting for shared LLM rollout"
 kctl rollout status deployment/ollama -n llm --timeout=900s
 
 echo "==> Applying core data manifests (Postgres/Redis)"
-kctl apply -f "${K8S_MANIFESTS}/postgres-secret.yaml"
+# Secrets are NOT applied automatically — they contain REPLACE_ME placeholders in Git.
+# On a fresh cluster, create the secrets manually BEFORE running this script:
+#   kubectl apply -f k8s-manifests/postgres-secret.local.yaml
+#   kubectl apply -f k8s-manifests/redis-secret.local.yaml
+#   kubectl apply -f k8s-manifests/backend-secret.local.yaml
+# (*.local.yaml files are gitignored; copy the templates and fill in real values)
+#
+# Pre-flight: abort if any required secret is missing in the cluster.
+for _secret in backend-secret postgres-secret redis-secret; do
+  if ! kctl get secret "${_secret}" -n zeroqwait >/dev/null 2>&1; then
+    echo "!! Secret '${_secret}' not found in namespace zeroqwait." >&2
+    echo "!! Apply it manually with real credentials before running this deploy." >&2
+    echo "!! See k8s-manifests/${_secret}.yaml for the required keys." >&2
+    exit 1
+  fi
+done
+echo "==> Secrets verified (pre-existing in cluster)."
+
 kctl apply -f "${K8S_MANIFESTS}/postgres-pvc.yaml"
 kctl apply -f "${K8S_MANIFESTS}/postgres-statefulset.yaml"
-kctl apply -f "${K8S_MANIFESTS}/redis-secret.yaml"
 kctl apply -f "${K8S_MANIFESTS}/redis-pvc.yaml"
 kctl apply -f "${K8S_MANIFESTS}/redis-service.yaml"
 kctl apply -f "${K8S_MANIFESTS}/redis-statefulset.yaml"
@@ -152,7 +168,7 @@ kctl rollout status statefulset/redis -n zeroqwait --timeout=300s
 
 echo "==> Applying app manifests"
 kctl apply -f "${K8S_MANIFESTS}/backend-configmap.yaml"
-kctl apply -f "${K8S_MANIFESTS}/backend-secret.yaml"
+# Secret is pre-existing (not auto-applied — see note above).
 kctl apply -f "${K8S_MANIFESTS}/backend-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/frontend-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/asr-deployment.yaml"
@@ -160,21 +176,25 @@ kctl apply -f "${K8S_MANIFESTS}/asr-service.yaml"
 kctl apply -f "${K8S_MANIFESTS}/tts-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/voice-mcp-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/ingress-traefik.yaml"
+kctl apply -f "${K8S_MANIFESTS}/network-policy.yaml"
+kctl apply -f "${K8S_MANIFESTS}/backend-pdb.yaml"
 
-# Backend currently runs from hostPath code; restart to pick latest branch code.
+# run-local-pipeline.sh already updated the backend image tag in the manifest
+# (sed replaces localhost:5000/backend:* with the new versioned tag).
+# The rollout restart triggers the new image to roll out.
 kctl rollout restart deployment/backend -n zeroqwait
 
 echo "==> Pruning production image tags (retain last 10 per service)"
 sudo env \
   KEEP_VERSIONS="10" \
+  REGISTRY="ghcr.io/nfornj" \
   REPOSITORIES="prod/backend prod/frontend prod/asr-service prod/tts-service prod/voice-mcp" \
   bash "${PROJECT_ROOT}/deployment/scripts/prune-registry-tags.sh"
 
 echo "==> Waiting for frontend and backend rollouts"
 kctl rollout status deployment/frontend -n zeroqwait --timeout=300s
-# Backend startup can exceed 5 minutes because it installs dependencies and
-# warms models at runtime in the current hostPath-based deployment mode.
-kctl rollout status deployment/backend -n zeroqwait --timeout=1800s
+# Pre-built image startup: ~2 min (model warm-up). 5 min ceiling is sufficient.
+kctl rollout status deployment/backend -n zeroqwait --timeout=300s
 
 echo "==> Production deployment successful"
 echo "    Site: https://zeroqwait.com"

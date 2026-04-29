@@ -117,62 +117,58 @@ Database migration script:
    - Calculates from raw data
    - Use new `/daily/` endpoint for better performance
 
-## Deployment Instructions
+## Deployment And Operations
 
-### 1. Run Database Migration
+### 1. Run The Migration
 
-Connect to your Supabase database and run the migration:
+Apply the analytics migration against the active PostgreSQL database:
 
 ```bash
-# Option 1: Via Supabase SQL Editor
-# - Go to Supabase Dashboard > SQL Editor
-# - Copy and paste contents of backend/migrations/001_analytics_and_archival.sql
-# - Click Run
-
-# Option 2: Via psql (if you have direct access)
-psql "postgresql://postgres:[PASSWORD]@db.yuxfpspyzyhesfuspjns.supabase.co:5432/postgres" \
-  -f backend/migrations/001_analytics_and_archival.sql
+psql "$DATABASE_URL" -f backend/migrations/001_analytics_and_archival.sql
 ```
 
-### 2. Update Environment Variables
+If you are running through the repo-managed local stack, ensure the backend database settings in `backend/.env` match the active PostgreSQL container or deployment target.
 
-Ensure your `.env` file has database connection details:
+### 2. Backend Environment
 
-```bash
-# Option 1: Direct connection URL
-DATABASE_URL=postgresql://postgres:[PASSWORD]@db.yuxfpspyzyhesfuspjns.supabase.co:5432/postgres
+The active backend uses the current PostgreSQL configuration model, for example:
 
-# Option 2: Individual components
-DB_HOST=db.yuxfpspyzyhesfuspjns.supabase.co
+```env
+DB_HOST=db
 DB_PORT=5432
-DB_NAME=postgres
+DB_NAME=zeroqwait
 DB_USER=postgres
-DB_PASSWORD=[YOUR_PASSWORD]
+DB_PASSWORD=zeroqwait_dev
 ```
 
-### 3. Install Python Dependencies
+Do not follow older database setup instructions that predate the current PostgreSQL workflow for this feature.
 
-The analytics system requires SQLAlchemy:
+### 3. Dependencies
+
+Use the backend dependency set already declared in `pyproject.toml` and `uv.lock`:
 
 ```bash
 cd backend
-pdm add sqlalchemy psycopg2-binary
+uv sync --dev
 ```
 
-### 4. Deploy to Production
+### 4. Deploy Or Run
+
+For local source-run validation:
 
 ```bash
-# Build and deploy
-npm run build --prefix frontend
-rsync -avz --exclude 'node_modules' --exclude '__pycache__' --exclude '.env' \
-  ./ pi@192.168.0.118:/home/pi/Documents/projects/apps/zeroqwait/
-
-# Restart containers on Pi
-ssh pi@192.168.0.118
-cd /home/pi/Documents/projects/apps/zeroqwait
-docker compose -f docker-compose.prod.simple.yml down
-docker compose -f docker-compose.prod.simple.yml up -d --build
+docker compose up -d db redis
+cd backend
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+For the full non-prod deployment flow:
+
+```bash
+bash deployment/scripts/deploy-test.sh
+```
+
+For production deployment, use the active K3s deployment path documented in `deployment/docs/README.md`.
 
 ### 5. Verify Scheduler
 
@@ -183,21 +179,21 @@ docker logs zeroqwait-backend-1 | grep -i scheduler
 # Should see: "Scheduler started - will run daily at 00:30:00"
 ```
 
-### 6. Test the System
+### 6. Test The System
 
 ```bash
 # Option 1: Wait for scheduled run (00:30)
 
 # Option 2: Manually trigger maintenance
-curl -X POST https://zeroqwait.com/api/analytics/maintenance/run \
+curl -X POST http://localhost:8000/api/analytics/maintenance/run \
   -H "Authorization: Bearer YOUR_TOKEN"
 
 # Check analytics
-curl https://zeroqwait.com/api/analytics/daily/1?start_date=2024-01-01 \
+curl "http://localhost:8000/api/analytics/daily/1?start_date=2024-01-01" \
   -H "Authorization: Bearer YOUR_TOKEN"
 
 # Check archive stats
-curl https://zeroqwait.com/api/analytics/archive/stats/1 \
+curl http://localhost:8000/api/analytics/archive/stats/1 \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 

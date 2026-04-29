@@ -4,6 +4,7 @@ import json
 import time
 from typing import Optional, Any, List
 import logging
+from shared.runtime_hosts import resolve_runtime_host
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ class RedisClient:
         
         if not redis_url:
             # Construct URL from components
-            host = os.getenv("REDIS_HOST", "localhost")
+            host = resolve_runtime_host(os.getenv("REDIS_HOST", "localhost"))
             port = os.getenv("REDIS_PORT", "6379")
             password = os.getenv("REDIS_PASSWORD", "")
             

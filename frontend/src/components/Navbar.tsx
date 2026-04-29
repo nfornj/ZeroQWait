@@ -18,7 +18,6 @@ import {
 import MenuIcon from "@mui/icons-material/Menu";
 import ContentCutIcon from "@mui/icons-material/ContentCut";
 import SearchIcon from "@mui/icons-material/Search";
-import FavoriteIcon from "@mui/icons-material/Favorite";
 import PersonIcon from "@mui/icons-material/Person";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -139,24 +138,6 @@ const Navbar = () => {
                     Pricing
                   </Button>
 
-                  {isAuthenticated && (
-                    <Button
-                      component={RouterLink}
-                      to="/favorites"
-                      startIcon={<FavoriteIcon />}
-                      sx={{
-                        color: 'text.primary',
-                        fontWeight: 500,
-                        px: 2,
-                        py: 1.5,
-                        '&:hover': {
-                          backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                        }
-                      }}
-                    >
-                      Favorites
-                    </Button>
-                  )}
                 </>
               )}
 
@@ -234,7 +215,7 @@ const Navbar = () => {
                     </Button>
                     <Button
                       component={RouterLink}
-                      to="/pricing"
+                      to="/signup"
                       variant="contained"
                       sx={{
                         fontWeight: 600,
@@ -301,17 +282,6 @@ const Navbar = () => {
                 >
                   Pricing
                 </MenuItem>
-                {isAuthenticated && (
-                  <MenuItem
-                    component={RouterLink}
-                    to="/favorites"
-                    onClick={handleCloseNavMenu}
-                    sx={{ px: 3, py: 1.5 }}
-                  >
-                    <FavoriteIcon sx={{ mr: 2, fontSize: 18 }} />
-                    Favorites
-                  </MenuItem>
-                )}
               </>
             )}
             {!isAuthenticated && (
@@ -326,7 +296,7 @@ const Navbar = () => {
                 </MenuItem>
                 <MenuItem
                   component={RouterLink}
-                  to="/pricing"
+                  to="/signup"
                   onClick={handleCloseNavMenu}
                   sx={{ px: 3, py: 1.5 }}
                 >

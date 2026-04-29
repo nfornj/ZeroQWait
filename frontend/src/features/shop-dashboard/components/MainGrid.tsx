@@ -4,7 +4,7 @@ import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { FormControl, Select, MenuItem, TextField } from '@mui/material';
-import axios from 'axios';
+import api from '../../../services/api';
 import { useShop } from '../../../contexts/ShopContext';
 import Copyright from './Copyright';
 import ChartUserByCountry from './ChartUserByCountry';
@@ -38,9 +38,6 @@ export default function MainGrid() {
       if (!shop) return;
 
       try {
-        const token = localStorage.getItem('token');
-        const headers = { Authorization: `Bearer ${token}` };
-
         let url = `/analytics/${shop.id}?`;
         if (period !== 'custom') {
           url += `days=${period}`;
@@ -48,7 +45,7 @@ export default function MainGrid() {
           url += `start_date=${startDate}&end_date=${endDate}`;
         }
 
-        const response = await axios.get(url, { headers });
+        const response = await api.get(url);
         const data = response.data;
 
         const dailyCounts = data.daily_stats.map((d: any) => d.count);

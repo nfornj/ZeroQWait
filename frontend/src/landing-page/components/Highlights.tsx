@@ -14,39 +14,39 @@ import ThumbUpAltRoundedIcon from '@mui/icons-material/ThumbUpAltRounded';
 const items = [
   {
     icon: <SettingsSuggestRoundedIcon />,
-    title: 'Automated Notifications',
+    title: 'Human-in-the-Loop Control',
     description:
-      'Keep customers informed with automated SMS and email updates about their queue status.',
+      'Your agents propose high-impact actions — closing the queue, updating a schedule, processing a refund — and wait for your explicit approval before acting.',
   },
   {
     icon: <ConstructionRoundedIcon />,
-    title: 'Customizable Queues',
+    title: 'Smart Queue Management',
     description:
-      'Configure service types, estimated times, and queue rules to match your specific business needs.',
+      'Your Receptionist agent opens, monitors, and closes your queue automatically — notifying customers at every step and adapting to live walk-in traffic.',
   },
   {
     icon: <ThumbUpAltRoundedIcon />,
-    title: 'Customer Satisfaction',
+    title: 'Voice-First Experience',
     description:
-      'Reduce perceived wait times and let customers wait from anywhere, improving their overall experience.',
+      'Speak naturally to manage your shop. Voice input and AI-generated speech make reviewing queues, checking revenue, and updating schedules feel like a conversation.',
   },
   {
     icon: <AutoFixHighRoundedIcon />,
-    title: 'Staff Management',
+    title: 'HR Agent',
     description:
-      'Assign staff to specific queues and track their efficiency in serving customers.',
+      'Add employees, assign shifts, and manage availability through conversation. Your HR agent handles the admin burden so you can focus on your team.',
   },
   {
     icon: <SupportAgentRoundedIcon />,
-    title: 'Dedicated Support',
+    title: 'Always-On Agent Team',
     description:
-      'Our team is ready to help you set up and optimize your queue system for maximum efficiency.',
+      'Your AI agent team runs 24/7 — handling customers, flagging issues, and surfacing insights even when you\'re away from the dashboard.',
   },
   {
     icon: <QueryStatsRoundedIcon />,
-    title: 'Data-Driven Insights',
+    title: 'Finance Agent',
     description:
-      'Make informed business decisions with detailed reports on peak times and service duration.',
+      'Ask for a revenue summary, top services, or busiest hours at any time. Your Finance agent delivers instant, accurate answers from your live business data.',
   },
 ];
 
@@ -77,11 +77,11 @@ export default function Highlights() {
           }}
         >
           <Typography component="h2" variant="h4" gutterBottom>
-            Highlights
+            What Your Agent Team Does For You
           </Typography>
           <Typography variant="body1" sx={{ color: 'grey.400' }}>
-            Discover how ZeroQwait transforms your waiting experience: automated updates,
-            customizable workflows, improved satisfaction, and powerful insights.
+            Six ways your ZeroQwait AI agent team takes work off your plate every single day —
+            from managing walk-ins to delivering real-time financial reports on demand.
           </Typography>
         </Box>
         <Grid container spacing={2}>

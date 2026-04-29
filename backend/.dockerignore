@@ -22,5 +22,6 @@ env
 Dockerfile
 README.md
 tests
+scripts
 .mypy_cache
 .ruff_cache

@@ -1,91 +1,157 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import axios from "axios";
 import {
   Alert,
-  alpha,
   Box,
-  Card,
-  CardContent,
-  Chip,
   Collapse,
-  Divider,
   Grid,
   IconButton,
   Stack,
-  Typography,
-  useTheme,
 } from "@mui/material";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import { useQueryClient } from "@tanstack/react-query";
+
 import { useShop } from "../../contexts/ShopContext";
+import api from "../../services/api";
+import AgentChat from "./AgentChat";
 import AgentFeed from "./AgentFeed";
-import ApprovalCard from "./ApprovalCard";
 import AgentInsights from "./AgentInsights";
 import InsightsPanel from "./InsightsPanel";
-import ThinkingSteps, { ThinkingStep } from "./ThinkingSteps";
-import MasterAIAgent from "../../landing-page/components/MasterAIAgent";
-import type { AgentFeedEvent, ChatMessage, InsightItem, PendingApproval } from "./types";
-
-const nowIso = () => new Date().toISOString();
-
-const toId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-const buildIntroMessage = (): ChatMessage => ({
-  id: toId("msg_intro"),
-  role: "assistant",
-  content: "Welcome to your Supervisor workspace. I can help with queue status, team scheduling, approvals, and daily performance summaries. What would you like to handle first?",
-  status: "done",
-  timestamp: nowIso(),
-});
-
-const apiBaseUrl = process.env.REACT_APP_API_URL || "/api";
-
-const buildWebSocketUrl = (shopId: number): string => {
-  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${protocol}://${window.location.host}/api/ws/${shopId}`;
-};
+import OwnerBriefing from "./OwnerBriefing";
+import PendingApprovalsPanel from "./PendingApprovalsPanel";
+import PoliciesPanel from "./PoliciesPanel";
+import { buildIntroMessage } from "./agentInboxShared";
+import { useApprovalDecisions } from "./hooks/useApprovalDecisions";
+import { useAgentStream } from "./hooks/useAgentStream";
+import { useAgentWebSocket } from "./hooks/useAgentWebSocket";
+import {
+  ownerDashboardKeys,
+  useOwnerBriefingQuery,
+  useOwnerFeedQuery,
+  useOwnerPoliciesQuery,
+  usePendingApprovalsQuery,
+} from "./ownerDashboardQueries";
+import type {
+  AgentFeedEvent,
+  BriefingAction,
+  InsightItem,
+  OwnerBriefing as OwnerBriefingData,
+  PendingApproval,
+  ShopPolicy,
+} from "./types";
+import {
+  createWorkspaceFeedSeed,
+  createWorkspaceInsightSeed,
+  createWorkspaceQuickActions,
+} from "./workspaceSeed";
 
 const AgentInbox: React.FC = () => {
-  const muiTheme = useTheme();
+  const queryClient = useQueryClient();
   const { shop } = useShop();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [feedEvents, setFeedEvents] = useState<AgentFeedEvent[]>([]);
-  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
+
+  const [persistedFeedEvents, setPersistedFeedEvents] = useState<AgentFeedEvent[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isApproving, setIsApproving] = useState(false);
+  const [policies, setPolicies] = useState<ShopPolicy[]>([]);
+  const [briefing, setBriefing] = useState<OwnerBriefingData | null>(null);
   const [insightsOpen, setInsightsOpen] = useState(false);
-  const [insightItems, setInsightItems] = useState<InsightItem[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const [streamedInsightItems, setStreamedInsightItems] = useState<InsightItem[]>([]);
+  const [savingPolicyKey, setSavingPolicyKey] = useState<string | null>(null);
+  const [markingNotificationId, setMarkingNotificationId] = useState<number | null>(null);
+  const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const previousShopIdRef = useRef<number | null>(null);
 
-  const addFeedEvent = useCallback((event: Omit<AgentFeedEvent, "id" | "timestamp">) => {
-    setFeedEvents((prev) => [
-      {
-        id: toId("feed"),
-        timestamp: nowIso(),
-        ...event,
-      },
-      ...prev,
-    ]);
+  const pendingApprovalsQuery = usePendingApprovalsQuery(shop?.id);
+  const briefingQuery = useOwnerBriefingQuery(shop?.id);
+  const feedQuery = useOwnerFeedQuery(shop?.id);
+  const policiesQuery = useOwnerPoliciesQuery(shop?.id);
+
+  const addPendingApproval = useCallback((approval: PendingApproval) => {
+    setPendingApprovals((prev) => {
+      const exists = prev.some((item) => item.action_id && item.action_id === approval.action_id);
+      if (exists) return prev;
+      return [approval, ...prev];
+    });
   }, []);
+
+  const prependInsightItem = useCallback((item: InsightItem) => {
+    setStreamedInsightItems((prev) => [item, ...prev]);
+  }, []);
+
+  const { feedEvents, addFeedEvent } = useAgentWebSocket(shop?.id);
 
   const refreshPendingApprovals = useCallback(async () => {
     if (!shop?.id) return;
-    try {
-      const response = await axios.get<{ pending: PendingApproval[] }>(`/v2/agent/pending`, {
-        params: { shop_id: shop.id },
-      });
-      setPendingApprovals(response.data.pending || []);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Failed to load pending approvals");
-    }
-  }, [shop?.id]);
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.pending(shop.id) });
+  }, [queryClient, shop?.id]);
+
+  const refreshBriefing = useCallback(async () => {
+    if (!shop?.id) return;
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.briefing(shop.id) });
+  }, [queryClient, shop?.id]);
+
+  const refreshFeed = useCallback(async () => {
+    if (!shop?.id) return;
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop.id) });
+  }, [queryClient, shop?.id]);
+
+  const refreshPolicies = useCallback(async () => {
+    if (!shop?.id) return;
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.policies(shop.id) });
+  }, [queryClient, shop?.id]);
+
+  const {
+    messages,
+    setMessages,
+    isStreaming,
+    error,
+    setError,
+    appendSystemMessage,
+    handleSend,
+  } = useAgentStream({
+    shopId: shop?.id,
+    addFeedEvent,
+    addPendingApproval,
+    prependInsightItem,
+    refreshPendingApprovals,
+    refreshBriefing,
+  });
+
+  const { handleApprovalDecision, isApproving } = useApprovalDecisions({
+    shopId: shop?.id,
+    addFeedEvent,
+    appendSystemMessage,
+    prependInsightItem,
+    refreshPendingApprovals,
+    refreshBriefing,
+    refreshFeed,
+    setError,
+  });
 
   useEffect(() => {
-    if (!shop?.id) return;
-    refreshPendingApprovals();
-  }, [shop?.id, refreshPendingApprovals]);
+    setPendingApprovals(pendingApprovalsQuery.data || []);
+  }, [pendingApprovalsQuery.data]);
+
+  useEffect(() => {
+    setBriefing(briefingQuery.data || null);
+  }, [briefingQuery.data]);
+
+  useEffect(() => {
+    setPersistedFeedEvents(feedQuery.data || []);
+  }, [feedQuery.data]);
+
+  useEffect(() => {
+    setPolicies(policiesQuery.data || []);
+  }, [policiesQuery.data]);
+
+  useEffect(() => {
+    const queryError = pendingApprovalsQuery.error || briefingQuery.error || feedQuery.error || policiesQuery.error;
+    if (!queryError) return;
+
+    const detail =
+      (queryError as any)?.response?.data?.detail ||
+      (queryError as Error)?.message ||
+      "Failed to load owner workspace data";
+    setError(detail);
+  }, [briefingQuery.error, feedQuery.error, pendingApprovalsQuery.error, policiesQuery.error, setError]);
 
   useEffect(() => {
     if (!shop?.id) return;
@@ -95,634 +161,289 @@ const AgentInbox: React.FC = () => {
 
     if (shopChanged) {
       setMessages([buildIntroMessage()]);
-      setFeedEvents([]);
+      setPersistedFeedEvents([]);
       setPendingApprovals([]);
-      setInsightItems([]);
-      setThinkingSteps([]);
+      setPolicies([]);
+      setBriefing(null);
+      setStreamedInsightItems([]);
       setError(null);
       return;
     }
 
-    setMessages((prev) => {
-      if (prev.length > 0) return prev;
-      return [buildIntroMessage()];
-    });
-  }, [shop?.id]);
+    setMessages((prev) => (prev.length > 0 ? prev : [buildIntroMessage()]));
+  }, [setError, setMessages, shop?.id]);
 
-  useEffect(() => {
-    if (!shop?.id) return;
-
-    const socket = new WebSocket(buildWebSocketUrl(shop.id));
-    wsRef.current = socket;
-
-    socket.onopen = () => {
-      connected = true;
-      addFeedEvent({
-        type: "system",
-        title: "Feed connected",
-        description: "Real-time shop updates are active.",
-      });
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(event.data);
-        const queueSize = Array.isArray(parsed.queue_items) ? parsed.queue_items.length : undefined;
-        addFeedEvent({
-          type: "queue_update",
-          title: "Shop live snapshot",
-          description:
-            typeof queueSize === "number"
-              ? `Current active queue size: ${queueSize}`
-              : "Received a real-time queue update.",
-          payload: parsed,
-        });
-      } catch {
-        addFeedEvent({
-          type: "system",
-          title: "WebSocket update",
-          description: String(event.data),
-        });
-      }
-    };
-
-    let connected = false;
-
-    socket.onerror = () => {
-      // Silently ignore — WS endpoint may not be deployed yet
-    };
-
-    socket.onclose = () => {
-      if (connected) {
-        addFeedEvent({
-          type: "system",
-          title: "Feed disconnected",
-          description: "WebSocket connection closed.",
-        });
-      }
-    };
-
-    return () => {
-      socket.close();
-      wsRef.current = null;
-    };
-  }, [shop?.id, addFeedEvent]);
-
-  const handleSend = useCallback(
-    async (messageText: string) => {
-      if (!shop?.id) {
-        setError("No active shop selected for agent inbox");
-        return;
-      }
+  const handlePolicyModeChange = useCallback(
+    async (policy: ShopPolicy, nextMode: string) => {
+      if (!shop?.id || !policy.policy_key || nextMode === policy.mode) return;
 
       setError(null);
-      setIsStreaming(true);
-      setThinkingSteps([]);
-
-      const userMessage: ChatMessage = {
-        id: toId("msg_user"),
-        role: "user",
-        content: messageText,
-        status: "done",
-        timestamp: nowIso(),
-      };
-
-      const assistantMessageId = toId("msg_assistant");
-      const assistantPlaceholder: ChatMessage = {
-        id: assistantMessageId,
-        role: "assistant",
-        content: "",
-        status: "streaming",
-        retryMessage: messageText,
-        timestamp: nowIso(),
-      };
-
-      setMessages((prev) => [...prev, userMessage, assistantPlaceholder]);
-      addFeedEvent({
-        type: "chat",
-        title: "Owner message sent",
-        description: messageText,
-      });
-
-      let streamEndedWithDone = false;
-
+      setSavingPolicyKey(policy.policy_key);
       try {
-        const token = localStorage.getItem("token");
-        const response = await fetch(`${apiBaseUrl}/v2/agent/chat/stream`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            message: messageText,
+        const response = await api.put<{ policy: ShopPolicy }>(
+          `/v2/agent/policies/${encodeURIComponent(policy.policy_key)}`,
+          {
             shop_id: shop.id,
-            is_voice: false,
-          }),
+            mode: nextMode,
+          },
+        );
+        const updatedPolicy = response.data.policy;
+        setPolicies((prev) =>
+          prev.map((item) => (item.policy_key === updatedPolicy.policy_key ? updatedPolicy : item)),
+        );
+        addFeedEvent({
+          type: "system",
+          title: "Policy updated",
+          description: `${policy.title} is now set to ${updatedPolicy.mode.replace(/_/g, " ")}.`,
+          payload: updatedPolicy,
         });
-
-        if (!response.ok || !response.body) {
-          throw new Error(`Streaming request failed with status ${response.status}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        const applyAssistantDelta = (delta: string) => {
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantMessageId
-                ? {
-                    ...msg,
-                    content: `${msg.content}${delta}`,
-                    status: "streaming",
-                  }
-                : msg
-            )
-          );
-        };
-
-        const handleEventData = (raw: string) => {
-          if (raw === "[DONE]") {
-            streamEndedWithDone = true;
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? {
-                      ...msg,
-                      status: "done",
-                    }
-                  : msg
-              )
-            );
-            return;
-          }
-
-          let eventJson: Record<string, any>;
-          try {
-            eventJson = JSON.parse(raw);
-          } catch {
-            return;
-          }
-
-          const eventType = String(eventJson.type || "");
-          if (eventType === "text") {
-            const content = String(eventJson.content || "");
-            if (content) applyAssistantDelta(content);
-            return;
-          }
-
-          if (eventType === "approval_required") {
-            const approval: PendingApproval = {
-              action_id: eventJson.details?.action_id,
-              action: String(eventJson.action || eventJson.details?.action || "pending_action"),
-              details: (eventJson.details?.details || eventJson.details || {}) as Record<string, unknown>,
-              shop_id: Number(eventJson.details?.shop_id || shop.id),
-            };
-
-            setPendingApprovals((prev) => {
-              const exists = prev.some((item) => item.action_id && item.action_id === approval.action_id);
-              if (exists) return prev;
-              return [approval, ...prev];
-            });
-
-            addFeedEvent({
-              type: "approval_required",
-              title: "Approval required",
-              description: `Action '${approval.action}' is waiting for your decision.`,
-              payload: approval,
-            });
-            return;
-          }
-
-          if (eventType === "agent_switch") {
-            addFeedEvent({
-              type: "agent_switch",
-              title: "Agent switched",
-              description: `Supervisor delegated to ${String(eventJson.agent || "sub-agent")}.`,
-              payload: eventJson,
-            });
-            return;
-          }
-
-          if (eventType === "tool_call") {
-            addFeedEvent({
-              type: "tool_call",
-              title: `Tool call: ${String(eventJson.tool || "unknown")}`,
-              description: "Tool execution started.",
-              payload: eventJson,
-            });
-            setThinkingSteps((prev) => {
-              const updated = prev.map((s) =>
-                s.status === "active" ? { ...s, status: "completed" as const } : s
-              );
-              return [
-                ...updated,
-                {
-                  id: `tool-${String(eventJson.tool || "unknown")}-${Date.now()}`,
-                  label: `Calling ${String(eventJson.tool || "unknown")}...`,
-                  status: "active" as const,
-                },
-              ];
-            });
-            return;
-          }
-
-          if (eventType === "tool_result") {
-            addFeedEvent({
-              type: "tool_result",
-              title: `Tool result: ${String(eventJson.tool || "unknown")}`,
-              description: "Tool execution completed.",
-              payload: eventJson,
-            });
-            setThinkingSteps((prev) =>
-              prev.map((s) =>
-                s.label === `Calling ${String(eventJson.tool || "unknown")}...`
-                  ? { ...s, status: eventJson.error ? ("error" as const) : ("completed" as const) }
-                  : s
-              )
-            );
-          }
-        };
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith("data:")) continue;
-            handleEventData(trimmed.slice(5).trim());
-          }
-        }
-
-        await refreshPendingApprovals();
       } catch (err: any) {
-        const detail = err?.message || "Failed to stream agent response";
+        const detail = err?.response?.data?.detail || err?.message || "Failed to update approval policy";
         setError(detail);
         addFeedEvent({
           type: "error",
-          title: "Chat stream failed",
+          title: "Policy update failed",
           description: detail,
         });
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantMessageId
-              ? {
-                  ...msg,
-                  status: "error",
-                }
-              : msg
-          )
-        );
       } finally {
-        setMessages((prev) => {
-          const target = prev.find((msg) => msg.id === assistantMessageId);
-          if (!target) return prev;
-
-          const contentEmpty = !String(target.content || "").trim();
-          if (contentEmpty || !streamEndedWithDone) {
-            return prev.map((msg) =>
-              msg.id === assistantMessageId
-                ? {
-                    ...msg,
-                    content: contentEmpty
-                      ? "Something went wrong — please try again."
-                      : msg.content,
-                    status: "error",
-                  }
-                : msg
-            );
-          }
-
-          return prev.map((msg) =>
-            msg.id === assistantMessageId
-              ? {
-                  ...msg,
-                  status: msg.status === "error" ? "error" : "done",
-                }
-              : msg
-          );
-        });
-        setIsStreaming(false);
+        setSavingPolicyKey(null);
       }
     },
-    [addFeedEvent, refreshPendingApprovals, shop?.id]
+    [addFeedEvent, setError, shop?.id],
   );
 
-  const handleApprovalDecision = useCallback(
-    async (approval: PendingApproval, approved: boolean) => {
+  const handleMarkNotificationRead = useCallback(
+    async (notificationId: number) => {
       if (!shop?.id) return;
       setError(null);
-      setIsApproving(true);
-
+      setMarkingNotificationId(notificationId);
       try {
-        const payload = {
-          shop_id: shop.id,
-          action_id: approval.action_id,
-          approved,
-        };
-
-        const response = await axios.post<{
-          message: string;
-          status: string;
-          agent?: string;
-        }>(`/v2/agent/approve`, payload);
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: toId("msg_system"),
-            role: "system",
-            content: response.data.message || `Action ${approved ? "approved" : "rejected"}.`,
-            status: "done",
-            timestamp: nowIso(),
-            agent: response.data.agent,
-          },
-        ]);
-
-        addFeedEvent({
-          type: "approval_decision",
-          title: approved ? "Action approved" : "Action rejected",
-          description: `You ${approved ? "approved" : "rejected"} '${approval.action}'.`,
-          payload: payload,
-        });
-
-        await refreshPendingApprovals();
+        const response = await api.post<{ notification: AgentFeedEvent }>(
+          `/v2/agent/notifications/${notificationId}/read`,
+          { shop_id: shop.id },
+        );
+        setPersistedFeedEvents((prev) =>
+          prev.map((event) =>
+            event.notification_id === notificationId ? { ...event, ...response.data.notification } : event,
+          ),
+        );
       } catch (err: any) {
-        const detail = err?.response?.data?.detail || err?.message || "Failed to submit approval decision";
-        setError(detail);
-        addFeedEvent({
-          type: "error",
-          title: "Approval failed",
-          description: detail,
-        });
+        setError(err?.response?.data?.detail || "Failed to mark notification as read");
       } finally {
-        setIsApproving(false);
+        setMarkingNotificationId(null);
       }
     },
-    [addFeedEvent, refreshPendingApprovals, shop?.id]
+    [setError, shop?.id],
   );
+
+  const handleMarkAllNotificationsRead = useCallback(async () => {
+    if (!shop?.id) return;
+    setError(null);
+    setIsMarkingAllRead(true);
+    try {
+      await api.post(`/v2/agent/notifications/read-all`, { shop_id: shop.id });
+      setPersistedFeedEvents((prev) =>
+        prev.map((event) => (event.notification_id ? { ...event, status: "read" } : event)),
+      );
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || "Failed to clear unread notifications");
+    } finally {
+      setIsMarkingAllRead(false);
+    }
+  }, [setError, shop?.id]);
 
   const latestPending = useMemo(() => pendingApprovals.slice(0, 3), [pendingApprovals]);
-  const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
-  const brandSecondary = shop?.secondary_color || brandPrimary;
-  const panelCardBg =
-    muiTheme.palette.mode === "dark"
-      ? "rgba(255, 255, 255, 0.05)"
-      : alpha("#ffffff", 0.68);
-  const panelCardBorder =
-    muiTheme.palette.mode === "dark"
-      ? alpha(brandPrimary, 0.24)
-      : alpha(brandPrimary, 0.16);
-  const ownerInitialChatHistory = useMemo(
-    () =>
-      shop?.name
-        ? [
-            {
-              role: "ai" as const,
-              text: `Welcome back to ${shop.name}. I can help with queue status, team scheduling, approvals, and daily performance summaries. What would you like to handle first?`,
-              quickActions: [
-                { label: "Give me today's queue summary", payload: "Give me today's queue summary" },
-                { label: "Show this week's revenue trend", payload: "Show this week's revenue trend" },
-                { label: "Who is on shift now?", payload: "Who is on shift now?" },
-              ],
-            },
-          ]
-        : [],
-    [shop?.name]
+  const seededFeedEvents = useMemo(
+    () => createWorkspaceFeedSeed(briefing, pendingApprovals),
+    [briefing, pendingApprovals],
   );
 
-  const handleAgentStreamEvent = useCallback(
-    (event: Record<string, any>) => {
-      const eventType = String(event.type || "");
-
-      if (eventType === "approval_required") {
-        addFeedEvent({
-          type: "approval_required",
-          title: "Approval required",
-          description: `Action '${String(event.action || event.details?.action || "pending_action")}' is waiting for your decision.`,
-          payload: event,
-        });
-        void refreshPendingApprovals();
-        return;
+  const displayedFeedEvents = useMemo(() => {
+    const merged = [...feedEvents, ...persistedFeedEvents, ...seededFeedEvents];
+    const deduped = new Map<string, AgentFeedEvent>();
+    merged.forEach((event) => {
+      if (!deduped.has(event.id)) {
+        deduped.set(event.id, event);
       }
-
-      if (eventType === "agent_switch") {
-        addFeedEvent({
-          type: "agent_switch",
-          title: "Agent switched",
-          description: `Supervisor delegated to ${String(event.agent || "sub-agent")}.`,
-          payload: event,
-        });
-        return;
-      }
-
-      if (eventType === "tool_call") {
-        addFeedEvent({
-          type: "tool_call",
-          title: `Tool call: ${String(event.tool || "unknown")}`,
-          description: "Tool execution started.",
-          payload: event,
-        });
-        setThinkingSteps((prev) => {
-          const updated = prev.map((s) =>
-            s.status === "active" ? { ...s, status: "completed" as const } : s
-          );
-          return [
-            ...updated,
-            {
-              id: `tool-${String(event.tool || "unknown")}-${Date.now()}`,
-              label: `Calling ${String(event.tool || "unknown")}...`,
-              status: "active" as const,
-            },
-          ];
-        });
-        return;
-      }
-
-      if (eventType === "tool_result") {
-        addFeedEvent({
-          type: "tool_result",
-          title: `Tool result: ${String(event.tool || "unknown")}`,
-          description: "Tool execution completed.",
-          payload: event,
-        });
-        setThinkingSteps((prev) =>
-          prev.map((s) =>
-            s.label === `Calling ${String(event.tool || "unknown")}...`
-              ? { ...s, status: event.error ? ("error" as const) : ("completed" as const) }
-              : s
-          )
-        );
-        return;
-      }
-
-      // Accumulate charts and files into the right-panel InsightsPanel
-      if (eventType === "chart" && event._parsed_chart) {
-        const chart = event._parsed_chart;
-        setInsightItems((prev) => [
-          { id: chart.id, type: "chart", chart, timestamp: chart.timestamp },
-          ...prev,
-        ]);
-        return;
-      }
-
-      if (eventType === "file" && event._parsed_file) {
-        const file = event._parsed_file;
-        setInsightItems((prev) => [
-          { id: file.id, type: "file", file, timestamp: file.timestamp },
-          ...prev,
-        ]);
-        return;
-      }
-    },
-    [addFeedEvent, refreshPendingApprovals]
-  );
-
-  const handleChatHistoryChange = useCallback((history: any[]) => {
-    setMessages(
-      history.map((item, index) => ({
-        id: item.id || `mirrored_${index}`,
-        role: item.role === "user" ? "user" : "assistant",
-        content: item.text || "",
-        status: item.status || "done",
-        timestamp: item.timestamp || nowIso(),
-      }))
+    });
+    return Array.from(deduped.values()).sort(
+      (left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime(),
     );
-  }, []);
+  }, [feedEvents, persistedFeedEvents, seededFeedEvents]);
+
+  const unreadFeedCount = useMemo(
+    () => persistedFeedEvents.filter((event) => event.notification_id && event.status === "unread").length,
+    [persistedFeedEvents],
+  );
+
+  const seededInsightItems = useMemo(
+    () => createWorkspaceInsightSeed(briefing, pendingApprovals),
+    [briefing, pendingApprovals],
+  );
+
+  const insightItems = useMemo(() => {
+    const seen = new Set(streamedInsightItems.map((item) => item.id));
+    return [...streamedInsightItems, ...seededInsightItems.filter((item) => !seen.has(item.id))];
+  }, [streamedInsightItems, seededInsightItems]);
+
+  const handleBriefingAction = useCallback(
+    (action: BriefingAction) => {
+      addFeedEvent({
+        type: "chat",
+        title: `Action: ${action.label}`,
+        description: action.description || action.payload,
+        payload: action,
+      });
+      void handleSend({ text: action.payload });
+    },
+    [addFeedEvent, handleSend],
+  );
+
+  const promptSections = useMemo(() => {
+    const quickActions = createWorkspaceQuickActions(briefing, pendingApprovals, shop?.name);
+    return [
+      {
+        id: "quick-actions",
+        title: "Suggested actions",
+        prompts: quickActions.map((action) => ({
+          id: action.label.replace(/[^a-zA-Z0-9_-]+/g, "_"),
+          label: action.label,
+          prompt: action.payload,
+        })),
+      },
+    ];
+  }, [briefing, pendingApprovals, shop?.name]);
 
   return (
-    <Box sx={{ width: "100%", maxWidth: { sm: "100%", md: "1700px" }, height: "calc(100dvh - 64px)", display: "flex", flexDirection: "column" }}>
-      <Stack spacing={1} sx={{ flex: 1, minHeight: 0 }}>
-
+    <Box
+      sx={{
+        width: "100%",
+        maxWidth: { xs: "100%", md: "1800px" },
+        mx: "auto",
+        height: "calc(100dvh - var(--navbar-h, 57px))",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 0 }}>
         {error && <Alert severity="error">{error}</Alert>}
 
         {!shop?.id && (
           <Alert severity="warning">
-            No active shop selected. Choose a shop from the sidebar settings panel to start the agent session.
+            No active shop selected. Refresh the shop workspace or choose an active shop from the top bar if you manage more than one location.
           </Alert>
         )}
 
-        <Grid container spacing={1.5} sx={{ flex: 1, minHeight: 0 }}>
-          <Grid size={{ xs: 12, xl: 7.5 }} sx={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-            {thinkingSteps.length > 0 && (
-              <ThinkingSteps
-                steps={thinkingSteps}
-                isComplete={!isStreaming}
-              />
-            )}
+        <Grid
+          container
+          spacing={1}
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            height: "100%",
+            alignItems: { md: "stretch" },
+            overflow: { md: "hidden" },
+          }}
+        >
+          <Grid
+            size={{ xs: 12, md: 7 }}
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+              height: { md: "100%" },
+            }}
+          >
             {shop?.id && (
-              <MasterAIAgent
-                key={shop.id}
-                forceOpen
-                embedded
-                hideCloseButton
-                hideUtilityControls
-                disableVoiceMode
-                compactEmbedded
-                initialInteractionMode="chat"
-                shopContext={{
-                  id: shop.id,
-                  name: shop.name,
-                  slug: shop.slug,
-                }}
-                brandPrimaryColor={brandPrimary}
-                brandSecondaryColor={brandSecondary}
-                streamEndpoint="/api/v2/agent/chat/stream"
-                requestHeaders={{
-                  Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-                }}
-                extraRequestBody={{
-                  shop_id: shop.id,
-                  is_voice: false,
-                }}
-                initialChatHistory={ownerInitialChatHistory}
-                embeddedFooter={
-                  <Box sx={{ width: "100%" }}>
-                    <IconButton
-                      size="small"
-                      onClick={() => setInsightsOpen((o) => !o)}
-                      sx={{
-                        color: "#0078d4",
-                        p: 0.25,
-                      }}
-                    >
-                      <ExpandMoreRoundedIcon
-                        sx={{
-                          fontSize: 18,
-                          transition: "transform 0.18s",
-                          transform: insightsOpen ? "rotate(180deg)" : "rotate(0deg)",
-                        }}
-                      />
-                    </IconButton>
-                    <Collapse in={insightsOpen} unmountOnExit>
-                      <Box mt={0.75}>
-                        <AgentInsights
-                          messages={messages}
-                          events={feedEvents}
-                          pendingApprovals={pendingApprovals}
-                        />
-                      </Box>
-                    </Collapse>
-                  </Box>
-                }
-                onStreamEvent={handleAgentStreamEvent}
-                onChatHistoryChange={handleChatHistoryChange}
+              <AgentChat
+                messages={messages}
+                isStreaming={isStreaming}
+                onSend={handleSend}
+                promptSections={promptSections}
+                interactablesStorageKey={`agent-inbox-${shop.id}`}
               />
             )}
-          </Grid>
-          <Grid size={{ xs: 12, xl: 4.5 }}>
-            <Stack spacing={1.5}>
-              <InsightsPanel items={insightItems} />
-              {latestPending.length > 0 && (
-                <Card
-                  variant="outlined"
+            <Box sx={{ flexShrink: 0 }}>
+              <IconButton
+                size="small"
+                onClick={() => setInsightsOpen((open) => !open)}
+                sx={{ color: "#0078d4", p: 0.25 }}
+              >
+                <ExpandMoreRoundedIcon
                   sx={{
-                    borderRadius: 3,
-                    borderColor: panelCardBorder,
-                    bgcolor: panelCardBg,
-                    backdropFilter: "blur(20px)",
+                    fontSize: 18,
+                    transition: "transform 0.18s",
+                    transform: insightsOpen ? "rotate(180deg)" : "rotate(0deg)",
                   }}
-                >
-                  <CardContent sx={{ py: 1.5 }}>
-                    <Stack spacing={1}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center">
-                        <Typography variant="h6">Pending Approvals</Typography>
-                        <Chip
-                          size="small"
-                          label={latestPending.length}
-                          sx={{
-                            bgcolor: alpha(brandPrimary, 0.14),
-                            color: brandPrimary,
-                            border: `1px solid ${alpha(brandPrimary, 0.22)}`,
-                            fontWeight: 700,
-                          }}
-                        />
-                      </Stack>
-                      <Divider sx={{ borderColor: alpha(brandPrimary, 0.12) }} />
-                      {latestPending.map((approval) => (
-                        <ApprovalCard
-                          key={approval.action_id || `${approval.action}_${approval.shop_id}`}
-                          approval={approval}
-                          isSubmitting={isApproving}
-                          onDecision={handleApprovalDecision}
-                        />
-                      ))}
-                    </Stack>
-                  </CardContent>
-                </Card>
-              )}
-              <AgentFeed events={feedEvents} />
+                />
+              </IconButton>
+              <Collapse in={insightsOpen} unmountOnExit>
+                <Box mt={0.75}>
+                  <AgentInsights
+                    messages={messages}
+                    events={displayedFeedEvents}
+                    pendingApprovals={pendingApprovals}
+                  />
+                </Box>
+              </Collapse>
+            </Box>
+          </Grid>
+
+          <Grid
+            size={{ xs: 12, md: 5 }}
+            sx={{
+              display: "flex",
+              minHeight: 0,
+              height: { md: "100%" },
+            }}
+          >
+            <Stack spacing={1.25} sx={{ flex: 1, minHeight: 0, height: { md: "100%" } }}>
+              <OwnerBriefing briefing={briefing} onAction={handleBriefingAction} isLoading={briefingQuery.isLoading} />
+              <Box
+                sx={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: { xs: "visible", md: "auto" },
+                  pr: { md: 0.5 },
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1.25,
+                }}
+              >
+                {latestPending.length > 0 && (
+                  <PendingApprovalsPanel
+                    approvals={pendingApprovals}
+                    isApproving={isApproving}
+                    onDecision={handleApprovalDecision}
+                  />
+                )}
+
+                <AgentFeed
+                  events={displayedFeedEvents}
+                  unreadCount={unreadFeedCount}
+                  isMarkingAllRead={isMarkingAllRead}
+                  markingNotificationId={markingNotificationId}
+                  onMarkAsRead={handleMarkNotificationRead}
+                  onMarkAllAsRead={handleMarkAllNotificationsRead}
+                  maxHeight={{ xs: 260, md: 360 }}
+                  isLoading={feedQuery.isLoading}
+                />
+
+                <InsightsPanel items={insightItems} />
+
+                {shop?.id && (
+                  <PoliciesPanel
+                    policies={policies}
+                    savingPolicyKey={savingPolicyKey}
+                    onModeChange={handlePolicyModeChange}
+                    onRetry={() => void refreshPolicies()}
+                  />
+                )}
+              </Box>
             </Stack>
           </Grid>
         </Grid>
-      </Stack>
+      </Box>
     </Box>
   );
 };

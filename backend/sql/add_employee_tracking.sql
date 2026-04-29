@@ -1,5 +1,5 @@
 -- Add employee time tracking and profile photo support
--- Run this in Supabase SQL Editor
+-- Run this against the current PostgreSQL database
 
 -- Add profile photo and time tracking columns to users table
 ALTER TABLE users 

@@ -2,10 +2,12 @@ import * as React from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
+import Divider from '@mui/material/Divider';
 import MuiChip from '@mui/material/Chip';
 import Container from '@mui/material/Container';
+import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import { styled } from '@mui/material/styles';
+import { alpha, styled } from '@mui/material/styles';
 
 import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
 import EdgesensorHighRoundedIcon from '@mui/icons-material/EdgesensorHighRounded';
@@ -14,27 +16,33 @@ import ViewQuiltRoundedIcon from '@mui/icons-material/ViewQuiltRounded';
 const items = [
   {
     icon: <ViewQuiltRoundedIcon />,
-    title: 'Smart Dashboard',
+    title: 'AI Supervisor',
     description:
-      'Manage multiple queues, staff members, and service times from a single intuitive dashboard.',
-    imageLight: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/dash-light.png")`,
-    imageDark: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/dash-dark.png")`,
+      'Your Supervisor agent interprets your instructions and routes tasks to the right specialist — Receptionist, Finance, or HR — then asks for your approval before any high-impact action.',
+    accent: '#1e88e5',
+    eyebrow: 'CONTROL LAYER',
+    highlights: ['Classifies owner requests', 'Triggers approvals before impact', 'Keeps specialist agents aligned'],
+    metrics: ['3 active specialists', '2 approvals pending', '24 actions resolved today'],
   },
   {
     icon: <EdgesensorHighRoundedIcon />,
-    title: 'Mobile Check-in',
+    title: 'Customer Receptionist',
     description:
-      'Customers can join the queue remotely and track their wait time from their own device.',
-    imageLight: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/mobile-light.png")`,
-    imageDark: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/mobile-dark.png")`,
+      'Your AI Receptionist greets walk-ins, manages your live queue, and handles bookings — via link, QR code, or voice. No app required.',
+    accent: '#ff6b57',
+    eyebrow: 'CUSTOMER DESK',
+    highlights: ['Handles queue intake by voice or text', 'Explains services and current wait times', 'Collects appointment and contact details'],
+    metrics: ['4 customers waiting', 'ETA 22 min', 'Voice + chat ready'],
   },
   {
     icon: <DevicesRoundedIcon />,
-    title: 'Real-time Analytics',
+    title: 'Finance & HR Agents',
     description:
-      'Gain insights into peak hours, staff performance, and customer wait times to optimize operations.',
-    imageLight: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/devices-light.png")`,
-    imageDark: `url("${process.env.TEMPLATE_IMAGE_URL || 'https://mui.com'}/static/images/templates/templates-images/devices-dark.png")`,
+      'Ask your Finance agent for yesterday\'s revenue or this week\'s report. Tell your HR agent to update a shift. Get answers and take action in plain language.',
+    accent: '#16a34a',
+    eyebrow: 'BACK OFFICE',
+    highlights: ['Summarizes revenue and service mix', 'Tracks staffing and shift changes', 'Keeps business actions in one conversation thread'],
+    metrics: ['$4.8k revenue today', '6 staff on schedule', '1 payroll question resolved'],
   },
 ];
 
@@ -68,6 +76,56 @@ interface MobileLayoutProps {
   selectedFeature: (typeof items)[0];
 }
 
+function FeaturePreview({ item }: { item: (typeof items)[0] }) {
+  return (
+    <Box
+      sx={{
+        height: '100%',
+        p: { xs: 2, sm: 2.5, md: 3 },
+        borderRadius: 6,
+        background: (theme) => theme.palette.mode === 'dark'
+          ? `linear-gradient(160deg, ${alpha(item.accent, 0.22)} 0%, rgba(15,23,42,0.92) 62%)`
+          : `linear-gradient(160deg, ${alpha(item.accent, 0.12)} 0%, rgba(255,255,255,0.94) 62%)`,
+      }}
+    >
+      <Stack spacing={2} sx={{ height: '100%' }}>
+        <Box>
+          <Typography sx={{ fontSize: '0.72rem', letterSpacing: '0.18em', color: 'text.secondary' }}>
+            {item.eyebrow}
+          </Typography>
+          <Typography variant="h5" sx={{ mt: 1, fontWeight: 800, letterSpacing: '-0.03em' }}>
+            {item.title}
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1.2, color: 'text.secondary', maxWidth: 420 }}>
+            {item.description}
+          </Typography>
+        </Box>
+
+        <Stack spacing={1.1}>
+          {item.highlights.map((highlight) => (
+            <Box key={highlight} sx={{ display: 'flex', gap: 1.2, alignItems: 'flex-start' }}>
+              <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: item.accent, mt: 0.7, flexShrink: 0 }} />
+              <Typography variant="body2" color="text.secondary">
+                {highlight}
+              </Typography>
+            </Box>
+          ))}
+        </Stack>
+
+        <Divider />
+
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
+          {item.metrics.map((metric) => (
+            <Card key={metric} variant="outlined" sx={{ p: 1.5, borderRadius: 4, bgcolor: (theme) => alpha(theme.palette.background.paper, 0.72) }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{metric}</Typography>
+            </Card>
+          ))}
+        </Box>
+      </Stack>
+    </Box>
+  );
+}
+
 export function MobileLayout({
   selectedItemIndex,
   handleItemClick,
@@ -97,37 +155,7 @@ export function MobileLayout({
         ))}
       </Box>
       <Card variant="outlined">
-        <Box
-          sx={(theme) => ({
-            mb: 2,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            minHeight: 280,
-            backgroundImage: 'var(--items-imageLight)',
-            ...theme.applyStyles('dark', {
-              backgroundImage: 'var(--items-imageDark)',
-            }),
-          })}
-          style={
-            items[selectedItemIndex]
-              ? ({
-                '--items-imageLight': items[selectedItemIndex].imageLight,
-                '--items-imageDark': items[selectedItemIndex].imageDark,
-              } as any)
-              : {}
-          }
-        />
-        <Box sx={{ px: 2, pb: 2 }}>
-          <Typography
-            gutterBottom
-            sx={{ color: 'text.primary', fontWeight: 'medium' }}
-          >
-            {selectedFeature.title}
-          </Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
-            {selectedFeature.description}
-          </Typography>
-        </Box>
+        <FeaturePreview item={selectedFeature} />
       </Card>
     </Box>
   );
@@ -151,15 +179,15 @@ export default function Features({ embedded = false }: { embedded?: boolean }) {
           gutterBottom
           sx={{ color: 'text.primary' }}
         >
-          Why ZeroQwait?
+          Your Dedicated AI Agent Team
         </Typography>
         <Typography
           variant="body1"
           sx={{ color: 'text.secondary', mb: { xs: 2, sm: 4 } }}
         >
-          Streamline your business operations and improve customer satisfaction with our
-          comprehensive queue management features. From mobile check-ins to detailed
-          analytics, we have everything you need.
+          Stop juggling apps and spreadsheets. ZeroQwait gives every shop a team of specialized
+          AI agents that handle queues, analytics, and staff — all operated through natural
+          conversation.
         </Typography>
       </Box>
       <Box
@@ -188,6 +216,7 @@ export default function Features({ embedded = false }: { embedded?: boolean }) {
                     p: 2,
                     height: '100%',
                     width: '100%',
+                    borderRadius: 5,
                     '&:hover': {
                       backgroundColor: (theme.vars || theme).palette.action.hover,
                     },
@@ -232,7 +261,7 @@ export default function Features({ embedded = false }: { embedded?: boolean }) {
           sx={{
             display: { xs: 'none', sm: 'flex' },
             width: { xs: '100%', md: '70%' },
-            height: 'var(--items-image-height)',
+            minHeight: 500,
           }}
         >
           <Card
@@ -242,28 +271,10 @@ export default function Features({ embedded = false }: { embedded?: boolean }) {
               width: '100%',
               display: { xs: 'none', sm: 'flex' },
               pointerEvents: 'none',
+              borderRadius: 6,
             }}
           >
-            <Box
-              sx={(theme) => ({
-                m: 'auto',
-                width: 420,
-                height: 500,
-                backgroundSize: 'contain',
-                backgroundImage: 'var(--items-imageLight)',
-                ...theme.applyStyles('dark', {
-                  backgroundImage: 'var(--items-imageDark)',
-                }),
-              })}
-              style={
-                items[selectedItemIndex]
-                  ? ({
-                    '--items-imageLight': items[selectedItemIndex].imageLight,
-                    '--items-imageDark': items[selectedItemIndex].imageDark,
-                  } as any)
-                  : {}
-              }
-            />
+            <FeaturePreview item={selectedFeature} />
           </Card>
         </Box>
       </Box>

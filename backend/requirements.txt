@@ -108,6 +108,7 @@ redis==5.0.1
 rich==14.3.1
 rsa==4.9.1
 s3transfer==0.16.0
+sentence-transformers==4.1.0
 shellingham==1.5.4
 six==1.17.0
 sniffio==1.3.1
@@ -135,6 +136,9 @@ websockets==15.0.1
 zipp==3.23.0
 langchain
 langchain-community
+langchain-anthropic==1.4.1
+langchain-google-genai==4.2.2
+langchain-groq==1.1.2
 langchain-openai
 langgraph
 Faker==20.0.0

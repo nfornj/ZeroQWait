@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-    Container,
     Typography,
     Paper,
     TextField,
@@ -11,7 +10,6 @@ import {
     Avatar,
     Card,
     Grid,
-    CardActionArea,
     CardContent,
     Tabs,
     Tab,
@@ -25,16 +23,17 @@ import {
     ListItem,
     ListItemText,
     ListItemSecondaryAction,
-    Divider
+    Divider,
+    Stack,
+    Chip
 } from '@mui/material';
 import Header from '../components/Header';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EventBusyIcon from '@mui/icons-material/EventBusy';
-import axios from 'axios';
+import api from '../../../services/api';
 import { useThemeContext, ThemePreset } from '../../../contexts/ThemeContext';
 import { DataGrid, GridColDef, GridActionsCellItem } from '@mui/x-data-grid';
 
@@ -53,6 +52,19 @@ interface TabPanelProps {
     value: number;
 }
 
+interface ShopAIEnvironmentResponse {
+    shop_id: number;
+    subscription_tier: string;
+    environment_name: string;
+    environment_summary: string;
+    operating_mode: string;
+    status_label: string;
+    uses_default: boolean;
+    can_customize: boolean;
+    capabilities: string[];
+    experience_notes: string[];
+}
+
 function CustomTabPanel(props: TabPanelProps) {
     const { children, value, index, ...other } = props;
     return (
@@ -69,7 +81,7 @@ function CustomTabPanel(props: TabPanelProps) {
 
 const ShopSettingsPage: React.FC = () => {
     // Shared State
-    const { themePreset, setThemePreset, setDashboardGradient } = useThemeContext();
+    const { themePreset, setThemePreset } = useThemeContext();
     const presetTheme = THEMES.find((item) => item.id === themePreset) || THEMES[0];
     const [shop, setShop] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -95,6 +107,13 @@ const ShopSettingsPage: React.FC = () => {
         id: undefined as number | undefined,
         name: '', description: '', duration_minutes: 30, cost: 0.0
     });
+    const [generateDataDialogOpen, setGenerateDataDialogOpen] = useState(false);
+    const [deleteServiceConfirmId, setDeleteServiceConfirmId] = useState<number | null>(null);
+
+    // AI Settings State
+    const [llmLoading, setLlmLoading] = useState(false);
+    const [llmError, setLlmError] = useState<string | null>(null);
+    const [aiEnvironment, setAiEnvironment] = useState<ShopAIEnvironmentResponse | null>(null);
 
     // Close Days State
     const [closeDays, setCloseDays] = useState<any[]>([]);
@@ -102,16 +121,9 @@ const ShopSettingsPage: React.FC = () => {
     const [newCloseDate, setNewCloseDate] = useState('');
     const [newCloseReason, setNewCloseReason] = useState('');
 
-    useEffect(() => {
-        fetchShop();
-    }, []);
-
-    const fetchShop = async () => {
+    const fetchShop = useCallback(async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`/shops/my-shops`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/shops/my-shops`);
 
             if (response.data.length > 0) {
                 const shopData = response.data[0];
@@ -134,21 +146,23 @@ const ShopSettingsPage: React.FC = () => {
                 // Fetch related data
                 fetchServices(shopData.id);
                 fetchCloseDays(shopData.id);
+                fetchLLMSettings(shopData.id);
             }
             setLoading(false);
         } catch (err) {
             setError('Failed to load shop settings');
             setLoading(false);
         }
-    };
+    }, [presetTheme.primary, presetTheme.secondary]);
+
+    useEffect(() => {
+        fetchShop();
+    }, [fetchShop]);
 
     const fetchServices = async (shopId: number) => {
         try {
             setServiceLoading(true);
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`/shops/${shopId}/services`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/shops/${shopId}/services`);
             setServices(response.data);
             setServiceLoading(false);
         } catch (err) {
@@ -160,15 +174,25 @@ const ShopSettingsPage: React.FC = () => {
     const fetchCloseDays = async (shopId: number) => {
         try {
             setCloseDaysLoading(true);
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`/shops/${shopId}/close-days`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/shops/${shopId}/close-days`);
             setCloseDays(response.data);
             setCloseDaysLoading(false);
         } catch (err) {
             console.error("Failed to fetch close days", err);
             setCloseDaysLoading(false);
+        }
+    };
+
+    const fetchLLMSettings = async (shopId: number) => {
+        try {
+            setLlmLoading(true);
+            setLlmError(null);
+            const response = await api.get<ShopAIEnvironmentResponse>(`/shops/${shopId}/llm-settings`);
+            setAiEnvironment(response.data);
+        } catch (err: any) {
+            setLlmError(err.response?.data?.detail || 'Failed to load AI settings');
+        } finally {
+            setLlmLoading(false);
         }
     };
 
@@ -181,17 +205,12 @@ const ShopSettingsPage: React.FC = () => {
         setSuccess(null);
 
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(`/shops/${shop.id}`, formData, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.put(`/shops/${shop.id}`, formData);
 
             if (logoFile) {
                 const fd = new FormData();
                 fd.append('file', logoFile);
-                await axios.put(`/shops/${shop.id}/logo`, fd, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                await api.put(`/shops/${shop.id}/logo`, fd);
             }
             setSuccess('Settings saved successfully');
             setTimeout(() => window.location.reload(), 1000); // Reload to apply themes globally
@@ -203,12 +222,13 @@ const ShopSettingsPage: React.FC = () => {
     };
 
     const handleGenerateData = async () => {
-        if (!window.confirm('This will generate 30 days of sample data. Proceed?')) return;
+        setGenerateDataDialogOpen(true);
+    };
+
+    const confirmGenerateData = async () => {
+        setGenerateDataDialogOpen(false);
         try {
-            const token = localStorage.getItem('token');
-            await axios.post(`/shops/${shop.id}/generate-sample-data`, {}, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.post(`/shops/${shop.id}/generate-sample-data`, {});
             setSuccess('Sample data generated! Refreshing...');
             setTimeout(() => window.location.reload(), 1500);
         } catch (e) {
@@ -220,12 +240,10 @@ const ShopSettingsPage: React.FC = () => {
 
     const handleServiceSubmit = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const headers = { Authorization: `Bearer ${token}` };
             if (serviceFormData.id) {
-                await axios.put(`/shops/${shop.id}/services/${serviceFormData.id}`, serviceFormData, { headers });
+                await api.put(`/shops/${shop.id}/services/${serviceFormData.id}`, serviceFormData);
             } else {
-                await axios.post(`/shops/${shop.id}/services`, serviceFormData, { headers });
+                await api.post(`/shops/${shop.id}/services`, serviceFormData);
             }
             setOpenServiceDialog(false);
             fetchServices(shop.id);
@@ -235,26 +253,26 @@ const ShopSettingsPage: React.FC = () => {
         }
     };
 
-    const deleteService = async (id: number) => {
-        if (!window.confirm("Delete this service?")) return;
+    const deleteService = (id: number) => {
+        setDeleteServiceConfirmId(id);
+    };
+
+    const confirmDeleteService = async () => {
+        if (deleteServiceConfirmId === null) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`/shops/${shop.id}/services/${id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.delete(`/shops/${shop.id}/services/${deleteServiceConfirmId}`);
+            setDeleteServiceConfirmId(null);
             fetchServices(shop.id);
         } catch (e) { setError('Failed to delete service'); }
-    }
+    };
 
     // --- Close Days Handlers ---
 
     const addCloseDay = async () => {
         if (!newCloseDate) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.post(`/shops/${shop.id}/close-days`, null, {
+            await api.post(`/shops/${shop.id}/close-days`, null, {
                 params: { date_str: newCloseDate, reason: newCloseReason },
-                headers: { Authorization: `Bearer ${token}` }
             });
             setNewCloseDate('');
             setNewCloseReason('');
@@ -267,10 +285,7 @@ const ShopSettingsPage: React.FC = () => {
 
     const deleteCloseDay = async (id: number) => {
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`/shops/${shop.id}/close-days/${id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.delete(`/shops/${shop.id}/close-days/${id}`);
             fetchCloseDays(shop.id);
         } catch (e) {
             setError('Failed to remove close day');
@@ -307,7 +322,6 @@ const ShopSettingsPage: React.FC = () => {
             ]
         }
     ];
-
     return (
         <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
             <Box sx={{ width: '100%', mb: 2 }}>
@@ -342,6 +356,7 @@ const ShopSettingsPage: React.FC = () => {
                 <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
                     <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
                         <Tab label="General Settings" />
+                        <Tab label="AI Environment" />
                         <Tab label="Services" />
                         <Tab label="Schedule & Close Days" />
                     </Tabs>
@@ -409,8 +424,99 @@ const ShopSettingsPage: React.FC = () => {
                     </Box>
                 </CustomTabPanel>
 
-                {/* TAB 2: SERVICES */}
+                {/* TAB 2: AI ENVIRONMENT */}
                 <CustomTabPanel value={tabValue} index={1}>
+                    <Box p={3}>
+                        <Grid container spacing={2}>
+                            <Grid size={{ xs: 12, md: 8 }}>
+                                <Card variant="outlined" sx={{ borderRadius: 3, mb: 2 }}>
+                                    <CardContent>
+                                        <Typography variant="h6" gutterBottom>AI Environment</Typography>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                                            Your shop runs inside a ZeroQwait-managed AI environment built for owner operations, approvals, and day-to-day assistance.
+                                        </Typography>
+
+                                        {llmError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setLlmError(null)}>{llmError}</Alert>}
+
+                                        {llmLoading ? (
+                                            <Box display="flex" justifyContent="center" py={6}>
+                                                <CircularProgress />
+                                            </Box>
+                                        ) : (
+                                            aiEnvironment && (
+                                                <Box display="flex" flexDirection="column" gap={3}>
+                                                    <Box>
+                                                        <Typography variant="h5" sx={{ fontWeight: 700, mb: 1 }}>
+                                                            {aiEnvironment.environment_name}
+                                                        </Typography>
+                                                        <Typography variant="body1" color="text.secondary">
+                                                            {aiEnvironment.environment_summary}
+                                                        </Typography>
+                                                    </Box>
+
+                                                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                                        <Chip size="small" label={aiEnvironment.status_label} color="primary" />
+                                                        <Chip size="small" label={aiEnvironment.operating_mode} variant="outlined" />
+                                                        <Chip size="small" label={`Plan: ${aiEnvironment.subscription_tier}`} variant="outlined" />
+                                                    </Stack>
+
+                                                    <Alert severity="info">
+                                                        ZeroQwait manages the underlying AI stack automatically so your team can focus on running the business, not configuring models.
+                                                    </Alert>
+
+                                                    <Box>
+                                                        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
+                                                            What Your AI Team Handles
+                                                        </Typography>
+                                                        <Stack spacing={1.5}>
+                                                            {aiEnvironment.capabilities.map((item) => (
+                                                                <Box key={item} sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                                                                    <Typography variant="body2">{item}</Typography>
+                                                                </Box>
+                                                            ))}
+                                                        </Stack>
+                                                    </Box>
+                                                </Box>
+                                            )
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, md: 4 }}>
+                                <Card variant="outlined" sx={{ borderRadius: 3, mb: 2 }}>
+                                    <CardContent>
+                                        <Typography variant="subtitle2" color="text.secondary">Environment Status</Typography>
+                                        <Typography variant="h6" sx={{ fontWeight: 700, mt: 0.5 }}>
+                                            {aiEnvironment?.uses_default ? 'Managed by ZeroQwait' : 'Managed with internal override'}
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                                            Technical model, provider, and infrastructure choices are handled centrally and are not exposed in owner settings.
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+
+                                <Card variant="outlined" sx={{ borderRadius: 3 }}>
+                                    <CardContent>
+                                        <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>How ZeroQwait Runs It</Typography>
+                                        <Stack spacing={1}>
+                                            {(aiEnvironment?.experience_notes || []).map((note) => (
+                                                <Box key={note} sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        {note}
+                                                    </Typography>
+                                                </Box>
+                                            ))}
+                                        </Stack>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                        </Grid>
+                    </Box>
+                </CustomTabPanel>
+
+                {/* TAB 3: SERVICES */}
+                <CustomTabPanel value={tabValue} index={2}>
                     <Box p={3}>
                         <Box display="flex" justifyContent="space-between" mb={2}>
                             <Typography variant="h6">Manage Services</Typography>
@@ -425,8 +531,8 @@ const ShopSettingsPage: React.FC = () => {
                     </Box>
                 </CustomTabPanel>
 
-                {/* TAB 3: SCHEDULE */}
-                <CustomTabPanel value={tabValue} index={2}>
+                {/* TAB 4: SCHEDULE */}
+                <CustomTabPanel value={tabValue} index={3}>
                     <Box p={3}>
                         <Typography variant="h6" gutterBottom>Operating Schedule</Typography>
                         <Alert severity="info" sx={{ mb: 3 }}>
@@ -514,6 +620,30 @@ const ShopSettingsPage: React.FC = () => {
                 <DialogActions>
                     <Button onClick={() => setOpenServiceDialog(false)}>Cancel</Button>
                     <Button variant="contained" onClick={handleServiceSubmit} disabled={!serviceFormData.name}>Save</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Generate Sample Data Confirmation */}
+            <Dialog open={generateDataDialogOpen} onClose={() => setGenerateDataDialogOpen(false)}>
+                <DialogTitle>Generate Sample Data</DialogTitle>
+                <DialogContent>
+                    <Typography>This will generate 30 days of sample data. Proceed?</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setGenerateDataDialogOpen(false)}>Cancel</Button>
+                    <Button variant="contained" onClick={confirmGenerateData}>Generate</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Delete Service Confirmation */}
+            <Dialog open={deleteServiceConfirmId !== null} onClose={() => setDeleteServiceConfirmId(null)}>
+                <DialogTitle>Delete Service</DialogTitle>
+                <DialogContent>
+                    <Typography>Delete this service? This cannot be undone.</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDeleteServiceConfirmId(null)}>Cancel</Button>
+                    <Button variant="contained" color="error" onClick={confirmDeleteService}>Delete</Button>
                 </DialogActions>
             </Dialog>
         </Box>

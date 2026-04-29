@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../../services/api';
 import {
     Box,
     Typography,
@@ -51,6 +51,7 @@ const ServicesManagementPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
     useEffect(() => {
         if (shop) {
@@ -61,10 +62,7 @@ const ServicesManagementPage: React.FC = () => {
     const fetchServices = async () => {
         if (!shop) return;
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`/shops/${shop.id}/services`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/shops/${shop.id}/services`);
             setServices(response.data);
             setLoading(false);
         } catch (err: any) {
@@ -101,16 +99,13 @@ const ServicesManagementPage: React.FC = () => {
         setError(null);
 
         try {
-            const token = localStorage.getItem('token');
-            const headers = { Authorization: `Bearer ${token}` };
-
             if (formData.id) {
                 // Update
-                await axios.put(`/shops/${shop.id}/services/${formData.id}`, formData, { headers });
+                await api.put(`/shops/${shop.id}/services/${formData.id}`, formData);
                 setSuccess('Service updated successfully');
             } else {
                 // Create
-                await axios.post(`/shops/${shop.id}/services`, formData, { headers });
+                await api.post(`/shops/${shop.id}/services`, formData);
                 setSuccess('Service created successfully');
             }
 
@@ -123,18 +118,20 @@ const ServicesManagementPage: React.FC = () => {
         }
     };
 
-    const handleDelete = async (id: number) => {
-        if (!shop || !window.confirm('Are you sure you want to delete this service?')) return;
+    const handleDelete = (id: number) => {
+        setDeleteConfirmId(id);
+    };
 
+    const confirmDelete = async () => {
+        if (!shop || deleteConfirmId === null) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`/shops/${shop.id}/services/${id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.delete(`/shops/${shop.id}/services/${deleteConfirmId}`);
             setSuccess('Service deleted successfully');
+            setDeleteConfirmId(null);
             fetchServices();
         } catch (err: any) {
             setError('Failed to delete service');
+            setDeleteConfirmId(null);
         }
     };
 
@@ -293,6 +290,18 @@ const ServicesManagementPage: React.FC = () => {
                     >
                         {submitting ? 'Saving...' : 'Save'}
                     </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Delete Service Confirmation Dialog */}
+            <Dialog open={deleteConfirmId !== null} onClose={() => setDeleteConfirmId(null)}>
+                <DialogTitle>Delete Service</DialogTitle>
+                <DialogContent>
+                    <Typography>Are you sure you want to delete this service? This cannot be undone.</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+                    <Button variant="contained" color="error" onClick={confirmDelete}>Delete</Button>
                 </DialogActions>
             </Dialog>
         </Box>

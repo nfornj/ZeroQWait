@@ -1,0 +1,14 @@
+# PodDisruptionBudget for the backend deployment.
+# maxUnavailable: 1 allows rolling updates and node drains to proceed even
+# when there is only one backend replica (single-node K3s setup).
+# Using minAvailable: 1 with replicas: 1 would permanently block all drains.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: zeroqwait
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: backend

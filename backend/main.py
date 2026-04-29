@@ -5,7 +5,7 @@ from starlette.requests import Request
 import re as _re
 import uvicorn
 from contextlib import asynccontextmanager
-from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments
+from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments, llm_settings
 from modules.auth.router import router as auth_router
 from modules.users.router import router as users_router
 from modules.shops.router import router as shops_router
@@ -16,6 +16,7 @@ from modules.admin.router import router as admin_router
 from modules.testing.routes import router as testing_router
 from modules.feedback.router import router as feedback_router
 from scheduler import start_scheduler, stop_scheduler
+from audit_logger import start_worker as _audit_start, stop_worker as _audit_stop
 import logging
 import models # Force model registration
 from websocket_manager import manager
@@ -34,6 +35,17 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Handle application startup and shutdown"""
     # Startup
+
+    # Ensure all SQLAlchemy model tables exist (idempotent — safe on every restart).
+    # This replaces the init-database K8s initContainer so the image is self-contained.
+    try:
+        from database import engine, Base
+        import models  # noqa: F401 — registers all mapped classes with Base
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database schema ready.")
+    except Exception as _db_err:
+        logger.warning(f"Database schema initialization warning: {_db_err}")
+
     logger.info("Starting analytics scheduler...")
     await start_scheduler(run_at_hour=0, run_at_minute=30)  # Run at 00:30 daily
     
@@ -73,11 +85,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Semantic cache pre-warm failed (non-fatal): {e}")
     
+    # Start async audit writer
+    _audit_start()
+    logger.info("Audit logger started")
+
     logger.info("Application started")
     
     yield
     
     # Shutdown
+    logger.info("Stopping audit logger...")
+    await _audit_stop()
     logger.info("Stopping analytics scheduler...")
     await stop_scheduler()
     logger.info("Application shutdown complete")
@@ -205,6 +223,7 @@ app.include_router(subscriptions.router, prefix="/api/subscriptions", tags=["Sub
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(data_generation.router, prefix="/api", tags=["Data Generation"])
 app.include_router(services.router, prefix="/api", tags=["Services"])
+app.include_router(llm_settings.router, prefix="/api", tags=["LLM Settings"])
 app.include_router(agent.router, prefix="/api/agent", tags=["AI Agent"])
 app.include_router(agent_v2.router, prefix="", tags=["AI Agent v2"])
 app.include_router(registration.router, prefix="/api/agent/registration", tags=["Registration"])

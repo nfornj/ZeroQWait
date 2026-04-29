@@ -10,7 +10,6 @@ jobs:
   deploy-prod:
     runs-on: self-hosted
     env:
-      REGISTRY_DATA_PATH: /media/neekrishrichu/One Touch/projects/zeroqwait
       SKIP_TESTS: "true"
       # Fixed path prevents run-<id> directory buildup across prod deploys.
       CHECKOUT_PATH: zeroqwait-prod-deploy
@@ -21,14 +20,25 @@ jobs:
           clean: false
           path: ${{ env.CHECKOUT_PATH }}
 
-      - name: Ensure local registry
-        env:
-          REGISTRY_DATA_PATH: /media/neekrishrichu/One Touch/projects/zeroqwait
+      - name: Login to GHCR
         run: |
-          cd "${CHECKOUT_PATH}"
-          chmod +x deployment/scripts/setup-local-registry.sh
-          # sudo -E preserves REGISTRY_DATA_PATH when escalating.
-          sudo -E deployment/scripts/setup-local-registry.sh
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Create / refresh GHCR pull secret in K8s
+        run: |
+          if sudo sh -c 'command -v kubectl >/dev/null 2>&1 || command -v k3s >/dev/null 2>&1'; then
+            KCTL_CMD="$(sudo sh -c 'command -v kubectl || (command -v k3s && echo k3s kubectl)' | head -n1)"
+            sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+              ${KCTL_CMD} create secret docker-registry ghcr-pull-secret \
+                --docker-server=ghcr.io \
+                --docker-username="${{ github.actor }}" \
+                --docker-password="${{ secrets.GITHUB_TOKEN }}" \
+                -n zeroqwait \
+                --dry-run=client -o yaml | \
+              sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml ${KCTL_CMD} apply -f -
+          else
+            echo "Kubernetes CLI not found — skipping pull secret creation"
+          fi
 
       - name: Ensure Kubernetes CLI
         run: |
@@ -51,11 +61,17 @@ jobs:
           deployment/scripts/deploy-prod.sh
 
       - name: Purge Cloudflare cache
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ZONE_ID != '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
         run: |
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" || -z "${CLOUDFLARE_ZONE_ID:-}" ]]; then
+            echo "Cloudflare credentials not configured — skipping cache purge"
+            exit 0
+          fi
           echo "Purging Cloudflare cache for zeroqwait.com..."
-          curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/purge_cache" \
-            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+          curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
             --data '{"purge_everything":true}' | tee /tmp/cf_purge_result.json
           if grep -q '"success":true' /tmp/cf_purge_result.json; then

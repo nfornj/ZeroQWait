@@ -87,6 +87,9 @@ fi
 cat > "${CI_OVERRIDE_FILE}" <<'EOF'
 services:
   backend:
+    build:
+      args:
+        PREWARM_SENTENCE_TRANSFORMER: "0"
     volumes: []
     environment:
       - OLLAMA_URL=${SHARED_OLLAMA_URL}
@@ -139,16 +142,15 @@ sudo env DB_HOST_PORT="${DB_HOST_PORT}" BACKEND_HOST_PORT="${BACKEND_HOST_PORT}"
 	docker compose "${COMPOSE_ARGS[@]}" exec -T backend /opt/venv/bin/python init_database.py
 
 sudo env DB_HOST_PORT="${DB_HOST_PORT}" BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" SHARED_OLLAMA_URL="${SHARED_OLLAMA_URL}" SHARED_MODEL_NAME="${SHARED_MODEL_NAME}" SHARED_TTS_URL="${SHARED_TTS_URL}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT}" \
-	docker compose "${COMPOSE_ARGS[@]}" exec -T backend /opt/venv/bin/python seed_data.py
+	docker compose "${COMPOSE_ARGS[@]}" exec -T backend env PYTHONPATH=/app /opt/venv/bin/python scripts/seed_data.py
 
 echo "==> Ensuring compatibility test login account"
 sudo env DB_HOST_PORT="${DB_HOST_PORT}" BACKEND_HOST_PORT="${BACKEND_HOST_PORT}" FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT}" SHARED_OLLAMA_URL="${SHARED_OLLAMA_URL}" SHARED_MODEL_NAME="${SHARED_MODEL_NAME}" SHARED_TTS_URL="${SHARED_TTS_URL}" COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT}" \
 	docker compose "${COMPOSE_ARGS[@]}" exec -T backend /opt/venv/bin/python - <<'PY'
-from passlib.context import CryptContext
 from database import SessionLocal
 from models import User, UserRole, SubscriptionTier, Shop
+from shared.auth_utils import get_password_hash
 
-pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 username = "test_bulk_owner_0_3504"
 email = "test_bulk_owner_0_3504@zeroqwait.com"
 password = "password123"
@@ -160,7 +162,7 @@ try:
 		user = User(
 			email=email,
 			username=username,
-			hashed_password=pwd.hash(password),
+			hashed_password=get_password_hash(password),
 			role=UserRole.SHOP_OWNER,
 			is_active=True,
 			subscription_tier=SubscriptionTier.PREMIUM,
@@ -234,18 +236,24 @@ echo "==> Deployment successful"
 echo "    Frontend: http://localhost:${FRONTEND_PUBLISHED_PORT}"
 echo "    Backend : http://localhost:${BACKEND_PUBLISHED_PORT}"
 
-ARCHIVE_SERVICES="${TEST_ARCHIVE_SERVICES:-backend,frontend}"
-echo "==> Archiving test images to local registry (retain last 3 tags)"
-echo "==> Archive services: ${ARCHIVE_SERVICES}"
-sudo env \
-	SKIP_TESTS="true" \
-	IMAGE_NAMESPACE="test" \
-	RETAIN_VERSIONS="3" \
-	SKIP_REGISTRY_PRUNE="false" \
-	SERVICES="${ARCHIVE_SERVICES}" \
-	AUTO_COMMIT="false" \
-	ARGOCD_SYNC="false" \
-	bash "${PROJECT_ROOT}/deployment/scripts/run-local-pipeline.sh"
+ARCHIVE_SERVICES="${TEST_ARCHIVE_SERVICES:-}"
+TEST_ARCHIVE_REGISTRY="${TEST_ARCHIVE_REGISTRY:-localhost:5000}"
+if [[ -n "${ARCHIVE_SERVICES// /}" ]]; then
+	echo "==> Archiving test images to local registry (retain last 3 tags)"
+	echo "==> Archive services: ${ARCHIVE_SERVICES}"
+	sudo env \
+		REGISTRY="${TEST_ARCHIVE_REGISTRY}" \
+		SKIP_TESTS="true" \
+		IMAGE_NAMESPACE="test" \
+		RETAIN_VERSIONS="3" \
+		SKIP_REGISTRY_PRUNE="false" \
+		SERVICES="${ARCHIVE_SERVICES}" \
+		AUTO_COMMIT="false" \
+		ARGOCD_SYNC="false" \
+		bash "${PROJECT_ROOT}/deployment/scripts/run-local-pipeline.sh"
+else
+	echo "==> Skipping test image archive (set TEST_ARCHIVE_SERVICES to enable)"
+fi
 
 # Some container steps can leave root-owned files in the checkout workspace
 # (for example backend/.venv). Restore ownership so actions/checkout can clean

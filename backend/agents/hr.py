@@ -1,381 +1,211 @@
-"""
-HR Sub-Agent - Handles employees, shifts, and scheduling.
+"""HR specialist graph with explicit planner and executor nodes."""
 
-Responsibilities:
-- Employee management (add, remove, list)
-- Shift scheduling and assignments
-- Employee availability and clock in/out
-- Shift coverage and gaps
-- Employee performance metrics
+import logging
+from typing import Any, Dict, Optional, Sequence
 
-Phase 2: Placeholder implementation
-Phase 3: Wire to HRMCP server
+from langchain_core.messages import BaseMessage
 
-Tools called:
-- list_employees(shop_id) → employee list
-- add_employee(shop_id, name, role, phone, wages) → employee_id
-- remove_employee(shop_id, employee_id) → confirmation
-- get_shifts(shop_id, date=None, employee_id=None) → shift list
-- assign_shift(shop_id, employee_id, start_time, end_time, date) → confirmation
-- clock_in_out(shop_id, employee_id, action='in'|'out') → timestamp
-
-Data sources:
-- shop_employees table
-- employee_shifts table
-- employee_clock_in_out table (if tracking time)
-"""
-
-import json as _json
-import os
-import re
-
-from langchain_core.messages import AIMessage, BaseMessage
-from langchain_ollama import ChatOllama
-from langgraph.graph import StateGraph, END
-
-from .state import AgentState
+from .specialist_graph import build_specialist_runnable
 from .tools import hr_tools
 
+logger = logging.getLogger(__name__)
 
-def classify_entry(state: AgentState) -> dict:
-    """No-op node so conditional routing can inspect state safely."""
-    return {}
+OPERATION_ALIASES = {
+    "request_employee_details": "add_employee",
+    "employee_details": "list_employees",
+}
 
-
-def _latest_user_text(state: AgentState) -> str:
-    messages = state.get("messages", [])
-    if not messages:
-        return ""
-    latest = messages[-1]
-    return str(latest.content) if isinstance(latest, BaseMessage) else str(latest)
-
-
-def _ollama_base_url() -> str:
-    base_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1").rstrip("/")
-    if base_url.endswith("/v1"):
-        return base_url[:-3]
-    return base_url
-
-
-def _get_hr_writer_llm() -> ChatOllama:
-    return ChatOllama(
-        model=os.getenv("MODEL_NAME", "qwen3:14b-q4_K_M"),
-        base_url=_ollama_base_url(),
-        temperature=0.2,
-        top_p=0.9,
-        num_gpu=-1,
-    )
-
-
-def _generate_hr_response(
-    state: AgentState,
-    response_type: str,
-    facts: dict,
-    *,
-    extra_instructions: str = "",
-) -> str:
-    query = _latest_user_text(state)
-    llm = _get_hr_writer_llm()
-    style_rules = [
-        "You are the HR assistant agent for a service business.",
-        "Your role is workforce operations: employees, shifts, availability, and attendance actions.",
-        "Use only the data in FACTS_JSON and never fabricate names, schedules, or statuses.",
-        "Be concise, professional, and action-oriented.",
-        "Do not mention internal systems, JSON, tools, routing, or shop_id unless the user asked.",
-        "No emojis.",
-        "Use bullets only when listing employees, shifts, or availability groups.",
-    ]
-    if extra_instructions:
-        style_rules.append(extra_instructions)
-
-    prompt = (
-        "\n".join(style_rules)
-        + f"\n\nRESPONSE_TYPE: {response_type}"
-        + f"\nUSER_QUESTION: {_json.dumps(query)}"
-        + f"\nFACTS_JSON: {_json.dumps(facts, default=str)}"
-        + "\n\nReturn only the owner-facing HR response text."
-    )
-
-    response = llm.invoke([{"role": "user", "content": prompt}])
-    content = response.content if hasattr(response, "content") else str(response)
-    if isinstance(content, list):
-        content = " ".join(str(chunk) for chunk in content)
-    text = str(content).strip()
-    text = re.sub(r"^```(?:text|markdown)?\s*", "", text).rstrip("`").strip()
-    if not text:
-        raise RuntimeError("LLM returned empty response for HR query")
-    return text
-
-
-def hr_intent_classifier(state: AgentState) -> str:
-    """
-    Classify the HR request type.
-    
-    Returns: "list_employees", "add_employee", "shift_schedule", "clock_in_out", "availability", "other"
-    """
-    
-    messages = state.get("messages", [])
-    if not messages:
-        return "other"
-    
-    latest = messages[-1]
-    if isinstance(latest, BaseMessage):
-        content = str(latest.content).lower()
-    else:
-        content = str(latest).lower()
-    
-    # Keyword matching for Phase 2
-    if any(word in content for word in ["add", "new", "hire", "employee", "staff"]):
-        if "add" in content or "new" in content or "hire" in content:
-            return "add_employee"
-        return "list_employees"
-    elif any(word in content for word in ["shift", "schedule", "assign", "time"]):
-        return "shift_schedule"
-    elif any(phrase in content for phrase in ["clock in", "clock out", "clocked in", "clocked out", "arrived", "left early"]):
-        return "clock_in_out"
-    elif any(word in content for word in ["available", "availability", "who", "working", "on duty", "roster"]):
-        return "availability"
-    else:
-        return "other"
-
-
-def handle_list_employees(state: AgentState) -> dict:
-    """List all employees for the shop."""
-    
-    shop_id = state["tenant_id"]
-    result = hr_tools.list_employees(shop_id)
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't load the employee roster: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    response = AIMessage(
-        content=_generate_hr_response(
-            state,
-            "list_employees",
-            result,
-            extra_instructions="If employees exist, provide a clear roster with active/inactive status and total count.",
-        )
-    )
-    
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": result
-    }
-
-
-def handle_add_employee(state: AgentState) -> dict:
-    """Propose adding a new employee (high-impact action requiring approval)."""
-    
-    shop_id = state["tenant_id"]
-    metadata = state.get("metadata") or {}
-    employee_name = metadata.get("employee_name") or "New Employee"
-    employee_email = metadata.get("employee_email") or f"employee_{shop_id}_{employee_name.lower().replace(' ', '_')}@zeroqwait.local"
-    employee_phone = metadata.get("employee_phone")
-    employee_role = metadata.get("employee_role") or "employee"
-    return {
-        "messages": list(state["messages"]) + [AIMessage(
-            content=f"I can add {employee_name} as a {employee_role}. Please approve this action to continue."
-        )],
-        "pending_approval": {
-            "action": "add_employee",
-            "shop_id": shop_id,
-            "details": {
-                "name": employee_name,
-                "email": employee_email,
-                "phone": employee_phone,
-                "role": employee_role,
-                "impact": "Creates a new active employee account and links it to this shop",
-            },
-        },
-        "needs_human_input": True,
-        "tool_results": None,
-    }
-
-
-def handle_shift_schedule(state: AgentState) -> dict:
-    """View or manage shift schedules."""
-    
-    shop_id = state["tenant_id"]
-    result = hr_tools.get_shifts(shop_id)
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't load today's shifts: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    response = AIMessage(
-        content=_generate_hr_response(
-            state,
-            "shift_schedule",
-            result,
-            extra_instructions="Summarize today's shifts and highlight unfilled or inactive coverage if implied by data.",
-        )
-    )
-    
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": result
-    }
-
-
-def handle_clock_in_out(state: AgentState) -> dict:
-    """Log employee clock in/out."""
-    
-    shop_id = state["tenant_id"]
-    metadata = state.get("metadata") or {}
-    user_id = metadata.get("employee_user_id")
-    if not user_id:
-        employees = hr_tools.list_employees(shop_id).get("employees", [])
-        user_id = employees[0].get("user_id") if employees else None
-    if not user_id:
-        response = AIMessage(content="I couldn't find an employee to clock in or out.")
-        return {"messages": list(state["messages"]) + [response], "tool_results": None}
-
-    action = metadata.get("clock_action") or "in"
-    result = hr_tools.clock_in_out(shop_id, int(user_id), action)
-    if result.get("error"):
-        response = AIMessage(content=f"I couldn't update the clock record: {result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": result}
-
-    shift = result.get("shift", {})
-    response = AIMessage(
-        content=_generate_hr_response(
-            state,
-            "clock_in_out",
-            {**result, "employee_user_id": user_id, "clock_action": action},
-            extra_instructions="Confirm the attendance action and timestamp in the first sentence.",
-        )
-    )
-    
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": result
-    }
-
-
-def handle_availability(state: AgentState) -> dict:
-    """Check employee availability for a time slot."""
-    
-    shop_id = state["tenant_id"]
-    employees_result = hr_tools.list_employees(shop_id)
-    shifts_result = hr_tools.get_shifts(shop_id)
-    if employees_result.get("error"):
-        response = AIMessage(content=f"I couldn't check availability: {employees_result['error']}")
-        return {"messages": list(state["messages"]) + [response], "tool_results": employees_result}
-
-    employees = employees_result.get("employees", [])
-    active_shift_user_ids = {shift.get("user_id") for shift in shifts_result.get("shifts", [])}
-    available = [
-        employee.get("user", {}).get("username", f"User {employee.get('user_id')}")
-        for employee in employees
-        if employee.get("user_id") not in active_shift_user_ids
-    ]
-    unavailable = [
-        employee.get("user", {}).get("username", f"User {employee.get('user_id')}")
-        for employee in employees
-        if employee.get("user_id") in active_shift_user_ids
-    ]
-    response = AIMessage(
-        content=_generate_hr_response(
-            state,
-            "availability",
-            {
-                "employees": employees_result,
-                "shifts": shifts_result,
-                "available": available,
-                "unavailable": unavailable,
-            },
-            extra_instructions="Group people into available and unavailable clearly, then suggest a next staffing action.",
-        )
-    )
-    
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": {
-            "employees": employees_result,
-            "shifts": shifts_result,
-            "available": available,
-            "unavailable": unavailable,
-        }
-    }
-
-
-def handle_other(state: AgentState) -> dict:
-    """Generic HR response."""
-    
-    response = AIMessage(
-        content=_generate_hr_response(
-            state,
-            "fallback_help",
-            {
-                "capabilities": [
-                    "List all employees",
-                    "Add a new employee",
-                    "View shift schedule",
-                    "Employee clock in/out",
-                    "Check availability",
-                ]
-            },
-            extra_instructions="Offer concise HR support options and ask what staffing task to handle next.",
-        )
-    )
-    
-    return {
-        "messages": list(state["messages"]) + [response],
-        "tool_results": None
-    }
-
-
-def build_hr_graph():
-    """
-    Build the LangGraph StateGraph for the HR sub-agent.
-    
-    Flow:
-    1. classify - determine HR query type
-    2. route to handler (list, add, schedule, clock, availability, other)
-    3. END
-    """
-    
-    graph = StateGraph(AgentState)
-    
-    # Nodes
-    graph.add_node("classify", classify_entry)
-    graph.add_node("list_employees", handle_list_employees)
-    graph.add_node("add_employee", handle_add_employee)
-    graph.add_node("shift_schedule", handle_shift_schedule)
-    graph.add_node("clock_in_out", handle_clock_in_out)
-    graph.add_node("availability", handle_availability)
-    graph.add_node("other", handle_other)
-    
-    # Edges
-    graph.add_conditional_edges(
-        "classify",
-        lambda state: hr_intent_classifier(state),
-        {
-            "list_employees": "list_employees",
-            "add_employee": "add_employee",
-            "shift_schedule": "shift_schedule",
-            "clock_in_out": "clock_in_out",
-            "availability": "availability",
-            "other": "other"
-        }
-    )
-    
-    # All handlers end
-    for node in ["list_employees", "add_employee", "shift_schedule", "clock_in_out", "availability", "other"]:
-        graph.add_edge(node, END)
-    
-    # Entry point
-    graph.set_entry_point("classify")
-    
-    return graph
-
-
-def create_hr_runnable():
-    """Compile the HR graph into an executable runnable."""
-    graph = build_hr_graph()
-    return graph.compile()
-
-
-__all__ = [
-    "build_hr_graph",
-    "create_hr_runnable"
+SUPPORTED_OPERATIONS = [
+    "list_employees",
+    "add_employee",
+    "remove_employee",
+    "get_shifts",
+    "assign_shift",
+    "clock_in_out",
 ]
+
+PLANNER_INSTRUCTIONS = """\
+- list_employees: list active employees unless include_inactive=true is explicitly requested.
+- add_employee: use when the owner asks to add or hire someone; requires at least the employee name. This requires approval.
+- remove_employee: use when the owner asks to remove or deactivate an employee and a user_id is known. This requires approval.
+- get_shifts: use for shift schedules and staffing views; arguments: date(optional), user_id(optional).
+- assign_shift: use when assigning a shift to a known employee id; requires user_id, start_time, end_time, and date. This requires approval.
+- clock_in_out: use for clock-in or clock-out requests; arguments: user_id and action.
+"""
+
+
+def _optional_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _to_int(value: Any) -> Optional[int]:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _flatten_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return " ".join(_flatten_text(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_flatten_text(item) for item in value)
+    return str(value)
+
+
+def _recent_conversation_text(messages: Sequence[BaseMessage]) -> str:
+    recent_messages = list(messages or [])[-6:]
+    parts = []
+    for message in recent_messages:
+        parts.append(_flatten_text(getattr(message, "content", None)))
+        additional_kwargs = getattr(message, "additional_kwargs", None)
+        if additional_kwargs:
+            parts.append(_flatten_text(additional_kwargs))
+    return " ".join(part for part in parts if part).strip()
+
+
+def _normalize_hr_operation(operation: str, plan: Dict[str, Any], messages: Sequence[BaseMessage]) -> str:
+    normalized_operation = str(operation or "").strip().lower()
+    if normalized_operation in OPERATION_ALIASES:
+        normalized_operation = OPERATION_ALIASES[normalized_operation]
+
+    plan_text = _flatten_text(plan).lower()
+    conversation_text = _recent_conversation_text(messages).lower()
+    combined_text = f"{normalized_operation} {conversation_text} {plan_text}".strip()
+
+    if normalized_operation in SUPPORTED_OPERATIONS:
+        return normalized_operation
+
+    if any(keyword in combined_text for keyword in ("add employee", "new employee", "hire", "onboard", "staff member")):
+        return "add_employee"
+    if any(keyword in combined_text for keyword in ("remove employee", "deactivate employee", "terminate employee", "fire employee")):
+        return "remove_employee"
+    if any(keyword in combined_text for keyword in ("assign shift", "schedule ", "put ", "roster")) and any(
+        keyword in combined_text for keyword in ("shift", "schedule", "tomorrow", "today")
+    ):
+        return "assign_shift"
+    if any(keyword in combined_text for keyword in ("clock in", "clock out", "punch in", "punch out")):
+        return "clock_in_out"
+    if any(keyword in combined_text for keyword in ("shift", "schedule", "who is on shift", "staffing")):
+        return "get_shifts"
+    return "list_employees"
+
+
+def _build_hr_executor(shop_id: int):
+    def executor(operation: str, arguments: Dict[str, Any], messages: Sequence[BaseMessage]) -> Dict[str, Any]:
+        if operation == "list_employees":
+            return hr_tools.list_employees(shop_id, bool(arguments.get("include_inactive", False)))
+        if operation == "add_employee":
+            name = _optional_str(arguments.get("name"))
+            if not name:
+                return {"error": "add_employee requires name"}
+            return {
+                "requires_approval": True,
+                "action": "add_employee",
+                "details": {
+                    "name": name,
+                    "email": _optional_str(arguments.get("email")),
+                    "phone": _optional_str(arguments.get("phone")),
+                    "role": _optional_str(arguments.get("role")) or "employee",
+                },
+                "message": (
+                    f"Adding employee '{name}' has been submitted for owner approval. "
+                    "A staff email will be generated automatically if one was not provided."
+                ),
+            }
+        if operation == "remove_employee":
+            user_id = _to_int(arguments.get("user_id"))
+            if user_id is None:
+                return {"error": "remove_employee requires user_id"}
+            return {
+                "requires_approval": True,
+                "action": "remove_employee",
+                "details": {"user_id": user_id},
+                "message": f"Removing employee (user_id={user_id}) has been submitted for owner approval.",
+            }
+        if operation == "get_shifts":
+            return hr_tools.get_shifts(shop_id, _optional_str(arguments.get("date")), _to_int(arguments.get("user_id")))
+        if operation == "assign_shift":
+            user_id = _to_int(arguments.get("user_id"))
+            start_time = _optional_str(arguments.get("start_time"))
+            end_time = _optional_str(arguments.get("end_time"))
+            date = _optional_str(arguments.get("date"))
+            if user_id is None or not start_time or not end_time or not date:
+                return {"error": "assign_shift requires user_id, start_time, end_time, and date"}
+            return {
+                "requires_approval": True,
+                "action": "assign_shift",
+                "details": {
+                    "user_id": user_id,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "date": date,
+                },
+                "message": (
+                    f"Assigning a shift for employee {user_id} on {date} from {start_time} to {end_time} "
+                    "has been submitted for owner approval."
+                ),
+            }
+        if operation == "clock_in_out":
+            user_id = _to_int(arguments.get("user_id"))
+            action = _optional_str(arguments.get("action"))
+            if user_id is None or not action:
+                return {"error": "clock_in_out requires user_id and action"}
+            return hr_tools.clock_in_out(shop_id, user_id, action)
+        return {"error": f"Unsupported HR operation: {operation}"}
+
+    return executor
+
+
+def _format_hr_response(operation: str, result: Dict[str, Any]) -> str:
+    if result.get("error"):
+        return f"I couldn't complete that HR task: {result['error']}"
+    if operation == "list_employees":
+        employees = list(result.get("employees") or [])
+        if not employees:
+            return "There are no active employees on file right now."
+        lines = []
+        for employee in employees[:10]:
+            lines.append(f"- #{employee.get('id')}: {employee.get('name')} — {employee.get('role', 'employee')}")
+        return f"I found {len(employees)} employee(s):\n" + "\n".join(lines)
+    if operation == "get_shifts":
+        shifts = list(result.get("shifts") or [])
+        if not shifts:
+            return "No shifts matched that request."
+        lines = []
+        for shift in shifts[:10]:
+            lines.append(
+                f"- Employee {shift.get('user_id')} on {shift.get('date')}: {shift.get('start_time')} to {shift.get('end_time')}"
+            )
+        return f"I found {len(shifts)} shift(s):\n" + "\n".join(lines)
+    if result.get("message"):
+        return str(result["message"])
+    return f"The HR specialist completed {operation.replace('_', ' ')}."
+
+def create_hr_runnable(shop_id: int | None = None):
+    if not shop_id:
+        raise ValueError("shop_id is required — cannot build the HR graph without it")
+
+    return build_specialist_runnable(
+        agent_name="hr",
+        shop_id=shop_id,
+        temperature=0.2,
+        planner_instructions=PLANNER_INSTRUCTIONS,
+        supported_operations=SUPPORTED_OPERATIONS,
+        operation_aliases=OPERATION_ALIASES,
+        operation_normalizer=_normalize_hr_operation,
+        executor=_build_hr_executor(shop_id),
+        formatter=_format_hr_response,
+    )
+
+
+    __all__ = ["create_hr_runnable"]

@@ -67,19 +67,21 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
 }) => {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [service, setService] = useState("");
+  const [serviceValue, setServiceValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = useCallback(async () => {
     setError(null);
+    const trimmedName = name.trim();
+    const trimmedPhone = phone.trim();
 
     // Validate inputs
-    if (!name.trim()) {
+    if (!trimmedName) {
       setError("Name is required");
       return;
     }
-    if (!phone.trim()) {
+    if (!trimmedPhone) {
       setError("Phone number is required");
       return;
     }
@@ -87,54 +89,38 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
     setIsLoading(true);
 
     try {
-      // Call backend to join queue with collected details
+      const payload: Record<string, unknown> = {
+        customer_name: trimmedName,
+        customer_phone: trimmedPhone,
+      };
+
+      let selectedServiceCost: number | undefined;
+      if (services.length > 0) {
+        const selectedServiceId = Number(serviceValue);
+        if (Number.isFinite(selectedServiceId) && selectedServiceId > 0) {
+          payload.service_id = selectedServiceId;
+          selectedServiceCost = services.find((svc) => svc.id === selectedServiceId)?.cost;
+        }
+      } else if (serviceValue.trim()) {
+        payload.notes = `Requested service: ${serviceValue.trim()}`;
+      }
+
       const response = await axios.post(
-        "/agent/master/chat",
-        {
-          message: `My name is ${name.trim()} and phone is ${phone.trim()}${
-            service ? ` and service is ${service.trim()}` : ""
-          }`,
-          session_id: sessionId,
-          context: {
-            shop_id: shopId,
-            shop_name: shopName,
-            submit_form: true, // Flag to indicate form submission
-          },
-        },
+        `/queues/shop/${shopId}/join`,
+        payload,
         { withCredentials: true }
       );
 
       const result = response.data;
-
-      // Check if join was successful
-      if (
-        result.actions &&
-        result.actions.some(
-          (a: any) =>
-            a.tool === "join_queue" && a.result && a.result.success === true
-        )
-      ) {
-        const joinAction = result.actions.find(
-          (a: any) => a.tool === "join_queue"
-        );
-        onFormSubmit({
-          success: true,
-          queueItemId: joinAction.result.queue_item_id,
-          position: joinAction.result.position,
-          serviceCost: joinAction.result.service_cost,
-        });
-      } else {
-        // Extract error message if available
-        const errorMsg =
-          result.response ||
-          error ||
-          "Failed to join queue. Please try again.";
-        setError(errorMsg);
-        onFormSubmit({
-          success: false,
-          error: errorMsg,
-        });
-      }
+      onFormSubmit({
+        success: true,
+        queueItemId: result.id,
+        position: result.position,
+        serviceCost:
+          typeof result.service_cost === "number"
+            ? result.service_cost
+            : selectedServiceCost,
+      });
     } catch (err: any) {
       const errorMsg =
         err.response?.data?.detail ||
@@ -148,7 +134,7 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [name, phone, service, shopId, shopName, sessionId, onFormSubmit, error]);
+  }, [name, onFormSubmit, phone, serviceValue, services, shopId]);
 
   if (disabled) {
     return null;
@@ -220,7 +206,6 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
           inputProps={{
             inputMode: "tel",
             enterKeyHint: "done",
-            pattern: "[0-9+()\\-\\s]*",
             maxLength: 24,
           }}
           InputProps={{
@@ -242,9 +227,9 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
           <FormControl fullWidth size="small">
             <InputLabel>Service</InputLabel>
             <Select
-              value={service}
+              value={serviceValue}
               label="Service"
-              onChange={(e) => setService(e.target.value)}
+              onChange={(e) => setServiceValue(e.target.value)}
               disabled={isLoading}
               sx={{
                 borderRadius: "12px",
@@ -255,7 +240,7 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
               }}
             >
               {services.map((svc) => (
-                <MenuItem key={svc.id} value={svc.name}>
+                <MenuItem key={svc.id} value={String(svc.id)}>
                   {svc.name} — ${svc.cost.toFixed(2)}
                 </MenuItem>
               ))}
@@ -265,8 +250,8 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
           <TextField
             label="Service (Optional)"
             placeholder="e.g., Haircut, Fade, Style"
-            value={service}
-            onChange={(e) => setService(e.target.value)}
+            value={serviceValue}
+            onChange={(e) => setServiceValue(e.target.value)}
             disabled={isLoading}
             fullWidth
             size="small"

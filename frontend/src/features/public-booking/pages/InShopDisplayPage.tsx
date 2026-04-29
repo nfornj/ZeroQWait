@@ -421,7 +421,7 @@ const InShopDisplayPage: React.FC = () => {
                         <Paper sx={{ display: 'inline-block', px: 4, py: 1, borderRadius: 20, bgcolor: 'rgba(255,255,255,0.9)', boxShadow: 2 }}>
                             <Typography variant="h6" fontWeight="500">
                                 📱 Join the queue at <Box component="span" sx={{ color: primaryColor, fontWeight: 'bold' }}>
-                                    {shop.slug ? `${shop.slug}.zeroqwait.com` : `nowait.app/${shop.id}`}
+                                    {shop.slug ? `${shop.slug}.zeroqwait.com` : `zeroqwait.com/queue/${shop.id}`}
                                 </Box>
                             </Typography>
                         </Paper>

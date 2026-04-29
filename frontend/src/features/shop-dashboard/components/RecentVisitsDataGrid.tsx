@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
 import { useShop } from '../../../contexts/ShopContext';
-import axios from 'axios';
+import api from '../../../services/api';
 import { CircularProgress, Typography, Box } from '@mui/material';
 
 export default function RecentVisitsDataGrid() {
@@ -14,12 +14,7 @@ export default function RecentVisitsDataGrid() {
             if (!shop) return;
             try {
                 setLoading(true);
-                const token = localStorage.getItem('token');
-                const headers = { Authorization: `Bearer ${token}` };
-
-                // Fetch all queues for the shop to get items
-                // Since we don't have a direct "all-items" endpoint yet, we fetch all queues and aggregate
-                const queuesRes = await axios.get(`/queues/shop/${shop.id}/all`, { headers });
+                const queuesRes = await api.get(`/queues/shop/${shop.id}/all`);
                 const allQueues = queuesRes.data;
 
                 let allItems: any[] = [];

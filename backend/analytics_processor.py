@@ -194,13 +194,13 @@ def get_analytics_summary(db: Session, shop_id: int, start_date: date, end_date:
         query = text("""
             SELECT 
                 SUM(total_customers) as total_customers,
-                SUM(total_completed) as total_completed,
-                SUM(total_cancelled) as total_cancelled,
+                SUM(completed_services) as total_completed,
+                SUM(cancelled_services) as total_cancelled,
                 AVG(avg_wait_time_minutes) as avg_wait_time,
                 AVG(avg_service_time_minutes) as avg_service_time,
                 SUM(total_revenue) as total_revenue,
                 COUNT(*) as days_count
-            FROM queue_analytics_daily
+            FROM daily_analytics
             WHERE shop_id = :shop_id
               AND date >= :start_date
               AND date <= :end_date
@@ -257,9 +257,9 @@ def get_peak_hours_analysis(db: Session, shop_id: int, days: int = 7) -> Dict:
         query = text("""
             SELECT 
                 date,
-                peak_hour,
-                customers_by_hour
-            FROM queue_analytics_daily
+                peak_hour_start,
+                peak_hour_customers
+            FROM daily_analytics
             WHERE shop_id = :shop_id
               AND date >= :start_date
             ORDER BY date DESC
@@ -271,13 +271,13 @@ def get_peak_hours_analysis(db: Session, shop_id: int, days: int = 7) -> Dict:
             {"shop_id": shop_id, "start_date": start_date}
         ).fetchall()
         
-        # Aggregate hourly data across all days
+        # Aggregate peak hour data across all days
         hourly_totals = {}
         for row in results:
-            customers_by_hour = row[2]  # JSONB field
-            if customers_by_hour:
-                for hour, count in customers_by_hour.items():
-                    hourly_totals[int(hour)] = hourly_totals.get(int(hour), 0) + count
+            peak_hour_start = row[1]
+            peak_customers = row[2] or 0
+            if peak_hour_start is not None:
+                hourly_totals[int(peak_hour_start)] = hourly_totals.get(int(peak_hour_start), 0) + peak_customers
         
         # Find overall peak hour
         peak_hour = max(hourly_totals, key=hourly_totals.get) if hourly_totals else None

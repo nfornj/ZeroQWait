@@ -22,11 +22,9 @@ from typing import Optional, Dict, Any, List, Tuple
 
 from redis_client import redis_client
 from database import SessionLocal
-from passlib.context import CryptContext
+from shared.auth_utils import get_password_hash
 
 logger = logging.getLogger("registration_agent")
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # --- Step Definitions ---
 
@@ -409,7 +407,7 @@ class RegistrationAgent:
             from modules.auth.models import User, UserRole
             
             # 1. Create User
-            hashed_pw = pwd_context.hash(data["password"])
+            hashed_pw = get_password_hash(data["password"])
             new_user = User(
                 username=data["username"].lower(),
                 email=data["email"].lower(),

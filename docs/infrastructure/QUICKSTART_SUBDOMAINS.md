@@ -1,70 +1,73 @@
-# Quick Start: Deploy & Test Subdomains
+# Quick Start: Current Subdomain Testing
 
-## 30-Second Setup
+This document reflects the current ZeroQwait subdomain story.
 
-```bash
-cd /Users/neekrish/zeroqwait
-./deploy-local.sh
+## Current Model
+
+There are now three relevant environments:
+
+- Local source-run and non-prod Docker Compose
+  Canonical URLs are `http://localhost:3000` and `http://localhost:8000`
+- K3s ingress test environment
+  Base URL is `http://192.168.2.134.nip.io`
+- Production
+  Base URL is `https://zeroqwait.com`
+
+Shop-specific subdomain behavior matters primarily in the K3s ingress and production environments, not in the standard local `localhost` workflow.
+
+## Standard Local Development
+
+For day-to-day development, do not start with wildcard subdomains. Use:
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000`
+
+This is the active non-prod development path.
+
+## K3s Ingress Testing
+
+Use this when you need to verify wildcard ingress or subdomain routing behavior.
+
+### Base Endpoints
+
+- Frontend root: `http://192.168.2.134.nip.io`
+- Backend API: `http://192.168.2.134.nip.io/api`
+
+### Wildcard Pattern
+
+Expected shop subdomain format:
+
+```text
+http://<shop-slug>.192.168.2.134.nip.io
 ```
 
-## Testing (5 minutes)
-
-1. **Open browser:**
-
-   ```
-   http://192.168.2.88.nip.io:3000
-   ```
-
-2. **Register as Shop Owner:**
-   - Click "Sign Up"
-   - Choose "Shop Owner"
-   - Fill in details
-   - Create account
-
-3. **Create a Shop:**
-   - After login, create new shop (e.g., "Pizza Palace")
-   - Shop slug auto-generated: `pizza-palace`
-
-4. **Logout & Login:**
-   - Logout
-   - Login again
-   - Should redirect to: `http://pizza-palace.192.168.2.88.nip.io`
-
-## Verify Deployment
+### Quick Verification
 
 ```bash
-# Check containers running
-docker-compose ps
-
-# View logs
-docker-compose logs -f
-
-# Test API
-curl http://192.168.2.88.nip.io:8000/docs
+curl -sk http://192.168.2.134.nip.io/api/agent/health
+curl -sk http://192.168.2.134.nip.io/api/voice/tts/health
 ```
 
-## What Changed?
+Then open a known shop slug in the browser and verify that the request flow resolves through the wildcard ingress.
 
-✅ **Frontend** - Redirects to shop subdomain after login  
-✅ **Backend** - Supports all shop subdomains via CORS  
-✅ **Docker** - Updated with correct nip.io URLs  
-✅ **Kubernetes** - Ingress configured for wildcard subdomains
+## Production Subdomains
+
+Production is anchored on:
+
+- Main site: `https://zeroqwait.com`
+- Wildcard shop domains: `https://<shop-slug>.zeroqwait.com` when that flow is enabled and routed
+
+If you are documenting customer-facing subdomain behavior, describe production in terms of `zeroqwait.com`.
 
 ## Troubleshooting
 
-| Issue                           | Solution                                                   |
-| ------------------------------- | ---------------------------------------------------------- |
-| Can't reach 192.168.2.88.nip.io | Update IP in scripts to your actual IP                     |
-| API calls fail from subdomain   | Check backend logs: `docker-compose logs backend`          |
-| Redirect not working            | Ensure you have a shop created before login                |
-| DB errors                       | Check PostgreSQL container: `docker-compose logs postgres` |
+| Issue | Current check |
+| --- | --- |
+| `localhost` works but wildcard subdomain does not | Test against the K3s ingress host, not the Compose stack |
+| K3s root host resolves but shop subdomain does not | Verify wildcard ingress and DNS pattern for `*.192.168.2.134.nip.io` |
+| API calls fail from subdomain | Check ingress rules, backend CORS config, and frontend nginx proxy settings |
+| Behavior differs from docs | Prefer `README.md`, `claude.md`, and `deployment/docs/README.md` |
 
-## Next: Deploy to K8s
+## Status
 
-```bash
-./deploy-k8s.sh
-```
-
----
-
-**Status:** Ready to test! 🚀
+This document replaces the older `192.168.2.88.nip.io` quickstart. The current test ingress host is `192.168.2.134.nip.io` and the standard local dev path is `localhost`.

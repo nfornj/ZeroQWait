@@ -1,29 +1,34 @@
-# Production Deployment Fix (Kubernetes)
+# Deployment Fix Notes
 
-As we are using Kubernetes for the production environment on your Raspberry Pi, please follow these steps to deploy the latest code and seed the new search data.
+This note captures the current way to apply a targeted deployment fix and any related seed step.
 
-### 1. Update Code & Deploy
-Run the enhanced deployment script. This will pull the latest code and restart both the frontend and backend services.
+## Non-Prod Validation
+
+For the current test deployment flow, run:
+
 ```bash
-./deploy-local.sh
+bash deployment/scripts/deploy-test.sh
 ```
 
-### 2. Seed Search Data (Important)
-To make "Search Auto Repair" work in production, run the new seeding script to inject "Mike's Auto Repair" into the Postgres database inside your cluster:
+This rebuilds and starts the authoritative local/non-prod Compose stack and publishes:
+
+- `http://localhost:3000`
+- `http://localhost:8000`
+
+## Production-Oriented Follow-Up
+
+If the fix also requires data seeding, run the seed helper after the environment is updated:
+
 ```bash
 chmod +x deploy-db-seed.sh
 ./deploy-db-seed.sh
 ```
 
-### 3. Verify
-1. Go to `https://zeroqwait.com`.
-2. Open the AI Assistant.
-3. Search for **"auto repair"**.
-4. You should see "Mike's Auto Repair" appear on the left side of the split-screen.
+Use the production deployment path documented in `deployment/docs/README.md` when the change needs to be applied to K3s.
 
----
-**What I Fixed in this Release:**
-*   **Search Engine**: Now matches query keywords (auto, repair) against name, type, and description.
-*   **Thinking Animation**: Removed the overlapping spinner; the Sphere now spins faster and pulses when "Thinking".
-*   **Alignment**: Fixed vertical centering for both the sphere and the content card.
-*   **Close Button**: Fixed z-index conflict to ensure it's always clickable.
+## Verification Checklist
+
+1. Open `https://zeroqwait.com` for production checks or `http://localhost:3000` for non-prod checks.
+2. Verify the relevant user flow that prompted the fix.
+3. If the change affects search or seeded examples, verify the expected records are present.
+4. Confirm the backend health endpoints still respond normally.

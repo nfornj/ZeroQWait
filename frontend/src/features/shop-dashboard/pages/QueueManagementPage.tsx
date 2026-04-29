@@ -22,7 +22,7 @@ import TvIcon from '@mui/icons-material/Tv';
 import QueueRoundedIcon from '@mui/icons-material/QueueRounded';
 import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
-import axios from 'axios';
+import api from '../../../services/api';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import QueueDataGrid from '../components/QueueDataGrid';
@@ -50,18 +50,13 @@ const QueueManagementPage: React.FC = () => {
 
   const fetchShopAndQueues = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const shopRes = await axios.get(`/shops/my-shops`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const shopRes = await api.get(`/shops/my-shops`);
 
       if (shopRes.data.length > 0) {
         const currentShop = shopRes.data[0];
         setShop(currentShop);
 
-        const queueRes = await axios.get(`/queues/shop/${currentShop.id}/all`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const queueRes = await api.get(`/queues/shop/${currentShop.id}/all`);
         setQueues(queueRes.data);
       }
     } catch {
@@ -71,13 +66,8 @@ const QueueManagementPage: React.FC = () => {
 
   const handleCreateQueue = async () => {
     try {
-      const token = localStorage.getItem('token');
       setError('');
-      await axios.post(
-        `/queues/shop/${shop.id}`,
-        { name: newQueueName },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      await api.post(`/queues/shop/${shop.id}`, { name: newQueueName });
       setOpen(false);
       setNewQueueName('');
       fetchShopAndQueues();
@@ -89,10 +79,7 @@ const QueueManagementPage: React.FC = () => {
 
   const handleDeleteQueue = async (id: number) => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.delete(`/queues/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await api.delete(`/queues/${id}`);
       setDeleteConfirmId(null);
       fetchShopAndQueues();
     } catch (err: any) {
@@ -103,10 +90,7 @@ const QueueManagementPage: React.FC = () => {
 
   const handleResetQueue = async (id: number) => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(`/queues/${id}/reset`, {}, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await api.post(`/queues/${id}/reset`, {});
       setResetConfirmId(null);
       fetchShopAndQueues();
     } catch (err: any) {

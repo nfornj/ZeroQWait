@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Local Docker registry with data on SSD path.
-# Usage:
-#   REGISTRY_DATA_PATH=/mnt/ssd/zeroqwait-registry ./deployment/scripts/setup-local-registry.sh
+# WARNING: DEPRECATED — DO NOT USE
+# This script set up a self-hosted Docker registry on localhost:5000.
+# As of the GHCR migration, all container images are stored in GitHub Container
+# Registry (ghcr.io/nfornj). This script is kept only for historical reference.
+#
+# To clean up the old local registry container and its data on the runner host:
+#   docker rm -f local-registry 2>/dev/null || true
+#   sudo rm -rf "/media/neekrishrichu/One Touch/projects/zeroqwait"  # only if no other data
+#   docker image prune -f
+#
+# Original script purpose: Local Docker registry with data on SSD path.
 
-REGISTRY_NAME="${REGISTRY_NAME:-local-registry}"
-REGISTRY_PORT="${REGISTRY_PORT:-5000}"
-REGISTRY_DATA_PATH="${REGISTRY_DATA_PATH:-/mnt/ssd/zeroqwait-registry}"
+echo "ERROR: setup-local-registry.sh is DEPRECATED. Images are now stored in ghcr.io/nfornj." >&2
+echo "       Log in to GHCR with: echo \$GITHUB_TOKEN | docker login ghcr.io -u <github_user> --password-stdin" >&2
+exit 1
+
 REGISTRY_CONFIG_PATH="${REGISTRY_CONFIG_PATH:-$(pwd)/deployment/registry/config.yml}"
 
 mkdir -p "${REGISTRY_DATA_PATH}"
