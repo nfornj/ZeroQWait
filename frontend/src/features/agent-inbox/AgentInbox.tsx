@@ -10,18 +10,16 @@ import {
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { useAuth } from "../../contexts/AuthContext";
 import { useShop } from "../../contexts/ShopContext";
-import MasterAIAgent from "../../landing-page/components/MasterAIAgent";
 import api from "../../services/api";
+import AgentChat from "./AgentChat";
 import AgentFeed from "./AgentFeed";
 import AgentInsights from "./AgentInsights";
 import InsightsPanel from "./InsightsPanel";
 import OwnerBriefing from "./OwnerBriefing";
 import PendingApprovalsPanel from "./PendingApprovalsPanel";
 import PoliciesPanel from "./PoliciesPanel";
-import ThinkingSteps from "./ThinkingSteps";
-import { buildIntroMessage, toId } from "./agentInboxShared";
+import { buildIntroMessage } from "./agentInboxShared";
 import { useApprovalDecisions } from "./hooks/useApprovalDecisions";
 import { useAgentStream } from "./hooks/useAgentStream";
 import { useAgentWebSocket } from "./hooks/useAgentWebSocket";
@@ -49,12 +47,11 @@ import {
 const AgentInbox: React.FC = () => {
   const queryClient = useQueryClient();
   const { shop } = useShop();
-  const { token } = useAuth();
+
   const [persistedFeedEvents, setPersistedFeedEvents] = useState<AgentFeedEvent[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [policies, setPolicies] = useState<ShopPolicy[]>([]);
   const [briefing, setBriefing] = useState<OwnerBriefingData | null>(null);
-  const [externalActionRequest, setExternalActionRequest] = useState<(BriefingAction & { id: string }) | null>(null);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [streamedInsightItems, setStreamedInsightItems] = useState<InsightItem[]>([]);
   const [savingPolicyKey, setSavingPolicyKey] = useState<string | null>(null);
@@ -105,12 +102,10 @@ const AgentInbox: React.FC = () => {
     messages,
     setMessages,
     isStreaming,
-    thinkingSteps,
     error,
     setError,
     appendSystemMessage,
-    handleStreamEvent,
-    handleChatHistoryChange,
+    handleSend,
   } = useAgentStream({
     shopId: shop?.id,
     addFeedEvent,
@@ -291,43 +286,33 @@ const AgentInbox: React.FC = () => {
     return [...streamedInsightItems, ...seededInsightItems.filter((item) => !seen.has(item.id))];
   }, [streamedInsightItems, seededInsightItems]);
 
-  const ownerInitialChatHistory = useMemo(
-    () =>
-      shop?.name
-        ? [
-            {
-              role: "ai" as const,
-              text: briefing?.summary
-                ? `Welcome back to ${shop.name}. ${briefing.summary} What would you like to handle first?`
-                : `Welcome back to ${shop.name}. I can help with queue status, team scheduling, approvals, and daily performance summaries. What would you like to handle first?`,
-              quickActions: createWorkspaceQuickActions(briefing, pendingApprovals, shop.name),
-            },
-          ]
-        : [],
-    [briefing, pendingApprovals, shop?.name],
-  );
-
   const handleBriefingAction = useCallback(
     (action: BriefingAction) => {
-      setExternalActionRequest({ ...action, id: toId("briefing_action") });
       addFeedEvent({
         type: "chat",
         title: `Action: ${action.label}`,
         description: action.description || action.payload,
         payload: action,
       });
+      void handleSend({ text: action.payload });
     },
-    [addFeedEvent],
+    [addFeedEvent, handleSend],
   );
 
-  const handleExternalActionHandled = useCallback(() => {
-    setExternalActionRequest(null);
-  }, []);
-
-  const ownerAgentRequestHeaders = useMemo(
-    () => (token ? { Authorization: `Bearer ${token}` } : undefined),
-    [token],
-  );
+  const promptSections = useMemo(() => {
+    const quickActions = createWorkspaceQuickActions(briefing, pendingApprovals, shop?.name);
+    return [
+      {
+        id: "quick-actions",
+        title: "Suggested actions",
+        prompts: quickActions.map((action) => ({
+          id: action.label.replace(/[^a-zA-Z0-9_-]+/g, "_"),
+          label: action.label,
+          prompt: action.payload,
+        })),
+      },
+    ];
+  }, [briefing, pendingApprovals, shop?.name]);
 
   return (
     <Box
@@ -369,63 +354,39 @@ const AgentInbox: React.FC = () => {
               height: { md: "100%" },
             }}
           >
-            {thinkingSteps.length > 0 && <ThinkingSteps steps={thinkingSteps} isComplete={!isStreaming} />}
             {shop?.id && (
-              <MasterAIAgent
-                key={shop.id}
-                forceOpen
-                embedded
-                hideCloseButton
-                hideUtilityControls
-                disableVoiceMode
-                compactEmbedded
-                initialInteractionMode="chat"
-                shopContext={{
-                  id: shop.id,
-                  name: shop.name,
-                  slug: shop.slug,
-                }}
-                brandPrimaryColor={shop.primary_color || undefined}
-                brandSecondaryColor={shop.secondary_color || shop.primary_color || undefined}
-                streamEndpoint="/api/v2/agent/chat/stream"
-                requestHeaders={ownerAgentRequestHeaders}
-                extraRequestBody={{
-                  shop_id: shop.id,
-                  is_voice: false,
-                }}
-                externalActionRequest={externalActionRequest}
-                onExternalActionHandled={handleExternalActionHandled}
-                initialChatHistory={ownerInitialChatHistory}
-                embeddedFooter={
-                  <Box sx={{ width: "100%" }}>
-                    <IconButton
-                      size="small"
-                      onClick={() => setInsightsOpen((open) => !open)}
-                      sx={{ color: "#0078d4", p: 0.25 }}
-                    >
-                      <ExpandMoreRoundedIcon
-                        sx={{
-                          fontSize: 18,
-                          transition: "transform 0.18s",
-                          transform: insightsOpen ? "rotate(180deg)" : "rotate(0deg)",
-                        }}
-                      />
-                    </IconButton>
-                    <Collapse in={insightsOpen} unmountOnExit>
-                      <Box mt={0.75}>
-                        <AgentInsights
-                          messages={messages}
-                          events={displayedFeedEvents}
-                          pendingApprovals={pendingApprovals}
-                        />
-                      </Box>
-                    </Collapse>
-                  </Box>
-                }
-                onStreamEvent={handleStreamEvent}
-                onChatHistoryChange={handleChatHistoryChange}
+              <AgentChat
+                messages={messages}
+                isStreaming={isStreaming}
+                onSend={handleSend}
+                promptSections={promptSections}
+                interactablesStorageKey={`agent-inbox-${shop.id}`}
               />
             )}
+            <Box sx={{ flexShrink: 0 }}>
+              <IconButton
+                size="small"
+                onClick={() => setInsightsOpen((open) => !open)}
+                sx={{ color: "#0078d4", p: 0.25 }}
+              >
+                <ExpandMoreRoundedIcon
+                  sx={{
+                    fontSize: 18,
+                    transition: "transform 0.18s",
+                    transform: insightsOpen ? "rotate(180deg)" : "rotate(0deg)",
+                  }}
+                />
+              </IconButton>
+              <Collapse in={insightsOpen} unmountOnExit>
+                <Box mt={0.75}>
+                  <AgentInsights
+                    messages={messages}
+                    events={displayedFeedEvents}
+                    pendingApprovals={pendingApprovals}
+                  />
+                </Box>
+              </Collapse>
+            </Box>
           </Grid>
 
           <Grid

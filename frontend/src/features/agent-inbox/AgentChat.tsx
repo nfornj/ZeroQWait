@@ -1648,6 +1648,8 @@ const AgentChat: React.FC<AgentChatProps> = ({
         return;
       }
 
+      // Edits send the revised text as a new conversation turn rather than patching history —
+      // intentional until the backend supports message-id-based re-runs.
       await onSend({ text: trimmed, attachments });
     },
     [isStreaming, isUploading, onSend],

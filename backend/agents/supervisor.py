@@ -39,8 +39,7 @@ from . import approval_policy
 from .llm_factory import create_chat_model
 from .state import AgentState
 from .tools import booking_tools, finance_tools, hr_tools
-from .memory_context import get_conversation_history, save_conversation_turn
-from redis_client import redis_client
+
 
 logger = logging.getLogger(__name__)
 
@@ -186,53 +185,6 @@ def _latest_user_text(state: AgentState) -> str:
     return ""
 
 
-def _conversation_history_messages(state: AgentState) -> List[BaseMessage]:
-    """Load persisted per-shop conversation history from Redis and map to messages."""
-    shop_id = state.get("tenant_id")
-    user_id = state.get("user_id")
-    if shop_id is None or user_id is None:
-        return []
-
-    history_items = get_conversation_history(redis_client, str(shop_id), str(user_id))
-    history_messages: List[BaseMessage] = []
-    for item in history_items:
-        role = item.get("role")
-        content = str(item.get("content", ""))
-        if not content:
-            continue
-        if role == "user":
-            history_messages.append(HumanMessage(content=content))
-        elif role == "assistant":
-            history_messages.append(AIMessage(content=content))
-    return history_messages
-
-
-def _persist_conversation_turns(state: AgentState, assistant_text: str) -> None:
-    """Persist user and assistant turns to Redis conversation history."""
-    shop_id = state.get("tenant_id")
-    user_id = state.get("user_id")
-    if shop_id is None or user_id is None:
-        return
-
-    user_text = _latest_user_text(state).strip()
-    assistant_text = str(assistant_text or "").strip()
-
-    if user_text:
-        save_conversation_turn(
-            redis_client,
-            str(shop_id),
-            str(user_id),
-            "user",
-            user_text,
-        )
-    if assistant_text:
-        save_conversation_turn(
-            redis_client,
-            str(shop_id),
-            str(user_id),
-            "assistant",
-            assistant_text,
-        )
 
 
 def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
@@ -247,7 +199,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
     messages = state.get("messages", [])
     if not messages:
         return Command(
-            goto="plan_execution",
+            goto="plan_and_route",
             update={
                 "current_agent": "general",
                 "metadata": _merge_metadata(state, {
@@ -260,7 +212,6 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
 
     user_input = _latest_user_text(state)
     previous_specialist = _get_previous_specialist(state)
-    history_messages = _conversation_history_messages(state)
 
     fastpath = _classify_intent_fastpath(user_input)
     if fastpath is not None:
@@ -269,7 +220,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
         logger.info("classify_intent fast-path: %r → %s in %.1fms", user_input[:80], intent, elapsed_ms)
         reasoning = f"I routed this directly to {intent} because the request clearly matched the {source.replace('_', ' ')} pattern."
         return Command(
-            goto="plan_execution",
+            goto="plan_and_route",
             update={
                 "current_agent": intent,
                 "metadata": _merge_metadata(state, {
@@ -316,7 +267,6 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
         structured_llm = llm.with_structured_output(RoutingDecision)
         decision = cast(RoutingDecision, structured_llm.invoke(
             [SystemMessage(content=system_prompt)]
-            + history_messages
             + [HumanMessage(content=user_input)]
         ))
         intent = decision.next_agent
@@ -346,7 +296,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
             source = "error_fallback"
 
     return Command(
-        goto="plan_execution",
+        goto="plan_and_route",
         update={
             "current_agent": intent,
             "metadata": _merge_metadata(state, {
@@ -360,14 +310,14 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
     )
 
 
-def plan_execution(state: AgentState) -> dict:
+def plan_and_route(state: AgentState) -> dict:
     """
-    Build a lightweight execution plan from classified intent.
+    Build a lightweight execution plan and resolve the routing target in one step.
 
-    This separates planning from routing so the graph can reason about
-    target agent and strategy before execution.
+    Previously two separate nodes (``plan_execution`` → ``route_to_agent``),
+    merged because the second node added no independent logic — it only
+    re-read and re-wrote the same ``execution_target`` value.
     """
-
     intent = state.get("current_agent", "general")
     owner_request = _latest_user_text(state)
 
@@ -393,193 +343,12 @@ def plan_execution(state: AgentState) -> dict:
             {
                 "plan": plan,
                 "execution_target": execution_target,
-            },
-        )
-    }
-
-
-def route_to_agent(state: AgentState) -> dict:
-    """
-    Route to the appropriate sub-agent based on classified intent.
-    
-    Phase 1: Returns intent as routing hint (no actual sub-agents yet)
-    Phase 2: Will route to actual sub-agent graphs via invoke()
-    """
-    
-    metadata = state.get("metadata") or {}
-    execution_target = metadata.get("execution_target")
-
-    routed_target = execution_target if execution_target in {"receptionist", "finance", "hr", "crm", "general"} else "general"
-
-    return {
-        "metadata": _merge_metadata(
-            state,
-            {
                 "route": {
-                    "from_intent": state.get("current_agent", "general"),
-                    "to": routed_target,
+                    "from_intent": intent,
+                    "to": execution_target,
                 },
-                "execution_target": routed_target,
             },
         )
-    }
-
-
-async def _run_crm_agent(state: AgentState) -> dict:
-    """Dispatch CRM query to Odoo ERP via XML-RPC."""
-    import re as _re
-
-    user_text = _latest_user_text(state)
-    messages = list(state.get("messages", []) or [])
-    shop_id = state.get("tenant_id")
-    lowered = user_text.lower()
-
-    from .tools import odoo_tools
-
-    try:
-        if any(w in lowered for w in ["pipeline", "opportunity", "opportunities", "deal", "deals"]):
-            if any(w in lowered for w in ["summary", "overview", "how many", "total"]):
-                data = await odoo_tools.odoo_get_pipeline_summary(shop_id=shop_id)
-            else:
-                data = await odoo_tools.odoo_get_leads(shop_id=shop_id)
-        elif any(w in lowered for w in ["compan", "companies"]):
-            data = await odoo_tools.odoo_get_companies(shop_id=shop_id)
-        elif any(w in lowered for w in ["stage", "stages"]):
-            if any(w in lowered for w in ["list", "show", "what", "available"]):
-                data = await odoo_tools.odoo_get_lead_stages(shop_id=shop_id)
-            else:
-                # Move lead to stage: "move lead 5 to won"
-                move_m = _re.search(r'(?:move|change|update)\s+(?:lead|deal|opportunity)\s+#?(\d+)\s+(?:to|→)\s+(.+)', user_text, _re.IGNORECASE)
-                if move_m:
-                    data = await odoo_tools.odoo_update_lead_stage(int(move_m.group(1)), move_m.group(2).strip())
-                else:
-                    data = await odoo_tools.odoo_get_lead_stages(shop_id=shop_id)
-        elif any(w in lowered for w in ["lead", "leads"]):
-            if any(w in lowered for w in ["create", "make", "add", "new"]):
-                # Extract lead name from quotes or after keyword
-                name_m = _re.search(r'["\']([^"\']+)["\']', user_text)
-                if not name_m:
-                    name_m = _re.search(r'(?:called|named|titled)\s+(.+?)(?:\s+(?:with|for|worth)|\s*$)', user_text, _re.IGNORECASE)
-                lead_name = name_m.group(1) if name_m else user_text[:80]
-                # Extract revenue if mentioned
-                rev_m = _re.search(r'\$?([\d,]+(?:\.\d+)?)', user_text)
-                revenue = float(rev_m.group(1).replace(",", "")) if rev_m else 0.0
-                data = await odoo_tools.odoo_create_lead(
-                    name=lead_name, shop_id=shop_id, expected_revenue=revenue
-                )
-            elif any(w in lowered for w in ["note", "comment"]):
-                # Add note to lead: "add note to lead 5: Great meeting"
-                note_m = _re.search(r'(?:lead|deal|opportunity)\s+#?(\d+)[:\s]+(.+)', user_text, _re.IGNORECASE)
-                if note_m:
-                    data = await odoo_tools.odoo_add_note_to_lead(int(note_m.group(1)), note_m.group(2).strip())
-                else:
-                    data = {"error": "Please specify lead ID and note text, e.g. 'add note to lead 5: Great meeting'"}
-            else:
-                data = await odoo_tools.odoo_get_leads(shop_id=shop_id)
-        elif any(w in lowered for w in ["contact", "contacts"]):
-            if any(w in lowered for w in ["create", "make", "add", "new"]):
-                name_m = _re.search(r'["\']([^"\']+)["\']', user_text)
-                if not name_m:
-                    name_m = _re.search(r'(?:called|named)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', user_text)
-                contact_name = name_m.group(1) if name_m else None
-                email_m = _re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', user_text)
-                phone_m = _re.search(r'(?:phone|tel|call)\s*[:#]?\s*([\d\s\-+()]+)', user_text, _re.IGNORECASE)
-                if contact_name:
-                    data = await odoo_tools.odoo_create_contact(
-                        name=contact_name, shop_id=shop_id,
-                        email=email_m.group(0) if email_m else None,
-                        phone=phone_m.group(1).strip() if phone_m else None,
-                    )
-                else:
-                    data = {"error": "Please specify the contact name, e.g. 'create contact called John Smith'"}
-            elif any(w in lowered for w in ["update", "edit", "change"]):
-                upd_m = _re.search(r'(?:contact|person)\s+#?(\d+)', user_text, _re.IGNORECASE)
-                if upd_m:
-                    cid = int(upd_m.group(1))
-                    email_m = _re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', user_text)
-                    phone_m = _re.search(r'(?:phone|tel)\s*[:#]?\s*([\d\s\-+()]+)', user_text, _re.IGNORECASE)
-                    data = await odoo_tools.odoo_update_contact(
-                        contact_id=cid,
-                        email=email_m.group(0) if email_m else None,
-                        phone=phone_m.group(1).strip() if phone_m else None,
-                    )
-                else:
-                    data = {"error": "Please specify the contact ID, e.g. 'update contact #12 email: new@email.com'"}
-            else:
-                data = await odoo_tools.odoo_get_contacts(shop_id=shop_id)
-        elif any(w in lowered for w in ["invoice", "invoices", "bill", "bills"]):
-            if any(w in lowered for w in ["create", "make", "add", "new", "generate"]):
-                import re as _re2
-                amount_m = _re2.search(r'\$?([\d,]+(?:\.\d+)?)', user_text)
-                amount = float(amount_m.group(1).replace(",", "")) if amount_m else 0.0
-                lines = [{"name": user_text[:80], "quantity": 1, "price_unit": amount}]
-                data = await odoo_tools.odoo_create_invoice(
-                    partner_id=1, lines=lines, shop_id=shop_id
-                )
-            else:
-                data = await odoo_tools.odoo_get_invoices(shop_id=shop_id)
-        elif any(w in lowered for w in ["payment", "payments", "paid"]):
-            data = await odoo_tools.odoo_get_payments(shop_id=shop_id)
-        elif any(w in lowered for w in ["product", "products", "service", "services", "catalog"]):
-            data = await odoo_tools.odoo_get_products(shop_id=shop_id)
-        elif any(w in lowered for w in ["revenue", "sales", "income", "earnings"]):
-            data = await odoo_tools.odoo_get_revenue_summary(shop_id=shop_id)
-        elif any(w in lowered for w in ["journal", "accounting", "balance", "trial balance"]):
-            data = await odoo_tools.odoo_get_account_balance(shop_id=shop_id)
-        elif any(w in lowered for w in ["note", "notes"]):
-            # Add note to a specific lead
-            note_m = _re.search(r'(?:lead|deal|opportunity)\s+#?(\d+)[:\s]+(.+)', user_text, _re.IGNORECASE)
-            if note_m:
-                data = await odoo_tools.odoo_add_note_to_lead(int(note_m.group(1)), note_m.group(2).strip())
-            else:
-                data = {"message": "To add a note, say: 'add note to lead #5: Your note text'"}
-        else:
-            name_match = _re.search(
-                r'(?:about|details|show|find|search|who is|contact)\s+'
-                r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
-                user_text,
-            )
-            if name_match:
-                data = await odoo_tools.odoo_search_contact(name_match.group(1), shop_id=shop_id)
-            else:
-                data = await odoo_tools.odoo_get_contacts(shop_id=shop_id)
-    except Exception as e:
-        data = {"error": str(e)}
-
-    llm = get_llm(state)
-    history_messages = _conversation_history_messages(state)
-
-    crm_system_prompt = f"""You are the CRM/ERP assistant for shop (shop_id={shop_id}).
-You have the owner's Odoo data below. Answer naturally and concisely.
-
-Formatting rules:
-- People/Contacts: "Name (email) — Company"
-- Opportunities/Leads: "Deal Name — $X,XXX (Stage)"
-- Pipeline summary: table by stage
-- Invoices: "Invoice # — $Amount (Status)"
-- Payments: "Payment # — $Amount (Status, Date)"
-- Empty results: "Your Odoo doesn't have any [type] yet"
-- Always state the total count when listing items
-- NEVER invent data — only use what is provided
-
-Odoo data:
-{data}
-
-Owner asked: {user_text}"""
-
-    try:
-        response = llm.invoke(
-            history_messages + messages + [SystemMessage(content=crm_system_prompt)]
-        )
-    except Exception as e:
-        response = AIMessage(
-            content=f"I retrieved your Odoo data but had trouble formatting it: {e}"
-        )
-
-    return {
-        "messages": messages + [response],
-        "current_agent": "crm",
-        "tool_results": {"crm_data": data},
     }
 
 
@@ -589,7 +358,16 @@ def execute_plan(state: AgentState) -> dict:
 
     Specialist execution happens here; general requests are handled by
     supervisor synthesis directly in the next node.
+
+    CRM calls use ``asyncio.run()`` to execute the async CRM agent. This is
+    safe here because ``execute_plan`` runs inside ``asyncio.to_thread`` in
+    ``agent_v2.py``, so there is no running event loop in this thread.
+
+    Full async graph migration (async def + astream) is tracked as a
+    follow-up — it requires switching the agent_v2 stream path to astream()
+    and an async-capable PostgreSQL checkpointer.
     """
+    import asyncio
 
     metadata = state.get("metadata") or {}
     target = metadata.get("execution_target", "general")
@@ -613,12 +391,8 @@ def execute_plan(state: AgentState) -> dict:
         merged_metadata["last_specialist_target"] = "hr"
         return {**result, "metadata": merged_metadata}
     if target == "crm":
-        import asyncio
-        import concurrent.futures
-        loop = asyncio.new_event_loop()
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(asyncio.run, _run_crm_agent(state))
-            result = future.result()
+        from .crm import run_crm_agent
+        result = asyncio.run(run_crm_agent(state))
         merged_metadata = dict(metadata)
         merged_metadata.update(result.get("metadata") or {})
         merged_metadata["last_specialist_target"] = "crm"
@@ -638,10 +412,7 @@ def synthesize_response(state: AgentState) -> dict:
     Formats final response to owner.
     """
     
-    # Get conversation history
     messages = list(state.get("messages", []) or [])
-    history_messages = _conversation_history_messages(state)
-    llm_messages = history_messages + messages
     metadata = state.get("metadata") or {}
 
     current_agent = state.get("current_agent", "supervisor")
@@ -653,7 +424,6 @@ def synthesize_response(state: AgentState) -> dict:
                 mixed_intents=(metadata.get("mixed_intents") or None),
             )
         )
-        _persist_conversation_turns(state, str(clarifier.content))
         return {
             "messages": messages + [clarifier],
             "tool_results": state.get("tool_results"),
@@ -673,7 +443,6 @@ def synthesize_response(state: AgentState) -> dict:
                     followup = AIMessage(
                         content=_clarifying_prompt(_latest_user_text(state), mixed_intents=next_domains)
                     )
-                    _persist_conversation_turns(state, str(followup.content))
                     return {
                         "messages": messages + [followup],
                         "tool_results": state.get("tool_results"),
@@ -685,7 +454,6 @@ def synthesize_response(state: AgentState) -> dict:
                             },
                         ),
                     }
-            _persist_conversation_turns(state, str(last_message.content))
             return {
                 "messages": messages,
                 "tool_results": state.get("tool_results"),
@@ -730,14 +498,10 @@ If a specialist agent already produced raw output, synthesize it into:
     
     # Invoke LLM
     # No fallback during stabilization — let LLM errors surface.
-    response = llm.invoke([SystemMessage(content=system_prompt)] + llm_messages)
-    
-    # Add response to messages
-    messages_with_response = messages + [response]
-    _persist_conversation_turns(state, str(getattr(response, "content", "")))
-    
+    response = llm.invoke([SystemMessage(content=system_prompt)] + messages)
+
     return {
-        "messages": messages_with_response,
+        "messages": messages + [response],
         "tool_results": state.get("tool_results")
     }
 
@@ -1043,12 +807,11 @@ def build_supervisor_graph():
     
     Graph flow:
     1. classify_intent - determine what owner is asking about
-    2. plan_execution - build explicit execution plan
-    3. route_to_agent - map plan to target specialist
-    4. execute_plan - run specialist (or supervisor direct path)
-    5. approval_gate - pause/resume high-impact actions
-    6. synthesize_response - produce final owner-facing response
-    7. END
+    2. plan_and_route - build execution plan and resolve target specialist
+    3. execute_plan - run specialist (or supervisor direct path)
+    4. approval_gate - pause/resume high-impact actions
+    5. synthesize_response - produce final owner-facing response
+    6. END
     
     Returns:
         langgraph.graph.StateGraph instance ready to compile
@@ -1058,16 +821,14 @@ def build_supervisor_graph():
     
     # Add nodes
     graph.add_node("classify_intent", classify_intent)
-    graph.add_node("plan_execution", plan_execution)
-    graph.add_node("route_to_agent", route_to_agent)
+    graph.add_node("plan_and_route", plan_and_route)
     graph.add_node("execute_plan", execute_plan)
     graph.add_node("approval_gate", approval_gate)
     graph.add_node("synthesize_response", synthesize_response)
     
     # Add edges
-    graph.add_edge("classify_intent", "plan_execution")
-    graph.add_edge("plan_execution", "route_to_agent")
-    graph.add_edge("route_to_agent", "execute_plan")
+    graph.add_edge("classify_intent", "plan_and_route")
+    graph.add_edge("plan_and_route", "execute_plan")
     graph.add_edge("execute_plan", "approval_gate")
     graph.add_edge("approval_gate", "synthesize_response")
 

@@ -60,6 +60,31 @@ from agents.memory_context import (
 )
 from agents.state import AgentState
 from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_saver
+from agents.chat_service import (
+    _build_pending_approval_block_message,
+    _create_chat_work_context,
+    _finalize_chat_work_context,
+    _get_current_pending_approval,
+    _get_pending_approval_payload,
+    _persist_chat_turn_memory,
+    _record_approval_decision,
+    _resume_persisted_approval,
+    _state_last_text,
+)
+from agents.document_store import (
+    _OWNER_DOCUMENT_ALLOWED_EXTENSIONS,
+    _OWNER_DOCUMENT_ALLOWED_MIME_TYPES,
+    _OWNER_DOCUMENT_MAX_BYTES,
+    _OWNER_DOCUMENT_MAX_FILES,
+    _chunk_owner_document_text,
+    _document_memory_query,
+    _extract_owner_document_text,
+    _get_owner_document_or_404,
+    _reindex_owner_document_in_session,
+    _sanitize_document_name,
+    _sanitize_relative_document_path,
+    _serialize_owner_document,
+)
 from shared.auth_utils import get_current_user
 from db_interface import DatabaseInterface
 from database import SessionLocal
@@ -77,7 +102,7 @@ db_interface = DatabaseInterface()
 
 # LangGraph node names that are surfaced as visible pipeline steps in the UI.
 _THINKING_NODES: frozenset = frozenset(
-    {"classify_intent", "route_to_agent", "execute_plan", "synthesize_response"}
+    {"classify_intent", "plan_and_route", "execute_plan", "synthesize_response"}
 )
 
 _AGENT_DISPLAY_LABELS: Dict[str, str] = {
@@ -94,7 +119,7 @@ def _thinking_label_active(node: str, routed_agent: Optional[str]) -> str:
     agent_name = _AGENT_DISPLAY_LABELS.get(routed_agent or "", "Specialist")
     return {
         "classify_intent": "Classifying your request",
-        "route_to_agent": f"Routing to {agent_name}" if has_agent else "Routing request",
+        "plan_and_route": f"Routing to {agent_name}" if has_agent else "Routing request",
         "execute_plan": f"Running {agent_name}" if has_agent else "Processing request",
         "synthesize_response": "Generating response",
     }.get(node, node)
@@ -105,7 +130,7 @@ def _thinking_label_done(node: str, routed_agent: Optional[str]) -> str:
     agent_name = _AGENT_DISPLAY_LABELS.get(routed_agent or "", "Specialist")
     return {
         "classify_intent": f"Classified {agent_name}" if has_agent else "Classified General",
-        "route_to_agent": f"{agent_name}" if has_agent else "Supervisor",
+        "plan_and_route": f"{agent_name}" if has_agent else "Supervisor",
         "execute_plan": f"{agent_name} complete" if has_agent else "Processing complete",
         "synthesize_response": "Response ready",
     }.get(node, f"{node} complete")
@@ -349,37 +374,6 @@ _FOLLOWUP_POOLS: Dict[Optional[str], list] = {
     ],
 }
 
-_OWNER_DOCUMENT_MAX_BYTES = 2 * 1024 * 1024
-_OWNER_DOCUMENT_MAX_FILES = 25
-_OWNER_DOCUMENT_ALLOWED_EXTENSIONS = {
-    ".txt",
-    ".md",
-    ".markdown",
-    ".csv",
-    ".json",
-    ".html",
-    ".htm",
-    ".xml",
-    ".yml",
-    ".yaml",
-    ".tsv",
-}
-_OWNER_DOCUMENT_ALLOWED_MIME_TYPES = {
-    "text/plain",
-    "text/markdown",
-    "text/csv",
-    "text/tab-separated-values",
-    "application/json",
-    "application/ld+json",
-    "text/html",
-    "application/xml",
-    "text/xml",
-    "application/x-yaml",
-    "text/yaml",
-}
-_OWNER_DOCUMENT_CHUNK_SIZE = 1200
-_OWNER_DOCUMENT_CHUNK_OVERLAP = 200
-
 
 def _generate_followup_suggestions(
     routed_agent: Optional[str],
@@ -450,64 +444,6 @@ def _extract_pending_action(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-def _pending_approval_fingerprint(payload: Optional[Dict[str, Any]]) -> Optional[str]:
-    if not payload:
-        return None
-
-    action = str(payload.get("action") or "").strip().lower()
-    if not action:
-        return None
-
-    details = payload.get("details") or {}
-    if not isinstance(details, dict):
-        details = {"value": details}
-
-    try:
-        details_key = json.dumps(details, sort_keys=True, default=str)
-    except TypeError:
-        details_key = json.dumps({key: str(value) for key, value in details.items()}, sort_keys=True)
-
-    return f"{action}::{details_key}"
-
-
-def _find_matching_pending_approval_request(
-    repo: AgentWorkRepository,
-    *,
-    shop_id: int,
-    action_id: Optional[str] = None,
-    pending_action: Optional[Dict[str, Any]] = None,
-) -> Optional[Any]:
-    normalized_action_id = str(action_id or "").strip()
-    if normalized_action_id:
-        approval = repo.get_pending_approval_by_action_id(shop_id, normalized_action_id)
-        if approval is not None:
-            return approval
-        if normalized_action_id.startswith("approval-request-"):
-            request_id = normalized_action_id.removeprefix("approval-request-")
-            for pending_approval in repo.list_pending_approval_requests(shop_id):
-                if str(getattr(pending_approval, "id", "")) == request_id:
-                    return pending_approval
-
-    pending_fingerprint = _pending_approval_fingerprint(pending_action)
-    if not pending_fingerprint:
-        return None
-
-    for approval in repo.list_pending_approval_requests(shop_id):
-        request_payload = dict(getattr(approval, "request_payload", None) or {})
-        if _pending_approval_fingerprint(request_payload) == pending_fingerprint:
-            return approval
-
-    return None
-
-
-def _state_last_text(state_values: Dict[str, Any]) -> str:
-    messages = state_values.get("messages") or []
-    if not messages:
-        return ""
-    final_message = messages[-1]
-    return getattr(final_message, "content", str(final_message))
-
-
 def _serialize_checkpoint_messages(state_values: Dict[str, Any]) -> list[Dict[str, Any]]:
     """Serialize checkpoint messages for the owner-facing history endpoint."""
     serialized: list[Dict[str, Any]] = []
@@ -541,111 +477,6 @@ def _serialize_stored_conversation_messages(shop_id: int, user_id: int) -> list[
             continue
         serialized.append({"role": role, "content": content})
     return serialized
-
-
-def _pending_payload_from_request(
-    approval_request: Any,
-    *,
-    metrics: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    request_payload = dict(getattr(approval_request, "request_payload", None) or {})
-    action_id = str(
-        request_payload.get("action_id")
-        or getattr(approval_request, "external_action_id", None)
-        or f"approval-request-{getattr(approval_request, 'id', 'unknown')}"
-    )
-    payload = enrich_pending_approval_payload(
-        {
-            **request_payload,
-            "action_id": action_id,
-            "action": request_payload.get("action") or getattr(approval_request, "action_type", "approval_required"),
-            "details": dict(request_payload.get("details") or {}),
-            "shop_id": int(request_payload.get("shop_id") or getattr(approval_request, "shop_id")),
-        },
-        metrics=metrics,
-    )
-    payload["approval_request_id"] = getattr(approval_request, "id", None)
-    requested_at = getattr(approval_request, "requested_at", None)
-    if requested_at is not None:
-        payload["created_at"] = requested_at.isoformat()
-    return payload
-
-
-def _get_pending_approval_payload(
-    shop_id: int,
-    user_id: int,
-    metrics: Optional[Dict[str, Any]] = None,
-) -> list[Dict[str, Any]]:
-    """Return current pending approval payloads for a tenant thread."""
-    checkpoint_config = build_checkpoint_config(shop_id, user_id)
-    runnable = _SUPERVISOR_RUNNABLE
-    snapshot = runnable.get_state(checkpoint_config)
-
-    pending: list[Dict[str, Any]] = []
-    seen_action_ids: set[str] = set()
-    seen_fingerprints: set[str] = set()
-    if snapshot and snapshot.interrupts:
-        values = cast(Dict[str, Any], snapshot.values or {})
-        pending_approval = values.get("pending_approval")
-        interrupt_id = getattr(snapshot.interrupts[0], "id", None)
-        if pending_approval:
-            checkpoint_payload = enrich_pending_approval_payload(
-                {
-                    **pending_approval,
-                    "action_id": interrupt_id,
-                    "action": pending_approval.get("action"),
-                    "details": pending_approval.get("details", {}),
-                    "shop_id": pending_approval.get("shop_id", shop_id),
-                },
-                metrics=metrics,
-            )
-            pending.append(checkpoint_payload)
-            if checkpoint_payload.get("action_id"):
-                seen_action_ids.add(str(checkpoint_payload["action_id"]))
-            checkpoint_fingerprint = _pending_approval_fingerprint(checkpoint_payload)
-            if checkpoint_fingerprint:
-                seen_fingerprints.add(checkpoint_fingerprint)
-
-    db = SessionLocal()
-    try:
-        repo = AgentWorkRepository(db)
-        for approval_request in repo.list_pending_approval_requests(shop_id):
-            repo_payload = _pending_payload_from_request(approval_request, metrics=metrics)
-            repo_action_id = str(repo_payload.get("action_id") or "")
-            if repo_action_id and repo_action_id in seen_action_ids:
-                continue
-            repo_fingerprint = _pending_approval_fingerprint(repo_payload)
-            if repo_fingerprint and repo_fingerprint in seen_fingerprints:
-                continue
-            pending.append(repo_payload)
-            if repo_action_id:
-                seen_action_ids.add(repo_action_id)
-            if repo_fingerprint:
-                seen_fingerprints.add(repo_fingerprint)
-    except Exception as exc:
-        logger.warning("Unable to load persisted approval requests for shop %s: %s", shop_id, exc)
-    finally:
-        db.close()
-
-    return pending
-
-
-def _get_current_pending_approval(shop_id: int, user_id: int) -> Optional[Dict[str, Any]]:
-    metrics = db_interface.get_shop_live_wait_metrics(shop_id) or {}
-    pending = _get_pending_approval_payload(shop_id, user_id, metrics=metrics)
-    return pending[0] if pending else None
-
-
-def _build_pending_approval_block_message(pending_action: Dict[str, Any]) -> str:
-    action_title = str(
-        pending_action.get("title")
-        or pending_action.get("action")
-        or "this action"
-    ).strip()
-    return (
-        f"You already have a pending approval for '{action_title}'. "
-        "Approve or reject it before sending another request."
-    )
 
 
 def _notification_feed_type(notification_type: str, severity: str, title: str, message: str) -> str:
@@ -739,38 +570,6 @@ def _get_owned_shop_ids(current_user: Dict[str, Any]) -> list[int]:
         db.close()
 
 
-def _persist_chat_turn_memory(
-    *,
-    shop_id: int,
-    user_id: int,
-    user_message: str,
-    assistant_response: str,
-    route: str,
-) -> None:
-    """Best-effort persistence for tenant-scoped owner chat memory."""
-    try:
-        db_interface.add_agent_memory(
-            shop_id=shop_id,
-            user_id=user_id,
-            memory_type="chat_user",
-            content=user_message,
-            source=route,
-            importance_score=0.6,
-            memory_meta={"role": "user"},
-        )
-        db_interface.add_agent_memory(
-            shop_id=shop_id,
-            user_id=user_id,
-            memory_type="chat_assistant",
-            content=assistant_response,
-            source=route,
-            importance_score=0.7,
-            memory_meta={"role": "assistant"},
-        )
-    except Exception as e:
-        logger.warning("Agent memory persistence failed (non-fatal): %s", str(e))
-
-
 def _require_owner_shop_access(shop_id: Any, current_user: Dict[str, Any]) -> tuple[int, int]:
     user_id = _extract_user_id(current_user)
     user_shops = _get_owned_shop_ids(current_user)
@@ -834,296 +633,6 @@ def _upsert_policy_payload(
     raise HTTPException(status_code=500, detail="Failed to load updated policy")
 
 
-def _build_work_title(message: str, fallback: str = "Owner request") -> str:
-    normalized = " ".join((message or "").split())
-    if not normalized:
-        return fallback
-    return normalized if len(normalized) <= 120 else f"{normalized[:117]}..."
-
-
-def _create_chat_work_context(shop_id: int, user_id: int, message: str, *, is_voice: bool = False) -> Dict[str, Any]:
-    trigger_source = "voice_chat" if is_voice else "chat"
-    db = SessionLocal()
-    try:
-        repo = AgentWorkRepository(db)
-        goal = repo.create_goal(
-            shop_id=shop_id,
-            created_by_user_id=user_id,
-            source=GoalSource.CHAT,
-            goal_type="owner_request",
-            title=_build_work_title(message),
-            description=message,
-            autonomy_policy="interactive",
-            context={"message": message, "trigger_source": trigger_source},
-        )
-        goal_id = cast(int, getattr(goal, "id"))
-        run = repo.create_run(
-            shop_id=shop_id,
-            goal_id=goal_id,
-            triggered_by_user_id=user_id,
-            run_type="chat",
-            trigger_source=trigger_source,
-            execution_mode="interactive",
-            graph_thread_id=_checkpoint_thread_id(shop_id, user_id),
-            current_agent="supervisor",
-            input_payload={"message": message},
-            event_context={"trigger_source": trigger_source},
-        )
-        run_id = cast(int, getattr(run, "id"))
-        return {
-            "goal_id": goal_id,
-            "run_id": run_id,
-            "execution_mode": "interactive",
-            "trigger_source": trigger_source,
-            "event_context": {"trigger_source": trigger_source, "goal_id": goal_id, "run_id": run_id},
-        }
-    finally:
-        db.close()
-
-
-def _persist_approval_request(
-    *,
-    shop_id: int,
-    user_id: int,
-    goal_id: int,
-    run_id: int,
-    routed_agent: str,
-    pending_action: Dict[str, Any],
-) -> Dict[str, Any]:
-    action_id = str(pending_action.get("action_id") or "").strip()
-    details = pending_action.get("details") or {}
-    db = SessionLocal()
-    try:
-        repo = AgentWorkRepository(db)
-        approval = _find_matching_pending_approval_request(
-            repo,
-            shop_id=shop_id,
-            action_id=action_id or None,
-            pending_action=pending_action,
-        )
-        if approval is not None and action_id and not getattr(approval, "external_action_id", None):
-            approval.external_action_id = action_id
-            db.commit()
-            db.refresh(approval)
-        if approval is None:
-            approval = repo.create_approval_request(
-                external_action_id=action_id or None,
-                shop_id=shop_id,
-                goal_id=goal_id,
-                run_id=run_id,
-                requested_by_user_id=user_id,
-                requested_by_agent=routed_agent or "supervisor",
-                action_type=str(pending_action.get("action") or "approval_required"),
-                title=_build_work_title(
-                    str(pending_action.get("title") or details.get("title") or pending_action.get("action") or "Approval required"),
-                    fallback="Approval required",
-                ),
-                rationale=str(pending_action.get("rationale") or details.get("reason") or details.get("rationale") or "") or None,
-                expected_impact=str(pending_action.get("expected_impact") or details.get("impact") or details.get("expected_impact") or "") or None,
-                urgency=str(details.get("urgency") or pending_action.get("urgency") or "normal"),
-                request_payload=pending_action,
-            )
-        enriched = dict(pending_action)
-        enriched["approval_request_id"] = approval.id
-        return enriched
-    finally:
-        db.close()
-
-
-def _finalize_chat_work_context(
-    *,
-    shop_id: int,
-    user_id: int,
-    goal_id: int,
-    run_id: int,
-    routed_agent: str,
-    response_text: str,
-    tool_results: Optional[Dict[str, Any]],
-    approval_required: bool,
-    pending_action: Optional[Dict[str, Any]],
-) -> Optional[Dict[str, Any]]:
-    db = SessionLocal()
-    try:
-        repo = AgentWorkRepository(db)
-        output_payload = {
-            "response": response_text,
-            "agent": routed_agent,
-            "tool_results": tool_results or {},
-        }
-        if approval_required:
-            repo.update_goal_status(goal_id, GoalStatus.WAITING_APPROVAL, summary=response_text or "Waiting for owner approval")
-            repo.update_run_status(
-                run_id,
-                RunStatus.WAITING_APPROVAL,
-                output_payload=output_payload,
-                current_agent=routed_agent or "supervisor",
-            )
-            if pending_action:
-                return _persist_approval_request(
-                    shop_id=shop_id,
-                    user_id=user_id,
-                    goal_id=goal_id,
-                    run_id=run_id,
-                    routed_agent=routed_agent or "supervisor",
-                    pending_action=pending_action,
-                )
-            return pending_action
-
-        repo.update_goal_status(goal_id, GoalStatus.COMPLETED, summary=response_text)
-        repo.update_run_status(
-            run_id,
-            RunStatus.COMPLETED,
-            output_payload=output_payload,
-            current_agent=routed_agent or "supervisor",
-        )
-        return pending_action
-    finally:
-        db.close()
-
-
-def _record_approval_decision(
-    *,
-    shop_id: int,
-    action_id: Optional[str],
-    pending_action: Optional[Dict[str, Any]],
-    approved: bool,
-    reason: Optional[str],
-    user_id: int,
-    resumed: Dict[str, Any],
-) -> None:
-    if not action_id and not pending_action:
-        return
-    db = SessionLocal()
-    try:
-        repo = AgentWorkRepository(db)
-        approval = _find_matching_pending_approval_request(
-            repo,
-            shop_id=shop_id,
-            action_id=action_id,
-            pending_action=pending_action,
-        )
-        if approval is None:
-            return
-        normalized_action_id = str(action_id or "").strip()
-        if normalized_action_id and not getattr(approval, "external_action_id", None):
-            approval.external_action_id = normalized_action_id
-            db.commit()
-            db.refresh(approval)
-        approval_id = cast(int, getattr(approval, "id"))
-        repo.decide_approval_request(
-            approval_id,
-            status=ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED,
-            decided_by_user_id=user_id,
-            decision_reason=reason,
-            decision_payload={
-                "message": _state_last_text(resumed),
-                "agent": resumed.get("current_agent", "supervisor"),
-                "tool_results": resumed.get("tool_results"),
-            },
-        )
-        goal_id = getattr(approval, "goal_id", None)
-        if goal_id is not None:
-            repo.update_goal_status(
-                int(goal_id),
-                GoalStatus.COMPLETED if approved else GoalStatus.CANCELLED,
-                summary=_state_last_text(resumed),
-            )
-        run_id = getattr(approval, "run_id", None)
-        if run_id is not None:
-            repo.update_run_status(
-                int(run_id),
-                RunStatus.COMPLETED if approved else RunStatus.CANCELLED,
-                output_payload={
-                    "message": _state_last_text(resumed),
-                    "agent": resumed.get("current_agent", "supervisor"),
-                    "tool_results": resumed.get("tool_results"),
-                },
-                current_agent=resumed.get("current_agent", "supervisor"),
-            )
-    finally:
-        db.close()
-
-
-def _resume_persisted_approval(
-    *,
-    shop_id: int,
-    action_id: Optional[str],
-    approved: bool,
-    reason: Optional[str],
-    user_id: int,
-) -> Optional[Dict[str, Any]]:
-    if not action_id:
-        return None
-
-    db = SessionLocal()
-    try:
-        repo = AgentWorkRepository(db)
-        approval = _find_matching_pending_approval_request(
-            repo,
-            shop_id=shop_id,
-            action_id=action_id,
-            pending_action=None,
-        )
-        if approval is None:
-            return None
-
-        pending = dict(getattr(approval, "request_payload", None) or {})
-        pending.setdefault("action", getattr(approval, "action_type", None) or "approval_required")
-        pending.setdefault("shop_id", shop_id)
-        pending.setdefault("details", {})
-        routed_agent = str(getattr(approval, "requested_by_agent", None) or "supervisor")
-    finally:
-        db.close()
-
-    if not approved:
-        rejection_text = f"Action '{pending.get('action')}' was rejected. No changes were made."
-        return {
-            "messages": [AIMessage(content=rejection_text)],
-            "current_agent": routed_agent,
-            "tool_results": {
-                "status": "rejected",
-                "action": pending.get("action"),
-                "reason": reason,
-            },
-        }
-
-    from agents.supervisor import _execute_approved_action
-
-    approval_state: AgentState = {
-        "messages": [],
-        "tenant_id": shop_id,
-        "user_id": user_id,
-        "current_agent": routed_agent,
-        "active_goal_id": None,
-        "active_task_id": None,
-        "execution_mode": "interactive",
-        "autonomy_policy": None,
-        "event_context": None,
-        "proposed_actions": [],
-        "run_summary": None,
-        "pending_approval": None,
-        "needs_human_input": False,
-        "tool_results": None,
-        "metadata": {"shop_id": shop_id, "user_id": user_id, "approval_action_id": action_id},
-    }
-
-    execution_result = _execute_approved_action(
-        approval_state,
-        pending,
-    )
-    if execution_result.get("error"):
-        message_text = f"Approval received, but the action failed: {execution_result.get('error')}"
-    else:
-        result_message = execution_result.get("message") or f"Action '{pending.get('action')}' was executed successfully."
-        message_text = f"Approval received. {result_message}"
-
-    return {
-        "messages": [AIMessage(content=message_text)],
-        "current_agent": routed_agent,
-        "tool_results": execution_result,
-    }
-
-
 def _build_memory_context(shop_id: int, user_id: int, query_text: str) -> str:
     """Best-effort retrieval of tenant-scoped memory context for supervisor input."""
     try:
@@ -1155,149 +664,6 @@ def _build_memory_context(shop_id: int, user_id: int, query_text: str) -> str:
     except Exception as e:
         logger.warning("Agent memory retrieval failed (non-fatal): %s", str(e))
         return ""
-
-
-def _sanitize_document_name(raw_name: Optional[str], fallback: str = "document.txt") -> str:
-    cleaned = (raw_name or fallback).replace("\\", "/").split("/")[-1].strip()
-    return cleaned or fallback
-
-
-def _sanitize_relative_document_path(raw_path: Optional[str], fallback_name: str) -> str:
-    candidate = (raw_path or "").replace("\\", "/").strip()
-    parts = [part for part in candidate.split("/") if part and part not in {".", ".."}]
-    if not parts:
-        return fallback_name
-    return "/".join(parts)[:500]
-
-
-def _extract_owner_document_text(file_bytes: bytes, *, filename: str, content_type: str) -> str:
-    if not file_bytes:
-        raise HTTPException(status_code=400, detail=f"{filename}: file is empty")
-
-    lowered = filename.lower()
-    extension = os.path.splitext(lowered)[1]
-    normalized_type = (content_type or "").split(";")[0].strip().lower()
-
-    if extension not in _OWNER_DOCUMENT_ALLOWED_EXTENSIONS and normalized_type not in _OWNER_DOCUMENT_ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"{filename}: unsupported file type. Upload text, markdown, CSV, JSON, HTML, XML, or YAML documents."
-            ),
-        )
-
-    if b"\x00" in file_bytes[:4096]:
-        raise HTTPException(status_code=400, detail=f"{filename}: binary files are not supported yet")
-
-    for encoding in ("utf-8-sig", "utf-8", "utf-16"):
-        try:
-            text = file_bytes.decode(encoding)
-            break
-        except UnicodeDecodeError:
-            text = ""
-    else:
-        raise HTTPException(status_code=400, detail=f"{filename}: file encoding is not supported")
-
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
-    if not normalized:
-        raise HTTPException(status_code=400, detail=f"{filename}: no readable text content found")
-    return normalized
-
-
-def _chunk_owner_document_text(text: str) -> List[str]:
-    if len(text) <= _OWNER_DOCUMENT_CHUNK_SIZE:
-        return [text]
-
-    chunks: List[str] = []
-    step = _OWNER_DOCUMENT_CHUNK_SIZE - _OWNER_DOCUMENT_CHUNK_OVERLAP
-    for start in range(0, len(text), step):
-        chunk = text[start:start + _OWNER_DOCUMENT_CHUNK_SIZE].strip()
-        if chunk:
-            chunks.append(chunk)
-    return chunks or [text]
-
-
-def _serialize_owner_document(document: AgentDocument, *, duplicate: bool = False) -> Dict[str, Any]:
-    return {
-        "id": document.id,
-        "filename": document.filename,
-        "relative_path": document.relative_path,
-        "size_bytes": document.size_bytes,
-        "content_type": document.content_type,
-        "knowledge_status": document.knowledge_status,
-        "chunk_count": document.chunk_count,
-        "created_at": document.created_at.isoformat() if document.created_at else None,
-        "updated_at": document.updated_at.isoformat() if document.updated_at else None,
-        "duplicate": duplicate,
-    }
-
-
-def _document_memory_query(db, *, shop_id: int, document_id: int):
-    return db.query(AgentMemory).filter(
-        AgentMemory.shop_id == shop_id,
-        AgentMemory.memory_type == "document",
-        AgentMemory.memory_meta["document_id"].as_integer() == document_id,
-    )
-
-
-def _reindex_owner_document_in_session(
-    db,
-    *,
-    document: AgentDocument,
-    shop_id: int,
-) -> int:
-    extracted_text = document.extracted_text or _extract_owner_document_text(
-        document.file_blob,
-        filename=document.filename,
-        content_type=document.content_type,
-    )
-    chunks = _chunk_owner_document_text(extracted_text)
-    relative_path = document.relative_path or document.filename
-
-    _document_memory_query(db, shop_id=shop_id, document_id=document.id).delete(synchronize_session=False)
-
-    for chunk_index, chunk in enumerate(chunks, start=1):
-        db.add(
-            AgentMemory(
-                shop_id=shop_id,
-                user_id=None,
-                memory_type="document",
-                content=f"From {relative_path} (chunk {chunk_index}/{len(chunks)}): {chunk}",
-                source=relative_path,
-                importance_score=0.82,
-                memory_meta={
-                    "document_id": document.id,
-                    "filename": document.filename,
-                    "relative_path": relative_path,
-                    "chunk_index": chunk_index,
-                    "chunk_count": len(chunks),
-                    "checksum": document.checksum,
-                },
-                is_active=True,
-                created_at=datetime.utcnow(),
-            )
-        )
-
-    document.extracted_text = extracted_text
-    document.chunk_count = len(chunks)
-    document.knowledge_status = "indexed"
-    document.updated_at = datetime.utcnow()
-    db.flush()
-    return len(chunks)
-
-
-def _get_owner_document_or_404(db, *, shop_id: int, document_id: int) -> AgentDocument:
-    document = (
-        db.query(AgentDocument)
-        .filter(
-            AgentDocument.id == document_id,
-            AgentDocument.shop_id == shop_id,
-        )
-        .first()
-    )
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-    return document
 
 
 @router.get("/documents")
@@ -1636,7 +1002,7 @@ async def chat_sync(
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
 
-    existing_pending = _get_current_pending_approval(shop_id, int(user_id))
+    existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
     if existing_pending is not None:
         return {
             "response": _build_pending_approval_block_message(existing_pending),
@@ -1811,7 +1177,7 @@ async def chat_stream(
     # Create streaming generator
     async def event_generator():
         try:
-            existing_pending = _get_current_pending_approval(shop_id, int(user_id))
+            existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
             if existing_pending is not None:
                 block_message = _build_pending_approval_block_message(existing_pending)
                 yield f"data: {json.dumps({'type': 'approval_required', 'action': existing_pending.get('action'), 'details': existing_pending})}\n\n"
@@ -2344,7 +1710,7 @@ async def get_history(
     return {
         "messages": checkpoint_messages or _serialize_stored_conversation_messages(shop_id, user_id),
         "checkpoint_id": f"tenant_{shop_id}_{user_id}",
-        "pending": _get_pending_approval_payload(shop_id, user_id),
+        "pending": _get_pending_approval_payload(shop_id, user_id, runnable=_SUPERVISOR_RUNNABLE),
     }
 
 
@@ -2385,7 +1751,7 @@ async def get_pending_approvals(
         raise HTTPException(status_code=403, detail="Not owner of this shop")
 
     metrics = db_interface.get_shop_live_wait_metrics(shop_id) or {}
-    return {"pending": _get_pending_approval_payload(shop_id, user_id, metrics=metrics)}
+    return {"pending": _get_pending_approval_payload(shop_id, user_id, metrics, runnable=_SUPERVISOR_RUNNABLE)}
 
 
 @router.get("/briefing")
@@ -2427,7 +1793,7 @@ async def get_owner_briefing(
         employees = db_interface.get_shop_employees(shop_id, is_active=True) or []
         metrics["active_employees"] = len(employees)
 
-    pending = _get_pending_approval_payload(shop_id, user_id, metrics=live_metrics or metrics)
+    pending = _get_pending_approval_payload(shop_id, user_id, live_metrics or metrics, runnable=_SUPERVISOR_RUNNABLE)
 
     active_services = int(metrics.get("active_services", 0) or 0)
     active_employees = int(metrics.get("active_employees", 0) or 0)

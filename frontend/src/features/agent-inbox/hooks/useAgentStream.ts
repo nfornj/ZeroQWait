@@ -5,8 +5,8 @@ import {
   buildStreamToolResultInsight,
 } from "../approvalOutcome";
 import { nowIso, normalizePendingApproval, toId } from "../agentInboxShared";
-import type { AgentFeedEvent, ChatMessage, InsightItem, PendingApproval } from "../types";
-import type { ThinkingStep } from "../ThinkingSteps";
+import type { AgentChatSendPayload } from "../AgentChat";
+import type { AgentFeedEvent, ChatMessage, InsightItem, PendingApproval, ThinkingStep } from "../types";
 
 const apiBaseUrl = process.env.REACT_APP_API_URL || "/api";
 
@@ -49,7 +49,6 @@ export const useAgentStream = ({
   refreshBriefing,
 }: UseAgentStreamOptions) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
 
@@ -122,19 +121,29 @@ export const useAgentStream = ({
           description: "Tool execution started.",
           payload: event,
         });
-        setThinkingSteps((prev) => {
-          const completed = prev.map((step) =>
-            step.status === "active" ? { ...step, status: "completed" as const } : step,
+        if (assistantMessageId) {
+          const newStep: ThinkingStep = {
+            id: `tool-${String(event.tool || "unknown")}-${Date.now()}`,
+            label: `Calling ${String(event.tool || "unknown")}...`,
+            status: "active",
+          };
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantMessageId
+                ? {
+                    ...message,
+                    thinkingSteps: [
+                      ...(message.thinkingSteps || []).map((step) =>
+                        step.status === "active" ? { ...step, status: "completed" as const } : step,
+                      ),
+                      newStep,
+                    ],
+                    thinkingComplete: false,
+                  }
+                : message,
+            ),
           );
-          return [
-            ...completed,
-            {
-              id: `tool-${String(event.tool || "unknown")}-${Date.now()}`,
-              label: `Calling ${String(event.tool || "unknown")}...`,
-              status: "active" as const,
-            },
-          ];
-        });
+        }
         return;
       }
 
@@ -177,13 +186,22 @@ export const useAgentStream = ({
           prependInsightItem(outcomeInsight);
         }
 
-        setThinkingSteps((prev) =>
-          prev.map((step) =>
-            step.label === `Calling ${String(event.tool || "unknown")}...`
-              ? { ...step, status: event.error ? ("error" as const) : ("completed" as const) }
-              : step,
-          ),
-        );
+        if (assistantMessageId) {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantMessageId
+                ? {
+                    ...message,
+                    thinkingSteps: (message.thinkingSteps || []).map((step) =>
+                      step.label === `Calling ${String(event.tool || "unknown")}...`
+                        ? { ...step, status: event.error ? ("error" as const) : ("completed" as const) }
+                        : step,
+                    ),
+                  }
+                : message,
+            ),
+          );
+        }
         return;
       }
 
@@ -202,14 +220,13 @@ export const useAgentStream = ({
   );
 
   const handleSend = useCallback(
-    async (messageText: string) => {
+    async ({ text: messageText, attachments }: AgentChatSendPayload) => {
       if (!shopId) {
         setError("No active shop selected for agent inbox");
         return;
       }
 
       setError(null);
-      setThinkingSteps([]);
 
       const userMessage: ChatMessage = {
         id: toId("msg_user"),
@@ -217,6 +234,7 @@ export const useAgentStream = ({
         content: messageText,
         status: "done",
         timestamp: nowIso(),
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
       };
       const assistantMessageId = toId("msg_assistant");
       const assistantPlaceholder: ChatMessage = {
@@ -226,6 +244,8 @@ export const useAgentStream = ({
         status: "streaming",
         retryMessage: messageText,
         timestamp: nowIso(),
+        thinkingSteps: [],
+        thinkingComplete: false,
       };
 
       setMessages((prev) => [...prev, userMessage, assistantPlaceholder]);
@@ -280,7 +300,9 @@ export const useAgentStream = ({
               streamEndedWithDone = true;
               setMessages((prev) =>
                 prev.map((message) =>
-                  message.id === assistantMessageId ? { ...message, status: "done" } : message,
+                  message.id === assistantMessageId
+                    ? { ...message, status: "done", thinkingComplete: true }
+                    : message,
                 ),
               );
               continue;
@@ -356,7 +378,9 @@ export const useAgentStream = ({
         });
         setMessages((prev) =>
           prev.map((message) =>
-            message.id === assistantMessageId ? { ...message, status: "error" } : message,
+            message.id === assistantMessageId
+              ? { ...message, status: "error", thinkingComplete: true }
+              : message,
           ),
         );
       } finally {
@@ -391,7 +415,7 @@ export const useAgentStream = ({
 
           return prev.map((message) =>
             message.id === assistantMessageId && message.status !== "error"
-              ? { ...message, status: "done" }
+              ? { ...message, status: "done", thinkingComplete: true }
               : message,
           );
         });
@@ -400,39 +424,14 @@ export const useAgentStream = ({
     [addFeedEvent, processStreamEvent, refreshBriefing, refreshPendingApprovals, shopId],
   );
 
-  const handleStreamEvent = useCallback(
-    (event: Record<string, any>) => {
-      processStreamEvent(event);
-      if (String(event.type || "") === "approval_required") {
-        void refreshPendingApprovals();
-      }
-    },
-    [processStreamEvent, refreshPendingApprovals],
-  );
-
-  const handleChatHistoryChange = useCallback((history: any[]) => {
-    setMessages(
-      history.map((item, index) => ({
-        id: item.id || `mirrored_${index}`,
-        role: item.role === "user" ? "user" : "assistant",
-        content: item.text || "",
-        status: item.status || "done",
-        timestamp: item.timestamp || nowIso(),
-      })),
-    );
-  }, []);
-
   return {
     messages,
     setMessages,
     isStreaming,
     handleSend,
-    thinkingSteps,
     error,
     setError,
     appendSystemMessage,
-    handleStreamEvent,
-    handleChatHistoryChange,
   };
 };
 
