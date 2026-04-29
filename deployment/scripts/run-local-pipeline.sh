@@ -78,6 +78,8 @@ print('Smoke tests passed:', ', '.join(modules))
 build_push() {
   local name="$1"
   local context="$2"
+  # Optional: relative path from PROJECT_ROOT to Dockerfile (use with context "." for project-root builds)
+  local dockerfile_override="${3:-}"
   local repo
   local image
 
@@ -85,7 +87,11 @@ build_push() {
   image="${REGISTRY}/${repo}:${VERSION_TAG}"
 
   echo "==> Building ${image}"
-  docker build --provenance=false -t "${image}" "${PROJECT_ROOT}/${context}"
+  if [[ -n "${dockerfile_override}" ]]; then
+    docker build --provenance=false -t "${image}" -f "${PROJECT_ROOT}/${dockerfile_override}" "${PROJECT_ROOT}/${context}"
+  else
+    docker build --provenance=false -t "${image}" "${PROJECT_ROOT}/${context}"
+  fi
   docker push "${image}"
 }
 
@@ -117,9 +123,10 @@ main() {
   should_build "asr-service" && build_push "asr-service" "asr_service"
   should_build "tts-service" && build_push "tts-service" "tts_service"
   should_build "voice-mcp"  && build_push "voice-mcp"  "mcps/voice"
-  should_build "booking-mcp" && build_push "booking-mcp" "mcps/booking"
-  should_build "finance-mcp" && build_push "finance-mcp" "mcps/finance"
-  should_build "hr-mcp"      && build_push "hr-mcp"      "mcps/hr"
+  # booking/finance/hr MCPs need project root as context (Dockerfiles reference backend/ + mcps/X/)
+  should_build "booking-mcp" && build_push "booking-mcp" "." "mcps/booking/Dockerfile"
+  should_build "finance-mcp" && build_push "finance-mcp" "." "mcps/finance/Dockerfile"
+  should_build "hr-mcp"      && build_push "hr-mcp"      "." "mcps/hr/Dockerfile"
 
   should_build "backend"     && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/backend-deployment.yaml"     "backend" "$(repo_for backend)"
   should_build "frontend"    && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/frontend-deployment.yaml"    "frontend" "$(repo_for frontend)"
