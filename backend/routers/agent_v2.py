@@ -55,7 +55,6 @@ from agents.briefings import (
 )
 from agents.memory_context import (
     format_memory_context,
-    get_conversation_history,
     merge_and_rank_memories,
 )
 from agents.state import AgentState
@@ -462,20 +461,6 @@ def _serialize_checkpoint_messages(state_values: Dict[str, Any]) -> list[Dict[st
                 "content": str(getattr(message, "content", "")),
             }
         )
-    return serialized
-
-
-def _serialize_stored_conversation_messages(shop_id: int, user_id: int) -> list[Dict[str, Any]]:
-    """Serialize Redis-backed owner conversation history as a history fallback."""
-    serialized: list[Dict[str, Any]] = []
-    for item in get_conversation_history(_redis, str(shop_id), str(user_id)):
-        role = str(item.get("role") or "assistant")
-        if role not in {"user", "assistant"}:
-            continue
-        content = str(item.get("content") or "")
-        if not content:
-            continue
-        serialized.append({"role": role, "content": content})
     return serialized
 
 
@@ -1708,7 +1693,7 @@ async def get_history(
     checkpoint_messages = _serialize_checkpoint_messages(values)
 
     return {
-        "messages": checkpoint_messages or _serialize_stored_conversation_messages(shop_id, user_id),
+        "messages": checkpoint_messages,
         "checkpoint_id": f"tenant_{shop_id}_{user_id}",
         "pending": _get_pending_approval_payload(shop_id, user_id, runnable=_SUPERVISOR_RUNNABLE),
     }
