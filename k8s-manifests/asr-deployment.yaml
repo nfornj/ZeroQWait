@@ -14,11 +14,9 @@ spec:
         app: asr-service
     spec:
       priorityClassName: voice-critical
-      imagePullSecrets:
-      - name: ghcr-pull-secret
       containers:
         - name: asr-service
-          image: ghcr.io/nfornj/prod/asr-service:latest
+          image: localhost:5000/prod/asr-service:latest
           imagePullPolicy: Always
           env:
             - name: MODEL_SIZE

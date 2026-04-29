@@ -28,11 +28,9 @@ spec:
               - key: zeroqwait.io/node-pool
                 operator: In
                 values: ["edge-cpu"]
-      imagePullSecrets:
-      - name: ghcr-pull-secret
       containers:
       - name: frontend
-        image: ghcr.io/nfornj/prod/frontend:latest
+        image: localhost:5000/prod/frontend:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 80

@@ -30,8 +30,6 @@ spec:
                   - key: zeroqwait.io/node-pool
                     operator: In
                     values: ["core-cpu"]
-      imagePullSecrets:
-      - name: ghcr-pull-secret
       containers:
         - name: hr-mcp
           image: ghcr.io/nfornj/prod/hr-mcp:latest

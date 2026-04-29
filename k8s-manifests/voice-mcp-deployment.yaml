@@ -34,11 +34,9 @@ spec:
                   - key: zeroqwait.io/node-pool
                     operator: In
                     values: ["core-cpu"]
-      imagePullSecrets:
-      - name: ghcr-pull-secret
       containers:
         - name: voice-mcp
-          image: ghcr.io/nfornj/prod/voice-mcp:latest
+          image: localhost:5000/prod/voice-mcp:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8881
