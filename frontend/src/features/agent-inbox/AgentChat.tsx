@@ -1774,6 +1774,8 @@ const AgentChat: React.FC<AgentChatProps> = ({
               flexShrink: 0,
               minHeight: { xs: 320, md: 0 },
               display: "flex",
+              alignSelf: "stretch",
+              height: { xs: "auto", md: "100%" },
             }}
           >
             {sidebar}

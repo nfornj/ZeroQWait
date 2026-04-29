@@ -25,6 +25,10 @@ const ShopLayout: React.FC = () => {
         <Box
             sx={{
                 display: 'flex',
+                '--navbar-h': '57px',
+                '@media (min-width: 600px)': {
+                    '--navbar-h': '65px',
+                },
                 '--owner-primary': brandPrimary,
                 '--owner-secondary': brandSecondary,
                 '--owner-glass-bg': ownerBrand.glass.bg,
@@ -89,8 +93,9 @@ const ShopLayout: React.FC = () => {
                     alignItems: 'stretch',
                     px: isAgentRoute ? 0 : { xs: 1.5, md: 3 },
                     pb: isAgentRoute ? 0 : 5,
-                    mt: { xs: 8, md: 10 },
-                    height: isAgentRoute ? { xs: 'calc(100vh - 64px)', md: 'calc(100vh - 80px)' } : '100%',
+                    mt: 0,
+                    pt: 'var(--navbar-h)',
+                    height: isAgentRoute ? 'calc(100dvh - var(--navbar-h))' : '100%',
                     minHeight: 0,
                     overflow: isAgentRoute ? 'hidden' : 'visible',
                     width: '100%',

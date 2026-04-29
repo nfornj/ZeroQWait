@@ -230,7 +230,7 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
         ) : null}
       </Stack>
 
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 0, pt: 0, pb: 0.25 }}>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 0, pt: 0, pb: 0 }}>
         {error ? (
           <Alert severity="error" sx={{ mb: 1.5 }}>
             Failed to sync task board state.
@@ -281,6 +281,7 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
                     borderRadius: 0,
                     px: 0.75,
                     py: 0,
+                    minHeight: 36,
                     textAlign: "left",
                     opacity: task.done ? 0.56 : 1,
                     transition: theme.transitions.create(["background-color", "opacity"], {

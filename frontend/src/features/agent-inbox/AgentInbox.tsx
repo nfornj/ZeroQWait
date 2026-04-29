@@ -335,12 +335,12 @@ const AgentInbox: React.FC = () => {
         width: "100%",
         maxWidth: { xs: "100%", md: "1800px" },
         mx: "auto",
-        height: "calc(100dvh - 64px)",
+        height: "calc(100dvh - var(--navbar-h, 57px))",
         display: "flex",
         flexDirection: "column",
       }}
     >
-      <Stack spacing={1} sx={{ flex: 1, minHeight: 0 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 0 }}>
         {error && <Alert severity="error">{error}</Alert>}
 
         {!shop?.id && (
@@ -481,7 +481,7 @@ const AgentInbox: React.FC = () => {
             </Stack>
           </Grid>
         </Grid>
-      </Stack>
+      </Box>
     </Box>
   );
 };
