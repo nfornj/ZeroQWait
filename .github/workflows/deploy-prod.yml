@@ -37,6 +37,18 @@ jobs:
           fi
           sudo sh -c 'command -v kubectl || command -v k3s'
 
+      - name: Ensure local Docker registry is running
+        run: |
+          if ! curl -fs http://localhost:5000/v2/ >/dev/null 2>&1; then
+            echo "Local registry not running — starting it"
+            sudo docker run -d --restart=always --name local-registry -p 5000:5000 registry:2
+            sleep 2
+            curl -fs http://localhost:5000/v2/ >/dev/null || { echo "ERROR: registry failed to start"; exit 1; }
+            echo "Local registry started"
+          else
+            echo "Local registry already running"
+          fi
+
       - name: Deploy to production (zeroqwait.com)
         run: |
           cd "${CHECKOUT_PATH}"
