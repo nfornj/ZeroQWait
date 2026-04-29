@@ -325,7 +325,12 @@ const OwnerDashboardPage: React.FC = () => {
   const handleSend = useCallback(
     async ({ text, attachments = [] }: AgentChatSendPayload) => {
       if (!shop?.id) {
-        setDashboardError("No active shop selected for the owner dashboard.");
+        // Only surface the error after the shop context has finished loading.
+        // During the loading window the shop is legitimately absent — showing an
+        // error here would be incorrect and would persist since nothing clears it.
+        if (!shopLoading) {
+          setDashboardError("No active shop selected for the owner dashboard.");
+        }
         return;
       }
 
