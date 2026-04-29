@@ -15,6 +15,7 @@ data:
   # LLM provider selection: nvidia (default), ollama (fallback), groq (backup)
   LLM_PROVIDER: "nvidia"
   NVIDIA_MODEL: "meta/llama-3.1-8b-instruct"
+  AGENT_SYNC_TIMEOUT_SECONDS: "120"
   REDIS_HOST: "redis.zeroqwait.svc.cluster.local"
   REDIS_PORT: "6379"
   BOOKING_MCP_URL: "http://booking-mcp.zeroqwait.svc.cluster.local:8890"

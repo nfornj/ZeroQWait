@@ -12,7 +12,7 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
 from . import approval_policy
-from .llm_factory import create_chat_model
+from .llm_factory import create_planner_model
 
 
 logger = logging.getLogger(__name__)
@@ -204,7 +204,7 @@ def build_specialist_runnable(
             if fast_plan:
                 return _finalize_plan(dict(fast_plan), messages, source="fast_path", started_at=started_at)
 
-        llm = create_chat_model(shop_id, temperature=temperature)
+        llm = create_planner_model(shop_id, temperature=temperature)
         planner_prompt = (
             f"You are the {agent_name} specialist planner for ZeroQwait. "
             "Pick exactly one supported operation and extract the arguments required to run it.\n\n"

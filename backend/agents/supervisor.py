@@ -36,7 +36,7 @@ from modules.agent.models import PolicyMode
 from modules.agent.work_repository import AgentWorkRepository
 
 from . import approval_policy
-from .llm_factory import create_chat_model
+from .llm_factory import create_planner_model, create_formatter_model
 from .state import AgentState
 from .tools import booking_tools, finance_tools, hr_tools
 
@@ -158,12 +158,15 @@ def _classify_intent_fastpath(user_input: str) -> Optional[Tuple[str, str]]:
     return None
 
 
-def get_llm(state: Optional[AgentState] = None, *, temperature: float = 0.3):
-    """Create the shop-aware chat model for agent graphs."""
-    shop_id = None
-    if state is not None:
-        shop_id = state.get("tenant_id")
-    return create_chat_model(shop_id, temperature=temperature)
+def get_llm(state: Optional[AgentState] = None, *, temperature: float = 0.3, role: str = "planner"):
+    """
+    role="planner"   → structured-output safe, used in classify_intent
+    role="formatter" → free-form prose, used in synthesize_response
+    """
+    shop_id = state.get("tenant_id") if state is not None else None
+    if role == "formatter":
+        return create_formatter_model(shop_id, temperature=temperature)
+    return create_planner_model(shop_id, temperature=temperature)
 
 
 def _merge_metadata(state: AgentState, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -261,7 +264,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route"]]:
         + "Respond with your classification."
     )
 
-    llm = get_llm(state)
+    llm = get_llm(state, role="planner")
 
     try:
         structured_llm = llm.with_structured_output(RoutingDecision)
@@ -459,7 +462,7 @@ def synthesize_response(state: AgentState) -> dict:
                 "tool_results": state.get("tool_results"),
             }
 
-    llm = get_llm(state)
+    llm = get_llm(state, role="formatter", temperature=0.7)
 
     # ── Shop-type adaptive prompt ────────────────────────────────
     shop_type_hint = ""

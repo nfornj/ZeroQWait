@@ -95,7 +95,7 @@ def provider_catalog(subscription_tier: Optional[str] = None) -> list[dict[str, 
         },
         {
             "key": "nvidia",
-            "label": "NVIDIA NIM (GLM-4.7)",
+            "label": "NVIDIA NIM",
             "default_model": default_model_name_for_provider("nvidia"),
             "supports_api_key": True,
             "supports_api_base_url": False,
@@ -139,7 +139,7 @@ def default_model_name_for_provider(provider: str) -> str:
         "anthropic": os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
         "groq": os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
         "google_genai": os.getenv("GOOGLE_GENAI_MODEL", "gemini-2.0-flash"),
-        "nvidia": os.getenv("NVIDIA_MODEL", "z-ai/glm4.7"),
+        "nvidia": os.getenv("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct"),
     }
     return defaults[provider]
 
@@ -318,8 +318,8 @@ def _import_attr(module_name: str, attr_name: str):
     return getattr(module, attr_name)
 
 
-def create_chat_model(shop_id: Optional[int], *, temperature: float):
-    config = load_shop_llm_config(shop_id)
+def _build_model_from_config(config: ResolvedLLMConfig, *, temperature: float):
+    """Low-level builder. Accepts a fully-resolved config and returns an LLM instance."""
     settings = dict(config.settings or {})
 
     if config.provider == "ollama":
@@ -376,3 +376,60 @@ def create_chat_model(shop_id: Optional[int], *, temperature: float):
         )
 
     raise ValueError(f"Unsupported LLM provider: {config.provider}")
+
+
+def create_chat_model(shop_id: Optional[int], *, temperature: float):
+    return _build_model_from_config(load_shop_llm_config(shop_id), temperature=temperature)
+
+
+# ---------------------------------------------------------------------------
+# Models that stream thinking tokens and do NOT support JSON/tool-call schemas
+# ---------------------------------------------------------------------------
+THINKING_MODELS: frozenset[str] = frozenset({
+    "z-ai/glm4.7",
+    "z-ai/glm4.7-thinking",
+    "deepseek-ai/deepseek-r1",
+    "deepseek-r1",
+    "qwq-32b",
+    "qwq-32b-preview",
+    "qwq-32b-q8_0",
+})
+
+# Per-provider safe fallback for the planner slot when user picks a thinking model
+_PLANNER_SAFE_FALLBACK: dict[str, str] = {
+    "nvidia":       "meta/llama-3.1-8b-instruct",
+    "ollama":       "qwen3:8b",
+    "groq":         "llama-3.1-8b-instant",
+    "openai":       "gpt-4.1-mini",
+    "anthropic":    "claude-3-5-haiku-20241022",
+    "google_genai": "gemini-2.0-flash",
+}
+
+
+def create_planner_model(shop_id: Optional[int], *, temperature: float = 0.1):
+    """
+    For classify_intent and plan_request nodes only.
+    Guarantees with_structured_output() compatibility.
+    If the shop has configured a thinking model, silently swaps to the
+    safe fallback for that provider without touching the DB record.
+    """
+    config = load_shop_llm_config(shop_id)
+    if config.model_name in THINKING_MODELS:
+        safe_model = _PLANNER_SAFE_FALLBACK.get(config.provider, config.model_name)
+        config = ResolvedLLMConfig(
+            provider=config.provider,
+            model_name=safe_model,
+            api_base_url=config.api_base_url,
+            api_key=config.api_key,
+            settings=config.settings,
+            subscription_tier=config.subscription_tier,
+        )
+    return _build_model_from_config(config, temperature=temperature)
+
+
+def create_formatter_model(shop_id: Optional[int], *, temperature: float = 0.7):
+    """
+    For synthesize_response node only.
+    No schema constraints — thinking models are fine and produce better prose.
+    """
+    return create_chat_model(shop_id, temperature=temperature)
