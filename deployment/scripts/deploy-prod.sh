@@ -118,6 +118,9 @@ echo "==> Ensuring required namespaces exist"
 kctl create namespace zeroqwait --dry-run=client -o yaml | kctl apply -f -
 kctl create namespace llm --dry-run=client -o yaml | kctl apply -f -
 
+# Allow root (sudo) to access the repo without "dubious ownership" errors.
+sudo git config --global --add safe.directory "${PROJECT_ROOT}" 2>/dev/null || true
+
 sudo env \
   SKIP_TESTS="${SKIP_TESTS:-true}" \
   REGISTRY="localhost:5000" \
