@@ -1,7 +1,6 @@
 // RESTYLED: Perplexity-style
 import React, { createContext, useState, useContext, useEffect, useMemo } from 'react';
 import { ThemeProvider as MUIThemeProvider, createTheme } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
 
 import { createOwnerBrandTokens } from '../hooks/useOwnerBrand';
 
@@ -190,7 +189,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return (
         <ThemeContext.Provider value={{ mode, toggleMode, themePreset, setThemePreset, dashboardGradient, setDashboardGradient, timeZone, setTimeZone }}>
             <MUIThemeProvider theme={theme}>
-                <CssBaseline />
                 {children}
             </MUIThemeProvider>
         </ThemeContext.Provider>

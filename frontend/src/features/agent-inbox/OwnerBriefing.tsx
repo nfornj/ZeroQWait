@@ -7,6 +7,7 @@ import {
   CardContent,
   Chip,
   Grid,
+  Skeleton,
   Stack,
   Typography,
   useTheme,
@@ -21,6 +22,7 @@ import { useShop } from "../../contexts/ShopContext";
 interface OwnerBriefingProps {
   briefing: OwnerBriefingData | null;
   onAction?: (action: BriefingAction) => void;
+  isLoading?: boolean;
 }
 
 const formatCurrency = (value: number) =>
@@ -64,13 +66,16 @@ const OwnerBriefingCard: React.FC<{ label: string; value: string; icon: React.Re
   );
 };
 
-const OwnerBriefingPanel: React.FC<OwnerBriefingProps> = ({ briefing, onAction }) => {
+const OwnerBriefingPanel: React.FC<OwnerBriefingProps> = ({ briefing, onAction, isLoading }) => {
   const muiTheme = useTheme();
   const { shop } = useShop();
   const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
   const brandSecondary = shop?.secondary_color || brandPrimary;
 
   if (!briefing) {
+    if (isLoading) {
+      return <Skeleton variant="rounded" height={220} sx={{ borderRadius: 3 }} />;
+    }
     return null;
   }
 

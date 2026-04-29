@@ -8,6 +8,7 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Skeleton,
   Stack,
   Typography,
   useTheme,
@@ -25,6 +26,7 @@ interface AgentFeedProps {
   onMarkAsRead?: (notificationId: number) => void;
   onMarkAllAsRead?: () => void;
   maxHeight?: MaxHeightValue;
+  isLoading?: boolean;
 }
 
 const typeColorMap: Record<AgentFeedEvent["type"], "default" | "primary" | "success" | "warning" | "error" | "info"> = {
@@ -47,6 +49,7 @@ const AgentFeed: React.FC<AgentFeedProps> = ({
   onMarkAsRead,
   onMarkAllAsRead,
   maxHeight = 160,
+  isLoading = false,
 }) => {
   const muiTheme = useTheme();
   const { shop } = useShop();
@@ -101,11 +104,17 @@ const AgentFeed: React.FC<AgentFeedProps> = ({
 
         <Stack spacing={1} sx={{ maxHeight, overflowY: "auto", pr: 0.5 }}>
           {events.length === 0 ? (
-            <Box py={2}>
-              <Typography variant="body2" color="text.secondary">
-                No activity yet. Send a message to start the feed.
-              </Typography>
-            </Box>
+            isLoading ? (
+              <Stack spacing={1} py={0.5}>
+                {[0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={52} sx={{ borderRadius: 1.5 }} />)}
+              </Stack>
+            ) : (
+              <Box py={2}>
+                <Typography variant="body2" color="text.secondary">
+                  No activity yet. Send a message to start the feed.
+                </Typography>
+              </Box>
+            )
           ) : (
             events.map((event, index) => (
               <React.Fragment key={event.id}>

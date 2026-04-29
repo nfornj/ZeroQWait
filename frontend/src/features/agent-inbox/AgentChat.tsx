@@ -57,7 +57,7 @@ import {
   ComposerAddAttachment,
   ComposerAttachments,
   UserMessageAttachments,
-} from "../../components/assistant-ui/attachment";
+} from "../../components/AssistantUIAttachment";
 import { Composer } from "../../components/assistant-ui/thread";
 import { resolveAgentChart } from "./types";
 import type { AgentChart, AgentFile, AgentTable, ChatMessage, ResolvedAgentChart } from "./types";
@@ -1058,10 +1058,10 @@ const EditComposerMessage: React.FC<{ brandPrimary: string }> = ({ brandPrimary 
   );
 };
 
-const UserThreadMessage: React.FC<{
+const UserThreadMessage = React.memo<{
   brandPrimary: string;
   externalMessage?: ChatMessage;
-}> = ({ brandPrimary, externalMessage }) => {
+}>(({ brandPrimary, externalMessage }) => {
   const muiTheme = useTheme();
   const hasText = Boolean(externalMessage?.content.trim());
   const hasAttachments = Boolean(externalMessage?.attachments?.length);
@@ -1116,13 +1116,13 @@ const UserThreadMessage: React.FC<{
       </Box>
     </MessagePrimitive.Root>
   );
-};
+});
 
-const AssistantThreadMessage: React.FC<{
+const AssistantThreadMessage = React.memo<{
   externalMessage?: ChatMessage;
   threadMessage?: ThreadMessage;
   brandPrimary: string;
-}> = ({ externalMessage, threadMessage, brandPrimary }) => {
+}>(({ externalMessage, threadMessage, brandPrimary }) => {
   const muiTheme = useTheme();
   const isRunning = threadMessage?.status?.type === "running";
   const statusLabel = getTransientStatusLabel(externalMessage, isRunning);
@@ -1206,13 +1206,13 @@ const AssistantThreadMessage: React.FC<{
       </Box>
     </MessagePrimitive.Root>
   );
-};
+});
 
-const SystemThreadMessage: React.FC<{
+const SystemThreadMessage = React.memo<{
   externalMessage?: ChatMessage;
   brandPrimary: string;
   brandSecondary: string;
-}> = ({ externalMessage, brandPrimary, brandSecondary }) => {
+}>(({ externalMessage, brandPrimary, brandSecondary }) => {
   const muiTheme = useTheme();
 
   return (
@@ -1253,7 +1253,7 @@ const SystemThreadMessage: React.FC<{
       </Box>
     </MessagePrimitive.Root>
   );
-};
+});
 
 const AgentChatInner: React.FC<AgentChatInnerProps> = ({
   isStreaming,

@@ -351,7 +351,7 @@ const AgentInbox: React.FC = () => {
 
         <Grid
           container
-          spacing={1.5}
+          spacing={1}
           sx={{
             flex: 1,
             minHeight: 0,
@@ -361,7 +361,7 @@ const AgentInbox: React.FC = () => {
           }}
         >
           <Grid
-            size={{ xs: 12, md: 7.25 }}
+            size={{ xs: 12, md: 7 }}
             sx={{
               display: "flex",
               flexDirection: "column",
@@ -429,7 +429,7 @@ const AgentInbox: React.FC = () => {
           </Grid>
 
           <Grid
-            size={{ xs: 12, md: 4.75 }}
+            size={{ xs: 12, md: 5 }}
             sx={{
               display: "flex",
               minHeight: 0,
@@ -437,7 +437,7 @@ const AgentInbox: React.FC = () => {
             }}
           >
             <Stack spacing={1.25} sx={{ flex: 1, minHeight: 0, height: { md: "100%" } }}>
-              <OwnerBriefing briefing={briefing} onAction={handleBriefingAction} />
+              <OwnerBriefing briefing={briefing} onAction={handleBriefingAction} isLoading={briefingQuery.isLoading} />
               <Box
                 sx={{
                   flex: 1,
@@ -465,6 +465,7 @@ const AgentInbox: React.FC = () => {
                   onMarkAsRead={handleMarkNotificationRead}
                   onMarkAllAsRead={handleMarkAllNotificationsRead}
                   maxHeight={{ xs: 260, md: 360 }}
+                  isLoading={feedQuery.isLoading}
                 />
 
                 <InsightsPanel items={insightItems} />

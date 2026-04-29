@@ -14,7 +14,7 @@ import {
   ComposerAddAttachment,
   ComposerAttachments,
   UserMessageAttachments,
-} from "./attachment";
+} from "../AssistantUIAttachment";
 
 export interface ComposerProps {
   placeholder?: string;

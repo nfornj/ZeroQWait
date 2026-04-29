@@ -5,7 +5,6 @@ import { Outlet } from 'react-router-dom';
 import { Box, CssBaseline, alpha, useTheme } from '@mui/material';
 import AppNavbar from '../features/shop-dashboard/components/AppNavbar';
 import SideMenu from '../features/shop-dashboard/components/SideMenu';
-import { useOwnerBrand } from '../hooks/useOwnerBrand';
 
 declare module '@mui/material/styles' {
     interface Theme {
@@ -16,7 +15,7 @@ declare module '@mui/material/styles' {
 const ShopLayout: React.FC = () => {
     const theme = useTheme();
     const location = useLocation();
-    const ownerBrand = useOwnerBrand();
+    const ownerBrand = theme.ownerBrand;
     const brandPrimary = ownerBrand.primary;
     const brandSecondary = ownerBrand.secondary;
     const isAgentRoute = location.pathname === '/dashboard';
