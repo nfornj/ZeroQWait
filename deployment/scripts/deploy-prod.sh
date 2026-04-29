@@ -127,7 +127,7 @@ sudo env \
   IMAGE_NAMESPACE="prod" \
   RETAIN_VERSIONS="10" \
   SKIP_REGISTRY_PRUNE="true" \
-  SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp}" \
+  SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp,booking-mcp,finance-mcp,hr-mcp}" \
   AUTO_COMMIT="false" \
   ARGOCD_SYNC="false" \
   BUILDX_NO_DEFAULT_ATTESTATIONS=1 \
@@ -179,6 +179,9 @@ kctl apply -f "${K8S_MANIFESTS}/asr-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/asr-service.yaml"
 kctl apply -f "${K8S_MANIFESTS}/tts-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/voice-mcp-deployment.yaml"
+kctl apply -f "${K8S_MANIFESTS}/booking-mcp-deployment.yaml"
+kctl apply -f "${K8S_MANIFESTS}/finance-mcp-deployment.yaml"
+kctl apply -f "${K8S_MANIFESTS}/hr-mcp-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/ingress-traefik.yaml"
 kctl apply -f "${K8S_MANIFESTS}/network-policy.yaml"
 kctl apply -f "${K8S_MANIFESTS}/backend-pdb.yaml"
@@ -192,7 +195,7 @@ echo "==> Pruning production image tags (retain last 10 per service)"
 sudo env \
   KEEP_VERSIONS="10" \
   REGISTRY_URL="http://localhost:5000" \
-  REPOSITORIES="prod/backend prod/frontend prod/asr-service prod/tts-service prod/voice-mcp" \
+  REPOSITORIES="prod/backend prod/frontend prod/asr-service prod/tts-service prod/voice-mcp prod/booking-mcp prod/finance-mcp prod/hr-mcp" \
   bash "${PROJECT_ROOT}/deployment/scripts/prune-registry-tags.sh"
 
 echo "==> Waiting for frontend and backend rollouts"

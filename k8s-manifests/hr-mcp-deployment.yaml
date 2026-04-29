@@ -32,8 +32,7 @@ spec:
                     values: ["core-cpu"]
       containers:
         - name: hr-mcp
-          image: ghcr.io/nfornj/prod/hr-mcp:latest
-          imagePullPolicy: Always
+          image: localhost:5000/prod/hr-mcp:latest
           ports:
             - containerPort: 8892
               protocol: TCP

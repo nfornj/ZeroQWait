@@ -32,8 +32,7 @@ spec:
                     values: ["core-cpu"]
       containers:
         - name: finance-mcp
-          image: ghcr.io/nfornj/prod/finance-mcp:latest
-          imagePullPolicy: Always
+          image: localhost:5000/prod/finance-mcp:latest
           ports:
             - containerPort: 8891
               protocol: TCP
