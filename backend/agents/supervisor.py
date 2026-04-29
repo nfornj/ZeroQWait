@@ -187,7 +187,7 @@ def _latest_user_text(state: AgentState) -> str:
 
 
 
-def classify_intent(state: AgentState) -> Command[Literal["plan_execution"]]:
+def classify_intent(state: AgentState) -> Command[Literal["plan_and_route"]]:
     """
     Classify owner's intent using LLM structured output.
 
