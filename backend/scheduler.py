@@ -9,7 +9,6 @@ import logging
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from analytics_processor import AnalyticsProcessor
-from agents.briefings import refresh_all_shop_briefings
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 class DailyScheduler:
     """Schedule and run daily maintenance tasks"""
     
-    def __init__(self, run_at_hour: int = 0, run_at_minute: int = 30, briefing_refresh_seconds: int = 300):
+    def __init__(self, run_at_hour: int = 0, run_at_minute: int = 30):
         """
         Initialize scheduler
         
@@ -26,10 +25,8 @@ class DailyScheduler:
             run_at_minute: Minute to run daily tasks (0-59, default: 30)
         """
         self.run_at = time(hour=run_at_hour, minute=run_at_minute)
-        self.briefing_refresh_seconds = briefing_refresh_seconds
         self.is_running = False
         self.task: Optional[asyncio.Task] = None
-        self.briefing_task: Optional[asyncio.Task] = None
     
     async def start(self):
         """Start the scheduler"""
@@ -39,7 +36,6 @@ class DailyScheduler:
         
         self.is_running = True
         self.task = asyncio.create_task(self._run_schedule())
-        self.briefing_task = asyncio.create_task(self._run_briefing_refresh_loop())
         logger.info(f"Scheduler started - will run daily at {self.run_at}")
     
     async def stop(self):
@@ -51,27 +47,8 @@ class DailyScheduler:
                 await self.task
             except asyncio.CancelledError:
                 pass
-        if self.briefing_task:
-            self.briefing_task.cancel()
-            try:
-                await self.briefing_task
-            except asyncio.CancelledError:
-                pass
         logger.info("Scheduler stopped")
 
-    async def _run_briefing_refresh_loop(self):
-        """Refresh operational briefing snapshots on a shorter cadence."""
-        while self.is_running:
-            try:
-                refreshed = await asyncio.to_thread(refresh_all_shop_briefings)
-                logger.info("Operational briefing refresh completed for %s shop(s)", refreshed)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error refreshing operational briefings: {e}", exc_info=True)
-
-            await asyncio.sleep(self.briefing_refresh_seconds)
-    
     async def _run_schedule(self):
         """Internal method to run scheduled tasks"""
         while self.is_running:
