@@ -130,6 +130,7 @@ sudo env \
   SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp}" \
   AUTO_COMMIT="false" \
   ARGOCD_SYNC="false" \
+  BUILDX_NO_DEFAULT_ATTESTATIONS=1 \
   bash "${PROJECT_ROOT}/deployment/scripts/run-local-pipeline.sh"
 
 echo "==> Applying K8s manifests"

@@ -85,7 +85,7 @@ build_push() {
   image="${REGISTRY}/${repo}:${VERSION_TAG}"
 
   echo "==> Building ${image}"
-  docker build -t "${image}" "${PROJECT_ROOT}/${context}"
+  docker build --provenance=false -t "${image}" "${PROJECT_ROOT}/${context}"
   docker push "${image}"
 }
 
