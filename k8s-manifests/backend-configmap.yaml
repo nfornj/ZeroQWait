@@ -12,6 +12,9 @@ data:
   USE_SUPABASE: "false"
   OLLAMA_URL: "http://ollama.llm.svc.cluster.local:11434/v1"
   MODEL_NAME: "qwen3:14b-q4_K_M"
+  # LLM provider selection: nvidia (default), ollama (fallback), groq (backup)
+  LLM_PROVIDER: "nvidia"
+  NVIDIA_MODEL: "z-ai/glm4.7"
   REDIS_HOST: "redis.zeroqwait.svc.cluster.local"
   REDIS_PORT: "6379"
   BOOKING_MCP_URL: "http://booking-mcp.zeroqwait.svc.cluster.local:8890"

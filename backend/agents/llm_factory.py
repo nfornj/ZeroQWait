@@ -12,7 +12,7 @@ from modules.agent.models import ShopLLMConfig
 from shared.crypto import decrypt_text
 
 
-SUPPORTED_LLM_PROVIDERS = frozenset({"ollama", "openai", "anthropic", "groq", "google_genai"})
+SUPPORTED_LLM_PROVIDERS = frozenset({"ollama", "openai", "anthropic", "groq", "google_genai", "nvidia"})
 PREMIUM_SUBSCRIPTION_TIERS = frozenset({"premium", "enterprise"})
 HOSTED_LLM_PROVIDERS = SUPPORTED_LLM_PROVIDERS.difference({"ollama"})
 
@@ -27,6 +27,8 @@ def _env_flag_enabled(name: str, *, default: bool = False) -> bool:
 def provider_runtime_enabled(provider: str) -> bool:
     if provider == "groq":
         return _env_flag_enabled("ENABLE_GROQ_PROVIDER", default=False)
+    if provider == "nvidia":
+        return bool(os.getenv("NVIDIA_API_KEY"))
     return True
 
 
@@ -48,7 +50,8 @@ def normalize_subscription_tier(subscription_tier: Optional[str]) -> str:
 
 def provider_allowed_for_tier(provider: str, subscription_tier: Optional[str]) -> bool:
     normalized_tier = normalize_subscription_tier(subscription_tier)
-    if provider == "ollama":
+    # Platform-level providers are available to all tiers
+    if provider in {"ollama", "nvidia"}:
         return True
     return normalized_tier in PREMIUM_SUBSCRIPTION_TIERS
 
@@ -87,6 +90,13 @@ def provider_catalog(subscription_tier: Optional[str] = None) -> list[dict[str, 
             "key": "google_genai",
             "label": "Google Gemini",
             "default_model": default_model_name_for_provider("google_genai"),
+            "supports_api_key": True,
+            "supports_api_base_url": False,
+        },
+        {
+            "key": "nvidia",
+            "label": "NVIDIA NIM (GLM-4.7)",
+            "default_model": default_model_name_for_provider("nvidia"),
             "supports_api_key": True,
             "supports_api_base_url": False,
         },
@@ -129,6 +139,7 @@ def default_model_name_for_provider(provider: str) -> str:
         "anthropic": os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
         "groq": os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
         "google_genai": os.getenv("GOOGLE_GENAI_MODEL", "gemini-2.0-flash"),
+        "nvidia": os.getenv("NVIDIA_MODEL", "z-ai/glm4.7"),
     }
     return defaults[provider]
 
@@ -147,6 +158,7 @@ def _default_api_key(provider: str) -> Optional[str]:
         "anthropic": "ANTHROPIC_API_KEY",
         "groq": "GROQ_API_KEY",
         "google_genai": "GOOGLE_API_KEY",
+        "nvidia": "NVIDIA_API_KEY",
     }
     env_name = env_map.get(provider)
     return os.getenv(env_name) if env_name else None
@@ -351,6 +363,16 @@ def create_chat_model(shop_id: Optional[int], *, temperature: float):
             model=config.model_name,
             google_api_key=config.api_key,
             temperature=temperature,
+        )
+
+    if config.provider == "nvidia":
+        ChatNVIDIA = _import_attr("langchain_nvidia_ai_endpoints", "ChatNVIDIA")
+        return ChatNVIDIA(
+            model=config.model_name,
+            api_key=config.api_key,
+            temperature=temperature,
+            max_completion_tokens=int(settings.get("max_tokens", 16384)),
+            top_p=float(settings.get("top_p", 1.0)),
         )
 
     raise ValueError(f"Unsupported LLM provider: {config.provider}")
