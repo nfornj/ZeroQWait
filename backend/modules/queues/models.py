@@ -18,6 +18,9 @@ class Queue(Base):
     name = Column(String, default="Main Queue")
     date = Column(DateTime, default=datetime.utcnow, index=True)
     is_active = Column(Boolean, default=True, index=True)
+    # Set to False to stop new joins while still serving the people already in queue
+    accepting_joins = Column(Boolean, default=True, index=True)
+    lock_reason = Column(Text, nullable=True)
     
     # Relationships
     shop = relationship("Shop", back_populates="queues")

@@ -54,6 +54,15 @@ class CloseQueueRequest(ShopRequest):
     reason: Optional[str] = None
 
 
+class OpenQueueRequest(ShopRequest):
+    name: Optional[str] = "Main Queue"
+
+
+class LockQueueJoinsRequest(ShopRequest):
+    lock: bool = True  # True=stop new joins, False=re-allow
+    reason: Optional[str] = None
+
+
 class ServiceSearchRequest(ShopRequest):
     query: Optional[str] = None
 
@@ -221,12 +230,87 @@ async def rest_close_queue(req: CloseQueueRequest):
             return {"success": False, "error": "No active queue for this shop"}
         for queue in queues:
             queue.is_active = False
+            queue.accepting_joins = False
+            if req.reason:
+                queue.lock_reason = req.reason
         db.commit()
         return {
             "success": True,
             "shop_id": req.shop_id,
             "closed_queues": len(queues),
             "reason": req.reason or "Owner request",
+        }
+    except Exception as exc:
+        db.rollback()
+        return {"success": False, "error": str(exc)}
+    finally:
+        db.close()
+
+
+@app.post("/queue/open")
+async def rest_open_queue(req: OpenQueueRequest):
+    """Open (or re-activate) today's queue for a shop."""
+    db = SessionLocal()
+    try:
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        existing = (
+            db.query(Queue)
+            .filter(Queue.shop_id == req.shop_id, Queue.date >= today_start)
+            .order_by(Queue.date.desc())
+            .first()
+        )
+        if existing:
+            # Re-activate an existing queue instead of creating a duplicate
+            existing.is_active = True
+            existing.accepting_joins = True
+            existing.lock_reason = None
+            db.commit()
+            return {
+                "success": True,
+                "shop_id": req.shop_id,
+                "queue_id": existing.id,
+                "action": "reactivated",
+            }
+        # No queue exists today — create a fresh one
+        queue = Queue(
+            shop_id=req.shop_id,
+            name=req.name or "Main Queue",
+            is_active=True,
+            accepting_joins=True,
+        )
+        db.add(queue)
+        db.commit()
+        db.refresh(queue)
+        return {
+            "success": True,
+            "shop_id": req.shop_id,
+            "queue_id": queue.id,
+            "action": "created",
+        }
+    except Exception as exc:
+        db.rollback()
+        return {"success": False, "error": str(exc)}
+    finally:
+        db.close()
+
+
+@app.post("/queue/lock-joins")
+async def rest_lock_queue_joins(req: LockQueueJoinsRequest):
+    """Lock or unlock new customer joins without closing the queue (existing customers still served)."""
+    db = SessionLocal()
+    try:
+        queues = db.query(Queue).filter(Queue.shop_id == req.shop_id, Queue.is_active == True).all()
+        if not queues:
+            return {"success": False, "error": "No active queue for this shop"}
+        for queue in queues:
+            queue.accepting_joins = not req.lock
+            queue.lock_reason = req.reason if req.lock else None
+        db.commit()
+        return {
+            "success": True,
+            "shop_id": req.shop_id,
+            "accepting_joins": not req.lock,
+            "reason": req.reason,
         }
     except Exception as exc:
         db.rollback()

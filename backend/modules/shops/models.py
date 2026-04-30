@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, ForeignKey, Time, ARRAY
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
@@ -41,6 +41,7 @@ class Shop(Base):
     services = relationship("ShopService", back_populates="shop", cascade="all, delete-orphan")
     close_days = relationship("ShopCloseDay", back_populates="shop", cascade="all, delete-orphan")
     customers = relationship("ShopCustomer", back_populates="shop", cascade="all, delete-orphan")
+    operating_hours = relationship("ShopOperatingHours", back_populates="shop", uselist=False, cascade="all, delete-orphan")
 
 class ShopService(Base):
     __tablename__ = "shop_services"
@@ -88,6 +89,30 @@ class ShopCloseDay(Base):
     
     # Relationships
     shop = relationship("Shop", back_populates="close_days")
+
+
+class ShopOperatingHours(Base):
+    """Per-shop configuration for Temporal auto-open/close schedules."""
+    __tablename__ = "shop_operating_hours"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+
+    open_time = Column(Time, nullable=False, default="09:00:00")
+    close_time = Column(Time, nullable=False, default="17:00:00")
+    timezone = Column(String(64), nullable=False, default="UTC")
+
+    auto_open_queue = Column(Boolean, nullable=False, default=True)
+    auto_close_queue = Column(Boolean, nullable=False, default=True)
+    pre_close_buffer_minutes = Column(Integer, nullable=False, default=15)
+    auto_lock_joins = Column(Boolean, nullable=False, default=True)
+    operating_days = Column(ARRAY(Integer), nullable=False, default=list)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationship
+    shop = relationship("Shop", back_populates="operating_hours")
 
 class ShopCustomer(Base):
     __tablename__ = "shop_customers"
