@@ -13,7 +13,6 @@ import {
   Typography,
   useTheme,
 } from "@mui/material";
-import { keyframes } from "@mui/material/styles";
 import AccountTreeRoundedIcon from "@mui/icons-material/AccountTreeRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
@@ -33,6 +32,22 @@ import StorefrontRoundedIcon from "@mui/icons-material/StorefrontRounded";
 import ToolRoundedIcon from "@mui/icons-material/BuildRounded";
 import { useQueryClient } from "@tanstack/react-query";
 
+import {
+  Background,
+  BackgroundVariant,
+  Controls,
+  type Edge,
+  MarkerType,
+  MiniMap,
+  type Node,
+  type NodeTypes,
+  ReactFlow,
+  ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+
 import { useShop } from "../../contexts/ShopContext";
 import { useAgentStream } from "../agent-inbox/hooks/useAgentStream";
 import { useAgentWebSocket } from "../agent-inbox/hooks/useAgentWebSocket";
@@ -43,22 +58,7 @@ import {
   usePendingApprovalsQuery,
 } from "../agent-inbox/ownerDashboardQueries";
 import type { AgentFeedEvent, ChatMessage, PendingApproval, ThinkingStep } from "../agent-inbox/types";
-
-const pulse = keyframes`
-  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.28); }
-  70% { transform: scale(1.02); box-shadow: 0 0 0 12px rgba(34, 197, 94, 0); }
-  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
-`;
-
-const flowDash = keyframes`
-  from { stroke-dashoffset: 28; }
-  to { stroke-dashoffset: 0; }
-`;
-
-const glow = keyframes`
-  0%, 100% { opacity: 0.62; }
-  50% { opacity: 1; }
-`;
+import BrainNode, { type BrainNodeData } from "./nodes/BrainNode";
 
 type BrainNodeId =
   | "owner"
@@ -74,43 +74,23 @@ type BrainNodeId =
   | "schedules"
   | "data";
 
-interface BrainNodeConfig {
+interface NodeSeed {
   id: BrainNodeId;
   label: string;
   subtitle: string;
-  x: number;
-  y: number;
   color: string;
   icon: React.ReactNode;
+  position: { x: number; y: number };
+  hasTarget?: boolean;
+  hasSource?: boolean;
 }
 
-interface BrainEdgeConfig {
+interface EdgeSeed {
   id: string;
-  from: BrainNodeId;
-  to: BrainNodeId;
-  label: string;
+  source: BrainNodeId;
+  target: BrainNodeId;
+  label?: string;
 }
-
-interface PositionedNode extends BrainNodeConfig {
-  active: boolean;
-  statusText: string;
-}
-
-const nodeW = 170;
-const nodeH = 78;
-
-const nodeCenter = (node: BrainNodeConfig) => ({
-  x: node.x + nodeW / 2,
-  y: node.y + nodeH / 2,
-});
-
-const pathForEdge = (from: BrainNodeConfig, to: BrainNodeConfig) => {
-  const start = nodeCenter(from);
-  const end = nodeCenter(to);
-  const midX = (start.x + end.x) / 2;
-  const curve = Math.max(40, Math.abs(start.x - end.x) / 3);
-  return `M ${start.x} ${start.y} C ${midX - curve / 2} ${start.y}, ${midX + curve / 2} ${end.y}, ${end.x} ${end.y}`;
-};
 
 const formatTime = (value?: string) => {
   if (!value) return "now";
@@ -165,12 +145,192 @@ const thinkingToEdgeIds = (steps: ThinkingStep[]): string[] => {
 const latestAssistant = (messages: ChatMessage[]) =>
   [...messages].reverse().find((message) => message.role === "assistant");
 
+const NODE_SEEDS: NodeSeed[] = [
+  { id: "temporal", label: "Temporal", subtitle: "Heartbeats & cron", color: "#0ea5e9", icon: <AccessTimeRoundedIcon />, position: { x: 0, y: 40 }, hasTarget: false },
+  { id: "owner", label: "Owner", subtitle: "Commands & approvals", color: "#9333ea", icon: <StorefrontRoundedIcon />, position: { x: 0, y: 280 } },
+  { id: "soul", label: "SOUL", subtitle: "Shop identity memory", color: "#a855f7", icon: <PsychologyRoundedIcon />, position: { x: 0, y: 500 } },
+  { id: "supervisor", label: "Supervisor", subtitle: "Routes the agent team", color: "#22c55e", icon: <HubRoundedIcon />, position: { x: 320, y: 280 } },
+  { id: "receptionist", label: "Receptionist", subtitle: "Queue & bookings", color: "#14b8a6", icon: <ContentCutRoundedIcon />, position: { x: 640, y: 40 } },
+  { id: "finance", label: "Finance", subtitle: "Revenue & reports", color: "#f59e0b", icon: <PointOfSaleRoundedIcon />, position: { x: 640, y: 200 } },
+  { id: "hr", label: "HR", subtitle: "Staff & shifts", color: "#ef4444", icon: <GroupsRoundedIcon />, position: { x: 640, y: 360 } },
+  { id: "crm", label: "CRM", subtitle: "Contacts & pipeline", color: "#6366f1", icon: <AccountTreeRoundedIcon />, position: { x: 640, y: 520 } },
+  { id: "tools", label: "MCP Tools", subtitle: "Booking · Finance · HR", color: "#64748b", icon: <ToolRoundedIcon />, position: { x: 960, y: 120 } },
+  { id: "commitments", label: "Commitments", subtitle: "Follow-ups & promises", color: "#ec4899", icon: <PendingActionsRoundedIcon />, position: { x: 960, y: 280 } },
+  { id: "schedules", label: "Schedules", subtitle: "Natural language cron", color: "#06b6d4", icon: <EventRepeatRoundedIcon />, position: { x: 960, y: 440 } },
+  { id: "data", label: "Postgres + Redis", subtitle: "Durable & short memory", color: "#475569", icon: <StorageRoundedIcon />, position: { x: 320, y: 540 }, hasSource: false },
+];
+
+const EDGE_SEEDS: EdgeSeed[] = [
+  { id: "owner-supervisor", source: "owner", target: "supervisor", label: "message" },
+  { id: "supervisor-owner", source: "supervisor", target: "owner", label: "answer" },
+  { id: "temporal-supervisor", source: "temporal", target: "supervisor", label: "scheduled" },
+  { id: "supervisor-receptionist", source: "supervisor", target: "receptionist" },
+  { id: "supervisor-finance", source: "supervisor", target: "finance" },
+  { id: "supervisor-hr", source: "supervisor", target: "hr" },
+  { id: "supervisor-crm", source: "supervisor", target: "crm" },
+  { id: "supervisor-soul", source: "supervisor", target: "soul", label: "context" },
+  { id: "supervisor-data", source: "supervisor", target: "data", label: "state" },
+  { id: "receptionist-tools", source: "receptionist", target: "tools" },
+  { id: "finance-tools", source: "finance", target: "tools" },
+  { id: "hr-tools", source: "hr", target: "tools" },
+  { id: "crm-tools", source: "crm", target: "tools" },
+  { id: "temporal-schedules", source: "temporal", target: "schedules" },
+  { id: "temporal-commitments", source: "temporal", target: "commitments" },
+  { id: "commitments-supervisor", source: "commitments", target: "supervisor", label: "follow-up" },
+  { id: "soul-data", source: "soul", target: "data" },
+];
+
+const nodeTypes: NodeTypes = { brain: BrainNode };
+
+interface BrainCanvasProps {
+  activeEdgeIds: Set<string>;
+  activeNodeIds: Set<string>;
+  statusByNode: Record<BrainNodeId, string>;
+  isDark: boolean;
+}
+
+const BrainCanvas: React.FC<BrainCanvasProps> = ({ activeEdgeIds, activeNodeIds, statusByNode, isDark }) => {
+  const initialNodes: Node[] = useMemo(
+    () =>
+      NODE_SEEDS.map((seed) => ({
+        id: seed.id,
+        type: "brain",
+        position: seed.position,
+        draggable: true,
+        data: {
+          label: seed.label,
+          subtitle: seed.subtitle,
+          status: statusByNode[seed.id] || "ready",
+          color: seed.color,
+          icon: seed.icon,
+          active: activeNodeIds.has(seed.id),
+          hasTarget: seed.hasTarget,
+          hasSource: seed.hasSource,
+        } satisfies BrainNodeData,
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const initialEdges: Edge[] = useMemo(
+    () =>
+      EDGE_SEEDS.map((seed) => {
+        const active = activeEdgeIds.has(seed.id);
+        return {
+          id: seed.id,
+          source: seed.source,
+          target: seed.target,
+          label: seed.label,
+          type: "smoothstep",
+          animated: active,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: active ? "#22c55e" : isDark ? "#475569" : "#94a3b8",
+            width: 16,
+            height: 16,
+          },
+          style: {
+            stroke: active ? "#22c55e" : isDark ? "#475569" : "#cbd5e1",
+            strokeWidth: active ? 2.5 : 1.4,
+          },
+          labelStyle: {
+            fill: isDark ? "#cbd5e1" : "#475569",
+            fontSize: 11,
+            fontWeight: 600,
+          },
+          labelBgStyle: {
+            fill: isDark ? "#0f172a" : "#ffffff",
+            fillOpacity: 0.85,
+          },
+          labelBgPadding: [4, 2] as [number, number],
+          labelBgBorderRadius: 4,
+        };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  // Update node activity / status without resetting positions
+  useEffect(() => {
+    setNodes((current) =>
+      current.map((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          active: activeNodeIds.has(n.id as BrainNodeId),
+          status: statusByNode[n.id as BrainNodeId] || (n.data as BrainNodeData).status,
+        },
+      })),
+    );
+  }, [activeNodeIds, statusByNode, setNodes]);
+
+  // Update edge animation/style live
+  useEffect(() => {
+    setEdges((current) =>
+      current.map((e) => {
+        const active = activeEdgeIds.has(e.id);
+        return {
+          ...e,
+          animated: active,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: active ? "#22c55e" : isDark ? "#475569" : "#94a3b8",
+            width: 16,
+            height: 16,
+          },
+          style: {
+            stroke: active ? "#22c55e" : isDark ? "#475569" : "#cbd5e1",
+            strokeWidth: active ? 2.5 : 1.4,
+          },
+        };
+      }),
+    );
+  }, [activeEdgeIds, isDark, setEdges]);
+
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      nodeTypes={nodeTypes}
+      fitView
+      fitViewOptions={{ padding: 0.18 }}
+      minZoom={0.4}
+      maxZoom={1.6}
+      proOptions={{ hideAttribution: true }}
+      nodesConnectable={false}
+      elementsSelectable
+    >
+      <Background
+        variant={BackgroundVariant.Dots}
+        gap={22}
+        size={1.2}
+        color={isDark ? "#1e293b" : "#cbd5e1"}
+      />
+      <Controls position="bottom-right" showInteractive={false} />
+      <MiniMap
+        pannable
+        zoomable
+        nodeStrokeWidth={2}
+        nodeColor={(n) => (n.data as BrainNodeData).color}
+        maskColor={isDark ? "rgba(2,6,23,0.6)" : "rgba(241,245,249,0.7)"}
+        style={{ width: 160, height: 110 }}
+      />
+    </ReactFlow>
+  );
+};
+
 const AgentBrainPage: React.FC = () => {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const { shop, loading: shopLoading } = useShop();
   const brandPrimary = shop?.primary_color || theme.palette.primary.main;
   const brandSecondary = shop?.secondary_color || theme.palette.secondary.main;
+  const isDark = theme.palette.mode === "dark";
   const [prompt, setPrompt] = useState("Give me a live operations summary and route to the right specialist if needed.");
   const [localApprovals, setLocalApprovals] = useState<PendingApproval[]>([]);
   const [localInsights, setLocalInsights] = useState<any[]>([]);
@@ -226,6 +386,7 @@ const AgentBrainPage: React.FC = () => {
 
   const assistant = latestAssistant(messages);
   const activeThinkingSteps = assistant?.thinkingSteps || [];
+
   const activeEdgeIds = useMemo(() => {
     const ids = new Set<string>();
     allEvents.slice(0, 8).forEach((event) => eventToEdgeIds(event).forEach((id) => ids.add(id)));
@@ -235,74 +396,66 @@ const AgentBrainPage: React.FC = () => {
     return ids;
   }, [activeThinkingSteps, allEvents, briefingQuery.data?.source, isStreaming]);
 
+  // Track recently-pulsed nodes (edge endpoints) so a node glows for ~6s after activity
   useEffect(() => {
-    const next: Record<string, number> = {};
-    activeEdgeIds.forEach((edgeId) => {
-      edgeId.split("-").forEach((part) => {
-        next[part] = Date.now();
+    if (activeEdgeIds.size === 0) return;
+    const now = Date.now();
+    setNodePulse((prev) => {
+      const next = { ...prev };
+      activeEdgeIds.forEach((edgeId) => {
+        const seed = EDGE_SEEDS.find((e) => e.id === edgeId);
+        if (!seed) return;
+        next[seed.source] = now;
+        next[seed.target] = now;
       });
+      return next;
     });
-    if (Object.keys(next).length > 0) {
-      setNodePulse((prev) => ({ ...prev, ...next }));
-    }
   }, [activeEdgeIds]);
 
-  const nodes = useMemo<BrainNodeConfig[]>(() => [
-    { id: "owner", label: "Owner", subtitle: "Commands and approvals", x: 32, y: 228, color: brandPrimary, icon: <StorefrontRoundedIcon /> },
-    { id: "temporal", label: "Temporal", subtitle: "Morning and evening heartbeats", x: 32, y: 48, color: "#0ea5e9", icon: <AccessTimeRoundedIcon /> },
-    { id: "supervisor", label: "Supervisor", subtitle: "Routes the agent team", x: 330, y: 162, color: "#22c55e", icon: <HubRoundedIcon /> },
-    { id: "soul", label: "SOUL", subtitle: "Shop identity memory", x: 330, y: 328, color: "#a855f7", icon: <PsychologyRoundedIcon /> },
-    { id: "receptionist", label: "Receptionist", subtitle: "Queue and bookings", x: 640, y: 36, color: "#14b8a6", icon: <ContentCutRoundedIcon /> },
-    { id: "finance", label: "Finance", subtitle: "Revenue and reports", x: 640, y: 142, color: "#f59e0b", icon: <PointOfSaleRoundedIcon /> },
-    { id: "hr", label: "HR", subtitle: "Staff and shifts", x: 640, y: 248, color: "#ef4444", icon: <GroupsRoundedIcon /> },
-    { id: "crm", label: "CRM", subtitle: "Contacts and pipeline", x: 640, y: 354, color: "#6366f1", icon: <AccountTreeRoundedIcon /> },
-    { id: "tools", label: "MCP Tools", subtitle: "Booking, Finance, HR, CRM", x: 944, y: 116, color: "#64748b", icon: <ToolRoundedIcon /> },
-    { id: "commitments", label: "Commitments", subtitle: "Follow-ups and promises", x: 944, y: 222, color: "#ec4899", icon: <PendingActionsRoundedIcon /> },
-    { id: "schedules", label: "Schedules", subtitle: "Natural language cron", x: 944, y: 328, color: "#06b6d4", icon: <EventRepeatRoundedIcon /> },
-    { id: "data", label: "Postgres + Redis", subtitle: "Durable and short memory", x: 330, y: 478, color: "#475569", icon: <StorageRoundedIcon /> },
-  ], [brandPrimary]);
+  // Sweep stale pulses every 2s
+  useEffect(() => {
+    const handle = window.setInterval(() => {
+      setNodePulse((prev) => {
+        const now = Date.now();
+        const next: Record<string, number> = {};
+        let changed = false;
+        Object.entries(prev).forEach(([k, ts]) => {
+          if (now - ts < 6000) next[k] = ts;
+          else changed = true;
+        });
+        return changed ? next : prev;
+      });
+    }, 2000);
+    return () => window.clearInterval(handle);
+  }, []);
 
-  const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+  const activeNodeIds = useMemo(() => {
+    const now = Date.now();
+    const set = new Set<string>();
+    Object.entries(nodePulse).forEach(([k, ts]) => {
+      if (now - ts < 6000) set.add(k);
+    });
+    return set;
+  }, [nodePulse]);
 
-  const edges = useMemo<BrainEdgeConfig[]>(() => [
-    { id: "owner-supervisor", from: "owner", to: "supervisor", label: "message" },
-    { id: "supervisor-owner", from: "supervisor", to: "owner", label: "answer / approval" },
-    { id: "temporal-supervisor", from: "temporal", to: "supervisor", label: "scheduled run" },
-    { id: "supervisor-receptionist", from: "supervisor", to: "receptionist", label: "booking" },
-    { id: "supervisor-finance", from: "supervisor", to: "finance", label: "finance" },
-    { id: "supervisor-hr", from: "supervisor", to: "hr", label: "staff" },
-    { id: "supervisor-crm", from: "supervisor", to: "crm", label: "crm" },
-    { id: "supervisor-soul", from: "supervisor", to: "soul", label: "context" },
-    { id: "supervisor-data", from: "supervisor", to: "data", label: "state" },
-    { id: "receptionist-tools", from: "receptionist", to: "tools", label: "booking tools" },
-    { id: "finance-tools", from: "finance", to: "tools", label: "finance tools" },
-    { id: "hr-tools", from: "hr", to: "tools", label: "hr tools" },
-    { id: "crm-tools", from: "crm", to: "tools", label: "crm tools" },
-    { id: "supervisor-tools", from: "supervisor", to: "tools", label: "direct tool" },
-    { id: "temporal-schedules", from: "temporal", to: "schedules", label: "cron" },
-    { id: "temporal-commitments", from: "temporal", to: "commitments", label: "due date" },
-    { id: "commitments-supervisor", from: "commitments", to: "supervisor", label: "follow-up" },
-    { id: "soul-data", from: "soul", to: "data", label: "persist" },
-  ], []);
-
-  const positionedNodes = useMemo<PositionedNode[]>(() => {
+  const statusByNode = useMemo<Record<BrainNodeId, string>>(() => {
     const pendingCount = (pendingQuery.data || []).length + localApprovals.length;
     const latestEvent = allEvents[0];
-    return nodes.map((node) => {
-      const active = Boolean(nodePulse[node.id] && Date.now() - nodePulse[node.id] < 6000);
-      const statusText = (() => {
-        if (node.id === "temporal") return briefingQuery.data?.source === "scheduled" ? "briefing generated" : "schedules armed";
-        if (node.id === "supervisor") return isStreaming ? "thinking" : latestEvent ? "listening" : "idle";
-        if (node.id === "owner") return pendingCount > 0 ? `${pendingCount} approval${pendingCount === 1 ? "" : "s"}` : "in control";
-        if (node.id === "soul") return "foundation ready";
-        if (node.id === "commitments") return "scanner next";
-        if (node.id === "schedules") return "2 heartbeats";
-        if (node.id === "data") return `${allEvents.length} recent events`;
-        return active ? "working" : "ready";
-      })();
-      return { ...node, active, statusText };
-    });
-  }, [allEvents, briefingQuery.data?.source, isStreaming, localApprovals.length, nodePulse, nodes, pendingQuery.data]);
+    return {
+      temporal: briefingQuery.data?.source === "scheduled" ? "briefing live" : "schedules armed",
+      owner: pendingCount > 0 ? `${pendingCount} approval${pendingCount === 1 ? "" : "s"}` : "in control",
+      soul: "foundation ready",
+      supervisor: isStreaming ? "thinking" : latestEvent ? "listening" : "idle",
+      receptionist: activeNodeIds.has("receptionist") ? "working" : "ready",
+      finance: activeNodeIds.has("finance") ? "working" : "ready",
+      hr: activeNodeIds.has("hr") ? "working" : "ready",
+      crm: activeNodeIds.has("crm") ? "working" : "ready",
+      tools: activeNodeIds.has("tools") ? "executing" : "ready",
+      commitments: "scanner next",
+      schedules: "2 heartbeats",
+      data: `${allEvents.length} recent events`,
+    };
+  }, [activeNodeIds, allEvents, briefingQuery.data?.source, isStreaming, localApprovals.length, pendingQuery.data]);
 
   const handleSubmit = useCallback(async () => {
     const clean = prompt.trim();
@@ -334,7 +487,12 @@ const AgentBrainPage: React.FC = () => {
           <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent={{ xs: "flex-start", md: "flex-end" }}>
             <Chip label={`Feed ${allEvents.length}`} size="small" />
             <Chip label={`Approvals ${(pendingQuery.data || []).length + localApprovals.length}`} size="small" color="warning" variant="outlined" />
-            <Chip label={briefingQuery.data?.source === "scheduled" ? "Temporal active" : "Temporal armed"} size="small" sx={{ borderColor: alpha("#0ea5e9", 0.35), color: "#0284c7" }} variant="outlined" />
+            <Chip
+              label={briefingQuery.data?.source === "scheduled" ? "Temporal active" : "Temporal armed"}
+              size="small"
+              sx={{ borderColor: alpha("#0ea5e9", 0.35), color: "#0284c7" }}
+              variant="outlined"
+            />
           </Stack>
         </Stack>
 
@@ -346,93 +504,21 @@ const AgentBrainPage: React.FC = () => {
             variant="outlined"
             sx={{
               position: "relative",
-              minHeight: { xs: 620, md: 690 },
+              height: { xs: 620, md: 720 },
               overflow: "hidden",
               borderRadius: 3,
               borderColor: alpha(brandPrimary, 0.16),
-              bgcolor: theme.palette.mode === "dark" ? alpha("#020617", 0.76) : alpha("#ffffff", 0.8),
+              bgcolor: isDark ? alpha("#020617", 0.78) : alpha("#f8fafc", 0.9),
             }}
           >
-            <Box sx={{ position: "absolute", inset: 0, overflow: "auto" }}>
-              <Box sx={{ position: "relative", width: 1160, height: 690 }}>
-                <svg width="1160" height="690" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
-                  <defs>
-                    <marker id="brain-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-                      <path d="M0,0 L0,6 L9,3 z" fill={alpha(theme.palette.text.secondary, 0.6)} />
-                    </marker>
-                    <marker id="brain-arrow-active" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-                      <path d="M0,0 L0,6 L9,3 z" fill="#22c55e" />
-                    </marker>
-                  </defs>
-                  {edges.map((edge) => {
-                    const from = nodeById.get(edge.from);
-                    const to = nodeById.get(edge.to);
-                    if (!from || !to) return null;
-                    const active = activeEdgeIds.has(edge.id);
-                    const path = pathForEdge(from, to);
-                    const mid = nodeCenter({ ...from, x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 });
-                    return (
-                      <g key={edge.id}>
-                        <path
-                          d={path}
-                          fill="none"
-                          stroke={active ? "#22c55e" : alpha(theme.palette.text.secondary, 0.22)}
-                          strokeWidth={active ? 3 : 1.5}
-                          strokeDasharray={active ? "10 8" : "0"}
-                          markerEnd={`url(#${active ? "brain-arrow-active" : "brain-arrow"})`}
-                          style={active ? { animation: `${flowDash} 900ms linear infinite` } : undefined}
-                        />
-                        {active && <circle r="4" fill="#22c55e" style={{ offsetPath: `path('${path}')`, animation: `${flowDash} 900ms linear infinite` } as React.CSSProperties} />}
-                        <text x={mid.x} y={mid.y - 6} fill={alpha(theme.palette.text.secondary, 0.7)} fontSize="11" textAnchor="middle">
-                          {edge.label}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-
-                {positionedNodes.map((node) => (
-                  <Paper
-                    key={node.id}
-                    elevation={0}
-                    sx={{
-                      position: "absolute",
-                      left: node.x,
-                      top: node.y,
-                      width: nodeW,
-                      minHeight: nodeH,
-                      borderRadius: 2.5,
-                      p: 1.25,
-                      border: "1px solid",
-                      borderColor: node.active ? alpha(node.color, 0.72) : alpha(node.color, 0.22),
-                      bgcolor: theme.palette.mode === "dark" ? alpha(node.color, node.active ? 0.18 : 0.1) : alpha("#ffffff", 0.9),
-                      animation: node.active ? `${pulse} 1.8s ease-out infinite` : undefined,
-                    }}
-                  >
-                    <Stack direction="row" spacing={1} alignItems="center" mb={0.75}>
-                      <Box sx={{ width: 32, height: 32, borderRadius: 2, display: "grid", placeItems: "center", color: node.color, bgcolor: alpha(node.color, 0.14) }}>
-                        {node.icon}
-                      </Box>
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="subtitle2" fontWeight={800} noWrap>{node.label}</Typography>
-                        <Typography variant="caption" color="text.secondary" noWrap>{node.subtitle}</Typography>
-                      </Box>
-                    </Stack>
-                    <Chip
-                      size="small"
-                      label={node.statusText}
-                      sx={{
-                        height: 22,
-                        maxWidth: "100%",
-                        color: node.active ? node.color : theme.palette.text.secondary,
-                        bgcolor: alpha(node.color, node.active ? 0.16 : 0.08),
-                        animation: node.active ? `${glow} 1.4s ease-in-out infinite` : undefined,
-                      }}
-                    />
-                  </Paper>
-                ))}
-              </Box>
-            </Box>
+            <ReactFlowProvider>
+              <BrainCanvas
+                activeEdgeIds={activeEdgeIds}
+                activeNodeIds={activeNodeIds as Set<string>}
+                statusByNode={statusByNode}
+                isDark={isDark}
+              />
+            </ReactFlowProvider>
           </Paper>
 
           <Stack spacing={2}>
@@ -478,7 +564,10 @@ const AgentBrainPage: React.FC = () => {
                     <Typography variant="body2" color="text.secondary">Waiting for real-time agent activity.</Typography>
                   )}
                   {allEvents.slice(0, 14).map((event) => (
-                    <Box key={event.id || `${event.type}_${event.timestamp}_${event.title}`} sx={{ borderLeft: `3px solid ${eventMatchesBriefing(event) ? "#0ea5e9" : alpha(brandPrimary, 0.5)}`, pl: 1.25 }}>
+                    <Box
+                      key={event.id || `${event.type}_${event.timestamp}_${event.title}`}
+                      sx={{ borderLeft: `3px solid ${eventMatchesBriefing(event) ? "#0ea5e9" : alpha(brandPrimary, 0.5)}`, pl: 1.25 }}
+                    >
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                         <Chip size="small" label={event.type.replace(/_/g, " ")} />
                         <Typography variant="caption" color="text.secondary">{formatTime(event.timestamp)}</Typography>
@@ -498,7 +587,9 @@ const AgentBrainPage: React.FC = () => {
                 <Typography variant="body2" color="text.secondary">Evening wrap-up: 20:00 UTC</Typography>
                 <Typography variant="body2" color="text.secondary">SOUL storage: Postgres foundation ready</Typography>
                 <Typography variant="body2" color="text.secondary">Commitment auto-action: approval gated</Typography>
-                {localInsights.length > 0 && <Typography variant="body2" color="text.secondary">New insights this session: {localInsights.length}</Typography>}
+                {localInsights.length > 0 && (
+                  <Typography variant="body2" color="text.secondary">New insights this session: {localInsights.length}</Typography>
+                )}
               </Stack>
             </Paper>
           </Stack>
