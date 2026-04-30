@@ -794,6 +794,34 @@ Implementation details:
 - [x] Supervisor routing and specialist execution exist for receptionist, finance, HR, and CRM flows
 - [x] MCP-backed booking, finance, and HR service paths exist in the repo
 - [x] Owner-facing frontend chat and approval UI exist under `frontend/src/features/agent-inbox/`
+- [x] **Agent Brain (Phase 2/3/4)** — see "Agent Brain Layer" section below
+  - SOUL (persistent shop personality + learned patterns) injected into supervisor synthesis
+  - Inferred Commitments scanned from chat tails and resolved on a 15-min Temporal sweep
+  - Natural-language Schedule Parser registers owner-defined recurring tasks as Temporal schedules
+  - Tier gating throughout: free vs premium/enterprise (sourced from `users.subscription_tier`)
+
+### Agent Brain Layer (added 2026-04-24)
+
+The brain layer extends the supervisor graph with persistent identity, inferred follow-through, and natural-language scheduling — all tier-aware via `users.subscription_tier` joined through `shops.owner_id`.
+
+| Capability | Module | DB Tables | Trigger |
+| ---------- | ------ | --------- | ------- |
+| **SOUL Reader** | `backend/agents/soul_reader.py` | `shop_soul`, `soul_learnings`, `commitments` | Read inside `supervisor.synthesize_response` and prepended to the system prompt. Free tier: 5 patterns / 30-day window. Premium: 25 patterns / 90-day window. |
+| **SOUL Updater** | `backend/agents/soul_updater.py` (Temporal activity) + `backend/agents/soul_workflows.py` (`AllShopsSoulEvolutionWorkflow`) | `shop_soul`, `soul_learnings` | Nightly schedule `zeroqwait-soul-evolution` (cron `0 3 * * *`). Free tier: at most one update / 7 days. |
+| **Commitment Scanner** | `backend/agents/commitment_scanner.py` | `commitments` | Fire-and-forget background task in `chat_service._finalize_chat_work_context` after every successful run. Free: ≤1 commitment/run. Premium: ≤5. |
+| **Commitment Resolver** | `backend/agents/commitment_workflows.py` (`CommitmentResolverWorkflow` + activities) | `commitments`, `agent_notifications` | Periodic schedule `zeroqwait-commitment-sweep` every 15 min. Free: notification only. Premium: notification + auto-act flag for supervisor follow-up. |
+| **NL Schedule Parser** | `backend/agents/schedule_intent_parser.py` | `shop_schedules` | Fast-path inside `supervisor.classify_intent` (regex prefilter → planner LLM with `ScheduleIntent` schema). Registers a Temporal schedule pointing at `CustomShopScheduleWorkflow`. Free cap: 3 active custom schedules. Premium: unlimited. |
+| **Custom Schedule Workflow** | `backend/agents/custom_schedule_workflow.py` | `shop_schedules`, `agent_notifications` | Created on demand by NL Schedule Parser. Each fire writes a `custom_schedule_fired` notification (full agent execution from these is a follow-up). |
+
+Brain Temporal bootstrap lives in `backend/agents/temporal_schedules.ensure_brain_schedules` and is called from `temporal_worker.py` at startup. New workflows/activities registered: `ShopSoulEvolutionWorkflow`, `AllShopsSoulEvolutionWorkflow`, `CommitmentResolverWorkflow`, `CustomShopScheduleWorkflow`, plus their backing activities.
+
+Tier source of truth: `backend/agents/llm_factory.load_shop_subscription_tier(shop_id)` (joins `shops.owner_id → users.subscription_tier`). Premium tier set: `PREMIUM_SUBSCRIPTION_TIERS = {"premium", "enterprise"}`.
+
+### Cleanup Notes (2026-04-24)
+
+- `backend/agent/` (singular dir) is **still in use** — imported by `backend/agent_logic.py` (cache, analyzer, categories, pydantic_agent, master, background) and `backend/tests/test_semantic_cache.py`. Do not delete until customer-facing chat is migrated off `agent_logic.py`.
+- `backend/agent_logic.py` is **still in use** — imported by `backend/main.py` (sentence-transformer pre-warming) and `backend/routers/agent.py` (legacy `/api/agent/master/*` endpoints serving the customer landing page chat). Do not delete until customer chat moves to LangGraph receptionist.
+- `backend/split_god_files.py` is a one-shot historical migration script with no runtime imports.
 
 #### Remaining High-Priority Work
 - [ ] Tighten validation and observability for agent routing, approvals, and health checks

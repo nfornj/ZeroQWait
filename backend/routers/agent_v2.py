@@ -1067,6 +1067,7 @@ async def chat_sync(
             tool_results=cast(Optional[Dict[str, Any]], result.get("tool_results")),
             approval_required=approval_required,
             pending_action=pending_action,
+            conversation_messages=messages,
         )
 
         _persist_chat_turn_memory(
@@ -1331,6 +1332,15 @@ async def chat_stream(
                     logger.warning("Could not retrieve final checkpoint state: %s", state_exc)
 
             approval_required = pending_action is not None
+            # Best-effort grab of the final messages list for commitment scanning
+            final_messages_for_scan = None
+            try:
+                snap = await asyncio.to_thread(runnable.get_state, checkpoint_config)
+                if snap and snap.values and isinstance(snap.values.get("messages"), list):
+                    final_messages_for_scan = list(snap.values.get("messages") or [])
+            except Exception:
+                final_messages_for_scan = None
+
             pending_action = _finalize_chat_work_context(
                 shop_id=shop_id,
                 user_id=int(user_id),
@@ -1341,6 +1351,7 @@ async def chat_stream(
                 tool_results=final_tool_results,
                 approval_required=approval_required,
                 pending_action=pending_action,
+                conversation_messages=final_messages_for_scan,
             )
 
             if pending_action:

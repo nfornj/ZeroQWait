@@ -216,6 +216,58 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route"]]:
     user_input = _latest_user_text(state)
     previous_specialist = _get_previous_specialist(state)
 
+    # ── Schedule intent fast-path (NL recurring schedule creation) ───────
+    # The owner says "every Monday at 9am, summarize last week's revenue".
+    # Detect, register a Temporal schedule, and short-circuit the graph.
+    try:
+        from .schedule_intent_parser import handle_schedule_intent, looks_like_schedule_intent
+
+        if looks_like_schedule_intent(user_input):
+            import asyncio
+            try:
+                schedule_result = asyncio.run(
+                    handle_schedule_intent(
+                        shop_id=int(state.get("tenant_id") or 0),
+                        user_id=state.get("user_id"),
+                        owner_message=user_input,
+                    )
+                )
+            except RuntimeError:
+                # Already inside a running loop (uncommon for sync graph nodes);
+                # spin a dedicated loop in a worker thread to avoid blocking.
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    schedule_result = pool.submit(
+                        lambda: asyncio.new_event_loop().run_until_complete(
+                            handle_schedule_intent(
+                                shop_id=int(state.get("tenant_id") or 0),
+                                user_id=state.get("user_id"),
+                                owner_message=user_input,
+                            )
+                        )
+                    ).result(timeout=30)
+
+            if schedule_result and schedule_result.get("handled"):
+                response_text = str(schedule_result.get("response") or "Schedule recorded.")
+                ai_msg = AIMessage(content=response_text)
+                return Command(
+                    goto="plan_and_route",
+                    update={
+                        "current_agent": "schedule",
+                        "messages": list(messages) + [ai_msg],
+                        "metadata": _merge_metadata(state, {
+                            "classified_intent": "schedule",
+                            "classification_source": "schedule_intent_parser",
+                            "routing_reasoning": "I detected a recurring-schedule request and registered it directly.",
+                            "schedule_intent": schedule_result.get("intent"),
+                            "schedule_id": schedule_result.get("schedule_id"),
+                            "skip_synthesis": True,
+                        }),
+                    },
+                )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("schedule_intent_parser failed (non-fatal): %s", exc)
+
     fastpath = _classify_intent_fastpath(user_input)
     if fastpath is not None:
         intent, source = fastpath
@@ -420,6 +472,14 @@ def synthesize_response(state: AgentState) -> dict:
 
     current_agent = state.get("current_agent", "supervisor")
 
+    # Schedule fast-path already produced its own AIMessage — pass it through.
+    if metadata.get("skip_synthesis"):
+        return {
+            "messages": messages,
+            "tool_results": state.get("tool_results"),
+            "metadata": _merge_metadata(state, {"skip_synthesis": False}),
+        }
+
     if current_agent == "supervisor" and metadata.get("requires_clarification"):
         clarifier = AIMessage(
             content=_clarifying_prompt(
@@ -476,10 +536,20 @@ def synthesize_response(state: AgentState) -> dict:
             )
     except Exception:
         pass
+
+    # ── Persistent shop SOUL (personality + learned patterns) ────
+    soul_block = ""
+    try:
+        from .soul_reader import format_soul_for_prompt
+        soul_block = format_soul_for_prompt(state.get("tenant_id") or 0)
+        if soul_block:
+            soul_block = "\n\n" + soul_block + "\n"
+    except Exception:
+        pass
     
     # Build response prompt
     system_prompt = f"""You are ZeroQwait Supervisor Agent, managing the AI operations team for shop owner (shop_id={state.get('tenant_id')}).
-{shop_type_hint}
+{shop_type_hint}{soul_block}
 You have specialized sub-agents available:
 1. Receptionist - handles bookings, queue management, appointments, customer service
 2. Finance Manager - handles revenue, analytics, POS/payments, invoicing, financial reporting

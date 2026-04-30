@@ -22,6 +22,8 @@ from agents.shop_ops_workflows import (
     AllShopsMorningOpenWorkflow,
     AllShopsPreCloseWorkflow,
 )
+from agents.soul_workflows import AllShopsSoulEvolutionWorkflow
+from agents.commitment_workflows import CommitmentResolverWorkflow
 from agents.temporal_config import TEMPORAL_TASK_QUEUE
 
 logger = logging.getLogger(__name__)
@@ -139,3 +141,77 @@ async def ensure_shop_ops_schedules(client: Client) -> None:
             state=ScheduleState(note=note, paused=False),
         )
         await _create_or_skip(client, schedule_id, schedule, note)
+
+
+# ─── Brain schedules (SOUL evolution + commitment sweep) ─────────────────────
+
+DEFAULT_SOUL_EVOLUTION_CRON = "0 3 * * *"        # nightly 03:00
+DEFAULT_COMMITMENT_SWEEP_CRON = "*/15 * * * *"   # every 15 minutes
+
+
+async def ensure_brain_schedules(client: Client) -> None:
+    """Bootstrap the persistent agent-brain schedules.
+
+    Two schedules:
+      * `zeroqwait-soul-evolution`         → nightly fan-out of SOUL updates
+      * `zeroqwait-commitment-sweep`       → every 15 min, fires due commitments
+    """
+    timezone = os.getenv("TEMPORAL_BRIEFING_TIMEZONE", DEFAULT_TIMEZONE)
+
+    soul_cron = os.getenv("TEMPORAL_SOUL_EVOLUTION_CRON", DEFAULT_SOUL_EVOLUTION_CRON)
+    soul_schedule = Schedule(
+        action=ScheduleActionStartWorkflow(
+            AllShopsSoulEvolutionWorkflow.run,
+            {"reason": "scheduled"},
+            task_queue=TEMPORAL_TASK_QUEUE,
+            execution_timeout=timedelta(minutes=45),
+        ),
+        spec=ScheduleSpec(
+            cron_expressions=[soul_cron],
+            time_zone_name=timezone,
+        ),
+        policy=SchedulePolicy(
+            overlap=ScheduleOverlapPolicy.SKIP,
+            catchup_window=timedelta(hours=2),
+            pause_on_failure=False,
+        ),
+        state=ScheduleState(
+            note="Nightly: evolve every active shop's SOUL from recent activity.",
+            paused=False,
+        ),
+    )
+    await _create_or_skip(
+        client,
+        "zeroqwait-soul-evolution",
+        soul_schedule,
+        "Nightly SOUL evolution for all active shops.",
+    )
+
+    commitment_cron = os.getenv("TEMPORAL_COMMITMENT_SWEEP_CRON", DEFAULT_COMMITMENT_SWEEP_CRON)
+    commitment_schedule = Schedule(
+        action=ScheduleActionStartWorkflow(
+            CommitmentResolverWorkflow.run,
+            {"trigger": "periodic"},
+            task_queue=TEMPORAL_TASK_QUEUE,
+            execution_timeout=timedelta(minutes=5),
+        ),
+        spec=ScheduleSpec(
+            cron_expressions=[commitment_cron],
+            time_zone_name=timezone,
+        ),
+        policy=SchedulePolicy(
+            overlap=ScheduleOverlapPolicy.SKIP,
+            catchup_window=timedelta(minutes=30),
+            pause_on_failure=False,
+        ),
+        state=ScheduleState(
+            note="Every 15 min: notify owners about due commitments.",
+            paused=False,
+        ),
+    )
+    await _create_or_skip(
+        client,
+        "zeroqwait-commitment-sweep",
+        commitment_schedule,
+        "Periodic commitment sweep.",
+    )

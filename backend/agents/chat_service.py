@@ -363,6 +363,7 @@ def _finalize_chat_work_context(
     tool_results: Optional[Dict[str, Any]],
     approval_required: bool,
     pending_action: Optional[Dict[str, Any]],
+    conversation_messages: Optional[list] = None,
 ) -> Optional[Dict[str, Any]]:
     db = SessionLocal()
     try:
@@ -398,6 +399,33 @@ def _finalize_chat_work_context(
             output_payload=output_payload,
             current_agent=routed_agent or "supervisor",
         )
+
+        # Fire-and-forget commitment scan on the conversation tail.
+        if conversation_messages:
+            try:
+                from .commitment_scanner import schedule_commitment_scan
+                import asyncio
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(
+                        schedule_commitment_scan(
+                            shop_id=shop_id,
+                            run_id=run_id,
+                            messages=conversation_messages,
+                        )
+                    )
+                except RuntimeError:
+                    # No running loop — invoke the sync fallback directly
+                    from .commitment_scanner import scan_and_persist_commitments_sync
+                    scan_and_persist_commitments_sync(
+                        shop_id=shop_id,
+                        run_id=run_id,
+                        messages=conversation_messages,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("commitment scan dispatch failed: %s", exc)
+
         return pending_action
     finally:
         db.close()
