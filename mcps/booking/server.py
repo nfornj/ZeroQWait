@@ -154,6 +154,7 @@ def _queue_snapshot(shop_id: int) -> dict:
     return {
         "shop_id": shop_id,
         "queue_id": queue.id,
+        "accepting_joins": queue.accepting_joins if hasattr(queue, "accepting_joins") else True,
         "items": [item.model_dump(mode="json") for item in active_items],
         "total_in_queue": len(active_items),
         "waiting_count": len(waiting),
