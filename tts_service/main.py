@@ -70,11 +70,23 @@ def _resolve_voice(voice_name: str) -> str:
 # Synthesis helper — runs in a thread pool (piper is synchronous)
 # ---------------------------------------------------------------------------
 def _synthesize_sync(text: str, gender: str, length_scale: float) -> bytes:
-    """Blocking synthesis; called via run_in_executor from async handlers."""
+    """Blocking synthesis; called via run_in_executor from async handlers.
+
+    piper-tts >= 1.4 API: synthesize() returns Iterable[AudioChunk] with
+    audio_int16_bytes (raw 16-bit PCM mono). We wrap the chunks into a WAV
+    container here instead of passing a wave.Wave_write to piper.
+    """
+    from piper.config import SynthesisConfig  # type: ignore[import]
+
     voice = _get_voice(gender)
+    syn_cfg = SynthesisConfig(length_scale=length_scale)
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
-        voice.synthesize(text, wf, length_scale=length_scale)
+        wf.setnchannels(1)       # mono
+        wf.setsampwidth(2)       # 16-bit PCM
+        wf.setframerate(voice.config.sample_rate)
+        for chunk in voice.synthesize(text, syn_config=syn_cfg):
+            wf.writeframes(chunk.audio_int16_bytes)
     return buf.getvalue()
 
 
