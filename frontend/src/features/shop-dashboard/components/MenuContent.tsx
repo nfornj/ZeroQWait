@@ -12,12 +12,14 @@ import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded';
 import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded';
+import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 
 const primaryListItems = [
   { text: 'Agent', icon: <SmartToyRoundedIcon />, path: '/dashboard' },
+  { text: 'Brain', icon: <AccountTreeRoundedIcon />, path: '/agent-brain' },
   { text: 'Overview', icon: <InsightsRoundedIcon />, path: '/overview' },
 ];
 

@@ -30,6 +30,7 @@ import MasterDashboardPage from "./features/admin/pages/MasterDashboardPage";
 import ServicesManagementPage from "./features/shop-dashboard/pages/ServicesManagementPage";
 import AppointmentsPage from "./features/shop-dashboard/pages/AppointmentsPage";
 import OwnerDashboardPage from "./features/shop-dashboard/pages/OwnerDashboardPage";
+import AgentBrainPage from "./features/agent-brain/AgentBrainPage";
 import { useAuth } from "./contexts/AuthContext";
 
 import SignInSide from "./features/auth/components/auth-sign-in/SignInSide";
@@ -107,6 +108,7 @@ function App() {
             <Route path="/services" element={<OwnerOnly><ServicesManagementPage /></OwnerOnly>} />
             <Route path="/appointments" element={<OwnerOnly><AppointmentsPage /></OwnerOnly>} />
             <Route path="/agent-inbox" element={<DashboardEntry />} />
+            <Route path="/agent-brain" element={<OwnerOnly><AgentBrainPage /></OwnerOnly>} />
           </Route>
 
           {/* Admin Portal — super_admin only, standalone (no ShopLayout) */}
