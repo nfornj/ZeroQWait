@@ -55,6 +55,10 @@ services:
       - BOOKING_MCP_URL=${BOOKING_MCP_URL:-http://booking-mcp:8890}
       - FINANCE_MCP_URL=${FINANCE_MCP_URL:-http://finance-mcp:8891}
       - HR_MCP_URL=${HR_MCP_URL:-http://hr-mcp:8892}
+      - TEMPORAL_ENABLED=${TEMPORAL_ENABLED:-false}
+      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-temporal:7233}
+      - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
+      - TEMPORAL_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-zeroqwait-agent-brain}
       - ODOO_URL=${ODOO_URL:-http://odoo:8069}
       - ODOO_DB=${ODOO_DB:-odoo}
       - ODOO_USER=${ODOO_USER:-admin}
@@ -118,6 +122,33 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+  temporal-worker:
+    build: ./backend
+    command: ["python", "temporal_worker.py"]
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_HOST=db
+      - REDIS_HOST=redis
+      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-temporal:7233}
+      - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
+      - TEMPORAL_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-zeroqwait-agent-brain}
+      - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
+      - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
+      - LLM_PROVIDER=${LLM_PROVIDER:-nvidia}
+      - NVIDIA_MODEL=${NVIDIA_MODEL:-z-ai/glm4.7}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - TTS_SERVICE_URL=${TTS_SERVICE_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30880}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles:
+      - temporal
     restart: unless-stopped
 
   # React Frontend

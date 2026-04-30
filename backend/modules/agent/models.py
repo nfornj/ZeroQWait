@@ -116,6 +116,92 @@ class ShopLLMConfig(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
+class ShopSoul(Base):
+    __tablename__ = "shop_soul"
+    __table_args__ = (
+        UniqueConstraint("shop_id", name="uq_shop_soul_shop"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    tone = Column(String, nullable=True)
+    upsell_style = Column(String, nullable=True)
+    owner_communication = Column(String, nullable=True)
+    personality = Column(JSON, nullable=True)
+    learned_patterns = Column(JSON, nullable=True)
+    recent_decisions = Column(JSON, nullable=True)
+    open_items = Column(JSON, nullable=True)
+    summary = Column(Text, nullable=True)
+    tier_scope = Column(String, nullable=False, default="basic", index=True)
+    rolling_window_days = Column(Integer, nullable=False, default=30)
+    last_evolved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class SoulLearning(Base):
+    __tablename__ = "soul_learnings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_id = Column(Integer, ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    source = Column(String, nullable=False, default="conversation", index=True)
+    category = Column(String, nullable=False, default="pattern", index=True)
+    content = Column(Text, nullable=False)
+    confidence_score = Column(Float, nullable=False, default=0.5)
+    evidence = Column(JSON, nullable=True)
+    graduated = Column(Boolean, nullable=False, default=False, index=True)
+    observed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Commitment(Base):
+    __tablename__ = "commitments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_id = Column(Integer, ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    made_by = Column(String, nullable=False, index=True)
+    commitment = Column(Text, nullable=False)
+    due_at = Column(DateTime, nullable=True, index=True)
+    trigger_if_missed = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    action_payload = Column(JSON, nullable=True)
+    detected_from = Column(JSON, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ShopSchedule(Base):
+    __tablename__ = "shop_schedules"
+    __table_args__ = (
+        UniqueConstraint("shop_id", "schedule_key", name="uq_shop_schedule_key"),
+        UniqueConstraint("temporal_schedule_id", name="uq_shop_schedule_temporal_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    schedule_key = Column(String, nullable=False, index=True)
+    temporal_schedule_id = Column(String, nullable=False, index=True)
+    schedule_type = Column(String, nullable=False, default="custom", index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    natural_language = Column(Text, nullable=True)
+    cron_expression = Column(String, nullable=False)
+    timezone = Column(String, nullable=False, default="UTC")
+    target_agent = Column(String, nullable=False, default="supervisor", index=True)
+    action_payload = Column(JSON, nullable=True)
+    condition_payload = Column(JSON, nullable=True)
+    status = Column(String, nullable=False, default="active", index=True)
+    tier_scope = Column(String, nullable=False, default="free", index=True)
+    last_triggered_at = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class GoalSource(str, enum.Enum):
     CHAT = "chat"
     SCHEDULED_JOB = "scheduled_job"
