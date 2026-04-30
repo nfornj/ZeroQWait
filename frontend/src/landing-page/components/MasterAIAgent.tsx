@@ -1005,6 +1005,14 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
   ) => {
     if (!userText.trim()) return;
 
+    // Pre-warm AudioContext inside this user gesture (send button / Enter key)
+    if (interactionModeRef.current === "voice") {
+      try {
+        const ctx = getAudioContext();
+        if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      } catch {}
+    }
+
     const normalized = userText.trim().toLowerCase();
     const now = Date.now();
     if (
@@ -1608,6 +1616,13 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
                     if (newMode === "chat") {
                       stopCurrentAudio();
                       if (isRecording) stopRecording();
+                    } else {
+                      // Pre-warm AudioContext inside this user gesture so Chrome
+                      // autoplay policy allows playback in later async callbacks.
+                      try {
+                        const ctx = getAudioContext();
+                        if (ctx.state === "suspended") ctx.resume().catch(() => {});
+                      } catch {}
                     }
                     setInteractionMode(newMode);
                   }}
