@@ -17,7 +17,7 @@ Configuration (env vars)
 ------------------------
 TTS_UPSTREAM_URL   Qwen3-TTS service  (default: http://tts-service.zeroqwait.svc.cluster.local:8880)
 ASR_UPSTREAM_URL   Whisper ASR base   (default: http://asr-service.zeroqwait.svc.cluster.local:8000)
-TTS_DEFAULT_VOICE  Voice name         (default: Vivian)
+TTS_DEFAULT_VOICE  Voice name         (default: female)
 HOST               Bind address       (default: 0.0.0.0)
 PORT               Listen port        (default: 8881)
 """
@@ -47,7 +47,7 @@ ASR_UPSTREAM = os.getenv(
     "ASR_UPSTREAM_URL",
     "http://asr-service.zeroqwait.svc.cluster.local:8000",
 )
-DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "Vivian")
+DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "female")
 
 # Shared async HTTP client — persistent connection pool across all requests
 _http: httpx.AsyncClient | None = None
@@ -118,7 +118,7 @@ async def _do_asr(
 app = FastAPI(
     title="ZeroQwait Voice MCP Gateway",
     description=(
-        "Single voice gateway: TTS (Qwen3-TTS/Vivian) + ASR (Whisper). "
+        "Single voice gateway: TTS (Piper/female) + ASR (Whisper). "
         "REST-compatible with the original TTS and ASR service APIs so the "
         "backend can redirect to this service with a URL change only."
     ),
@@ -213,14 +213,14 @@ try:
     mcp = FastMCP(
         name="zeroqwait-voice",
         instructions=(
-            "ZeroQwait Voice tools — TTS (Qwen3-TTS/Vivian) and ASR (Whisper). "
+            "ZeroQwait Voice tools — TTS (Piper/female) and ASR (Whisper). "
             "Accessible by any MCP-compatible client."
         ),
     )
 
     @mcp.tool(
         description=(
-            "Convert text to speech using Qwen3-TTS (Vivian voice). "
+            "Convert text to speech using Piper TTS (female voice by default). "
             "Returns base64-encoded WAV audio and the voice used."
         )
     )

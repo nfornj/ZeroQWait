@@ -47,7 +47,7 @@ spec:
             - name: PORT
               value: "8881"
             - name: TTS_DEFAULT_VOICE
-              value: "Vivian"
+              value: "female"
             - name: TTS_UPSTREAM_URL
               value: "http://tts-service.zeroqwait.svc.cluster.local:8880"
             - name: ASR_UPSTREAM_URL

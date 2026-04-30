@@ -1,5 +1,4 @@
-# Qwen3-TTS Deployment - GPU-accelerated (Blackwell/sm_120)
-# Uses NVIDIA GPU time-slicing to share RTX 5070 Ti with Ollama
+# Piper TTS Deployment - CPU-only (no GPU required)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,7 +19,6 @@ spec:
         app: tts-service
     spec:
       priorityClassName: voice-critical
-      runtimeClassName: nvidia
       containers:
         - name: tts-service
           image: localhost:5000/prod/tts-service:v20260429092027-30a8ac4
@@ -33,63 +31,44 @@ spec:
               value: "0.0.0.0"
             - name: PORT
               value: "8880"
-            - name: WORKERS
-              value: "1"
-            - name: CORS_ORIGINS
-              value: "*"
-            - name: TTS_BACKEND
-              value: "official"
-            - name: TTS_DEVICE
-              value: "gpu"
-            - name: TTS_WARMUP_ON_START
-              value: "false"
-            - name: CUDA_VISIBLE_DEVICES
-              value: "0"
-            - name: NVIDIA_VISIBLE_DEVICES
-              value: "all"
-            - name: NVIDIA_DRIVER_CAPABILITIES
-              value: "compute,utility"
+            - name: MODELS_DIR
+              value: "/app/models"
+            - name: TTS_DEFAULT_VOICE
+              value: "female"
           resources:
             requests:
-              memory: "8Gi"
-              cpu: "1"
+              memory: "512Mi"
+              cpu: "500m"
             limits:
-              memory: "16Gi"
-              cpu: "2"
-          volumeMounts:
-            - name: model-cache
-              mountPath: /home/appuser/.cache/huggingface
+              memory: "1Gi"
+              cpu: "1"
           startupProbe:
             httpGet:
               path: /health
               port: 8880
-            initialDelaySeconds: 30
-            periodSeconds: 10
+            initialDelaySeconds: 10
+            periodSeconds: 5
             timeoutSeconds: 5
-            failureThreshold: 60
+            failureThreshold: 12
           readinessProbe:
             httpGet:
               path: /health
               port: 8880
-            initialDelaySeconds: 300
-            periodSeconds: 30
-            timeoutSeconds: 10
-            failureThreshold: 10
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health
               port: 8880
-            initialDelaySeconds: 600
-            periodSeconds: 60
+            initialDelaySeconds: 60
+            periodSeconds: 30
             timeoutSeconds: 10
-            failureThreshold: 5
-      volumes:
-        - name: model-cache
-          persistentVolumeClaim:
-            claimName: tts-model-cache
+            failureThreshold: 3
       terminationGracePeriodSeconds: 30
 ---
-# Qwen3-TTS Service
+# Piper TTS Service
 apiVersion: v1
 kind: Service
 metadata:

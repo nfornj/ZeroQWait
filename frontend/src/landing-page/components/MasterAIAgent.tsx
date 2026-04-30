@@ -809,11 +809,11 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: plainText,
-          voice: "Vivian",
+          voice: "female",
           speed: 0.98,
-          model: "tts-1-en",
+          model: "tts-1",
           language: "English",
-          instruct: PROFESSIONAL_VOICE_INSTRUCT,
+          instruct: "",
         }),
         signal: controller.signal,
       });

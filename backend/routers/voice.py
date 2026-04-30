@@ -48,14 +48,11 @@ def detect_audio_format(audio_bytes: bytes) -> tuple[str, str]:
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = "Vivian"
+    voice: str = "female"
     speed: float = 1.0
-    model: str = "tts-1-en"
+    model: str = "tts-1"
     language: str = "English"
-    instruct: str = (
-        "Speak clearly and naturally with a warm, confident North American English accent. "
-        "Keep a steady, professional tone and consistent pacing. Enunciate each word precisely."
-    )
+    instruct: str = ""
 
 @router.post("/transcribe")
 async def transcribe_voice(file: UploadFile = File(...)):

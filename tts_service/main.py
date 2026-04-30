@@ -1,324 +1,180 @@
 """
-Qwen3-TTS OpenAI-compatible API wrapper.
+Piper TTS — OpenAI-compatible API wrapper.
 
 Exposes POST /v1/audio/speech compatible with the OpenAI TTS API,
-backed by Qwen3-TTS-12Hz-1.7B-CustomVoice.
+backed by CPU-only Piper ONNX voice models.
+
+Voices
+------
+  female  — en_US-lessac-medium  (default, warm clear North American English)
+  male    — en_US-ryan-medium    (clear North American English male)
+
+All legacy Qwen3-TTS/OpenAI voice aliases are accepted and mapped to
+the appropriate gender automatically.
 """
 
 import asyncio
 import io
-import os
 import logging
+import os
 import threading
-import json
-import re
-import urllib.request
-import hashlib
+import wave
 from typing import Dict
 
-import torch
-import soundfile as sf
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("qwen3-tts-service")
+logger = logging.getLogger("piper-tts-service")
 
-app = FastAPI(title="Qwen3-TTS Service")
+app = FastAPI(title="Piper TTS Service", version="1.0.0")
 
-MODEL_NAME = os.getenv("TTS_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
-TTS_DEVICE = os.getenv("TTS_DEVICE", "gpu").lower()
-TTS_WARMUP = os.getenv("TTS_WARMUP_ON_START", "true").lower() == "true"
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+MODELS_DIR = os.getenv("MODELS_DIR", "/app/models")
+DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "female")
 
-# Global model reference and generation lock (GPU is single-threaded)
-_model = None
-_gen_lock = asyncio.Lock()
-_model_load_error = None
-_model_loading = False
-_tts_response_cache: Dict[str, bytes] = {}
-_TTS_CACHE_MAX_ITEMS = 512
+# Voice model file names (ONNX files baked into the Docker image)
+VOICE_MODELS: Dict[str, str] = {
+    "female": "en_US-lessac-medium.onnx",
+    "male":   "en_US-ryan-medium.onnx",
+}
+
+# Aliases -> canonical gender key
+VOICE_ALIASES: Dict[str, str] = {
+    # female aliases (legacy Qwen3-TTS + OpenAI compat)
+    "vivian":   "female",
+    "serena":   "female",
+    "nova":     "female",
+    "shimmer":  "female",
+    "alloy":    "female",
+    "fable":    "female",
+    "af_heart": "female",
+    "ono_anna": "female",
+    "sohee":    "female",
+    # male aliases
+    "ryan":     "male",
+    "echo":     "male",
+    "onyx":     "male",
+    "aiden":    "male",
+    "dylan":    "male",
+    "eric":     "male",
+    "uncle_fu": "male",
+}
+
+# ---------------------------------------------------------------------------
+# Voice loader — lazy-load, thread-safe, one instance per gender
+# ---------------------------------------------------------------------------
+_voices: Dict[str, object] = {}
+_voice_lock = threading.Lock()
 
 
-def _ensure_missing_preprocessor_config(error_text: str) -> bool:
-    """Create a minimal preprocessor_config.json when HF snapshot misses it."""
-    if "preprocessor_config.json" not in error_text or "speech_tokenizer" not in error_text:
-        return False
+def _load_voice(gender: str):
+    from piper import PiperVoice  # type: ignore[import]
+    model_path = os.path.join(MODELS_DIR, VOICE_MODELS[gender])
+    logger.info("Loading Piper voice '%s' from %s", gender, model_path)
+    return PiperVoice.load(model_path)
 
 
-def _ensure_missing_speech_tokenizer_files(error_text: str) -> bool:
-    """Download missing speech_tokenizer artifacts directly from HuggingFace when absent."""
-    if "speech_tokenizer" not in error_text:
-        return False
+def _get_voice(gender: str):
+    with _voice_lock:
+        if gender not in _voices:
+            _voices[gender] = _load_voice(gender)
+    return _voices[gender]
 
-    match = re.search(r"'([^']+/speech_tokenizer)'", error_text)
-    if not match:
-        return False
 
-    speech_tokenizer_dir = match.group(1)
-    os.makedirs(speech_tokenizer_dir, exist_ok=True)
+def _resolve_voice(voice_name: str) -> str:
+    """Return 'female' or 'male' from any voice name string."""
+    lower = voice_name.strip().lower()
+    if lower in VOICE_MODELS:
+        return lower
+    resolved = VOICE_ALIASES.get(lower)
+    if resolved:
+        return resolved
+    logger.warning("Unknown voice '%s', defaulting to female", voice_name)
+    return "female"
 
-    base_url = f"https://huggingface.co/{MODEL_NAME}/resolve/main/speech_tokenizer"
-    required = [
-        "preprocessor_config.json",
-        "model.safetensors",
-    ]
 
-    changed = False
-    for filename in required:
-        path = os.path.join(speech_tokenizer_dir, filename)
-        if os.path.exists(path):
-            continue
-        url = f"{base_url}/{filename}"
+# ---------------------------------------------------------------------------
+# Synthesis helper — runs in a thread pool (piper is synchronous)
+# ---------------------------------------------------------------------------
+def _synthesize_sync(text: str, gender: str, length_scale: float) -> bytes:
+    """Blocking synthesis; called via run_in_executor from async handlers."""
+    voice = _get_voice(gender)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        voice.synthesize(text, wf, length_scale=length_scale)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Startup: pre-load both voices so the first request is fast
+# ---------------------------------------------------------------------------
+@app.on_event("startup")
+async def _startup():
+    loop = asyncio.get_event_loop()
+    for gender in VOICE_MODELS:
         try:
-            logger.warning("Downloading missing speech_tokenizer file: %s", url)
-            with urllib.request.urlopen(url, timeout=300) as r:
-                data = r.read()
-            with open(path, "wb") as f:
-                f.write(data)
-            changed = True
-        except Exception as dl_err:
-            logger.error("Failed to download %s: %s", filename, dl_err, exc_info=True)
-            return False
-
-    return changed
-
-    match = re.search(r"'([^']+/speech_tokenizer)'", error_text)
-    if not match:
-        return False
-
-    speech_tokenizer_dir = match.group(1)
-    config_path = os.path.join(speech_tokenizer_dir, "config.json")
-    preproc_path = os.path.join(speech_tokenizer_dir, "preprocessor_config.json")
-
-    if os.path.exists(preproc_path) or not os.path.exists(config_path):
-        return False
-
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            tokenizer_cfg = json.load(f)
-
-        sample_rate = tokenizer_cfg.get("input_sample_rate", 24000)
-        preproc_cfg = {
-            "feature_extractor_type": "Wav2Vec2FeatureExtractor",
-            "sampling_rate": sample_rate,
-            "padding_value": 0.0,
-            "return_attention_mask": True,
-            "do_normalize": False,
-        }
-
-        with open(preproc_path, "w", encoding="utf-8") as f:
-            json.dump(preproc_cfg, f)
-
-        logger.warning(
-            "Created missing preprocessor_config.json at %s to recover tokenizer load",
-            preproc_path,
-        )
-        return True
-    except Exception as patch_err:
-        logger.error("Failed to create fallback preprocessor config: %s", patch_err, exc_info=True)
-        return False
-
-# Qwen3-TTS built-in speakers for CustomVoice models
-VALID_SPEAKERS = {
-    "Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric",
-    "Ryan", "Aiden", "Ono_Anna", "Sohee",
-}
-
-# Map common/OpenAI voice names to Qwen3-TTS speakers
-VOICE_MAP = {
-    "serena": "Serena",
-    "vivian": "Vivian",
-    "ryan": "Ryan",
-    "aiden": "Aiden",
-    "eric": "Eric",
-    "dylan": "Dylan",
-    "uncle_fu": "Uncle_Fu",
-    "ono_anna": "Ono_Anna",
-    "sohee": "Sohee",
-    # OpenAI-compatible aliases
-    "alloy": "Serena",
-    "nova": "Vivian",
-    "echo": "Ryan",
-    "onyx": "Aiden",
-    "fable": "Serena",
-    "shimmer": "Vivian",
-    # Legacy Kokoro aliases
-    "af_heart": "Serena",
-}
+            await loop.run_in_executor(None, _get_voice, gender)
+            logger.info("Piper voice '%s' ready", gender)
+        except Exception as exc:
+            logger.error("Failed to preload voice '%s': %s", gender, exc, exc_info=True)
 
 
+# ---------------------------------------------------------------------------
+# API
+# ---------------------------------------------------------------------------
 class SpeechRequest(BaseModel):
     model: str = "tts-1"
     input: str
-    voice: str = "Vivian"
+    voice: str = DEFAULT_VOICE
     speed: float = 1.0
     response_format: str = "wav"
-    # Optional styling/language hints forwarded from the backend
+    # Accepted but ignored — kept for API compat with old Qwen3-TTS callers
     language: str = "English"
     instruct: str = ""
 
 
-def _resolve_speaker(voice: str) -> str:
-    """Resolve voice name to a valid Qwen3-TTS speaker."""
-    # Try direct match (case-sensitive)
-    if voice in VALID_SPEAKERS:
-        return voice
-    # Try case-insensitive lookup
-    mapped = VOICE_MAP.get(voice.lower())
-    if mapped:
-        return mapped
-    # Default fallback
-    logger.warning(f"Unknown voice '{voice}', falling back to Vivian")
-    return "Vivian"
-
-
-def _load_model_sync():
-    global _model, _model_load_error, _model_loading
-    from qwen_tts import Qwen3TTSModel
-
-    device_map = "cuda:0" if TTS_DEVICE == "gpu" else "cpu"
-    dtype = torch.bfloat16 if TTS_DEVICE == "gpu" else torch.float32
-
-    try:
-        logger.info(f"Loading Qwen3-TTS model: {MODEL_NAME} on {device_map}")
-        try:
-            _model = Qwen3TTSModel.from_pretrained(
-                MODEL_NAME,
-                device_map=device_map,
-                dtype=dtype,
-            )
-            
-            # GPU-specific optimizations for RTX 5060 Ti (Ada architecture)
-            if TTS_DEVICE == "gpu" and torch.cuda.is_available():
-                try:
-                    # Enable flash attention if available for faster computation
-                    if hasattr(_model, "model") and hasattr(_model.model, "config"):
-                        _model.model.config.use_flash_attn = True
-                    logger.info("Enabled GPU optimizations for RTX 5060 Ti (Ada architecture, compute_capability=8.9)")
-                except Exception as opt_err:
-                    logger.warning(f"Could not apply all GPU optimizations: {opt_err}")
-                
-                # Log GPU memory available
-                torch.cuda.empty_cache()
-                total_mem = torch.cuda.get_device_properties(0).total_memory / 1024**3
-                logger.info(f"GPU initialized: {torch.cuda.get_device_name(0)}, Total VRAM: {total_mem:.1f}GB")
-                
-        except Exception as first_err:
-            err_text = str(first_err)
-            patched = _ensure_missing_preprocessor_config(err_text)
-            patched = _ensure_missing_speech_tokenizer_files(err_text) or patched
-            if patched:
-                logger.info("Retrying Qwen3-TTS model load after applying speech tokenizer file fixes")
-                _model = Qwen3TTSModel.from_pretrained(
-                    MODEL_NAME,
-                    device_map=device_map,
-                    dtype=dtype,
-                )
-            else:
-                raise
-
-        _model_load_error = None
-        logger.info("Qwen3-TTS model loaded successfully")
-    except Exception as e:
-        _model_load_error = str(e)
-        logger.error(f"Qwen3-TTS model load failed: {e}", exc_info=True)
-    finally:
-        _model_loading = False
-
-
-def _warmup_model():
-    """Fire a short inference after load to prime CUDA kernels, reducing cold-start latency."""
-    if not TTS_WARMUP or _model is None:
-        return
-    try:
-        logger.info("Warming up Qwen3-TTS model (CUDA kernel prime)...")
-        _model.generate_custom_voice(text="Hello.", language="English", speaker="Vivian")
-        logger.info("Warm-up complete.")
-    except Exception as e:
-        logger.warning(f"Warm-up failed (non-fatal): {e}")
-
-
-def _load_model_and_warmup():
-    _load_model_sync()
-    _warmup_model()
-
-
-@app.on_event("startup")
-async def load_model():
-    global _model_loading
-    _model_loading = True
-    threading.Thread(target=_load_model_and_warmup, daemon=True).start()
-
-
-@app.get("/health")
-async def health():
-    if _model is not None:
-        return {"status": "healthy"}
-    if _model_load_error:
-        return {"status": "error", "error": _model_load_error}
-    if _model_loading:
-        return {"status": "loading"}
-    return {"status": "loading"}
-
-
 @app.post("/v1/audio/speech")
-async def create_speech(req: SpeechRequest):
-    if _model is None:
-        if _model_load_error:
-            raise HTTPException(status_code=503, detail=f"Model load failed: {_model_load_error}")
-        raise HTTPException(status_code=503, detail="Model not loaded yet")
-
-    text = (req.input or "").strip()
+async def synthesize_speech(req: SpeechRequest):
+    text = req.input.strip()
     if not text:
-        raise HTTPException(status_code=400, detail="Input text is empty")
+        raise HTTPException(status_code=400, detail="input text is required")
 
-    speaker = _resolve_speaker(req.voice)
+    gender = _resolve_voice(req.voice)
+    # Piper uses length_scale (inverse of speed): speed=2.0 => 0.5x duration
+    length_scale = max(0.1, 1.0 / max(req.speed, 0.1))
 
-    # Map request language to what the model accepts
-    lang = req.language if req.language else "English"
-
-    cache_key = hashlib.sha256(
-        f"{text}|{speaker}|{lang}|{req.model}|{req.speed}".encode("utf-8")
-    ).hexdigest()
-    cached_audio = _tts_response_cache.get(cache_key)
-    if cached_audio is not None:
-        return Response(
-            content=cached_audio,
-            media_type="audio/wav",
-            headers={
-                "Content-Disposition": "attachment; filename=speech.wav",
-                "X-TTS-Cache": "HIT",
-            },
+    try:
+        loop = asyncio.get_event_loop()
+        audio_bytes = await loop.run_in_executor(
+            None, _synthesize_sync, text, gender, length_scale
         )
-
-    def _run_inference() -> bytes:
-        """Run generate + encode entirely off the event loop to avoid CPU-spike blocking."""
-        wavs, sr = _model.generate_custom_voice(
-            text=text,
-            language=lang,
-            speaker=speaker,
-        )
-        buf = io.BytesIO()
-        sf.write(buf, wavs[0], sr, format="WAV")
-        return buf.getvalue()
-
-    async with _gen_lock:
-        try:
-            audio_bytes = await asyncio.to_thread(_run_inference)
-            _tts_response_cache[cache_key] = audio_bytes
-            if len(_tts_response_cache) > _TTS_CACHE_MAX_ITEMS:
-                oldest_key = next(iter(_tts_response_cache))
-                _tts_response_cache.pop(oldest_key, None)
-        except Exception as e:
-            logger.error(f"TTS generation failed: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
+    except Exception as exc:
+        logger.error("Piper synthesis error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"TTS synthesis failed: {exc}")
 
     return Response(
         content=audio_bytes,
         media_type="audio/wav",
         headers={
-            "Content-Disposition": "attachment; filename=speech.wav",
-            "X-TTS-Cache": "MISS",
+            "X-Piper-Voice": gender,
+            "X-Piper-Model": VOICE_MODELS[gender],
         },
     )
+
+
+@app.get("/health")
+async def health():
+    loaded = [g for g in VOICE_MODELS if g in _voices]
+    return {
+        "status": "ok",
+        "engine": "piper",
+        "voices": {
+            "available": list(VOICE_MODELS.keys()),
+            "loaded": loaded,
+            "default": DEFAULT_VOICE,
+        },
+    }

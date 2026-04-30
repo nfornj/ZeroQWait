@@ -188,7 +188,7 @@ export const useVoiceInterface = (
                 const response = await fetch('/api/voice/tts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: plainText, voice: 'Vivian', speed: 1.0 }),
+                    body: JSON.stringify({ text: plainText, voice: 'female', speed: 1.0 }),
                     signal: ttsAbortRef.current.signal,
                 });
 

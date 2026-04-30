@@ -493,12 +493,10 @@ class MasterAgent:
             response = await client.post(
                 f"{tts_url}/v1/audio/speech",
                 json={
-                    "model": "tts-1-en",
+                    "model": "tts-1",
                     "input": clean_text,
-                    "voice": "Vivian",
+                    "voice": "female",
                     "speed": 1.0,
-                    "language": "English",
-                    "instruct": "Speak clearly and naturally with a warm, confident North American English accent. Keep a steady, professional tone and consistent pacing. Enunciate each word precisely.",
                     "response_format": "wav"
                 },
                 headers={"Content-Type": "application/json"}
