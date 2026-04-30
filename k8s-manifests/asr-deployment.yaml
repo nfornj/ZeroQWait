@@ -20,7 +20,7 @@ spec:
           imagePullPolicy: Always
           env:
             - name: MODEL_SIZE
-              value: "medium"
+              value: "small"
             - name: DEVICE
               value: "cpu"
             - name: COMPUTE_TYPE
