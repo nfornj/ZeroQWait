@@ -811,9 +811,6 @@ const MasterAIAgent: React.FC<MasterAIAgentProps> = ({
           text: plainText,
           voice: "female",
           speed: 0.98,
-          model: "tts-1",
-          language: "English",
-          instruct: "",
         }),
         signal: controller.signal,
       });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   buildStreamToolResultFeedEvent,
@@ -51,6 +51,104 @@ export const useAgentStream = ({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
+
+  // ─── Voice / TTS state ────────────────────────────────────────────────────
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // Refs so audio callbacks always read the latest values without stale closures.
+  const isVoiceEnabledRef = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const audioQueueRef = useRef<ArrayBuffer[]>([]);
+  const isPlayingAudioRef = useRef(false);
+  const cancelAudioRef = useRef(false);
+  const ttsSentenceBufferRef = useRef("");
+
+  useEffect(() => {
+    isVoiceEnabledRef.current = isVoiceEnabled;
+  }, [isVoiceEnabled]);
+
+  const getAudioCtx = useCallback(() => {
+    if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const stopVoice = useCallback(() => {
+    cancelAudioRef.current = true;
+    audioQueueRef.current = [];
+    isPlayingAudioRef.current = false;
+    try {
+      currentAudioSourceRef.current?.stop();
+      currentAudioSourceRef.current = null;
+    } catch {}
+    setIsSpeaking(false);
+  }, []);
+
+  const drainAudioQueue = useCallback(async () => {
+    if (isPlayingAudioRef.current) return;
+    isPlayingAudioRef.current = true;
+    cancelAudioRef.current = false;
+
+    while (audioQueueRef.current.length > 0) {
+      if (cancelAudioRef.current) break;
+      const arrayBuffer = audioQueueRef.current.shift()!;
+      try {
+        const ctx = getAudioCtx();
+        if (ctx.state === "suspended") await ctx.resume();
+        const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+        await new Promise<void>((resolve) => {
+          if (cancelAudioRef.current) { resolve(); return; }
+          const src = ctx.createBufferSource();
+          src.buffer = decoded;
+          src.connect(ctx.destination);
+          currentAudioSourceRef.current = src;
+          setIsSpeaking(true);
+          src.onended = () => {
+            currentAudioSourceRef.current = null;
+            resolve();
+          };
+          src.start(0);
+        });
+      } catch {
+        // skip undecodable chunk
+      }
+    }
+    isPlayingAudioRef.current = false;
+    if (!cancelAudioRef.current) setIsSpeaking(false);
+  }, [getAudioCtx]);
+
+  const speakSentence = useCallback(async (sentence: string) => {
+    const clean = sentence.trim();
+    if (!clean || clean.length < 2) return;
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${apiBaseUrl}/voice/tts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ text: clean, voice: "female", speed: 1.0 }),
+      });
+      if (!res.ok) return;
+      const ab = await res.arrayBuffer();
+      audioQueueRef.current.push(ab);
+      if (!isPlayingAudioRef.current) drainAudioQueue();
+    } catch {
+      // TTS failure is non-fatal
+    }
+  }, [drainAudioQueue]);
+
+  const toggleVoice = useCallback(() => {
+    setIsVoiceEnabled((prev) => {
+      if (prev) stopVoice();
+      return !prev;
+    });
+  }, [stopVoice]);
+  // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     setIsStreaming(messages.some((message) => message.status === "sending" || message.status === "streaming"));
@@ -255,6 +353,10 @@ export const useAgentStream = ({
         description: messageText,
       });
 
+      // Reset TTS sentence buffer for this response
+      ttsSentenceBufferRef.current = "";
+      if (isVoiceEnabledRef.current) stopVoice();
+
       let streamEndedWithDone = false;
       let streamTerminalStatus: "completed" | "error" | null = null;
       let streamErrorDetail: string | null = null;
@@ -271,7 +373,7 @@ export const useAgentStream = ({
           body: JSON.stringify({
             message: messageText,
             shop_id: shopId,
-            is_voice: false,
+            is_voice: isVoiceEnabledRef.current,
             attachments:
               attachments && attachments.length > 0
                 ? attachments.map((a) => {
@@ -313,6 +415,12 @@ export const useAgentStream = ({
 
             const payload = trimmed.slice(5).trim();
             if (payload === "[DONE]") {
+              // Flush any remaining TTS sentence buffer
+              const remaining = ttsSentenceBufferRef.current.trim();
+              if (isVoiceEnabledRef.current && remaining.length > 2) {
+                speakSentence(remaining);
+                ttsSentenceBufferRef.current = "";
+              }
               streamEndedWithDone = true;
               setMessages((prev) =>
                 prev.map((message) =>
@@ -367,6 +475,17 @@ export const useAgentStream = ({
 
               if (eventType === "text" && String(event.content || "")) {
                 sawRenderableAssistantContent = true;
+                // Real-time TTS: buffer tokens into sentences
+                if (isVoiceEnabledRef.current) {
+                  ttsSentenceBufferRef.current += String(event.content || "");
+                  // Split on sentence endings followed by whitespace
+                  const parts = ttsSentenceBufferRef.current.split(/(?<=[.!?])\s+/);
+                  if (parts.length > 1) {
+                    const toSpeak = parts.slice(0, -1).join(" ");
+                    ttsSentenceBufferRef.current = parts[parts.length - 1] || "";
+                    if (toSpeak.trim().length > 2) speakSentence(toSpeak.trim());
+                  }
+                }
               }
 
               if (eventType === "chart" || eventType === "file") {
@@ -437,7 +556,7 @@ export const useAgentStream = ({
         });
       }
     },
-    [addFeedEvent, processStreamEvent, refreshBriefing, refreshPendingApprovals, shopId],
+    [addFeedEvent, processStreamEvent, refreshBriefing, refreshPendingApprovals, shopId, speakSentence, stopVoice],
   );
 
   return {
@@ -448,6 +567,9 @@ export const useAgentStream = ({
     error,
     setError,
     appendSystemMessage,
+    isVoiceEnabled,
+    isSpeaking,
+    toggleVoice,
   };
 };
 

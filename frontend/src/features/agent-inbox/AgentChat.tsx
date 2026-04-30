@@ -21,6 +21,8 @@ import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import BuildCircleOutlinedIcon from "@mui/icons-material/BuildCircleOutlined";
 import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
+import VolumeUpRoundedIcon from "@mui/icons-material/VolumeUpRounded";
+import VolumeOffRoundedIcon from "@mui/icons-material/VolumeOffRounded";
 import {
   AuiIf,
   ActionBarPrimitive,
@@ -97,6 +99,9 @@ interface AgentChatProps {
   header?: React.ReactNode;
   sidebar?: React.ReactNode;
   interactablesStorageKey?: string;
+  isVoiceEnabled?: boolean;
+  isSpeaking?: boolean;
+  onToggleVoice?: () => void;
 }
 
 type AgentChatInnerProps = Omit<AgentChatProps, "messages" | "onSend"> & {
@@ -1272,6 +1277,9 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
   brandSecondary,
   hasDictation,
   messageCount,
+  isVoiceEnabled = false,
+  isSpeaking = false,
+  onToggleVoice,
 }) => {
   const muiTheme = useTheme();
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -1585,10 +1593,52 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                   isRunning={isStreaming}
                   onOpenFolderPicker={openFolderPicker}
                   dictationControl={
-                    <ComposerDictationButton
-                      disabled={isUploading || isStreaming}
-                      supported={hasDictation}
-                    />
+                    <>
+                      {onToggleVoice && (
+                        <IconButton
+                          size="small"
+                          onClick={onToggleVoice}
+                          disabled={isUploading || isStreaming}
+                          aria-label={isVoiceEnabled ? "Disable voice" : "Enable voice"}
+                          sx={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: 2.5,
+                            color: isVoiceEnabled
+                              ? brandPrimary
+                              : muiTheme.palette.mode === "dark"
+                              ? alpha("#f5f3ef", 0.82)
+                              : "#6f6a63",
+                            bgcolor: isVoiceEnabled
+                              ? alpha(brandPrimary, muiTheme.palette.mode === "dark" ? 0.18 : 0.1)
+                              : "transparent",
+                            "@keyframes voice-pulse": {
+                              "0%, 100%": { opacity: 0.7 },
+                              "50%": { opacity: 1 },
+                            },
+                            animation: isSpeaking ? "voice-pulse 1s ease-in-out infinite" : "none",
+                            "&:hover": {
+                              backgroundColor: isVoiceEnabled
+                                ? alpha(brandPrimary, 0.22)
+                                : muiTheme.palette.mode === "dark"
+                                ? alpha("#f5f3ef", 0.08)
+                                : alpha("#1f1d1a", 0.06),
+                            },
+                            "&.Mui-disabled": { color: alpha(muiTheme.palette.text.secondary, 0.4) },
+                          }}
+                        >
+                          {isVoiceEnabled ? (
+                            <VolumeUpRoundedIcon fontSize="small" />
+                          ) : (
+                            <VolumeOffRoundedIcon fontSize="small" />
+                          )}
+                        </IconButton>
+                      )}
+                      <ComposerDictationButton
+                        disabled={isUploading || isStreaming}
+                        supported={hasDictation}
+                      />
+                    </>
                   }
                 />
               </ThreadPrimitive.ViewportFooter>
@@ -1611,6 +1661,9 @@ const AgentChat: React.FC<AgentChatProps> = ({
   header,
   sidebar,
   interactablesStorageKey,
+  isVoiceEnabled = false,
+  isSpeaking = false,
+  onToggleVoice,
 }) => {
   const muiTheme = useTheme();
   const { shop } = useShop();
@@ -1770,6 +1823,9 @@ const AgentChat: React.FC<AgentChatProps> = ({
               brandSecondary={brandSecondary}
               hasDictation={Boolean(dictationAdapter)}
               messageCount={messages.length}
+              isVoiceEnabled={isVoiceEnabled}
+              isSpeaking={isSpeaking}
+              onToggleVoice={onToggleVoice}
             />
           </Box>
         </Box>

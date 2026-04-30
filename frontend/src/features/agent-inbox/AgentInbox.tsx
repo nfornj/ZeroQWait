@@ -106,6 +106,9 @@ const AgentInbox: React.FC = () => {
     setError,
     appendSystemMessage,
     handleSend,
+    isVoiceEnabled,
+    isSpeaking,
+    toggleVoice,
   } = useAgentStream({
     shopId: shop?.id,
     addFeedEvent,
@@ -361,6 +364,9 @@ const AgentInbox: React.FC = () => {
                 onSend={handleSend}
                 promptSections={promptSections}
                 interactablesStorageKey={`agent-inbox-${shop.id}`}
+                isVoiceEnabled={isVoiceEnabled}
+                isSpeaking={isSpeaking}
+                onToggleVoice={toggleVoice}
               />
             )}
             <Box sx={{ flexShrink: 0 }}>
