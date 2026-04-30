@@ -143,11 +143,19 @@ export const useAgentStream = ({
   }, [drainAudioQueue]);
 
   const toggleVoice = useCallback(() => {
+    if (!isVoiceEnabledRef.current) {
+      // Pre-warm AudioContext RIGHT NOW inside the user gesture (click) so the
+      // browser autoplay policy allows audio playback later in async callbacks.
+      try {
+        const ctx = getAudioCtx();
+        if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      } catch {}
+    }
     setIsVoiceEnabled((prev) => {
       if (prev) stopVoice();
       return !prev;
     });
-  }, [stopVoice]);
+  }, [stopVoice, getAudioCtx]);
   // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -325,6 +333,15 @@ export const useAgentStream = ({
       }
 
       setError(null);
+
+      // If voice is enabled, resume AudioContext inside this click/send gesture
+      // (belt-and-suspenders alongside the toggleVoice pre-warm)
+      if (isVoiceEnabledRef.current) {
+        try {
+          const ctx = getAudioCtx();
+          if (ctx.state === "suspended") ctx.resume().catch(() => {});
+        } catch {}
+      }
 
       const userMessage: ChatMessage = {
         id: toId("msg_user"),
@@ -556,7 +573,7 @@ export const useAgentStream = ({
         });
       }
     },
-    [addFeedEvent, processStreamEvent, refreshBriefing, refreshPendingApprovals, shopId, speakSentence, stopVoice],
+    [addFeedEvent, processStreamEvent, refreshBriefing, refreshPendingApprovals, shopId, speakSentence, stopVoice, getAudioCtx],
   );
 
   return {
