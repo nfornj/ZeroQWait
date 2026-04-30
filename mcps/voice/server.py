@@ -71,20 +71,12 @@ async def _do_tts(
     text: str,
     voice: str = DEFAULT_VOICE,
     speed: float = 1.0,
-    language: str = "English",
 ) -> bytes:
-    """Forward TTS request to Qwen3-TTS upstream, return raw WAV bytes."""
+    """Forward TTS request to Piper upstream, return raw WAV bytes."""
     payload = {
-        "model": "tts-1-en",
         "input": text.strip(),
         "voice": voice,
         "speed": speed,
-        "language": language,
-        "instruct": (
-            "Speak clearly and naturally with a warm, confident North American "
-            "English accent. Enunciate each word precisely. Friendly and professional tone."
-        ),
-        "response_format": "wav",
     }
     resp = await _client().post(
         f"{TTS_UPSTREAM}/v1/audio/speech",
@@ -127,26 +119,21 @@ app = FastAPI(
 
 
 class SpeechRequest(BaseModel):
-    model: str = "tts-1-en"
     input: str
     voice: str = DEFAULT_VOICE
     speed: float = 1.0
-    response_format: str = "wav"
-    # Forwarded to Qwen3-TTS (already stripped/ignored by older clients)
-    language: str = "English"
-    instruct: str = ""
 
 
 @app.post(
     "/v1/audio/speech",
-    summary="Text-to-Speech (OpenAI-compatible, routes to Qwen3-TTS)",
+    summary="Text-to-Speech (Piper TTS)",
     response_class=Response,
 )
 async def rest_tts(req: SpeechRequest):
     if not req.input or not req.input.strip():
         raise HTTPException(status_code=400, detail="input text is empty")
     try:
-        audio_bytes = await _do_tts(req.input, req.voice, req.speed, req.language)
+        audio_bytes = await _do_tts(req.input, req.voice, req.speed)
     except httpx.HTTPStatusError as exc:
         logger.error("TTS upstream %s: %s", exc.response.status_code, exc.response.text[:200])
         raise HTTPException(status_code=502, detail="TTS upstream error")
@@ -228,12 +215,11 @@ try:
         text: str,
         voice: str = DEFAULT_VOICE,
         speed: float = 1.0,
-        language: str = "English",
     ) -> dict:
         if not text or not text.strip():
             return {"error": "text is empty"}
         try:
-            audio_bytes = await _do_tts(text, voice, speed, language)
+            audio_bytes = await _do_tts(text, voice, speed)
             return {
                 "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
                 "audio_format": "wav",

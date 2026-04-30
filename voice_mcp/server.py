@@ -76,9 +76,9 @@ def _get_redis() -> "redis.Redis | None":  # type: ignore[name-defined]
     return _redis
 
 
-def _tts_cache_key(text: str, voice: str, speed: float, language: str) -> str:
+def _tts_cache_key(text: str, voice: str, speed: float) -> str:
     return hashlib.sha256(
-        f"{text.strip()}|{voice}|{speed}|{language}".encode("utf-8")
+        f"{text.strip()}|{voice}|{speed}".encode("utf-8")
     ).hexdigest()
 
 
@@ -104,16 +104,10 @@ async def _do_tts(
     text: str,
     voice: str = DEFAULT_VOICE,
     speed: float = 1.0,
-    language: str = "English",
 ) -> bytes:
-    """Forward TTS request to Qwen3-TTS upstream, return raw WAV bytes.
-
-    Checks Redis TTS cache before synthesizing. On a cache miss the result is
-    stored for TTS_CACHE_TTL seconds so subsequent identical requests are served
-    from cache without touching the GPU.
-    """
+    """Forward TTS request to Piper upstream, return raw WAV bytes."""
     text = text.strip()
-    cache_key = _tts_cache_key(text, voice, speed, language)
+    cache_key = _tts_cache_key(text, voice, speed)
 
     # Redis L2 cache lookup
     r = _get_redis()
@@ -131,16 +125,9 @@ async def _do_tts(
             logger.debug("voice-mcp: Redis TTS get error: %s", exc)
 
     payload = {
-        "model": "tts-1-en",
         "input": text,
         "voice": voice,
         "speed": speed,
-        "language": language,
-        "instruct": (
-            "Speak clearly and naturally with a warm, confident North American "
-            "English accent. Enunciate each word precisely. Friendly and professional tone."
-        ),
-        "response_format": "wav",
     }
     t0 = time.perf_counter()
     resp = await _client().post(
@@ -198,26 +185,21 @@ app = FastAPI(
 
 
 class SpeechRequest(BaseModel):
-    model: str = "tts-1-en"
     input: str
     voice: str = DEFAULT_VOICE
     speed: float = 1.0
-    response_format: str = "wav"
-    # Forwarded to Qwen3-TTS (already stripped/ignored by older clients)
-    language: str = "English"
-    instruct: str = ""
 
 
 @app.post(
     "/v1/audio/speech",
-    summary="Text-to-Speech (OpenAI-compatible, routes to Qwen3-TTS)",
+    summary="Text-to-Speech (Piper TTS)",
     response_class=Response,
 )
 async def rest_tts(req: SpeechRequest):
     if not req.input or not req.input.strip():
         raise HTTPException(status_code=400, detail="input text is empty")
     try:
-        audio_bytes = await _do_tts(req.input, req.voice, req.speed, req.language)
+        audio_bytes = await _do_tts(req.input, req.voice, req.speed)
     except httpx.HTTPStatusError as exc:
         logger.error("TTS upstream %s: %s", exc.response.status_code, exc.response.text[:200])
         raise HTTPException(status_code=502, detail="TTS upstream error")
@@ -299,12 +281,11 @@ try:
         text: str,
         voice: str = DEFAULT_VOICE,
         speed: float = 1.0,
-        language: str = "English",
     ) -> dict:
         if not text or not text.strip():
             return {"error": "text is empty"}
         try:
-            audio_bytes = await _do_tts(text, voice, speed, language)
+            audio_bytes = await _do_tts(text, voice, speed)
             return {
                 "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
                 "audio_format": "wav",

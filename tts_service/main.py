@@ -1,16 +1,10 @@
 """
-Piper TTS — OpenAI-compatible API wrapper.
+Piper TTS service.
 
-Exposes POST /v1/audio/speech compatible with the OpenAI TTS API,
-backed by CPU-only Piper ONNX voice models.
+POST /v1/audio/speech  — synthesize speech
+GET  /health           — readiness probe
 
-Voices
-------
-  female  — en_US-lessac-medium  (default, warm clear North American English)
-  male    — en_US-ryan-medium    (clear North American English male)
-
-All legacy Qwen3-TTS/OpenAI voice aliases are accepted and mapped to
-the appropriate gender automatically.
+Voices: "female" (en_US-lessac-medium, default) | "male" (en_US-ryan-medium)
 """
 
 import asyncio
@@ -42,28 +36,6 @@ VOICE_MODELS: Dict[str, str] = {
     "male":   "en_US-ryan-medium.onnx",
 }
 
-# Aliases -> canonical gender key
-VOICE_ALIASES: Dict[str, str] = {
-    # female aliases (legacy Qwen3-TTS + OpenAI compat)
-    "vivian":   "female",
-    "serena":   "female",
-    "nova":     "female",
-    "shimmer":  "female",
-    "alloy":    "female",
-    "fable":    "female",
-    "af_heart": "female",
-    "ono_anna": "female",
-    "sohee":    "female",
-    # male aliases
-    "ryan":     "male",
-    "echo":     "male",
-    "onyx":     "male",
-    "aiden":    "male",
-    "dylan":    "male",
-    "eric":     "male",
-    "uncle_fu": "male",
-}
-
 # ---------------------------------------------------------------------------
 # Voice loader — lazy-load, thread-safe, one instance per gender
 # ---------------------------------------------------------------------------
@@ -86,13 +58,10 @@ def _get_voice(gender: str):
 
 
 def _resolve_voice(voice_name: str) -> str:
-    """Return 'female' or 'male' from any voice name string."""
+    """Return 'female' or 'male'; unknown values default to female."""
     lower = voice_name.strip().lower()
     if lower in VOICE_MODELS:
         return lower
-    resolved = VOICE_ALIASES.get(lower)
-    if resolved:
-        return resolved
     logger.warning("Unknown voice '%s', defaulting to female", voice_name)
     return "female"
 
@@ -127,14 +96,9 @@ async def _startup():
 # API
 # ---------------------------------------------------------------------------
 class SpeechRequest(BaseModel):
-    model: str = "tts-1"
     input: str
     voice: str = DEFAULT_VOICE
     speed: float = 1.0
-    response_format: str = "wav"
-    # Accepted but ignored — kept for API compat with old Qwen3-TTS callers
-    language: str = "English"
-    instruct: str = ""
 
 
 @app.post("/v1/audio/speech")

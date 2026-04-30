@@ -22,16 +22,9 @@ _tts_l1_cache: Dict[str, Tuple[bytes, str, str]] = {}
 _TTS_L1_MAX_ITEMS = 128
 
 
-def _tts_cache_key(
-    text: str,
-    voice: str,
-    speed: float,
-    model: str,
-    language: str,
-    instruct: str,
-) -> str:
+def _tts_cache_key(text: str, voice: str, speed: float) -> str:
     return hashlib.sha256(
-        f"{text}|{voice}|{speed}|{model}|{language}|{instruct}".encode("utf-8")
+        f"{text}|{voice}|{speed}".encode("utf-8")
     ).hexdigest()
 
 
@@ -50,9 +43,6 @@ class TTSRequest(BaseModel):
     text: str
     voice: str = "female"
     speed: float = 1.0
-    model: str = "tts-1"
-    language: str = "English"
-    instruct: str = ""
 
 @router.post("/transcribe")
 async def transcribe_voice(file: UploadFile = File(...)):
@@ -84,14 +74,7 @@ async def text_to_speech(req: TTSRequest):
     """
     from redis_client import redis_client
 
-    cache_key = _tts_cache_key(
-        req.text,
-        req.voice,
-        req.speed,
-        req.model,
-        req.language,
-        req.instruct,
-    )
+    cache_key = _tts_cache_key(req.text, req.voice, req.speed)
     t0 = time.perf_counter()
 
     # L2: Redis cache (shared across all backend pods)
@@ -128,13 +111,9 @@ async def text_to_speech(req: TTSRequest):
     # Cache miss — synthesize
     try:
         payload = {
-            "model": req.model,
             "input": req.text,
             "voice": req.voice,
             "speed": req.speed,
-            "language": req.language,
-            "instruct": req.instruct,
-            "response_format": "wav",
         }
 
         async with httpx.AsyncClient(timeout=90.0) as client:
@@ -144,7 +123,7 @@ async def text_to_speech(req: TTSRequest):
                 headers={"Content-Type": "application/json"},
             )
             if response.status_code != 200:
-                logger.error(f"Qwen TTS failed ({response.status_code}): {response.text}")
+                logger.error(f"Piper TTS failed ({response.status_code}): {response.text}")
                 redis_client.record_tts_error()
                 raise HTTPException(status_code=502, detail="TTS service unavailable")
 
