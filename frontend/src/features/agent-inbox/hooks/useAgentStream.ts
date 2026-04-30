@@ -272,6 +272,22 @@ export const useAgentStream = ({
             message: messageText,
             shop_id: shopId,
             is_voice: false,
+            attachments:
+              attachments && attachments.length > 0
+                ? attachments.map((a) => {
+                    const dataContent = (a.content ?? []).find(
+                      (c) => c.type === "data" && (c as { name?: string }).name === "attachment",
+                    );
+                    const data = dataContent
+                      ? (dataContent as { data?: { filename?: string; contentType?: string; textContent?: string } }).data ?? {}
+                      : {};
+                    return {
+                      filename: data.filename ?? (a as { name?: string }).name ?? "",
+                      content_type: data.contentType ?? "",
+                      text_content: data.textContent ?? "",
+                    };
+                  })
+                : undefined,
           }),
         });
 

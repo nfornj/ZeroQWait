@@ -396,6 +396,12 @@ class KnowledgeBaseAttachmentAdapter implements AttachmentAdapter {
   }
 
   async send(attachment: Awaited<ReturnType<KnowledgeBaseAttachmentAdapter["add"]>>) {
+    const textContent = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve((e.target?.result as string) ?? "");
+      reader.onerror = () => resolve("");
+      reader.readAsText(attachment.file);
+    });
     return {
       ...attachment,
       status: { type: "complete" } as const,
@@ -407,6 +413,7 @@ class KnowledgeBaseAttachmentAdapter implements AttachmentAdapter {
             filename: attachment.name,
             contentType: attachment.contentType || null,
             sizeBytes: attachment.file.size,
+            textContent,
           },
         },
       ],

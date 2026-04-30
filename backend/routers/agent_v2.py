@@ -959,9 +959,18 @@ async def chat_sync(
     
     message = body.get("message", "")
     shop_id = body.get("shop_id")
+    attachments = body.get("attachments", []) or []
     
     if not message:
         raise HTTPException(status_code=400, detail="message field required")
+    
+    # Augment message with any attached file content
+    human_message_content = message
+    for att in attachments:
+        filename = str(att.get("filename", "attachment"))
+        text_content = str(att.get("text_content", "")).strip()
+        if text_content:
+            human_message_content = f"{human_message_content}\n\n[Attached file: {filename}]\n{text_content}"
     
     # Get user's shops and validate ownership
     user_id = _extract_user_id(current_user)
@@ -1008,7 +1017,7 @@ async def chat_sync(
     input_messages = []
     if memory_context:
         input_messages.append(SystemMessage(content=memory_context))
-    input_messages.append(HumanMessage(content=message))
+    input_messages.append(HumanMessage(content=human_message_content))
 
     initial_state: AgentState = {
         "messages": input_messages,
@@ -1135,9 +1144,18 @@ async def chat_stream(
     message = body.get("message", "")
     shop_id = body.get("shop_id")
     is_voice = body.get("is_voice", False)
+    attachments = body.get("attachments", []) or []
     
     if not message:
         raise HTTPException(status_code=400, detail="message field required")
+    
+    # Augment message with any attached file content
+    human_message_content = message
+    for att in attachments:
+        filename = str(att.get("filename", "attachment"))
+        text_content = str(att.get("text_content", "")).strip()
+        if text_content:
+            human_message_content = f"{human_message_content}\n\n[Attached file: {filename}]\n{text_content}"
     
     # Validate ownership
     user_id = _extract_user_id(current_user)
@@ -1182,7 +1200,7 @@ async def chat_stream(
             input_messages = []
             if memory_context:
                 input_messages.append(SystemMessage(content=memory_context))
-            input_messages.append(HumanMessage(content=message))
+            input_messages.append(HumanMessage(content=human_message_content))
 
             initial_state: AgentState = {
                 "messages": input_messages,
