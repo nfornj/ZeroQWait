@@ -165,15 +165,19 @@ kctl apply -f "${K8S_MANIFESTS}/postgres-statefulset.yaml"
 kctl apply -f "${K8S_MANIFESTS}/redis-pvc.yaml"
 kctl apply -f "${K8S_MANIFESTS}/redis-service.yaml"
 kctl apply -f "${K8S_MANIFESTS}/redis-statefulset.yaml"
+kctl apply -f "${K8S_MANIFESTS}/temporal-configmap.yaml"
+kctl apply -f "${K8S_MANIFESTS}/temporal-deployment.yaml"
 
 echo "==> Waiting for core data workloads"
 kctl rollout status statefulset/postgres -n zeroqwait --timeout=300s
 kctl rollout status statefulset/redis -n zeroqwait --timeout=300s
+kctl rollout status deployment/temporal -n zeroqwait --timeout=300s
 
 echo "==> Applying app manifests"
 kctl apply -f "${K8S_MANIFESTS}/backend-configmap.yaml"
 # Secret is pre-existing (not auto-applied — see note above).
 kctl apply -f "${K8S_MANIFESTS}/backend-deployment.yaml"
+kctl apply -f "${K8S_MANIFESTS}/temporal-worker-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/frontend-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/asr-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/asr-service.yaml"
@@ -190,6 +194,7 @@ kctl apply -f "${K8S_MANIFESTS}/backend-pdb.yaml"
 # (sed replaces localhost:5000/backend:* with the new versioned tag).
 # The rollout restart triggers the new image to roll out.
 kctl rollout restart deployment/backend -n zeroqwait
+kctl rollout restart deployment/temporal-worker -n zeroqwait
 
 echo "==> Pruning production image tags (retain last 10 per service)"
 sudo env \
@@ -202,6 +207,7 @@ echo "==> Waiting for frontend and backend rollouts"
 kctl rollout status deployment/frontend -n zeroqwait --timeout=300s
 # Pre-built image startup: ~2 min (model warm-up). 5 min ceiling is sufficient.
 kctl rollout status deployment/backend -n zeroqwait --timeout=300s
+kctl rollout status deployment/temporal-worker -n zeroqwait --timeout=300s
 
 echo "==> Production deployment successful"
 echo "    Site: https://zeroqwait.com"

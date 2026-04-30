@@ -12,6 +12,9 @@ resources:
   - postgres-statefulset.yaml
   - redis-statefulset.yaml
   - redis-service.yaml
+  - temporal-configmap.yaml
+  - temporal-deployment.yaml
+  - temporal-worker-deployment.yaml
   - backend-deployment.yaml
   - frontend-deployment.yaml
   - asr-deployment.yaml

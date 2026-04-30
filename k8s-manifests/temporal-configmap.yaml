@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-config
+  namespace: zeroqwait
+data:
+  development-sql.yaml: |
+    system.forceSearchAttributesCacheRefreshOnRead:
+      - value: true

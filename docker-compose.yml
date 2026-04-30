@@ -124,6 +124,26 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_SEEDS=db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PWD=zeroqwait_dev
+      - DBNAME=temporal
+      - VISIBILITY_DBNAME=temporal_visibility
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+    ports:
+      - "${TEMPORAL_HOST_PORT:-7233}:7233"
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - temporal
+    restart: unless-stopped
+
   temporal-worker:
     build: ./backend
     command: ["python", "temporal_worker.py"]
@@ -136,6 +156,10 @@ services:
       - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-temporal:7233}
       - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
       - TEMPORAL_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-zeroqwait-agent-brain}
+      - TEMPORAL_BOOTSTRAP_SCHEDULES=${TEMPORAL_BOOTSTRAP_SCHEDULES:-true}
+      - TEMPORAL_MORNING_BRIEFING_CRON=${TEMPORAL_MORNING_BRIEFING_CRON:-0 8 * * *}
+      - TEMPORAL_EVENING_WRAP_UP_CRON=${TEMPORAL_EVENING_WRAP_UP_CRON:-0 20 * * *}
+      - TEMPORAL_BRIEFING_TIMEZONE=${TEMPORAL_BRIEFING_TIMEZONE:-UTC}
       - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
       - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
       - LLM_PROVIDER=${LLM_PROVIDER:-nvidia}
@@ -147,6 +171,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      temporal:
+        condition: service_started
     profiles:
       - temporal
     restart: unless-stopped

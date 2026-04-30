@@ -121,6 +121,9 @@ echo ""
 # ── Core services ─────────────────────────────────────────────────────────
 echo -e "${BLUE}[7/9] Deploying backend, frontend, ASR, TTS...${NC}"
 sudo kubectl apply -f "$K8S_MANIFESTS/backend-deployment.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/temporal-configmap.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/temporal-deployment.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/temporal-worker-deployment.yaml"
 sudo kubectl apply -f "$K8S_MANIFESTS/frontend-deployment.yaml"
 sudo kubectl apply -f "$K8S_MANIFESTS/asr-deployment.yaml"
 sudo kubectl apply -f "$K8S_MANIFESTS/asr-service.yaml"
@@ -142,6 +145,10 @@ echo ""
 echo -e "${BLUE}Waiting for deployments to become available...${NC}"
 sudo kubectl wait --for=condition=available --timeout=300s deployment/backend  -n $NAMESPACE 2>/dev/null \
     || echo -e "${YELLOW}  ⚠  backend still starting (startup probe takes ~2min)${NC}"
+sudo kubectl wait --for=condition=available --timeout=300s deployment/temporal -n $NAMESPACE 2>/dev/null \
+    || echo -e "${YELLOW}  ⚠  temporal still starting${NC}"
+sudo kubectl wait --for=condition=available --timeout=300s deployment/temporal-worker -n $NAMESPACE 2>/dev/null \
+    || echo -e "${YELLOW}  ⚠  temporal-worker still starting${NC}"
 sudo kubectl wait --for=condition=available --timeout=120s  deployment/frontend -n $NAMESPACE 2>/dev/null \
     || echo -e "${YELLOW}  ⚠  frontend still starting${NC}"
 
