@@ -177,6 +177,29 @@ services:
       - temporal
     restart: unless-stopped
 
+  # ─── Live shop simulation ────────────────────────────────────────────────────
+  # Simulates owner, 2 barbers, and a stream of customers against the real API.
+  # Watch the live queue in the browser:  http://localhost:3000
+  # Watch the terminal dashboard:         docker compose logs -f simulation
+  simulation:
+    build:
+      context: ./simulation
+    environment:
+      - BASE_URL=http://backend:8000
+      - SHOP_NAME=ZeroQ Demo Cuts
+      - CUSTOMER_ARRIVAL_MIN=20
+      - CUSTOMER_ARRIVAL_MAX=45
+      - EMPLOYEE_CALL_MIN=25
+      - EMPLOYEE_CALL_MAX=55
+      - OWNER_QUERY_MIN=60
+      - OWNER_QUERY_MAX=120
+      - TIME_COMPRESSION=2
+      - MAX_QUEUE_SIZE=10
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
   # React Frontend
   frontend:
     build:
