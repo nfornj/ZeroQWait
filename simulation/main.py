@@ -61,6 +61,21 @@ MAX_QUEUE_SIZE = int(os.getenv("MAX_QUEUE_SIZE", "10"))
 SHIFT_DURATION_MINUTES = float(os.getenv("SHIFT_DURATION_MINUTES", "480"))
 SICK_DAY_CHANCE = float(os.getenv("SICK_DAY_CHANCE", "0.15"))
 
+# Shop operating hours (real wall clock — all actor loops obey these)
+SHOP_OPEN_HOUR  = int(os.getenv("SHOP_OPEN_HOUR",  "9"))   # 09:00
+SHOP_CLOSE_HOUR = int(os.getenv("SHOP_CLOSE_HOUR", "0"))   # 0 = midnight
+
+# Surge management — queue depth thresholds for auto walk-in control
+SURGE_THRESHOLD = int(os.getenv("SURGE_THRESHOLD", "7"))   # waiting → block walk-ins
+SURGE_RESUME    = int(os.getenv("SURGE_RESUME",    "4"))   # waiting → re-open walk-ins
+
+# Walk-in vs pre-booked appointment split (0.0 = all appointments, 1.0 = all walk-ins)
+WALKIN_RATIO    = float(os.getenv("WALKIN_RATIO", "0.6"))
+
+# Customer cancellations — impatient customers abandon the queue
+CANCEL_CHECK_INTERVAL = float(os.getenv("CANCEL_CHECK_INTERVAL", "45"))  # seconds between scans
+CANCEL_CHANCE         = float(os.getenv("CANCEL_CHANCE",         "0.12")) # per waiting customer
+
 # ─── Customer names ───────────────────────────────────────────────────────────
 
 FIRST_NAMES = [
@@ -89,6 +104,10 @@ OWNER_QUERIES = [
     "What's the busiest hour we've had so far today?",
     "Any issues I should know about?",
     "How are we doing compared to yesterday?",
+    "We're getting a surge in walk-ins — should I call in a third barber?",
+    "A few customers just cancelled. What's our cancellation trend today?",
+    "What's the current wait time for a new walk-in customer right now?",
+    "Are walk-ins suspended due to surge? What's the queue depth?",
 ]
 
 PAYMENT_METHODS = ["cash", "card", "contactless", "cash", "card"]  # weighted toward card/cash
@@ -106,6 +125,8 @@ class Actor:
     user_id: Optional[int] = None
     on_sick_day: bool = False
     clocked_in: bool = False
+    svc_time_min: float = 20.0  # simulated minutes per service (lower bound)
+    svc_time_max: float = 30.0  # simulated minutes per service (upper bound)
 
 
 @dataclass
@@ -116,10 +137,13 @@ class SimState:
     queue_items: list = field(default_factory=list)
     events: list = field(default_factory=list)
     shop_closed_today: bool = False  # True if today is a registered close day
+    walkins_open: bool = True        # False during a queue surge
+    in_surge: bool = False           # True when waiting >= SURGE_THRESHOLD
     stats: dict = field(default_factory=lambda: {
         "customers_served": 0,
         "customers_waiting": 0,
         "customers_today": 0,
+        "cancellations_today": 0,
         "revenue_today": 0.0,
         "payments_processed": 0,
         "owner_queries": 0,
@@ -415,6 +439,30 @@ async def _check_today_closed(client: httpx.AsyncClient) -> None:
         pass
 
 
+# ─── Shop-hours helpers ───────────────────────────────────────────────────────
+
+def _shop_is_open() -> bool:
+    """Return True if the shop is within operating hours (real wall clock)."""
+    h = datetime.now().hour
+    if SHOP_CLOSE_HOUR == 0:  # 0 = midnight — open until end of day
+        return SHOP_OPEN_HOUR <= h
+    return SHOP_OPEN_HOUR <= h < SHOP_CLOSE_HOUR
+
+
+def _seconds_until_open() -> float:
+    """Seconds from now until the shop next opens. Returns 0.0 if already open."""
+    import datetime as dt_mod
+    if _shop_is_open():
+        return 0.0
+    now = datetime.now()
+    if now.hour < SHOP_OPEN_HOUR:
+        next_open = now.replace(hour=SHOP_OPEN_HOUR, minute=0, second=0, microsecond=0)
+    else:
+        tomorrow = now.date() + dt_mod.timedelta(days=1)
+        next_open = dt_mod.datetime(tomorrow.year, tomorrow.month, tomorrow.day, SHOP_OPEN_HOUR)
+    return max((next_open - now).total_seconds(), 0.0)
+
+
 # ─── Actor: Customer ──────────────────────────────────────────────────────────
 
 
@@ -585,6 +633,142 @@ async def employee_loop(client: httpx.AsyncClient, emp: Actor) -> None:
         await asyncio.sleep(delay)
 
 
+# ─── Actor: Surge Monitor ─────────────────────────────────────────────────────
+
+
+async def surge_monitor_loop(client: httpx.AsyncClient, owner: Actor) -> None:
+    """Watch queue depth; block walk-ins + notify owner via AI on surge."""
+    await asyncio.sleep(30)
+    while STATE.running:
+        if not _shop_is_open() or STATE.shop_closed_today:
+            await asyncio.sleep(30)
+            continue
+
+        waiting = len([i for i in STATE.queue_items if i["status"] == "waiting"])
+
+        if waiting >= SURGE_THRESHOLD and not STATE.in_surge:
+            STATE.in_surge = True
+            STATE.walkins_open = False
+            STATE.log(
+                f"⚡ SURGE — {waiting} waiting! Walk-ins suspended automatically.",
+                "bold red",
+            )
+            try:
+                await _request(
+                    client, "POST", "/api/v2/agent/chat",
+                    token=owner.token,
+                    json={
+                        "message": (
+                            f"ALERT: Queue surge — {waiting} customers waiting right now. "
+                            "Walk-ins have been automatically suspended. "
+                            "Should I call in a third barber?"
+                        ),
+                        "shop_id": STATE.shop_id,
+                    },
+                )
+                STATE.log("📲 AI agent notified owner of surge", "bold yellow")
+                STATE.stats["owner_queries"] += 1
+            except Exception:
+                pass
+
+        elif waiting <= SURGE_RESUME and STATE.in_surge:
+            STATE.in_surge = False
+            STATE.walkins_open = True
+            STATE.log(
+                f"✅ Surge cleared — {waiting} waiting. Walk-ins re-opened.",
+                "bold green",
+            )
+            try:
+                await _request(
+                    client, "POST", "/api/v2/agent/chat",
+                    token=owner.token,
+                    json={
+                        "message": (
+                            f"Surge resolved — only {waiting} customers waiting now. "
+                            "Walk-ins have been re-opened automatically."
+                        ),
+                        "shop_id": STATE.shop_id,
+                    },
+                )
+                STATE.stats["owner_queries"] += 1
+            except Exception:
+                pass
+
+        await asyncio.sleep(10)
+
+
+# ─── Actor: Cancellations ─────────────────────────────────────────────────────
+
+
+async def cancellation_loop(client: httpx.AsyncClient, owner: Actor) -> None:
+    """Impatient customers abandon the queue; rate doubles during a surge."""
+    await asyncio.sleep(60)
+    while STATE.running:
+        if _shop_is_open() and not STATE.shop_closed_today:
+            waiting = [i for i in STATE.queue_items if i["status"] == "waiting"]
+            # Higher abandonment during surge (longer waits)
+            effective_chance = CANCEL_CHANCE * (2.0 if STATE.in_surge else 1.0)
+            for item in waiting:
+                if random.random() < effective_chance:
+                    item_id = item.get("id")
+                    name = item.get("customer_name", "Customer")
+                    try:
+                        await _request(
+                            client, "PATCH", f"/api/queues/items/{item_id}/status",
+                            params={"new_status": "cancelled"},
+                        )
+                        STATE.log(
+                            f"❌ {name} left the queue — wait too long"
+                            + (" (surge)" if STATE.in_surge else ""),
+                            "dim red",
+                        )
+                        STATE.stats["cancellations_today"] += 1
+                    except APIError:
+                        pass
+        await asyncio.sleep(random.uniform(CANCEL_CHECK_INTERVAL * 0.5, CANCEL_CHECK_INTERVAL * 1.5))
+
+
+# ─── Midnight reset ───────────────────────────────────────────────────────────
+
+
+async def midnight_reset_loop(
+    client: httpx.AsyncClient, owner: Actor, employees: list,
+) -> None:
+    """At midnight: reset daily stats, re-check close days, re-roll sick days."""
+    while STATE.running:
+        import datetime as dt_mod
+        now = datetime.now()
+        tomorrow = (now + dt_mod.timedelta(days=1)).replace(
+            hour=0, minute=0, second=5, microsecond=0
+        )
+        await asyncio.sleep((tomorrow - now).total_seconds())
+        if not STATE.running:
+            return
+
+        STATE.log("🌙 Midnight — resetting daily stats for the new day", "bold blue")
+        STATE.stats["customers_served"] = 0
+        STATE.stats["customers_today"] = 0
+        STATE.stats["cancellations_today"] = 0
+        STATE.stats["revenue_today"] = 0.0
+        STATE.stats["payments_processed"] = 0
+        STATE.stats["owner_queries"] = 0
+        STATE.stats["start"] = datetime.now()
+        STATE.shop_closed_today = False
+        STATE.in_surge = False
+        STATE.walkins_open = True
+
+        await _check_today_closed(client)
+        await _register_upcoming_holidays(client, owner)
+
+        for emp in employees:
+            was_sick = emp.on_sick_day
+            emp.on_sick_day = random.random() < SICK_DAY_CHANCE
+            if emp.on_sick_day:
+                STATE.log(f"🤒 {emp.display_name} called in sick today!", "bold red")
+            elif was_sick:
+                STATE.log(f"👷 {emp.display_name} is back from sick day", "green")
+
+
 # ─── Actor: Owner ─────────────────────────────────────────────────────────────
 
 
@@ -719,13 +903,16 @@ def _build_dashboard() -> Layout:
     if not active_items:
         q_table.add_row("—", "[dim]Queue empty[/dim]", "—", "[dim]—[/dim]", "[dim]—[/dim]")
 
+    surge_badge = "  [bold red blink]⚡ SURGE — WALK-INS CLOSED[/bold red blink]" if STATE.in_surge else ""
     stats_line = (
         f"[cyan]Today[/cyan]: {STATE.stats['customers_today']} arrivals  "
         f"[green]{STATE.stats['customers_served']} served[/green]  "
+        f"[red]{STATE.stats['cancellations_today']} cancelled[/red]  "
         f"[bright_white]{STATE.stats['payments_processed']} payments[/bright_white]  "
         f"[yellow]${STATE.stats['revenue_today']:.2f} revenue[/yellow]  "
         f"[magenta]{STATE.stats['owner_queries']} AI queries[/magenta]"
         + ("  [bold red]CLOSED TODAY[/bold red]" if STATE.shop_closed_today else "")
+        + surge_badge
     )
     layout["queue"].update(Panel(
         q_table,
@@ -746,16 +933,18 @@ def _build_dashboard() -> Layout:
     ))
 
     # ── Footer ──
+    shop_status   = "🟢 OPEN" if (_shop_is_open() and not STATE.shop_closed_today) else "🔴 CLOSED"
+    walkin_status = "🚶 Walk-ins: OPEN" if STATE.walkins_open else "🚫 Walk-ins: SUSPENDED"
     layout["footer"].update(Panel(
         Text(
-            f"Ctrl+C to stop  │  "
+            f"{shop_status}  │  {walkin_status}  │  "
             f"Waiting: {STATE.stats['customers_waiting']}  │  "
+            f"Cancelled: {STATE.stats['cancellations_today']}  │  "
             f"Served: {STATE.stats['customers_served']}  │  "
-            f"Payments: {STATE.stats['payments_processed']}  │  "
             f"Revenue: ${STATE.stats['revenue_today']:.2f}  │  "
-            f"TIME_COMPRESSION={TIME_COMPRESSION}x  │  "
-            f"SICK_DAY_CHANCE={SICK_DAY_CHANCE:.0%}  │  "
-            f"Watch → http://localhost:3000",
+            f"Hours: {SHOP_OPEN_HOUR:02d}:00–00:00  │  "
+            f"Compression={TIME_COMPRESSION}x  │  "
+            f"http://localhost:3000",
             justify="center",
             style="dim",
         ),
@@ -808,8 +997,10 @@ async def main() -> None:
         role="shop_owner",
     )
     employees = [
-        Actor("Marcus", "marcus.barber@zeroqwait.demo", "ZeroQDemo2025!", "employee"),
-        Actor("Elena",  "elena.barber@zeroqwait.demo",  "ZeroQDemo2025!", "employee"),
+        Actor("Marcus", "marcus.barber@zeroqwait.demo", "ZeroQDemo2025!", "employee",
+              svc_time_min=24.0, svc_time_max=26.0),   # methodical — 24–26 sim-min per cut
+        Actor("Elena",  "elena.barber@zeroqwait.demo",  "ZeroQDemo2025!", "employee",
+              svc_time_min=16.0, svc_time_max=18.0),   # quick hands — 16–18 sim-min per cut
     ]
 
     async with httpx.AsyncClient() as client:
@@ -827,6 +1018,9 @@ async def main() -> None:
             asyncio.create_task(employee_loop(client, employees[1])),
             asyncio.create_task(owner_loop(client, owner)),
             asyncio.create_task(queue_poller(client)),
+            asyncio.create_task(surge_monitor_loop(client, owner)),
+            asyncio.create_task(cancellation_loop(client, owner)),
+            asyncio.create_task(midnight_reset_loop(client, owner, employees)),
         ]
 
         try:

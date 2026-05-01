@@ -189,12 +189,21 @@ services:
       - SHOP_NAME=ZeroQ Demo Cuts
       - CUSTOMER_ARRIVAL_MIN=20
       - CUSTOMER_ARRIVAL_MAX=45
-      - EMPLOYEE_CALL_MIN=25
-      - EMPLOYEE_CALL_MAX=55
-      - OWNER_QUERY_MIN=60
-      - OWNER_QUERY_MAX=120
-      - TIME_COMPRESSION=2
-      - MAX_QUEUE_SIZE=10
+      - EMPLOYEE_CALL_MIN=5
+      - EMPLOYEE_CALL_MAX=12
+      - OWNER_QUERY_MIN=120
+      - OWNER_QUERY_MAX=240
+      - TIME_COMPRESSION=1
+      - MAX_QUEUE_SIZE=12
+      - SHIFT_DURATION_MINUTES=480
+      - SICK_DAY_CHANCE=0.15
+      - SHOP_OPEN_HOUR=9
+      - SHOP_CLOSE_HOUR=0
+      - SURGE_THRESHOLD=7
+      - SURGE_RESUME=4
+      - WALKIN_RATIO=0.6
+      - CANCEL_CHECK_INTERVAL=45
+      - CANCEL_CHANCE=0.12
     depends_on:
       backend:
         condition: service_started
