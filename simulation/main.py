@@ -4,8 +4,10 @@ ZeroQwait Live Shop Simulation
 ================================
 
 Simulates a real barber shop with:
-  👷 2 barber employees — serve customers in queue
-  👤 Continuous customer arrivals — join queue with random services
+  👷 2 barber employees — clock in, serve customers, clock out after shift; random sick days
+  👤 Continuous customer arrivals — join queue with random services; paused on holidays
+  💳 Checkout + payment — cash / card / contactless logged after every service
+  📅 Holidays — upcoming close days registered; customer arrivals paused on those days
   🏪 1 shop owner — asks the AI agent operational questions every minute
 
 Output: Rich terminal dashboard  (docker compose logs -f simulation)
@@ -19,6 +21,8 @@ Environment variables:
   OWNER_QUERY_MIN/MAX      Seconds between owner AI queries (default: 60/120)
   TIME_COMPRESSION         Seconds per simulated service-minute (default: 2)
   MAX_QUEUE_SIZE           Max simultaneous waiting customers (default: 10)
+  SHIFT_DURATION_MINUTES   Simulated shift length in minutes before clock-out (default: 480 = 8h)
+  SICK_DAY_CHANCE          0.0–1.0 probability each employee calls in sick (default: 0.15)
 """
 
 import asyncio
@@ -52,6 +56,10 @@ OWNER_QUERY_MIN = float(os.getenv("OWNER_QUERY_MIN", "60"))
 OWNER_QUERY_MAX = float(os.getenv("OWNER_QUERY_MAX", "120"))
 TIME_COMPRESSION = float(os.getenv("TIME_COMPRESSION", "2"))
 MAX_QUEUE_SIZE = int(os.getenv("MAX_QUEUE_SIZE", "10"))
+# A full 8-hour shift takes SHIFT_DURATION_MINUTES * TIME_COMPRESSION seconds real-time.
+# At TIME_COMPRESSION=2, 480 min * 2s = 960s (~16 min) before employee clocks out.
+SHIFT_DURATION_MINUTES = float(os.getenv("SHIFT_DURATION_MINUTES", "480"))
+SICK_DAY_CHANCE = float(os.getenv("SICK_DAY_CHANCE", "0.15"))
 
 # ─── Customer names ───────────────────────────────────────────────────────────
 
@@ -83,6 +91,8 @@ OWNER_QUERIES = [
     "How are we doing compared to yesterday?",
 ]
 
+PAYMENT_METHODS = ["cash", "card", "contactless", "cash", "card"]  # weighted toward card/cash
+
 # ─── State ────────────────────────────────────────────────────────────────────
 
 
@@ -94,6 +104,8 @@ class Actor:
     role: str
     token: Optional[str] = None
     user_id: Optional[int] = None
+    on_sick_day: bool = False
+    clocked_in: bool = False
 
 
 @dataclass
@@ -103,11 +115,13 @@ class SimState:
     services: list = field(default_factory=list)
     queue_items: list = field(default_factory=list)
     events: list = field(default_factory=list)
+    shop_closed_today: bool = False  # True if today is a registered close day
     stats: dict = field(default_factory=lambda: {
         "customers_served": 0,
         "customers_waiting": 0,
         "customers_today": 0,
         "revenue_today": 0.0,
+        "payments_processed": 0,
         "owner_queries": 0,
         "start": datetime.now(),
     })
@@ -272,7 +286,7 @@ async def setup(
         STATE.log(f"❌ Queue fetch failed: {exc}", "bold red")
         return False
 
-    # Setup employees
+    # Setup employees — sick-day roll + clock-in
     for emp in employees:
         # Try to add via shop employee endpoint (creates + links in one call)
         try:
@@ -289,14 +303,116 @@ async def setup(
         except APIError:
             pass  # already exists is fine
         # Login the employee regardless
-        if await login(client, emp):
-            STATE.log(f"👷 Barber '{emp.display_name}' ready (id={emp.user_id})", "green")
-        else:
+        if not await login(client, emp):
             STATE.log(f"⚠️  Barber '{emp.display_name}' login failed", "yellow")
+            continue
 
-    STATE.log("🚀 Setup complete — simulation is LIVE!", "bold green")
-    STATE.log(f"   👀 Watch at http://localhost:3000", "bold cyan")
+        # Sick-day lottery
+        if random.random() < SICK_DAY_CHANCE:
+            emp.on_sick_day = True
+            STATE.log(
+                f"🤒 Barber '{emp.display_name}' called in sick today — only one barber on duty!",
+                "bold red",
+            )
+            continue
+
+        # Clock in
+        try:
+            await _request(
+                client, "POST", f"/api/clock-in/{STATE.shop_id}",
+                token=emp.token,
+            )
+            emp.clocked_in = True
+            STATE.log(f"👷 Barber '{emp.display_name}' clocked in (id={emp.user_id})", "green")
+        except APIError as e:
+            if e.status == 400:
+                emp.clocked_in = True  # already clocked in from a previous run
+                STATE.log(f"👷 Barber '{emp.display_name}' already clocked in", "cyan")
+            else:
+                STATE.log(f"⚠️  Clock-in failed for {emp.display_name}: {e}", "yellow")
+
+    # Register upcoming close days (bank holidays, etc.)
+    await _register_upcoming_holidays(client, owner)
+
+    # Check if today is a registered close day
+    await _check_today_closed(client)
+
+    if STATE.shop_closed_today:
+        STATE.log("🔒 Today is a registered CLOSE DAY — no customers will arrive", "bold red")
+    else:
+        STATE.log("🚀 Setup complete — simulation is LIVE!", "bold green")
+        STATE.log(f"   👀 Watch at http://localhost:3000", "bold cyan")
     return True
+
+
+# ─── Holiday helpers ──────────────────────────────────────────────────────────
+
+# Well-known Canadian public holidays (month-day). Adjust for your locale.
+_CANADIAN_HOLIDAYS: list[tuple[int, int, str]] = [
+    (1,  1,  "New Year's Day"),
+    (2,  17, "Family Day"),
+    (4,  18, "Good Friday"),
+    (5,  19, "Victoria Day"),
+    (7,  1,  "Canada Day"),
+    (8,  4,  "Civic Holiday"),
+    (9,  1,  "Labour Day"),
+    (10, 13, "Thanksgiving"),
+    (11, 11, "Remembrance Day"),
+    (12, 25, "Christmas Day"),
+    (12, 26, "Boxing Day"),
+]
+
+
+async def _register_upcoming_holidays(client: httpx.AsyncClient, owner: Actor) -> None:
+    """Register the next 3 upcoming public holidays as shop close days."""
+    today = datetime.now().date()
+    import datetime as dt_mod
+    year = today.year
+    registered = 0
+    for month, day, reason in _CANADIAN_HOLIDAYS:
+        try:
+            holiday = dt_mod.date(year, month, day)
+        except ValueError:
+            continue
+        if holiday < today:
+            # Try next year
+            try:
+                holiday = dt_mod.date(year + 1, month, day)
+            except ValueError:
+                continue
+        if (holiday - today).days > 180:
+            continue  # too far out
+        try:
+            await _request(
+                client, "POST", f"/api/shops/{STATE.shop_id}/close-days",
+                token=owner.token,
+                params={"date_str": str(holiday), "reason": reason},
+            )
+            STATE.log(f"📅 Registered close day: {holiday} — {reason}", "yellow")
+            registered += 1
+            if registered >= 3:
+                break
+        except Exception:
+            pass  # already registered or error — non-fatal
+
+
+async def _check_today_closed(client: httpx.AsyncClient) -> None:
+    """Check if today is listed as a shop close day."""
+    try:
+        close_days: list = await _request(
+            client, "GET", f"/api/shops/{STATE.shop_id}/close-days",
+        )
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        for cd in close_days:
+            if str(cd.get("date", "")).startswith(today_str):
+                STATE.shop_closed_today = True
+                STATE.log(
+                    f"🏖️  Shop is closed today ({cd.get('reason', 'holiday')}) — queue paused",
+                    "bold red",
+                )
+                return
+    except Exception:
+        pass
 
 
 # ─── Actor: Customer ──────────────────────────────────────────────────────────
@@ -306,6 +422,11 @@ async def customer_loop(client: httpx.AsyncClient) -> None:
     """Continuously spawn new customers joining the queue."""
     await asyncio.sleep(3)
     while STATE.running:
+        # Shop closed today (holiday / close day) — no customers arrive
+        if STATE.shop_closed_today:
+            await asyncio.sleep(30)
+            continue
+
         active = [i for i in STATE.queue_items if i["status"] in ("waiting", "being_served")]
         if len(active) >= MAX_QUEUE_SIZE:
             await asyncio.sleep(8)
@@ -347,10 +468,49 @@ async def customer_loop(client: httpx.AsyncClient) -> None:
 
 
 async def employee_loop(client: httpx.AsyncClient, emp: Actor) -> None:
-    """Employee calls next customer, serves them, marks complete."""
+    """Employee shift: clock in → serve customers → checkout+pay → clock out."""
     await asyncio.sleep(6 + random.uniform(0, 5))
+
+    if emp.on_sick_day:
+        # Nothing to do today — the sick-day log was already written in setup
+        return
+
+    shift_seconds = SHIFT_DURATION_MINUTES * TIME_COMPRESSION
+    shift_end = asyncio.get_event_loop().time() + shift_seconds
+
     while STATE.running:
-        if not emp.token:
+        # Clock-out time reached
+        if asyncio.get_event_loop().time() >= shift_end:
+            if emp.clocked_in:
+                try:
+                    await _request(client, "POST", "/api/clock-out", token=emp.token)
+                    emp.clocked_in = False
+                    STATE.log(
+                        f"🏁 Barber '{emp.display_name}' clocked out — shift complete",
+                        "yellow",
+                    )
+                except Exception:
+                    pass
+            # Restart shift cycle (next simulated day)
+            shift_end = asyncio.get_event_loop().time() + shift_seconds
+            STATE.log(
+                f"🌅 Barber '{emp.display_name}' starting next shift",
+                "dim cyan",
+            )
+            try:
+                await _request(
+                    client, "POST", f"/api/clock-in/{STATE.shop_id}",
+                    token=emp.token,
+                )
+                emp.clocked_in = True
+            except APIError as e:
+                if e.status == 400:
+                    emp.clocked_in = True  # already clocked in
+                else:
+                    await asyncio.sleep(15)
+                    continue
+
+        if not emp.token or not emp.clocked_in:
             await asyncio.sleep(5)
             continue
 
@@ -385,12 +545,33 @@ async def employee_loop(client: httpx.AsyncClient, emp: Actor) -> None:
                 token=emp.token,
                 params={"new_status": "completed"},
             )
+
+            # Checkout + payment
+            payment_method = random.choice(PAYMENT_METHODS)
+            tip = round(random.uniform(0, svc_cost * 0.25), 2) if svc_cost > 0 else 0.0
+            total = svc_cost + tip
+            try:
+                await _request(
+                    client, "POST", f"/api/queues/items/{item_id}/checkout",
+                )
+                STATE.log(
+                    f"💳 {cust_name} paid ${total:.2f} ({payment_method})"
+                    + (f" + ${tip:.2f} tip" if tip > 0.5 else ""),
+                    "bright_white",
+                )
+                STATE.stats["payments_processed"] += 1
+            except APIError:
+                STATE.log(
+                    f"💵 {cust_name} paid ${svc_cost:.2f} ({payment_method}) [no checkout endpoint]",
+                    "white",
+                )
+
             STATE.log(
-                f"✅ {emp.display_name} ✓ {cust_name} — {svc_name} (${svc_cost:.0f})",
+                f"✅ {emp.display_name} ✓ {cust_name} — {svc_name} (${total:.2f})",
                 "bright_green",
             )
             STATE.stats["customers_served"] += 1
-            STATE.stats["revenue_today"] += svc_cost
+            STATE.stats["revenue_today"] += total
 
         except APIError as e:
             if e.status in (400, 404):
@@ -541,8 +722,10 @@ def _build_dashboard() -> Layout:
     stats_line = (
         f"[cyan]Today[/cyan]: {STATE.stats['customers_today']} arrivals  "
         f"[green]{STATE.stats['customers_served']} served[/green]  "
-        f"[yellow]${STATE.stats['revenue_today']:.0f} revenue[/yellow]  "
+        f"[bright_white]{STATE.stats['payments_processed']} payments[/bright_white]  "
+        f"[yellow]${STATE.stats['revenue_today']:.2f} revenue[/yellow]  "
         f"[magenta]{STATE.stats['owner_queries']} AI queries[/magenta]"
+        + ("  [bold red]CLOSED TODAY[/bold red]" if STATE.shop_closed_today else "")
     )
     layout["queue"].update(Panel(
         q_table,
@@ -567,10 +750,12 @@ def _build_dashboard() -> Layout:
         Text(
             f"Ctrl+C to stop  │  "
             f"Waiting: {STATE.stats['customers_waiting']}  │  "
-            f"Served today: {STATE.stats['customers_served']}  │  "
+            f"Served: {STATE.stats['customers_served']}  │  "
+            f"Payments: {STATE.stats['payments_processed']}  │  "
             f"Revenue: ${STATE.stats['revenue_today']:.2f}  │  "
             f"TIME_COMPRESSION={TIME_COMPRESSION}x  │  "
-            f"Watch UI → http://localhost:3000",
+            f"SICK_DAY_CHANCE={SICK_DAY_CHANCE:.0%}  │  "
+            f"Watch → http://localhost:3000",
             justify="center",
             style="dim",
         ),
