@@ -2,11 +2,12 @@
 
 import json
 import logging
+import re
 from typing import Any, Dict, Optional, Sequence
 
 from langchain_core.messages import BaseMessage
 
-from .specialist_graph import build_specialist_runnable
+from .specialist_graph import build_specialist_runnable, FastPlanBuilder
 from .tools import booking_tools
 
 logger = logging.getLogger(__name__)
@@ -308,6 +309,71 @@ def _format_receptionist_response(operation: str, result: Dict[str, Any]) -> str
         return str(result["message"])
     return f"The receptionist completed {operation.replace('_', ' ')}."
 
+# ---------------------------------------------------------------------------
+# Fast-plan builder — skips the LLM planner for obvious queue/wait operations.
+# Patterns are matched against the latest human message text.
+# ---------------------------------------------------------------------------
+
+_FAST_LIST_QUEUE_RE = re.compile(
+    r"""
+    \bqueue\s+(?:summary|status|count|length|check|overview|line)\b
+    | \bqueue\s+summary\b
+    | \blist\s+(?:the\s+)?queue\b
+    | \bshow\s+(?:the\s+|me\s+)?(?:the\s+)?queue\b
+    | \bhow\s+many\s+(?:people|customers|are)\b
+    | \bwho(?:'?s|\s+is)\s+waiting\b
+    | \bcurrent\s+queue\b
+    | \bactive\s+queue\b
+    | \bnext\s+(?:customer|operational\s+action)\b
+    | \btoday[''s]*\s+queue\b
+    | \bqueue\s+(?:size|update)\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+_FAST_WAIT_TIME_RE = re.compile(
+    r"""
+    \bwait\s+time\b
+    | \bestimated\s+wait\b
+    | \bhow\s+long\s+(?:will|does|is|it|the)\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _build_receptionist_fast_planner() -> FastPlanBuilder:
+    """Return a fast_plan_builder that bypasses the LLM for common queue/wait-time reads."""
+
+    def fast_plan(messages: Sequence[BaseMessage]) -> Optional[Dict[str, Any]]:
+        if not messages:
+            return None
+        user_text = ""
+        for msg in reversed(list(messages)):
+            if hasattr(msg, "content") and isinstance(msg.content, str) and msg.content.strip():
+                user_text = msg.content
+                break
+        if not user_text:
+            return None
+
+        if _FAST_LIST_QUEUE_RE.search(user_text):
+            return {
+                "operation": "list_queue",
+                "arguments": {},
+                "requires_clarification": False,
+                "rationale": "Queue status or summary request (fast-path, no LLM needed).",
+            }
+        if _FAST_WAIT_TIME_RE.search(user_text):
+            return {
+                "operation": "get_wait_time",
+                "arguments": {},
+                "requires_clarification": False,
+                "rationale": "Wait time request (fast-path, no LLM needed).",
+            }
+        return None
+
+    return fast_plan
+
+
 def create_receptionist_runnable(shop_id: int | None = None):
     if not shop_id:
         raise ValueError("shop_id is required — cannot build the receptionist graph without it")
@@ -320,6 +386,7 @@ def create_receptionist_runnable(shop_id: int | None = None):
         supported_operations=SUPPORTED_OPERATIONS,
         operation_aliases=OPERATION_ALIASES,
         operation_normalizer=_normalize_receptionist_operation,
+        fast_plan_builder=_build_receptionist_fast_planner(),
         executor=_build_receptionist_executor(shop_id),
         formatter=_format_receptionist_response,
     )

@@ -17,6 +17,15 @@ class User(UserBase):
     is_active: bool
     role: UserRole
 
+class UserProfile(DictModel):
+    """Embeddable user summary for related models. Email is Optional to handle
+    system/employee accounts that may not have a valid email on record."""
+    id: int
+    username: str
+    email: Optional[str] = None
+    is_active: bool
+    role: UserRole
+
 # Token schemas
 class Token(DictModel):
     access_token: str

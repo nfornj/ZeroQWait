@@ -330,6 +330,7 @@ def _build_model_from_config(config: ResolvedLLMConfig, *, temperature: float):
             temperature=temperature,
             top_p=float(settings.get("top_p", 0.9)),
             num_gpu=int(settings.get("num_gpu", -1)),
+            timeout=120,
         )
 
     if config.provider == "openai":
@@ -373,6 +374,7 @@ def _build_model_from_config(config: ResolvedLLMConfig, *, temperature: float):
             temperature=temperature,
             max_completion_tokens=int(settings.get("max_tokens", 16384)),
             top_p=float(settings.get("top_p", 1.0)),
+            timeout=120,
         )
 
     raise ValueError(f"Unsupported LLM provider: {config.provider}")

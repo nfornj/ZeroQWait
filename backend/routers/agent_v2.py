@@ -1233,6 +1233,7 @@ async def chat_stream(
             # This keeps compatibility with the sync Postgres checkpointer
             # while still emitting real-time thinking-step events.
             # ----------------------------------------------------------------
+            _GRAPH_STEP_TIMEOUT = 150  # seconds per graph step; prevents indefinite blocking on slow LLMs
             try:
                 update_iter = runnable.stream(
                     initial_state,
@@ -1241,7 +1242,10 @@ async def chat_stream(
                 )
 
                 while True:
-                    update = await asyncio.to_thread(next, update_iter, None)
+                    update = await asyncio.wait_for(
+                        asyncio.to_thread(next, update_iter, None),
+                        timeout=_GRAPH_STEP_TIMEOUT,
+                    )
                     if update is None:
                         break
                     if not isinstance(update, dict):
@@ -1541,6 +1545,10 @@ async def chat_stream(
             yield f"data: {json.dumps(completion_event)}\n\n"
             yield "data: [DONE]\n\n"
 
+        except asyncio.CancelledError:
+            # Client disconnected mid-stream — clean exit, no need to yield [DONE].
+            logger.info("Stream cancelled: client disconnected for shop_id=%s", shop_id)
+            return
         except Exception as e:
             logger.error(f"Stream error: {str(e)}", exc_info=True)
             error_message = str(e) or "Unexpected stream error"
