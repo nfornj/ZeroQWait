@@ -488,6 +488,7 @@ const OwnerDashboardPage: React.FC = () => {
                 content: "",
                 status: "streaming" as const,
                 timestamp: nowIso(),
+                processingStartedAt: nowIso(),
                 retryMessage: messageText,
                 thinkingSteps: [],
                 thinkingComplete: false,
@@ -878,7 +879,14 @@ const OwnerDashboardPage: React.FC = () => {
           setMessages((prev) =>
             prev.map((msg) =>
               msg.id === assistantMessageId
-                ? { ...msg, status: "done", thinkingComplete: true }
+                ? {
+                    ...msg,
+                    status: "done",
+                    thinkingComplete: true,
+                    processingDuration: msg.processingStartedAt
+                      ? Date.now() - Date.parse(msg.processingStartedAt)
+                      : undefined,
+                  }
                 : msg
             )
           );
@@ -929,6 +937,9 @@ const OwnerDashboardPage: React.FC = () => {
                     content: contentEmpty && !hasRichPayload ? (streamErrorDetail || STREAM_RETRY_MESSAGE) : msg.content,
                     status: "error",
                     thinkingComplete: true,
+                    processingDuration: msg.processingStartedAt
+                      ? Date.now() - Date.parse(msg.processingStartedAt)
+                      : undefined,
                   }
                 : msg
             );
@@ -936,7 +947,14 @@ const OwnerDashboardPage: React.FC = () => {
 
           return prev.map((msg) =>
             msg.id === assistantMessageId
-              ? { ...msg, status: streamEndedWithDone || streamTerminalStatus === "completed" ? "done" : msg.status, thinkingComplete: true }
+              ? {
+                  ...msg,
+                  status: streamEndedWithDone || streamTerminalStatus === "completed" ? "done" : msg.status,
+                  thinkingComplete: true,
+                  processingDuration: msg.processingStartedAt
+                    ? Date.now() - Date.parse(msg.processingStartedAt)
+                    : undefined,
+                }
               : msg
           );
         });

@@ -681,6 +681,122 @@ const StatusIndicator: React.FC<{ label: string; brandPrimary: string }> = ({ la
   );
 };
 
+/** Live elapsed-time counter while a response is streaming. */
+const LiveTimer: React.FC<{ startedAt?: string; durationMs?: number; isDone: boolean }> = ({
+  startedAt,
+  durationMs,
+  isDone,
+}) => {
+  const [elapsed, setElapsed] = React.useState<number>(() =>
+    startedAt ? Math.max(0, Date.now() - Date.parse(startedAt)) : 0,
+  );
+
+  useEffect(() => {
+    if (isDone || !startedAt) return;
+    const id = setInterval(() => {
+      setElapsed(Math.max(0, Date.now() - Date.parse(startedAt)));
+    }, 100);
+    return () => clearInterval(id);
+  }, [isDone, startedAt]);
+
+  const ms = isDone ? (durationMs ?? elapsed) : elapsed;
+  const s = (ms / 1000).toFixed(1);
+  return <span>{isDone ? `Processed in ${s}s` : `${s}s`}</span>;
+};
+
+/**
+ * ProcessingBanner — shown ABOVE message content while streaming, and
+ * replaced by a "Processed in X.Xs" caption once done.
+ */
+const ProcessingBanner: React.FC<{
+  externalMessage?: ChatMessage;
+  brandPrimary: string;
+  isStreaming: boolean;
+}> = ({ externalMessage, brandPrimary, isStreaming }) => {
+  const muiTheme = useTheme();
+
+  // Active step label from thinking steps
+  const activeStep = externalMessage?.thinkingSteps?.length
+    ? [...externalMessage.thinkingSteps].reverse().find((s) => s.status === "active" || s.status === "pending")
+    : undefined;
+  const stepLabel = activeStep?.label?.trim() || (isStreaming ? "Thinking" : "");
+
+  if (!isStreaming && !externalMessage?.processingDuration && !externalMessage?.processingStartedAt) {
+    return null;
+  }
+
+  if (isStreaming) {
+    return (
+      <Box
+        sx={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 1.1,
+          px: 1.2,
+          py: 0.8,
+          borderRadius: 999,
+          bgcolor: alpha(brandPrimary, muiTheme.palette.mode === "dark" ? 0.13 : 0.07),
+          border: "1px solid",
+          borderColor: alpha(brandPrimary, 0.15),
+          mb: 0.5,
+        }}
+      >
+        {/* animated dots */}
+        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.45 }}>
+          {[0, 1, 2].map((i) => (
+            <Box
+              key={i}
+              component="span"
+              sx={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                bgcolor: alpha(brandPrimary, 0.85),
+                animation: `agent-status-pulse 1.1s ${i * 0.14}s ease-in-out infinite`,
+              }}
+            />
+          ))}
+        </Box>
+        {/* step label */}
+        <Typography variant="body2" sx={{ fontWeight: 600, color: "text.primary", letterSpacing: "0.01em" }}>
+          {stepLabel}
+        </Typography>
+        {/* live timer */}
+        <Typography
+          variant="caption"
+          sx={{
+            ml: 0.5,
+            fontVariantNumeric: "tabular-nums",
+            color: alpha(muiTheme.palette.text.secondary, 0.85),
+            minWidth: 36,
+            textAlign: "right",
+          }}
+        >
+          <LiveTimer
+            startedAt={externalMessage?.processingStartedAt}
+            durationMs={externalMessage?.processingDuration}
+            isDone={false}
+          />
+        </Typography>
+      </Box>
+    );
+  }
+
+  // Done — show "Processed in X.Xs"
+  return (
+    <Typography
+      variant="caption"
+      sx={{ color: alpha(muiTheme.palette.text.secondary, 0.75), fontVariantNumeric: "tabular-nums" }}
+    >
+      <LiveTimer
+        startedAt={externalMessage?.processingStartedAt}
+        durationMs={externalMessage?.processingDuration}
+        isDone
+      />
+    </Typography>
+  );
+};
+
 const MessageChainOfThought: React.FC<{ brandPrimary: string }> = ({ brandPrimary }) => {
   const muiTheme = useTheme();
   const [isExpanded, setIsExpanded] = useState(true);
@@ -1137,13 +1253,14 @@ const AssistantThreadMessage = React.memo<{
 }>(({ externalMessage, threadMessage, brandPrimary }) => {
   const muiTheme = useTheme();
   const isRunning = threadMessage?.status?.type === "running";
-  const statusLabel = getTransientStatusLabel(externalMessage, isRunning);
+  const isStreaming = externalMessage?.status === "streaming" || isRunning;
   const hasRenderablePayload = hasRenderableMessagePayload(externalMessage);
-  const showChainOfThought = !hasRenderablePayload && hasChainOfThoughtParts(threadMessage);
+  const showChainOfThought = hasChainOfThoughtParts(threadMessage);
   const label = formatAssistantLabel(externalMessage?.agent);
   const initials = getAgentInitials(label);
 
-  if (!hasRenderablePayload && !statusLabel && !showChainOfThought) {
+  // Only return null when there is genuinely nothing to show at all
+  if (!hasRenderablePayload && !isStreaming && !showChainOfThought) {
     return null;
   }
 
@@ -1189,31 +1306,40 @@ const AssistantThreadMessage = React.memo<{
             {label}
           </Typography>
 
-          {statusLabel && !hasRenderablePayload && !showChainOfThought ? (
-            <StatusIndicator label={statusLabel} brandPrimary={brandPrimary} />
-          ) : (
-            <>
-              {hasRenderablePayload || showChainOfThought ? (
-                <Box sx={{ width: "100%", color: "text.primary", pr: { xs: 0.5, sm: 1.5 } }}>
-                  <MessageRichContent
-                    accent={brandPrimary}
-                    role="assistant"
-                    enableChainOfThought={showChainOfThought}
-                    externalMessage={externalMessage}
-                  />
-                </Box>
-              ) : null}
-              {externalMessage?.timestamp && (
-                <Typography variant="caption" sx={{ color: alpha(muiTheme.palette.text.secondary, 0.88) }}>
-                  {formatTimestamp(externalMessage.timestamp)}
-                </Typography>
-              )}
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <MessageBranchPicker />
-                <AssistantActionBar />
-              </Box>
-            </>
+          {/* Processing banner — always shown while streaming, above content */}
+          {isStreaming && (
+            <ProcessingBanner
+              externalMessage={externalMessage}
+              brandPrimary={brandPrimary}
+              isStreaming={isStreaming}
+            />
           )}
+
+          {/* Content area — shown whenever there is renderable payload or chain-of-thought */}
+          {(hasRenderablePayload || showChainOfThought) && (
+            <Box sx={{ width: "100%", color: "text.primary", pr: { xs: 0.5, sm: 1.5 } }}>
+              <MessageRichContent
+                accent={brandPrimary}
+                role="assistant"
+                enableChainOfThought={showChainOfThought}
+                externalMessage={externalMessage}
+              />
+            </Box>
+          )}
+
+          {/* Processing time / timestamp — shown when not streaming */}
+          {!isStreaming && (
+            <ProcessingBanner
+              externalMessage={externalMessage}
+              brandPrimary={brandPrimary}
+              isStreaming={false}
+            />
+          )}
+
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <MessageBranchPicker />
+            <AssistantActionBar />
+          </Box>
         </Box>
       </Box>
     </MessagePrimitive.Root>
