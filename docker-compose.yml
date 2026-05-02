@@ -40,10 +40,25 @@ services:
       - ./backend/static:/app/static
     ports:
       - "${BACKEND_HOST_PORT:-8000}:8000"
-    env_file:
-      - ./backend/.env
     environment:
       - PYTHONUNBUFFERED=1
+      # ── Secrets — sourced from shell env (CI) or project-root .env (local dev) ──
+      - SECRET_KEY=${SECRET_KEY:-change-me-to-a-long-random-string-at-least-32-chars}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - LLM_CONFIG_ENCRYPTION_KEY=${LLM_CONFIG_ENCRYPTION_KEY:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY:-pk_test_placeholder}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
+      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
+      # ── Database ───────────────────────────────────────────────────────────────
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
+      - DB_PORT=${DB_PORT:-5432}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # ── App ────────────────────────────────────────────────────────────────────
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - DB_HOST=db
       - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
@@ -84,10 +99,11 @@ services:
     build:
       context: .
       dockerfile: ./mcps/booking/Dockerfile
-    env_file:
-      - ./backend/.env
     environment:
       - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
       - HOST=0.0.0.0
       - PORT=8890
     depends_on:
@@ -99,10 +115,11 @@ services:
     build:
       context: .
       dockerfile: ./mcps/finance/Dockerfile
-    env_file:
-      - ./backend/.env
     environment:
       - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
       - HOST=0.0.0.0
       - PORT=8891
     depends_on:
@@ -114,10 +131,11 @@ services:
     build:
       context: .
       dockerfile: ./mcps/hr/Dockerfile
-    env_file:
-      - ./backend/.env
     environment:
       - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
       - HOST=0.0.0.0
       - PORT=8892
     depends_on:
@@ -148,12 +166,22 @@ services:
   temporal-worker:
     build: ./backend
     command: ["python", "temporal_worker.py"]
-    env_file:
-      - ./backend/.env
     environment:
       - PYTHONUNBUFFERED=1
+      - SECRET_KEY=${SECRET_KEY:-change-me-to-a-long-random-string-at-least-32-chars}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - LLM_CONFIG_ENCRYPTION_KEY=${LLM_CONFIG_ENCRYPTION_KEY:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
+      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
       - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
+      - DB_PORT=${DB_PORT:-5432}
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-temporal:7233}
       - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
       - TEMPORAL_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-zeroqwait-agent-brain}

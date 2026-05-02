@@ -138,7 +138,7 @@ No GPU required on your machine.
 
 1. Go to https://build.nvidia.com and create a free account.
 2. Click your profile → **API Keys** → **Generate API Key**.
-3. Copy the key and paste it into `backend/.env`:
+3. Copy the key and paste it into `.env`:
    ```
    LLM_PROVIDER=nvidia
    NVIDIA_MODEL=meta/llama-3.1-8b-instruct
@@ -158,7 +158,7 @@ This runs the AI model entirely on your machine. Requires ~8 GB VRAM (NVIDIA GPU
    ollama pull qwen3:14b-q4_K_M
    ```
 3. Make sure Ollama is running (it starts automatically on most systems after install).
-4. In `backend/.env`, set:
+4. In `.env`, set:
    ```
    LLM_PROVIDER=ollama
    OLLAMA_URL=http://host.docker.internal:11434
@@ -172,7 +172,7 @@ This runs the AI model entirely on your machine. Requires ~8 GB VRAM (NVIDIA GPU
 
 If you only want to explore the UI and queue management without AI chat working:
 
-- Leave `NVIDIA_API_KEY` blank in `backend/.env`.
+- Leave `NVIDIA_API_KEY` blank in `.env`.
 - The app will start and the dashboard will work.
 - AI chat responses will fail or return an error — everything else (queues, employees, services) works fine.
 
@@ -355,7 +355,7 @@ docker compose logs backend --tail=50
 ```
 
 Common causes:
-- **`backend/.env` not found** — make sure you completed Step 2 and the file exists at `backend/.env`.
+- **`.env` not found** — make sure you completed Step 2 and the file exists at `.env` in the project root.
 - **Database not ready** — wait 30 seconds and try `docker compose restart backend`.
 - **Port 8000 already in use** — something else is using port 8000. Stop that service or add `BACKEND_HOST_PORT=8001` to a `.env` file in the project root.
 
@@ -374,7 +374,7 @@ If the backend is healthy but frontend fails, try a hard reload in the browser (
 
 ### AI chat returns an error
 
-- For NVIDIA: make sure `NVIDIA_API_KEY` in `backend/.env` is a valid key (not the placeholder).
+- For NVIDIA: make sure `NVIDIA_API_KEY` in `.env` is a valid key (not the placeholder).
 - For Ollama: make sure Ollama is running (`ollama list` should show the model).
 - Restart backend after fixing the env: `docker compose restart backend`.
 
@@ -387,7 +387,7 @@ docker compose restart simulation
 
 ### Port conflicts (something already using 3000, 8000, 5432, etc.)
 
-Add a `.env` file in the **project root** (not `backend/.env`) to override host ports:
+Add a `.env` file in the **project root** (if you don't have one already) to override host ports:
 ```bash
 cat > .env << 'EOF'
 FRONTEND_HOST_PORT=3001
@@ -444,8 +444,8 @@ Browser (http://localhost:3000)
   LOCAL_UID=1000
   LOCAL_GID=1000
   ```
-- File paths use backslashes on Windows (`backend\.env`), but inside Docker everything is Linux.
-- The `cat > file << 'EOF'` syntax does not work in CMD/PowerShell — use a text editor to create `backend/.env` manually.
+- File paths use backslashes on Windows (`backend\.env` for Python files inside `backend/`), but inside Docker everything is Linux.
+- The `cat > file << 'EOF'` syntax does not work in CMD/PowerShell — use a text editor to create `.env` in the project root manually.
 
 ---
 
