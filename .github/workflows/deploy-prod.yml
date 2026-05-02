@@ -38,17 +38,28 @@ jobs:
           fi
           sudo sh -c 'command -v kubectl || command -v k3s'
 
-      - name: Ensure local Docker registry is running
+      - name: Log in to GitHub Container Registry
         run: |
-          if ! curl -fs http://localhost:5000/v2/ >/dev/null 2>&1; then
-            echo "Local registry not running — starting it"
-            sudo docker run -d --restart=always --name local-registry -p 5000:5000 registry:2
-            sleep 2
-            curl -fs http://localhost:5000/v2/ >/dev/null || { echo "ERROR: registry failed to start"; exit 1; }
-            echo "Local registry started"
-          else
-            echo "Local registry already running"
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "Logged in to ghcr.io as ${{ github.actor }}"
+
+      - name: Configure K3s to pull from ghcr.io
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          REGISTRY_CONFIG="/etc/rancher/k3s/registries.yaml"
+          if [[ -z "${GHCR_TOKEN:-}" ]]; then
+            echo "GHCR_TOKEN secret not set — skipping K3s auth config."
+            echo "Ensure ghcr.io packages are set to Public visibility in GitHub."
+            exit 0
           fi
+          sudo mkdir -p /etc/rancher/k3s
+          printf 'configs:\n  "ghcr.io":\n    auth:\n      username: nfornj\n      password: "%s"\n' "${GHCR_TOKEN}" | sudo tee "${REGISTRY_CONFIG}" > /dev/null
+          echo "K3s registries.yaml written — restarting K3s to apply"
+          sudo systemctl restart k3s
+          sleep 15
+          sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes
+          echo "K3s registry config applied successfully"
 
       # ─── Apply k8s backend-secret from GitHub Secrets ─────────────────────
       # This is the authoritative source for all credentials.

@@ -38,7 +38,7 @@ spec:
         command: ['sh', '-c', 'until nc -z temporal.zeroqwait.svc.cluster.local 7233; do echo waiting for temporal; sleep 2; done;']
       containers:
       - name: temporal-worker
-        image: localhost:5000/prod/backend:v20260429092027-30a8ac4
+        image: ghcr.io/nfornj/backend:v20260429092027-30a8ac4
         command: ["python", "temporal_worker.py"]
         envFrom:
         - configMapRef:
