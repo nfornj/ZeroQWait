@@ -67,6 +67,30 @@ _ACTION_CATALOG: Dict[str, Dict[str, str]] = {
         "urgency": "normal",
         "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
     },
+    "leave_request": {
+        "policy_key": "approval.leave_request",
+        "category": "staffing",
+        "title": "Employee Leave Request",
+        "risk_level": "medium",
+        "urgency": "normal",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
+    "update_service_price": {
+        "policy_key": "approval.update_service_price",
+        "category": "operations",
+        "title": "Update Service Price",
+        "risk_level": "medium",
+        "urgency": "normal",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
+    "apply_discount": {
+        "policy_key": "approval.apply_discount",
+        "category": "finance",
+        "title": "Apply Customer Discount",
+        "risk_level": "medium",
+        "urgency": "normal",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
 }
 
 
@@ -107,6 +131,20 @@ def _summary_for_action(action: str, details: Dict[str, Any]) -> str:
         if refund_amount in (None, ""):
             return f"Refund payment {payment_id}."
         return f"Refund ${float(refund_amount or 0.0):.2f} for payment {payment_id}."
+    if action == "leave_request":
+        employee_name = str(details.get("employee_name") or "An employee")
+        leave_date = str(details.get("leave_date") or details.get("date") or "the requested date")
+        reason = str(details.get("reason") or "")
+        suffix = f" — reason: {reason}" if reason else ""
+        return f"{employee_name} has requested leave on {leave_date}{suffix}."
+    if action == "update_service_price":
+        service_name = str(details.get("service_name") or "a service")
+        new_price = details.get("new_price")
+        return f"Update the price for '{service_name}' to ${float(new_price or 0.0):.2f}."
+    if action == "apply_discount":
+        customer = str(details.get("customer_name") or "a customer")
+        discount = details.get("discount_percent") or details.get("discount_amount")
+        return f"Apply a discount of {discount} for {customer}."
     return "A business action needs a policy decision before the agent can continue."
 
 
@@ -140,6 +178,22 @@ def _rationale_for_action(action: str, details: Dict[str, Any]) -> str:
         if refund_amount in (None, ""):
             return f"Refund payment {payment_id}. Reason: {reason}"
         return f"Refund ${float(refund_amount or 0.0):.2f} for payment {payment_id}. Reason: {reason}"
+    if action == "leave_request":
+        employee_name = str(details.get("employee_name") or "the employee")
+        leave_date = str(details.get("leave_date") or details.get("date") or "the requested date")
+        reason = str(details.get("reason") or "No reason given.")
+        return f"{employee_name} is requesting time off on {leave_date}. Reason: {reason}"
+    if action == "update_service_price":
+        service_name = str(details.get("service_name") or "a service")
+        old_price = details.get("old_price")
+        new_price = details.get("new_price")
+        old_str = f" (currently ${float(old_price):.2f})" if old_price is not None else ""
+        return f"Change the price of '{service_name}'{old_str} to ${float(new_price or 0.0):.2f}."
+    if action == "apply_discount":
+        customer = str(details.get("customer_name") or "a customer")
+        discount = details.get("discount_percent") or details.get("discount_amount")
+        service = str(details.get("service_name") or "their service")
+        return f"Apply a discount of {discount} on {service} for {customer}."
     return "The agent flagged this change as operationally significant."
 
 
@@ -158,6 +212,12 @@ def _impact_for_action(action: str, details: Dict[str, Any]) -> str:
         return "The invoice and payment ledger will update immediately after execution."
     if action == "process_refund":
         return "The payment ledger will be adjusted immediately and the refund cannot be silently ignored by staff or customers."
+    if action == "leave_request":
+        return "The employee's schedule will be marked as leave on the requested date, affecting staffing coverage."
+    if action == "update_service_price":
+        return "All future customers will see and be charged the new price immediately."
+    if action == "apply_discount":
+        return "The discount will be applied to the invoice and will reduce revenue for this transaction."
     return "Shop operations will change immediately after execution."
 
 

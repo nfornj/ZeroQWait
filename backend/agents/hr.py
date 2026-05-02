@@ -22,6 +22,7 @@ SUPPORTED_OPERATIONS = [
     "get_shifts",
     "assign_shift",
     "clock_in_out",
+    "leave_request",
 ]
 
 PLANNER_INSTRUCTIONS = """\
@@ -31,6 +32,7 @@ PLANNER_INSTRUCTIONS = """\
 - get_shifts: use for shift schedules and staffing views; arguments: date(optional), user_id(optional).
 - assign_shift: use when assigning a shift to a known employee id; requires user_id, start_time, end_time, and date. This requires approval.
 - clock_in_out: use for clock-in or clock-out requests; arguments: user_id and action.
+- leave_request: use when an employee asks for time off, sick leave, annual leave, personal day, or vacation; OR when the owner is notified that an employee wants leave. Requires approval. Arguments: employee_name, leave_date (YYYY-MM-DD or descriptive), reason (optional), leave_type (sick/annual/personal/other).
 """
 
 
@@ -97,6 +99,12 @@ def _normalize_hr_operation(operation: str, plan: Dict[str, Any], messages: Sequ
         return "clock_in_out"
     if any(keyword in combined_text for keyword in ("shift", "schedule", "who is on shift", "staffing")):
         return "get_shifts"
+    if any(keyword in combined_text for keyword in (
+        "leave", "day off", "time off", "sick", "vacation", "annual leave",
+        "personal day", "absent", "not coming in", "take friday", "take monday",
+        "request off", "requesting leave", "can i take",
+    )):
+        return "leave_request"
     return "list_employees"
 
 
@@ -161,6 +169,31 @@ def _build_hr_executor(shop_id: int):
             if user_id is None or not action:
                 return {"error": "clock_in_out requires user_id and action"}
             return hr_tools.clock_in_out(shop_id, user_id, action)
+        if operation == "leave_request":
+            employee_name = _optional_str(arguments.get("employee_name") or arguments.get("name"))
+            leave_date = _optional_str(
+                arguments.get("leave_date") or arguments.get("date") or arguments.get("start_date")
+            )
+            reason = _optional_str(arguments.get("reason")) or "No reason provided"
+            leave_type = _optional_str(arguments.get("leave_type")) or "leave"
+            if not employee_name:
+                return {"error": "leave_request requires employee_name"}
+            if not leave_date:
+                return {"error": "leave_request requires leave_date"}
+            return {
+                "requires_approval": True,
+                "action": "leave_request",
+                "details": {
+                    "employee_name": employee_name,
+                    "leave_date": leave_date,
+                    "leave_type": leave_type,
+                    "reason": reason,
+                },
+                "message": (
+                    f"{employee_name}'s {leave_type} request for {leave_date} has been forwarded to you for approval. "
+                    "Please approve or deny this request in your Agent Inbox."
+                ),
+            }
         return {"error": f"Unsupported HR operation: {operation}"}
 
     return executor
@@ -189,6 +222,8 @@ def _format_hr_response(operation: str, result: Dict[str, Any]) -> str:
         return f"I found {len(shifts)} shift(s):\n" + "\n".join(lines)
     if result.get("message"):
         return str(result["message"])
+    if operation == "leave_request":
+        return "The leave request has been forwarded for your approval — check the Agent Inbox."
     return f"The HR specialist completed {operation.replace('_', ' ')}."
 
 def create_hr_runnable(shop_id: int | None = None):
