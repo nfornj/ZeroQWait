@@ -64,10 +64,10 @@ async def generate_connect_link(shop_id: int, user_id: int, db: Session) -> Conn
         logger.info("Connect token generated for shop %s (expires in %ss)", shop_id, _TOKEN_TTL_SECONDS)
 
     # ── Also store in Redis for fast webhook lookup ───────────────────────────
-    redis_client.setex(
+    redis_client.set(
         f"{_REDIS_PREFIX}{token}",
-        _TOKEN_TTL_SECONDS,
         f"{shop_id}:{user_id}",
+        ttl=_TOKEN_TTL_SECONDS,
     )
 
     # ── Build deep link ───────────────────────────────────────────────────────
