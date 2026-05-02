@@ -455,10 +455,17 @@ def _serialize_checkpoint_messages(state_values: Dict[str, Any]) -> list[Dict[st
             role = "user"
         elif msg_type == "ai":
             role = "assistant"
+        content = str(getattr(message, "content", ""))
+        if not content.strip():
+            continue
+        # Use the message's additional_kwargs timestamp if present; else omit
+        additional = getattr(message, "additional_kwargs", {}) or {}
+        timestamp = additional.get("timestamp") or None
         serialized.append(
             {
                 "role": role,
-                "content": str(getattr(message, "content", "")),
+                "content": content,
+                "timestamp": timestamp,
             }
         )
     return serialized
@@ -1006,12 +1013,10 @@ async def chat_sync(
             "metadata": {"pending_conflict": True},
         }
 
-    _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
-    
     # Build checkpoint config for this tenant
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
     work_context = _create_chat_work_context(shop_id, int(user_id), message)
-    
+
     # Create initial state
     memory_context = _build_memory_context(shop_id, int(user_id), message)
     input_messages = []
@@ -1189,8 +1194,6 @@ async def chat_stream(
                     yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
-
-            _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
 
             # Build checkpoint config
             checkpoint_config = build_checkpoint_config(shop_id, user_id)

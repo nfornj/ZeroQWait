@@ -52,6 +52,37 @@ export const useAgentStream = ({
   const [error, setError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
 
+  // Restore conversation history from the checkpoint when shopId is available
+  // (handles tab switches and page refreshes)
+  const loadedShopIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!shopId || loadedShopIdRef.current === shopId) return;
+    loadedShopIdRef.current = shopId;
+
+    const token = localStorage.getItem("token");
+    fetch(`${apiBaseUrl}/v2/agent/history?shop_id=${shopId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const raw: { role: string; content: string; timestamp?: string | null }[] = data?.messages ?? [];
+        if (raw.length === 0) return;
+        const restored: ChatMessage[] = raw
+          .filter((m) => m.content && m.content.trim())
+          .map((m, i) => ({
+            id: toId(`msg_history_${i}`),
+            role: m.role === "user" ? "user" : ("assistant" as const),
+            content: m.content,
+            status: "done" as const,
+            timestamp: m.timestamp ?? nowIso(),
+          }));
+        setMessages(restored);
+      })
+      .catch(() => {
+        // Non-fatal — messages will just start empty
+      });
+  }, [shopId]);
+
   // ─── Voice / TTS state ────────────────────────────────────────────────────
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
