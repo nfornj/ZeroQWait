@@ -36,7 +36,7 @@ from modules.agent.models import PolicyMode
 from modules.agent.work_repository import AgentWorkRepository
 
 from . import approval_policy
-from .llm_factory import create_planner_model, create_formatter_model
+from .llm_factory import create_planner_model, create_formatter_model, create_ollama_fallback_planner
 from .state import AgentState
 from .tools import booking_tools, finance_tools, hr_tools
 
@@ -354,20 +354,21 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route"]]:
             user_input[:80], intent, elapsed_ms, decision.is_followup, decision.thought_process,
         )
     except Exception as e:
-        logger.warning("classify_intent structured output failed, falling back: %s", e)
-        # Single-shot fallback — bare LLM call with plain text
+        logger.warning("classify_intent primary LLM failed, retrying with Ollama fallback: %s", e)
+        # Retry with local Ollama so a hosted-provider outage doesn't hard-fail classification
         try:
             fallback_prompt = (
                 "Classify this shop owner command into exactly one word: "
                 "booking, finance, hr, crm, or general.\n\n"
                 f"Command: {user_input}\n\nCategory:"
             )
-            resp = llm.invoke([HumanMessage(content=fallback_prompt)])
+            fallback_llm = create_ollama_fallback_planner(temperature=0.1)
+            resp = fallback_llm.invoke([HumanMessage(content=fallback_prompt)])
             raw = str(resp.content).strip().lower()
             intent = raw if raw in {"booking", "finance", "hr", "crm", "general"} else "general"
-            source = "llm_fallback"
+            source = "ollama_fallback"
             elapsed_ms = (time.perf_counter() - started_at) * 1000
-            logger.info("classify_intent fallback: %r → %s in %.1fms", user_input[:80], intent, elapsed_ms)
+            logger.info("classify_intent Ollama fallback: %r → %s in %.1fms", user_input[:80], intent, elapsed_ms)
         except Exception:
             intent = "general"
             source = "error_fallback"

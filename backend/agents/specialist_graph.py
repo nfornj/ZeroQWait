@@ -12,7 +12,7 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
 from . import approval_policy
-from .llm_factory import create_planner_model
+from .llm_factory import create_planner_model, create_ollama_fallback_planner
 
 
 logger = logging.getLogger(__name__)
@@ -227,7 +227,26 @@ def build_specialist_runnable(
         except Exception as error:
             recovered_plan = _recover_specialist_plan(error)
             if recovered_plan is None:
-                raise
+                # Primary LLM failed — retry with local Ollama as fallback
+                logger.warning(
+                    "%s planner primary LLM failed, retrying with Ollama fallback: %s",
+                    agent_name, error,
+                )
+                try:
+                    fallback_llm = create_ollama_fallback_planner(temperature=temperature)
+                    decision = fallback_llm.with_structured_output(SpecialistPlan).invoke(
+                        [SystemMessage(content=planner_prompt)] + messages
+                    )
+                    return _finalize_plan(
+                        decision.model_dump(), messages,
+                        source="ollama_fallback", started_at=started_at,
+                    )
+                except Exception as fallback_error:
+                    logger.error(
+                        "%s planner Ollama fallback also failed: %s",
+                        agent_name, fallback_error,
+                    )
+                    raise error  # re-raise the original error
 
             logger.warning("%s planner recovered from structured-output failure: %s", agent_name, error)
             return _finalize_plan(recovered_plan.model_dump(), messages, source="llm_recovery", started_at=started_at)
