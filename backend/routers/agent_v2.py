@@ -1195,6 +1195,9 @@ async def chat_stream(
                 yield "data: [DONE]\n\n"
                 return
 
+            # Emit immediately so the user sees activity before any DB / LLM work starts.
+            yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Analyzing your request…', 'status': 'active', 'agent': None})}\n\n"
+
             # Build checkpoint config
             checkpoint_config = build_checkpoint_config(shop_id, user_id)
             work_context = _create_chat_work_context(shop_id, int(user_id), message, is_voice=bool(is_voice))

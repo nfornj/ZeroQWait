@@ -230,6 +230,20 @@ const OwnerDashboardPage: React.FC = () => {
   const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
+  // Abort controller for the active stream — aborted when component unmounts
+  // or when a new message is sent while a previous stream is still running.
+  const activeStreamAbortRef = useRef<AbortController | null>(null);
+
+  // Abort any ongoing stream when the component unmounts.
+  useEffect(() => {
+    return () => {
+      if (activeStreamAbortRef.current) {
+        activeStreamAbortRef.current.abort();
+        activeStreamAbortRef.current = null;
+      }
+    };
+  }, []);
+
   // Restore conversation history when the component mounts (covers tab
   // switches and page refreshes).  We check sessionStorage first so that
   // charts / tables generated during the current browser session survive
@@ -283,20 +297,24 @@ const OwnerDashboardPage: React.FC = () => {
       });
   }, [shop?.id, token]);
 
-  // Persist messages (including charts / tables) to sessionStorage so they
-  // survive page refreshes and in-tab navigation.  Only persist when not
-  // currently streaming to avoid saving partial messages.
+  // Persist messages (including charts / tables) to sessionStorage on every
+  // change — including during streaming so thinking steps survive tab switches.
+  // We save a snapshot where any in-progress "streaming" message is marked
+  // "done" so that when it is restored after unmount it renders cleanly.
   useEffect(() => {
-    if (!shop?.id || isStreaming) return;
+    if (!shop?.id || messages.length === 0) return;
     const ssKey = `owner-chat-messages:${shop.id}`;
     try {
-      if (messages.length > 0) {
-        sessionStorage.setItem(ssKey, JSON.stringify(messages));
-      }
+      const toSave = messages.map((m) =>
+        m.status === "streaming"
+          ? { ...m, status: "done" as const, thinkingComplete: true }
+          : m
+      );
+      sessionStorage.setItem(ssKey, JSON.stringify(toSave));
     } catch {
       // sessionStorage full or unavailable — skip silently
     }
-  }, [messages, shop?.id, isStreaming]);
+  }, [messages, shop?.id]);
 
   // ── New chat ────────────────────────────────────────────────────────────
   const [showNewChatDialog, setShowNewChatDialog] = useState(false);
@@ -527,6 +545,14 @@ const OwnerDashboardPage: React.FC = () => {
 
       setIsStreaming(true);
 
+      // Create a fresh AbortController for this stream.  Any previous stream
+      // (e.g. rapid send) is cancelled first.
+      if (activeStreamAbortRef.current) {
+        activeStreamAbortRef.current.abort();
+      }
+      const abortController = new AbortController();
+      activeStreamAbortRef.current = abortController;
+
       let streamEndedWithDone = false;
       let streamTerminalStatus: "completed" | "error" | null = null;
       let streamErrorDetail: string | null = null;
@@ -535,6 +561,7 @@ const OwnerDashboardPage: React.FC = () => {
       try {
         const response = await fetch(`${apiBaseUrl}/v2/agent/chat/stream`, {
           method: "POST",
+          signal: abortController.signal,
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -844,6 +871,20 @@ const OwnerDashboardPage: React.FC = () => {
           queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop.id) }),
         ]);
       } catch (error) {
+        // An AbortError means the component unmounted or the user navigated
+        // away — not a real failure.  The partial state has already been
+        // persisted to sessionStorage by the save effect; just mark done.
+        if (error instanceof DOMException && error.name === "AbortError") {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, status: "done", thinkingComplete: true }
+                : msg
+            )
+          );
+          setIsStreaming(false);
+          return;
+        }
         const detail = normalizeStreamErrorDetail(error, STREAM_RETRY_MESSAGE);
         streamTerminalStatus = "error";
         streamErrorDetail = streamErrorDetail || detail;
