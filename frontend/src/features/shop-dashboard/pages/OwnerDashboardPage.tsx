@@ -34,6 +34,7 @@ import {
   useOwnerPoliciesQuery,
   usePendingApprovalsQuery,
 } from "../../agent-inbox/ownerDashboardQueries";
+import { useApprovalDecisions } from "../../agent-inbox/hooks/useApprovalDecisions";
 import { createAgentChartFromPayload } from "../../agent-inbox/types";
 import type {
   AgentChart,
@@ -41,6 +42,7 @@ import type {
   AgentFile,
   AgentTable,
   ChatMessage,
+  InsightItem,
   PendingApproval,
   ThinkingStep,
 } from "../../agent-inbox/types";
@@ -446,6 +448,46 @@ const OwnerDashboardPage: React.FC = () => {
     [addFeedEvent, queryClient, shop?.id],
   );
 
+  const appendSystemMessage = useCallback(
+    (content: string, _agent?: string) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: toId("msg_system"),
+          role: "system" as const,
+          content,
+          status: "done" as const,
+          timestamp: nowIso(),
+        },
+      ]);
+    },
+    [],
+  );
+
+  const { handleApprovalDecision, isApproving } = useApprovalDecisions({
+    shopId: shop?.id,
+    addFeedEvent,
+    appendSystemMessage,
+    prependInsightItem: (_item: InsightItem) => {},
+    refreshPendingApprovals: async () => {
+      await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.pending(shop?.id) });
+    },
+    refreshBriefing: async () => {
+      await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.briefing(shop?.id) });
+    },
+    refreshFeed: async () => {
+      await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop?.id) });
+    },
+    setError: setDashboardError,
+  });
+
+  const handleApprovalTaskClick = useCallback(
+    (actionId: string) => {
+      const el = document.querySelector(`[data-approval-id="${actionId}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    },
+    [],
+  );
 
   const handleSend = useCallback(
     async ({ text, attachments = [] }: AgentChatSendPayload) => {
@@ -736,6 +778,25 @@ const OwnerDashboardPage: React.FC = () => {
               const exists = prev.some((item) => item.action_id && item.action_id === approval.action_id);
               if (exists) return prev;
               return [approval, ...prev];
+            });
+            // Inject a standalone approval card message into chat
+            setMessages((prev) => {
+              const alreadyExists = prev.some(
+                (m) => m.pendingAction?.action_id && m.pendingAction.action_id === approval.action_id,
+              );
+              if (alreadyExists) return prev;
+              return [
+                ...prev,
+                {
+                  id: toId("msg_approval"),
+                  role: "assistant" as const,
+                  content: "",
+                  status: "done" as const,
+                  timestamp: nowIso(),
+                  pendingAction: approval,
+                  thinkingComplete: true,
+                },
+              ];
             });
             addFeedEvent({
               type: "approval_required",
@@ -1223,6 +1284,8 @@ const OwnerDashboardPage: React.FC = () => {
             isStreaming={isStreaming}
             isUploading={isUploadingDocuments}
             onSend={handleSend}
+            onApprovalDecision={handleApprovalDecision}
+            isApproving={isApproving}
             title="Hello there!"
             subtitle="How can I help you today?"
             promptSections={contextPromptSections}
@@ -1249,6 +1312,7 @@ const OwnerDashboardPage: React.FC = () => {
               <AgentTaskBoard
                 interactableId={`owner-task-board-${shop?.id || "default"}`}
                 externalTasks={taskBoardTasks}
+                onApprovalTaskClick={handleApprovalTaskClick}
               />
             }
           />

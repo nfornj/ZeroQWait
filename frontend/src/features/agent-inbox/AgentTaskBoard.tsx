@@ -39,6 +39,7 @@ export type AgentTaskBoardExternalTask = Omit<AgentTaskBoardTask, "done"> & {
 interface AgentTaskBoardProps {
   interactableId: string;
   externalTasks?: AgentTaskBoardExternalTask[];
+  onApprovalTaskClick?: (actionId: string) => void;
 }
 
 const TASK_BOARD_STATE_SCHEMA = {
@@ -110,6 +111,7 @@ const normalizeExternalTask = (
 const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
   interactableId,
   externalTasks = [],
+  onApprovalTaskClick,
 }) => {
   const theme = useTheme();
 
@@ -271,7 +273,13 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
             {tasks.map((task) => (
               <Box component="li" key={task.id}>
                 <ButtonBase
-                  onClick={() => handleToggleTask(task.id)}
+                  onClick={() => {
+                    if (task.source === "approval" && task.actionId && onApprovalTaskClick) {
+                      onApprovalTaskClick(task.actionId);
+                    } else {
+                      handleToggleTask(task.id);
+                    }
+                  }}
                   sx={{
                     display: "flex",
                     width: "100%",

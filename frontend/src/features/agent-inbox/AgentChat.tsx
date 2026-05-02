@@ -62,8 +62,9 @@ import {
 } from "../../components/AssistantUIAttachment";
 import { Composer } from "../../components/assistant-ui/thread";
 import { resolveAgentChart } from "./types";
-import type { AgentChart, AgentFile, AgentTable, ChatMessage, ResolvedAgentChart } from "./types";
+import type { AgentChart, AgentFile, AgentTable, ChatMessage, PendingApproval, ResolvedAgentChart } from "./types";
 import { useShop } from "../../contexts/ShopContext";
+import ApprovalCard from "./ApprovalCard";
 
 export interface AgentChatPromptItem {
   id: string;
@@ -92,6 +93,8 @@ interface AgentChatProps {
   isStreaming: boolean;
   isUploading?: boolean;
   onSend: (payload: AgentChatSendPayload) => Promise<void>;
+  onApprovalDecision?: (approval: PendingApproval, approved: boolean) => void;
+  isApproving?: boolean;
   title?: string;
   subtitle?: string;
   summaryChips?: AgentChatSummaryChip[];
@@ -1250,17 +1253,20 @@ const AssistantThreadMessage = React.memo<{
   externalMessage?: ChatMessage;
   threadMessage?: ThreadMessage;
   brandPrimary: string;
-}>(({ externalMessage, threadMessage, brandPrimary }) => {
+  onApprovalDecision?: (approval: PendingApproval, approved: boolean) => void;
+  isApproving?: boolean;
+}>(({ externalMessage, threadMessage, brandPrimary, onApprovalDecision, isApproving = false }) => {
   const muiTheme = useTheme();
   const isRunning = threadMessage?.status?.type === "running";
   const isStreaming = externalMessage?.status === "streaming" || isRunning;
   const hasRenderablePayload = hasRenderableMessagePayload(externalMessage);
   const showChainOfThought = hasChainOfThoughtParts(threadMessage);
+  const hasPendingAction = Boolean(externalMessage?.pendingAction);
   const label = formatAssistantLabel(externalMessage?.agent);
   const initials = getAgentInitials(label);
 
   // Only return null when there is genuinely nothing to show at all
-  if (!hasRenderablePayload && !isStreaming && !showChainOfThought) {
+  if (!hasRenderablePayload && !isStreaming && !showChainOfThought && !hasPendingAction) {
     return null;
   }
 
@@ -1324,6 +1330,31 @@ const AssistantThreadMessage = React.memo<{
                 enableChainOfThought={showChainOfThought}
                 externalMessage={externalMessage}
               />
+            </Box>
+          )}
+
+          {/* Inline approval card — rendered when this message carries a pendingAction */}
+          {hasPendingAction && externalMessage?.pendingAction && (
+            <Box
+              data-approval-id={
+                externalMessage.pendingAction.action_id || externalMessage.pendingAction.action
+              }
+            >
+              {onApprovalDecision ? (
+                <ApprovalCard
+                  approval={externalMessage.pendingAction}
+                  isSubmitting={isApproving}
+                  onDecision={onApprovalDecision}
+                />
+              ) : (
+                /* Render resolved/read-only when no handler provided */
+                <ApprovalCard
+                  approval={externalMessage.pendingAction}
+                  isSubmitting={false}
+                  onDecision={() => {}}
+                  resolved
+                />
+              )}
             </Box>
           )}
 
@@ -1406,6 +1437,8 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
   isVoiceEnabled = false,
   isSpeaking = false,
   onToggleVoice,
+  onApprovalDecision,
+  isApproving = false,
 }) => {
   const muiTheme = useTheme();
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -1681,6 +1714,8 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                         externalMessage={externalMessage}
                         threadMessage={message}
                         brandPrimary={brandPrimary}
+                        onApprovalDecision={onApprovalDecision}
+                        isApproving={isApproving}
                       />
                     );
                   }}
@@ -1780,6 +1815,8 @@ const AgentChat: React.FC<AgentChatProps> = ({
   isStreaming,
   isUploading = false,
   onSend,
+  onApprovalDecision,
+  isApproving = false,
   title = "Hello there!",
   subtitle = "How can I help you today?",
   summaryChips = [],
@@ -1952,6 +1989,8 @@ const AgentChat: React.FC<AgentChatProps> = ({
               isVoiceEnabled={isVoiceEnabled}
               isSpeaking={isSpeaking}
               onToggleVoice={onToggleVoice}
+              onApprovalDecision={onApprovalDecision}
+              isApproving={isApproving}
             />
           </Box>
         </Box>
