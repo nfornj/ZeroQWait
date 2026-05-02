@@ -107,20 +107,23 @@ class TestSendPasswordResetEmail:
 
     def test_reset_link_uses_frontend_url(self, capsys):
         """The reset link must use the FRONTEND_URL env variable."""
-        expected_prefix = "https://custom-domain.io/reset-password"
+        frontend_url = "https://custom-domain.io"
         with patch.dict(os.environ, {
             "EMAIL_PASSWORD": "",
-            "FRONTEND_URL": "https://custom-domain.io",
+            "FRONTEND_URL": frontend_url,
         }):
             fn = self._import()
             fn("test@example.com", "tok")
 
         captured = capsys.readouterr()
-        # Assert the reset link line starts with the expected URL prefix.
-        assert any(
-            expected_prefix in line
-            for line in captured.out.splitlines()
-        ), f"Expected reset link with prefix '{expected_prefix}' in output"
+        # The output line contains "Link: <url>" — verify the URL starts with
+        # the configured FRONTEND_URL so we can be sure it uses the right domain.
+        link_lines = [line for line in captured.out.splitlines() if "Link:" in line]
+        assert link_lines, "Expected a 'Link:' line in the output"
+        link_value = link_lines[0].split("Link:")[-1].strip()
+        assert link_value.startswith(frontend_url), (
+            f"Reset link '{link_value}' does not start with FRONTEND_URL '{frontend_url}'"
+        )
 
     def test_starttls_called_on_smtp_success(self):
         """server.starttls() must be called when connecting via SMTP."""

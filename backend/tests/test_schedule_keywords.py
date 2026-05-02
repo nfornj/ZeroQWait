@@ -119,11 +119,12 @@ class TestLooksLikeScheduleIntent:
         assert looks_like_schedule_intent("Hello, how are you?") is False
 
     def test_word_containing_every_not_standalone(self):
-        """'every' inside another word should not be a match due to word boundary."""
-        # 'everytime' is not a word boundary match for 'every' alone
-        # depending on regex, but the \b ensures standalone word match.
-        # "giveRYday" should NOT match
-        assert looks_like_schedule_intent("giveRYday") is False
+        """'every' embedded inside another word (no word boundary after it) should not match.
+
+        'everyone' starts with 'every' but has no word-boundary after 'every',
+        so the regex's trailing \\b prevents a match.
+        """
+        assert looks_like_schedule_intent("everyone here is happy") is False
 
     def test_whitespace_only_returns_false(self):
         assert looks_like_schedule_intent("   ") is False
