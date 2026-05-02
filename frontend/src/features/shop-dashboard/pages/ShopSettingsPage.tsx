@@ -29,7 +29,6 @@ import {
 } from '@mui/material';
 import Header from '../components/Header';
 import TelegramIntegrationCard from '../components/TelegramIntegrationCard';
-import TelegramIntegrationCard from '../components/TelegramIntegrationCard';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';

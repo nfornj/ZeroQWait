@@ -10,28 +10,34 @@ Shop-scoped endpoints:
 Platform endpoints:
   POST   /api/telegram/webhook                      — receive Telegram Bot API updates
   POST   /api/telegram/setup-webhook                — register webhook URL (super_admin only)
+
+Business logic is split into dedicated modules:
+  telegram_onboarding.py   — token generation and deep links
+  telegram_webhook.py      — update processing (start, callbacks, messages)
+  notification_preferences.py — encrypted preference CRUD
 """
 
 import logging
-import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+import telegram_client as tgc
 import telegram_service as tg
 from database import get_db
 from shared.auth_utils import get_current_user
 from modules.shops.models import Shop
-from redis_client import redis_client
+from notification_preferences import (
+    get_telegram_prefs,
+    disconnect_telegram,
+    set_notifications_enabled,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_CONNECT_TOKEN_TTL = 600        # 10 minutes (seconds) — single-use
-_CONNECT_KEY_PREFIX = "zq:tg_connect:"
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -40,7 +46,7 @@ class TelegramStatusResponse(BaseModel):
     configured: bool    # Bot token is set server-side
     connected: bool     # This shop has a linked chat_id
     enabled: bool       # Notifications are enabled
-    chat_id: Optional[str] = None
+    chat_id: Optional[str] = None   # Masked for display (last 6 digits only)
 
 
 class TelegramConnectResponse(BaseModel):
@@ -69,6 +75,13 @@ def _get_owned_shop(shop_id: int, current_user: Any, db: Session) -> Shop:
     return shop
 
 
+def _mask_chat_id(chat_id: Optional[str]) -> Optional[str]:
+    """Show only the last 6 digits of the chat_id for the dashboard display."""
+    if not chat_id:
+        return None
+    return f"...{chat_id[-6:]}" if len(chat_id) > 6 else chat_id
+
+
 # ── Shop-scoped endpoints ─────────────────────────────────────────────────────
 
 @router.get("/shops/{shop_id}/telegram/status", response_model=TelegramStatusResponse)
@@ -78,12 +91,16 @@ async def telegram_status(
     db: Session = Depends(get_db),
 ):
     """Return the current Telegram connection status for a shop."""
-    shop = _get_owned_shop(shop_id, current_user, db)
+    _get_owned_shop(shop_id, current_user, db)  # ownership check
+    prefs = get_telegram_prefs(shop_id, db)
+    if not prefs:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
     return TelegramStatusResponse(
-        configured=tg.is_configured(),
-        connected=bool(shop.telegram_chat_id),
-        enabled=bool(shop.telegram_notifications_enabled),
-        chat_id=shop.telegram_chat_id,
+        configured=tgc.is_configured(),
+        connected=prefs.connected,
+        enabled=prefs.enabled,
+        chat_id=_mask_chat_id(prefs.chat_id),
     )
 
 
@@ -94,29 +111,22 @@ async def telegram_connect(
     db: Session = Depends(get_db),
 ):
     """Generate a one-time connection token and deep-link for the owner."""
-    if not tg.is_configured():
+    if not tgc.is_configured():
         raise HTTPException(
             status_code=503,
-            detail="Telegram integration is not enabled on this server.",
+            detail="Telegram integration is not enabled on this server. "
+                   "Contact your administrator.",
         )
     _get_owned_shop(shop_id, current_user, db)  # ownership check
 
-    token = uuid.uuid4().hex[:20]
-    redis_client.setex(
-        f"{_CONNECT_KEY_PREFIX}{token}",
-        _CONNECT_TOKEN_TTL,
-        f"{shop_id}:{current_user.id}",
-    )
-
-    bot_info = await tg.get_bot_info()
-    bot_username = bot_info.get("username", "ZeroQwaitBot")
-    deep_link = f"https://t.me/{bot_username}?start={token}"
+    from telegram_onboarding import generate_connect_link
+    link = await generate_connect_link(shop_id=shop_id, user_id=current_user.id, db=db)
 
     return TelegramConnectResponse(
-        token=token,
-        bot_username=bot_username,
-        deep_link=deep_link,
-        expires_in=_CONNECT_TOKEN_TTL,
+        token=link.token,
+        bot_username=link.bot_username,
+        deep_link=link.deep_link,
+        expires_in=link.expires_in,
     )
 
 
@@ -127,10 +137,8 @@ async def telegram_disconnect(
     db: Session = Depends(get_db),
 ):
     """Unlink the owner's Telegram account from this shop."""
-    shop = _get_owned_shop(shop_id, current_user, db)
-    shop.telegram_chat_id = None
-    shop.telegram_notifications_enabled = False
-    db.commit()
+    _get_owned_shop(shop_id, current_user, db)
+    disconnect_telegram(shop_id, db)
 
 
 @router.post("/shops/{shop_id}/telegram/toggle", status_code=204)
@@ -141,16 +149,16 @@ async def telegram_toggle(
     db: Session = Depends(get_db),
 ):
     """Enable or disable Telegram notifications for a shop."""
-    shop = _get_owned_shop(shop_id, current_user, db)
-    if not shop.telegram_chat_id:
+    _get_owned_shop(shop_id, current_user, db)
+    prefs = get_telegram_prefs(shop_id, db)
+    if not prefs or not prefs.connected:
         raise HTTPException(
             status_code=400, detail="Connect Telegram before toggling notifications."
         )
-    shop.telegram_notifications_enabled = body.enabled
-    db.commit()
+    set_notifications_enabled(shop_id, body.enabled, db)
 
 
-# ── Webhook endpoint ───────────────────────────────────────────────────────────
+# ── Webhook endpoint ──────────────────────────────────────────────────────────
 
 @router.post("/telegram/webhook", include_in_schema=False)
 async def telegram_webhook(
@@ -158,13 +166,30 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    """Receive updates pushed by Telegram's servers (webhook mode)."""
-    if tg.TELEGRAM_WEBHOOK_SECRET:
-        if x_telegram_bot_api_secret_token != tg.TELEGRAM_WEBHOOK_SECRET:
+    """Receive all updates pushed by Telegram's servers (webhook mode).
+
+    Security: validates X-Telegram-Bot-Api-Secret-Token before processing.
+    Delegates all business logic to telegram_webhook.process_update().
+    Always returns {"ok": True} — Telegram ignores the body but retries on
+    non-2xx status codes, so we must not surface errors here.
+    """
+    secret = tg.TELEGRAM_WEBHOOK_SECRET
+    if secret:
+        if x_telegram_bot_api_secret_token != secret:
             raise HTTPException(status_code=403, detail="Invalid webhook secret")
 
-    update: Dict[str, Any] = await request.json()
-    await _process_update(update, db)
+    try:
+        update = await request.json()
+    except Exception:
+        return {"ok": True}  # malformed body — ignore silently
+
+    try:
+        from telegram_webhook import process_update
+        await process_update(update, db)
+    except Exception as exc:
+        logger.error("Telegram webhook processing error: %s", exc)
+        # Do NOT re-raise — Telegram would retry indefinitely on 5xx
+
     return {"ok": True}
 
 
@@ -177,152 +202,11 @@ async def setup_webhook(
     role = getattr(current_user, "role", "")
     if role != "super_admin":
         raise HTTPException(status_code=403, detail="Super admin only")
-    ok = await tg.set_webhook(body.webhook_url)
+    ok = await tgc.set_webhook(body.webhook_url)
     if not ok:
         raise HTTPException(
-            status_code=500, detail="Failed to register webhook with Telegram"
+            status_code=500, detail="Failed to register webhook with Telegram."
         )
     return {"ok": True, "webhook_url": body.webhook_url}
 
 
-# ── Update processor ──────────────────────────────────────────────────────────
-
-async def _process_update(update: Dict[str, Any], db: Session) -> None:
-    """Route a Telegram update to the correct handler."""
-    message = update.get("message") or update.get("edited_message")
-    if not message:
-        return  # ignore non-message updates (polls, channel posts, etc.)
-
-    chat_id = str(message.get("chat", {}).get("id", ""))
-    text: str = (message.get("text") or "").strip()
-
-    if not chat_id or not text:
-        return
-
-    if text.startswith("/start"):
-        await _handle_start(chat_id, text, db)
-    elif text.lower().startswith("/approve ") or text.lower().startswith("/deny "):
-        await _handle_approval_command(chat_id, text, db)
-    elif text.startswith("/"):
-        await tg.send_message(
-            chat_id,
-            "Unknown command. Just send a message to chat with your AI team!",
-        )
-    else:
-        await _handle_chat_message(chat_id, text, db)
-
-
-async def _handle_start(chat_id: str, text: str, db: Session) -> None:
-    """Handle /start {token} — link owner's Telegram to their shop."""
-    parts = text.split(maxsplit=1)
-    token = parts[1].strip() if len(parts) > 1 else ""
-
-    if not token:
-        await tg.send_message(
-            chat_id,
-            "👋 Welcome to ZeroQwait!\n\nUse the *Connect Telegram* button in your shop settings to link your account.",
-        )
-        return
-
-    key = f"{_CONNECT_KEY_PREFIX}{token}"
-    raw = redis_client.get(key)
-
-    if not raw:
-        await tg.send_message(
-            chat_id,
-            "❌ This link has expired or is invalid.\n\nPlease generate a new one from your shop settings.",
-        )
-        return
-
-    try:
-        raw_str = raw.decode() if isinstance(raw, bytes) else str(raw)
-        shop_id_str, _ = raw_str.split(":", 1)
-        shop_id = int(shop_id_str)
-    except (ValueError, AttributeError):
-        await tg.send_message(chat_id, "❌ Invalid token format. Please try again.")
-        return
-
-    shop = db.query(Shop).filter(Shop.id == shop_id).first()
-    if not shop:
-        await tg.send_message(chat_id, "❌ Shop not found. Please contact support.")
-        return
-
-    shop.telegram_chat_id = chat_id
-    shop.telegram_notifications_enabled = True
-    db.commit()
-    redis_client.delete(key)  # single-use — delete immediately
-
-    await tg.send_message(
-        chat_id,
-        f"✅ *{shop.name}* is now connected to Telegram!\n\n"
-        "You'll receive:\n"
-        "🔔 Approval requests\n"
-        "📊 Business summaries on demand\n"
-        "💬 Chat with your AI operations team\n\n"
-        "Just send me a message anytime.",
-    )
-
-
-async def _handle_approval_command(chat_id: str, text: str, db: Session) -> None:
-    """Handle /approve {action_id} or /deny {action_id}."""
-    shop = db.query(Shop).filter(Shop.telegram_chat_id == chat_id).first()
-    if not shop:
-        await tg.send_message(
-            chat_id,
-            "❌ Account not linked. Reconnect from your shop settings.",
-        )
-        return
-
-    parts = text.split(maxsplit=1)
-    cmd = parts[0].lstrip("/").lower()  # "approve" or "deny"
-    action_id = parts[1].strip() if len(parts) > 1 else ""
-
-    if not action_id:
-        await tg.send_message(
-            chat_id,
-            "Usage:\n`/approve <action_id>`\n`/deny <action_id>`",
-        )
-        return
-
-    approved = cmd == "approve"
-    try:
-        from agents.chat_service import _record_approval_decision
-
-        await _record_approval_decision(shop.id, action_id, approved)
-        verb = "approved ✅" if approved else "rejected ❌"
-        await tg.send_message(chat_id, f"Action has been *{verb}*.")
-    except Exception as exc:
-        logger.error("Telegram approval command error: %s", exc)
-        await tg.send_message(
-            chat_id, "⚠️ Could not process decision. Please use the dashboard."
-        )
-
-
-async def _handle_chat_message(chat_id: str, text: str, db: Session) -> None:
-    """Route an owner's Telegram message to the supervisor agent and reply."""
-    shop = db.query(Shop).filter(Shop.telegram_chat_id == chat_id).first()
-    if not shop:
-        await tg.send_message(
-            chat_id,
-            "❌ Account not linked. Reconnect from your shop settings.",
-        )
-        return
-
-    # Acknowledge quickly so the owner knows the message was received
-    await tg.send_message(chat_id, "⏳ _Thinking…_")
-
-    try:
-        from agents.telegram_agent_bridge import handle_telegram_message
-
-        response = await handle_telegram_message(
-            shop_id=shop.id,
-            owner_user_id=shop.owner_id,
-            message=text,
-        )
-        await tg.send_message(chat_id, response or "_No response generated._")
-    except Exception as exc:
-        logger.error("Telegram chat message error: %s", exc)
-        await tg.send_message(
-            chat_id,
-            "⚠️ Something went wrong. Please try again or use the dashboard.",
-        )

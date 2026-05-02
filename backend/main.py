@@ -81,10 +81,46 @@ async def lifespan(app: FastAPI):
             _conn.execute(_sql_text(
                 "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_notifications_enabled BOOLEAN DEFAULT FALSE"
             ))
+            _conn.execute(_sql_text(
+                "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_chat_id_hash VARCHAR"
+            ))
+            _conn.execute(_sql_text(
+                "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_connect_token VARCHAR"
+            ))
+            _conn.execute(_sql_text(
+                "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_connect_token_expires_at TIMESTAMPTZ"
+            ))
             _conn.commit()
         logger.info("Telegram columns ready on shops table.")
     except Exception as _tg_err:
         logger.warning(f"Telegram column migration warning: {_tg_err}")
+
+    # Create notification_log table (idempotent)
+    try:
+        from database import engine
+        from sqlalchemy import text as _sql_text
+        with engine.connect() as _conn:
+            _conn.execute(_sql_text("""
+                CREATE TABLE IF NOT EXISTS notification_log (
+                    id          BIGSERIAL PRIMARY KEY,
+                    shop_id     INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                    channel     VARCHAR(32) NOT NULL,
+                    event_type  VARCHAR(64) NOT NULL,
+                    message_text TEXT,
+                    status      VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    sent_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """))
+            _conn.execute(_sql_text(
+                "CREATE INDEX IF NOT EXISTS ix_notification_log_shop_id ON notification_log(shop_id)"
+            ))
+            _conn.execute(_sql_text(
+                "CREATE INDEX IF NOT EXISTS ix_notification_log_sent_at ON notification_log(sent_at)"
+            ))
+            _conn.commit()
+        logger.info("notification_log table ready.")
+    except Exception as _nl_err:
+        logger.warning(f"notification_log table migration warning: {_nl_err}")
     
     # Pre-warm the semantic cache (loads sentence-transformer model) before serving requests.
     # This avoids a 60-90s stall on the first chat request after a pod restart.
