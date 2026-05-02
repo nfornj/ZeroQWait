@@ -54,8 +54,9 @@ _QUEUE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
 _FINANCE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:revenue|sales)\b.*\b(?:trend|trends|graph|chart|over\s+time|by\s+day|by\s+date|daily\s+breakdown)\b"),
     re.compile(r"\b(?:trend|trends|graph|chart|over\s+time|by\s+day|by\s+date|daily\s+breakdown)\b.*\b(?:revenue|sales)\b"),
-    re.compile(r"\b(?:today|today's|yesterday|yesterday's|this\s+week|last\s+week|this\s+month|last\s+month|this\s+quarter|last\s+quarter|this\s+year|last\s+year)\b.*\b(?:revenue|sales)\b"),
-    re.compile(r"\b(?:revenue|sales)\b.*\b(?:today|today's|yesterday|yesterday's|this\s+week|last\s+week|this\s+month|last\s+month|this\s+quarter|last\s+quarter|this\s+year|last\s+year)\b"),
+    # weeks? and week's? so "this weeks revenue" / "last week's revenue" also fast-path
+    re.compile(r"\b(?:today|today's|yesterday|yesterday's|this\s+weeks?|this\s+week's?|last\s+weeks?|last\s+week's?|this\s+month|last\s+month|this\s+quarter|last\s+quarter|this\s+year|last\s+year)\b.*\b(?:revenue|sales|earnings)\b"),
+    re.compile(r"\b(?:revenue|sales|earnings)\b.*\b(?:today|today's|yesterday|yesterday's|this\s+weeks?|this\s+week's?|last\s+weeks?|last\s+week's?|this\s+month|last\s+month|this\s+quarter|last\s+quarter|this\s+year|last\s+year)\b"),
     re.compile(r"\b(?:weekly|monthly|quarterly|yearly)\s+(?:revenue|sales)\s+(?:summary|summaries)\b"),
     re.compile(r"\b(?:summary|summaries)\s+of\s+(?:weekly|monthly|quarterly|yearly)\s+(?:revenue|sales)\b"),
 )
@@ -147,13 +148,18 @@ def _classify_intent_fastpath(user_input: str) -> Optional[Tuple[str, str]]:
     if not normalized:
         return None
 
-    for pattern in _QUEUE_OPERATION_PATTERNS:
-        if pattern.search(normalized):
-            return "booking", "fastpath_queue_operation"
+    queue_match = any(p.search(normalized) for p in _QUEUE_OPERATION_PATTERNS)
+    finance_match = any(p.search(normalized) for p in _FINANCE_OPERATION_PATTERNS)
 
-    for pattern in _FINANCE_OPERATION_PATTERNS:
-        if pattern.search(normalized):
-            return "finance", "fastpath_finance_operation"
+    # When the message clearly spans both domains, run both specialists.
+    if queue_match and finance_match:
+        return "multi_booking_finance", "fastpath_multi_domain"
+
+    if queue_match:
+        return "booking", "fastpath_queue_operation"
+
+    if finance_match:
+        return "finance", "fastpath_finance_operation"
 
     return None
 
@@ -273,6 +279,22 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route"]]:
         intent, source = fastpath
         elapsed_ms = (time.perf_counter() - started_at) * 1000
         logger.info("classify_intent fast-path: %r → %s in %.1fms", user_input[:80], intent, elapsed_ms)
+
+        if intent == "multi_booking_finance":
+            return Command(
+                goto="plan_and_route",
+                update={
+                    "current_agent": "multi",
+                    "metadata": _merge_metadata(state, {
+                        "classified_intent": "multi",
+                        "classification_source": source,
+                        "multi_agents": ["receptionist", "finance"],
+                        "routing_reasoning": "Request covers both queue management and revenue analytics — running both specialists.",
+                        "requires_clarification": False,
+                    }),
+                },
+            )
+
         reasoning = f"I routed this directly to {intent} because the request clearly matched the {source.replace('_', ' ')} pattern."
         return Command(
             goto="plan_and_route",
@@ -381,6 +403,7 @@ def plan_and_route(state: AgentState) -> dict:
         "finance": "finance",
         "hr": "hr",
         "crm": "crm",
+        "multi": "multi",
         "general": "general",
     }
     execution_target = target_by_intent.get(intent, "general")
@@ -453,6 +476,39 @@ def execute_plan(state: AgentState) -> dict:
         merged_metadata["last_specialist_target"] = "crm"
         return {**result, "metadata": merged_metadata}
 
+    if target == "multi":
+        multi_agents = list(metadata.get("multi_agents") or ["receptionist", "finance"])
+        specialist_runners = {
+            "receptionist": placeholder_receptionist,
+            "finance": placeholder_finance,
+            "hr": placeholder_hr,
+        }
+        combined_summaries: Dict[str, str] = {}
+        combined_tool_results: Dict[str, Any] = {}
+        for agent_name in multi_agents:
+            runner = specialist_runners.get(agent_name)
+            if runner is None:
+                continue
+            try:
+                sub_result = runner(state)
+                # Capture the specialist's final AIMessage content
+                for msg in reversed(sub_result.get("messages") or []):
+                    if isinstance(msg, AIMessage):
+                        combined_summaries[agent_name] = str(msg.content)
+                        break
+                agent_tool_results = sub_result.get("tool_results") or {}
+                combined_tool_results[agent_name] = agent_tool_results
+            except Exception as exc:
+                logger.warning("Multi-agent: %s specialist failed: %s", agent_name, exc)
+        merged_metadata = dict(metadata)
+        merged_metadata["multi_specialist_summaries"] = combined_summaries
+        merged_metadata["last_specialist_target"] = "multi"
+        return {
+            "tool_results": combined_tool_results,
+            "current_agent": "multi",
+            "metadata": merged_metadata,
+        }
+
     return {
         "current_agent": "supervisor",
     }
@@ -479,6 +535,19 @@ def synthesize_response(state: AgentState) -> dict:
             "tool_results": state.get("tool_results"),
             "metadata": _merge_metadata(state, {"skip_synthesis": False}),
         }
+
+    # Multi-domain: each specialist already produced its response — join them directly.
+    if current_agent == "multi":
+        specialist_summaries = metadata.get("multi_specialist_summaries") or {}
+        if specialist_summaries:
+            parts = [summary for summary in specialist_summaries.values() if summary]
+            combined = "\n\n---\n\n".join(parts)
+            return {
+                "messages": messages + [AIMessage(content=combined)],
+                "tool_results": state.get("tool_results"),
+            }
+        # Fallback: nothing was produced, let the normal LLM path handle it
+        current_agent = "supervisor"
 
     if current_agent == "supervisor" and metadata.get("requires_clarification"):
         clarifier = AIMessage(
