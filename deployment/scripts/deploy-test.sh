@@ -56,13 +56,12 @@ SHARED_TTS_URL="${SHARED_TTS_URL:-http://${K8S_NODE_IP}:30880}"
 COMPOSE_PROJECT_NAME="zeroqwait"
 export COMPOSE_PROJECT_NAME
 
-# Actions checkout on self-hosted runners may not include backend/.env
-# because it is typically gitignored. Create a local CI-safe file when absent.
-# When GitHub Actions secrets are injected as env vars (via deploy-test.yml),
-# those values override the hard-coded defaults below.
-if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
-	echo "==> backend/.env missing, generating CI-safe local defaults"
-	cat > "${BACKEND_ENV_FILE}" << EOF
+# Always regenerate backend/.env from GitHub Actions secrets.
+# This ensures a stale file left on the runner from a previous deploy never
+# silently wins over the current secrets. The file is gitignored and safe to
+# overwrite on every CI run.
+echo "==> Writing backend/.env from GitHub Actions secrets"
+cat > "${BACKEND_ENV_FILE}" << EOF
 SECRET_KEY=${SECRET_KEY:-ci_test_secret_key_change_in_prod}
 DB_HOST=db
 DB_PORT=5432
@@ -85,7 +84,6 @@ MODEL_NAME=qwen3:14b-q4_K_M
 TTS_SERVICE_URL=http://192.168.2.134:30880
 FRONTEND_URL=http://localhost:3000
 EOF
-fi
 
 # Remove stale runner workspace virtualenv if previous runs left root-owned files.
 if [[ -d "${PROJECT_ROOT}/backend/.venv" ]]; then
