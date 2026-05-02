@@ -1739,6 +1739,49 @@ async def get_history(
     }
 
 
+@router.post("/reset-conversation")
+async def reset_conversation(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete all checkpoint data for this owner's conversation thread so the
+    next message starts a completely fresh context.
+
+    The caller must own the shop (same guard as /history).
+    """
+    user_id: Optional[int] = current_user.get("user_id")
+    user_shops: list[int] = current_user.get("shop_ids") or []
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authenticated user_id missing")
+
+    if shop_id not in user_shops:
+        raise HTTPException(status_code=403, detail="Not owner of this shop")
+
+    thread_id = _checkpoint_thread_id(shop_id, user_id)
+    db = SessionLocal()
+    try:
+        db.execute(
+            text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"),
+            {"tid": thread_id},
+        )
+        db.execute(
+            text("DELETE FROM checkpoints WHERE thread_id = :tid"),
+            {"tid": thread_id},
+        )
+        db.commit()
+        logger.info("reset-conversation: cleared thread %s for user %s", thread_id, user_id)
+    except Exception as exc:
+        db.rollback()
+        logger.warning("reset-conversation: failed to clear thread %s: %s", thread_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to reset conversation")
+    finally:
+        db.close()
+
+    return {"status": "ok", "thread_id": thread_id}
+
+
 @router.get("/pending")
 async def get_pending_approvals(
     shop_id: int,

@@ -3,8 +3,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Alert,
   Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  IconButton,
   Stack,
+  Tooltip,
 } from "@mui/material";
+import AddCommentOutlinedIcon from "@mui/icons-material/AddCommentOutlined";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "../../../contexts/AuthContext";
@@ -221,12 +230,32 @@ const OwnerDashboardPage: React.FC = () => {
   const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
-  // Restore conversation history from the LangGraph checkpoint when the
-  // component mounts (handles tab switches and browser navigation).
+  // Restore conversation history when the component mounts (covers tab
+  // switches and page refreshes).  We check sessionStorage first so that
+  // charts / tables generated during the current browser session survive
+  // navigation.  When sessionStorage is empty we fall back to the API which
+  // returns text-only checkpoint history.
   const historyLoadedForRef = useRef<number | null>(null);
   useEffect(() => {
     if (!shop?.id || historyLoadedForRef.current === shop.id) return;
     historyLoadedForRef.current = shop.id;
+
+    // 1. Try sessionStorage (preserves charts across refreshes / tab switches)
+    const ssKey = `owner-chat-messages:${shop.id}`;
+    try {
+      const raw = sessionStorage.getItem(ssKey);
+      if (raw) {
+        const parsed: ChatMessage[] = JSON.parse(raw);
+        if (parsed.length > 0) {
+          setMessages(parsed);
+          return;
+        }
+      }
+    } catch {
+      // Ignore parse errors — fall through to API
+    }
+
+    // 2. Fallback: LangGraph checkpoint (text-only, cross-session)
     const authToken = token || localStorage.getItem("token");
     fetch(`${apiBaseUrl}/v2/agent/history?shop_id=${shop.id}`, {
       headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
@@ -253,6 +282,51 @@ const OwnerDashboardPage: React.FC = () => {
         // Non-fatal — chat will start empty on history load failure
       });
   }, [shop?.id, token]);
+
+  // Persist messages (including charts / tables) to sessionStorage so they
+  // survive page refreshes and in-tab navigation.  Only persist when not
+  // currently streaming to avoid saving partial messages.
+  useEffect(() => {
+    if (!shop?.id || isStreaming) return;
+    const ssKey = `owner-chat-messages:${shop.id}`;
+    try {
+      if (messages.length > 0) {
+        sessionStorage.setItem(ssKey, JSON.stringify(messages));
+      }
+    } catch {
+      // sessionStorage full or unavailable — skip silently
+    }
+  }, [messages, shop?.id, isStreaming]);
+
+  // ── New chat ────────────────────────────────────────────────────────────
+  const [showNewChatDialog, setShowNewChatDialog] = useState(false);
+  const [isResettingChat, setIsResettingChat] = useState(false);
+
+  const handleNewChatConfirm = useCallback(async () => {
+    if (!shop?.id) return;
+    setIsResettingChat(true);
+    try {
+      const authToken = token || localStorage.getItem("token");
+      await fetch(`${apiBaseUrl}/v2/agent/reset-conversation?shop_id=${shop.id}`, {
+        method: "POST",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
+    } catch {
+      // Best-effort — clear locally even if API fails
+    } finally {
+      setIsResettingChat(false);
+    }
+    // Clear persisted messages and reset state
+    try {
+      sessionStorage.removeItem(`owner-chat-messages:${shop.id}`);
+    } catch {
+      // ignore
+    }
+    historyLoadedForRef.current = null;
+    setMessages([]);
+    setShowNewChatDialog(false);
+  }, [shop?.id, token]);
+
 
   const briefingQuery = useOwnerBriefingQuery(shop?.id);
   const pendingQuery = usePendingApprovalsQuery(shop?.id);
@@ -1093,7 +1167,24 @@ const OwnerDashboardPage: React.FC = () => {
             title="Hello there!"
             subtitle="How can I help you today?"
             promptSections={contextPromptSections}
-            header={<Header />}
+            header={
+              <Box sx={{ display: "flex", alignItems: "center", width: "100%" }}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Header />
+                </Box>
+                <Tooltip title="New chat">
+                  <IconButton
+                    size="small"
+                    onClick={() => setShowNewChatDialog(true)}
+                    disabled={isStreaming || messages.length === 0}
+                    sx={{ flexShrink: 0, ml: 1 }}
+                    aria-label="Start new chat"
+                  >
+                    <AddCommentOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            }
             interactablesStorageKey={shop?.id ? `owner-dashboard-task-board:${shop.id}` : undefined}
             sidebar={
               <AgentTaskBoard
@@ -1104,6 +1195,37 @@ const OwnerDashboardPage: React.FC = () => {
           />
         </Box>
       </Stack>
+
+      {/* New chat confirmation dialog */}
+      <Dialog
+        open={showNewChatDialog}
+        onClose={() => !isResettingChat && setShowNewChatDialog(false)}
+        aria-labelledby="new-chat-dialog-title"
+      >
+        <DialogTitle id="new-chat-dialog-title">Start a new conversation?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will permanently delete your current conversation history. The AI will start
+            fresh with no memory of previous messages.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setShowNewChatDialog(false)}
+            disabled={isResettingChat}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleNewChatConfirm}
+            color="error"
+            variant="contained"
+            disabled={isResettingChat}
+          >
+            {isResettingChat ? "Clearing…" : "Clear and start fresh"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
