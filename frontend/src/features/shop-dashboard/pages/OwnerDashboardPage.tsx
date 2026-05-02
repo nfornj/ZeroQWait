@@ -1,5 +1,5 @@
 // RESTYLED: Perplexity-style
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -220,6 +220,39 @@ const OwnerDashboardPage: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+
+  // Restore conversation history from the LangGraph checkpoint when the
+  // component mounts (handles tab switches and browser navigation).
+  const historyLoadedForRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!shop?.id || historyLoadedForRef.current === shop.id) return;
+    historyLoadedForRef.current = shop.id;
+    const authToken = token || localStorage.getItem("token");
+    fetch(`${apiBaseUrl}/v2/agent/history?shop_id=${shop.id}`, {
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const raw: { role: string; content: string; timestamp?: string | null }[] =
+          data?.messages ?? [];
+        if (raw.length === 0) return;
+        const restored: ChatMessage[] = raw
+          .filter((m) => m.content && m.content.trim())
+          .map((m, i) => ({
+            id: toId(`msg_history_${i}`),
+            role: m.role === "user" ? ("user" as const) : ("assistant" as const),
+            content: m.content,
+            status: "done" as const,
+            timestamp: m.timestamp ?? nowIso(),
+          }));
+        if (restored.length > 0) {
+          setMessages(restored);
+        }
+      })
+      .catch(() => {
+        // Non-fatal — chat will start empty on history load failure
+      });
+  }, [shop?.id, token]);
 
   const briefingQuery = useOwnerBriefingQuery(shop?.id);
   const pendingQuery = usePendingApprovalsQuery(shop?.id);
