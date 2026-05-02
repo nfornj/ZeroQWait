@@ -58,17 +58,28 @@ export COMPOSE_PROJECT_NAME
 
 # Actions checkout on self-hosted runners may not include backend/.env
 # because it is typically gitignored. Create a local CI-safe file when absent.
+# When GitHub Actions secrets are injected as env vars (via deploy-test.yml),
+# those values override the hard-coded defaults below.
 if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
 	echo "==> backend/.env missing, generating CI-safe local defaults"
-	cat > "${BACKEND_ENV_FILE}" << 'EOF'
-SECRET_KEY=ci_test_secret_key_change_in_prod
+	cat > "${BACKEND_ENV_FILE}" << EOF
+SECRET_KEY=${SECRET_KEY:-ci_test_secret_key_change_in_prod}
 DB_HOST=db
 DB_PORT=5432
-DB_NAME=zeroqwait
-DB_USER=postgres
-DB_PASSWORD=zeroqwait_dev
+DB_NAME=${DB_NAME:-zeroqwait}
+DB_USER=${DB_USER:-postgres}
+DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
 REDIS_HOST=redis
 REDIS_PORT=6379
+NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+LLM_CONFIG_ENCRYPTION_KEY=${LLM_CONFIG_ENCRYPTION_KEY:-}
+TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_placeholder}
+STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
+ODOO_URL=http://odoo:8069
+ODOO_DB=odoo
+ODOO_USER=admin
+ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
 OLLAMA_URL=http://192.168.2.134:30002/v1
 MODEL_NAME=qwen3:14b-q4_K_M
 TTS_SERVICE_URL=http://192.168.2.134:30880

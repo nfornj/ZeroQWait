@@ -13,6 +13,7 @@ concurrency:
 jobs:
   deploy-test:
     runs-on: self-hosted
+    environment: test
     env:
       # Fixed checkout path to prevent run-specific directory buildup.
       CHECKOUT_PATH: zeroqwait-deploy
@@ -29,6 +30,16 @@ jobs:
       - name: Deploy to test (localhost:3000)
         env:
           REGISTRY: ghcr.io/nfornj
+          SECRET_KEY:                ${{ secrets.SECRET_KEY }}
+          DB_USER:                   ${{ secrets.DB_USER }}
+          DB_PASSWORD:               ${{ secrets.DB_PASSWORD }}
+          DB_NAME:                   ${{ secrets.DB_NAME }}
+          NVIDIA_API_KEY:            ${{ secrets.NVIDIA_API_KEY }}
+          LLM_CONFIG_ENCRYPTION_KEY: ${{ secrets.LLM_CONFIG_ENCRYPTION_KEY }}
+          TELEGRAM_BOT_TOKEN:        ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          STRIPE_SECRET_KEY:         ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET:     ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          ODOO_PASSWORD:             ${{ secrets.ODOO_PASSWORD }}
         run: |
           cd "${CHECKOUT_PATH}"
           chmod +x deployment/scripts/deploy-test.sh
