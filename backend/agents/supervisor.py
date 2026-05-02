@@ -340,6 +340,8 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route"]]:
 
     llm = get_llm(state, role="planner")
 
+    decision: RoutingDecision | None = None
+
     try:
         structured_llm = llm.with_structured_output(RoutingDecision)
         decision = cast(RoutingDecision, structured_llm.invoke(
@@ -380,8 +382,8 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route"]]:
             "metadata": _merge_metadata(state, {
                 "classified_intent": intent,
                 "classification_source": source,
-                "routing_reasoning": decision.thought_process.strip(),
-                "is_followup": decision.is_followup,
+                "routing_reasoning": decision.thought_process.strip() if decision else "",
+                "is_followup": decision.is_followup if decision else False,
                 "requires_clarification": False,
             }),
         },
