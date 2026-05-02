@@ -132,6 +132,30 @@ class NotificationService:
             )
         return results
 
+    async def send_telegram_async(
+        self,
+        chat_id: str,
+        text: str,
+        shop_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Send a Telegram message to a connected shop owner.
+
+        Always attempted regardless of NOTIFICATIONS_ENABLED — Telegram
+        connectivity depends only on TELEGRAM_BOT_TOKEN being set.
+        """
+        import telegram_service as tg
+
+        if not tg.is_configured():
+            logger.debug(
+                "[notify-stub] Telegram to %s: %s (shop_id=%s)", chat_id, text[:60], shop_id
+            )
+            return {"sent": False, "channel": "telegram", "reason": "bot_not_configured"}
+
+        ok = await tg.send_message(chat_id, text)
+        if ok:
+            logger.info("[notify] Telegram to %s (shop_id=%s): sent", chat_id, shop_id)
+        return {"sent": ok, "channel": "telegram", "chat_id": chat_id}
+
 
 # Singleton
 notification_service = NotificationService()

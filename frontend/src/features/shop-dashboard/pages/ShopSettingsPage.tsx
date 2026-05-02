@@ -28,6 +28,8 @@ import {
     Chip
 } from '@mui/material';
 import Header from '../components/Header';
+import TelegramIntegrationCard from '../components/TelegramIntegrationCard';
+import TelegramIntegrationCard from '../components/TelegramIntegrationCard';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -359,6 +361,7 @@ const ShopSettingsPage: React.FC = () => {
                         <Tab label="AI Environment" />
                         <Tab label="Services" />
                         <Tab label="Schedule & Close Days" />
+                        <Tab label="Integrations" />
                     </Tabs>
                 </Box>
 
@@ -601,6 +604,19 @@ const ShopSettingsPage: React.FC = () => {
                                     )}
                                 </Paper>
                             </Box>
+                        </Box>
+                    </Box>
+                </CustomTabPanel>
+
+                {/* TAB 5: INTEGRATIONS */}
+                <CustomTabPanel value={tabValue} index={4}>
+                    <Box p={3}>
+                        <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>Integrations</Typography>
+                        <Typography variant="body2" color="text.secondary" mb={3}>
+                            Connect external services to extend your AI team's reach.
+                        </Typography>
+                        <Box sx={{ maxWidth: 600 }}>
+                            <TelegramIntegrationCard shopId={shop.id} />
                         </Box>
                     </Box>
                 </CustomTabPanel>

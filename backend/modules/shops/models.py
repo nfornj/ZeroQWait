@@ -33,6 +33,10 @@ class Shop(Base):
     tenant_schema = Column(String, nullable=True, index=True)  # NULL = shared/free, 'tenant_<id>' = premium
     odoo_company_id = Column(Integer, nullable=True, index=True)  # Odoo res.company ID for multi-tenant ERP isolation
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Telegram integration
+    telegram_chat_id = Column(String, nullable=True)               # Owner's Telegram chat ID (set after /start)
+    telegram_notifications_enabled = Column(Boolean, default=False) # Whether Telegram notifications are active
     
     # Relationships
     owner = relationship("User", back_populates="owned_shops", foreign_keys=[owner_id])

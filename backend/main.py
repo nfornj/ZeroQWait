@@ -6,6 +6,7 @@ import re as _re
 import uvicorn
 from contextlib import asynccontextmanager
 from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments, llm_settings
+from routers.telegram_router import router as telegram_router
 from modules.auth.router import router as auth_router
 from modules.users.router import router as users_router
 from modules.shops.router import router as shops_router
@@ -68,6 +69,22 @@ async def lifespan(app: FastAPI):
         logger.info("LangGraph checkpoint tables ready.")
     except Exception as e:
         logger.warning(f"LangGraph checkpoint setup warning: {e}")
+
+    # Add Telegram columns to shops table (idempotent — safe on every restart)
+    try:
+        from database import engine
+        from sqlalchemy import text as _sql_text
+        with engine.connect() as _conn:
+            _conn.execute(_sql_text(
+                "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_chat_id VARCHAR"
+            ))
+            _conn.execute(_sql_text(
+                "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_notifications_enabled BOOLEAN DEFAULT FALSE"
+            ))
+            _conn.commit()
+        logger.info("Telegram columns ready on shops table.")
+    except Exception as _tg_err:
+        logger.warning(f"Telegram column migration warning: {_tg_err}")
     
     # Pre-warm the semantic cache (loads sentence-transformer model) before serving requests.
     # This avoids a 60-90s stall on the first chat request after a pod restart.
@@ -232,6 +249,7 @@ app.include_router(tenants.router, prefix="/api", tags=["Tenants"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(testing_router, tags=["Testing Feedback"])
 app.include_router(feedback_router, prefix="/api", tags=["Chat Feedback"])
+app.include_router(telegram_router, prefix="/api", tags=["Telegram"])
 
 # Serve Docsify-based documentation site at /docs
 import os as _os

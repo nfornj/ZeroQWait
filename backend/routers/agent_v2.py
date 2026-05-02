@@ -1366,6 +1366,23 @@ async def chat_stream(
 
             if pending_action:
                 yield f"data: {json.dumps({'type': 'approval_required', 'action': pending_action.get('action'), 'details': pending_action})}\n\n"
+                # Notify owner via Telegram if connected
+                try:
+                    from modules.shops.models import Shop as _Shop
+                    _db_tg = SessionLocal()
+                    try:
+                        _shop_tg = _db_tg.query(_Shop).filter(_Shop.id == shop_id).first()
+                        if _shop_tg and _shop_tg.telegram_chat_id and _shop_tg.telegram_notifications_enabled:
+                            import telegram_service as _tg
+                            _action_id = pending_action.get("action_id") or pending_action.get("id") or ""
+                            _action_label = pending_action.get("action") or "Action required"
+                            _details = pending_action.get("description") or pending_action.get("details") or ""
+                            _tg_text = await _tg.format_approval_notification(_action_label, str(_details)[:200], _action_id)
+                            await _tg.send_message(_shop_tg.telegram_chat_id, _tg_text)
+                    finally:
+                        _db_tg.close()
+                except Exception as _tg_err:
+                    logger.warning("Telegram approval notification error: %s", _tg_err)
 
             _persist_chat_turn_memory(
                 shop_id=shop_id,
