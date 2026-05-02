@@ -102,6 +102,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Semantic cache pre-warm failed (non-fatal): {e}")
     
+    # Validate NVIDIA API key at startup — loud failure beats a silent fallback
+    # to ollama which would cause the agent to slow down to 35+ seconds.
+    try:
+        import os as _os
+        _nvidia_key = _os.getenv("NVIDIA_API_KEY", "")
+        _llm_provider = _os.getenv("LLM_PROVIDER", "ollama")
+        if _llm_provider == "nvidia":
+            if not _nvidia_key or len(_nvidia_key) < 8:
+                logger.error(
+                    "❌ NVIDIA_API_KEY is missing or too short! "
+                    "The agent will fall back to ollama which may not be running. "
+                    "Set NVIDIA_API_KEY in GitHub Secrets and redeploy."
+                )
+            else:
+                masked = f"{_nvidia_key[:8]}****{_nvidia_key[-4:]}"
+                logger.info(f"✅ NVIDIA_API_KEY loaded (key: {masked}), model: {_os.getenv('NVIDIA_MODEL', 'not set')}")
+        else:
+            logger.info(f"LLM_PROVIDER={_llm_provider} (not nvidia — NVIDIA key not required)")
+    except Exception as _key_err:
+        logger.warning(f"NVIDIA key validation warning: {_key_err}")
+
     # Start async audit writer
     _audit_start()
     logger.info("Audit logger started")

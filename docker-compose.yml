@@ -49,7 +49,7 @@ services:
       - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
       - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
       - LLM_PROVIDER=${LLM_PROVIDER:-nvidia}
-      - NVIDIA_MODEL=${NVIDIA_MODEL:-z-ai/glm4.7}
+      - NVIDIA_MODEL=${NVIDIA_MODEL:-meta/llama-3.1-8b-instruct}
       - TTS_SERVICE_URL=${TTS_SERVICE_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30880}
       - BOOKING_MCP_URL=${BOOKING_MCP_URL:-http://booking-mcp:8890}
       - FINANCE_MCP_URL=${FINANCE_MCP_URL:-http://finance-mcp:8891}
@@ -164,7 +164,7 @@ services:
       - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
       - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
       - LLM_PROVIDER=${LLM_PROVIDER:-nvidia}
-      - NVIDIA_MODEL=${NVIDIA_MODEL:-z-ai/glm4.7}
+      - NVIDIA_MODEL=${NVIDIA_MODEL:-meta/llama-3.1-8b-instruct}
       - TTS_SERVICE_URL=${TTS_SERVICE_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30880}
     depends_on:
       db:
