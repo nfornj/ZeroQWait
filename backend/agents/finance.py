@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 import logging
 import re
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Callable, Dict, Optional, Sequence
 
 from langchain_core.messages import BaseMessage
 

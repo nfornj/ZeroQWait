@@ -1,5 +1,5 @@
 // RESTYLED: Perplexity-style
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -17,6 +17,7 @@ import AgentChat, {
 import AgentTaskBoard, {
   AgentTaskBoardExternalTask,
 } from "../../agent-inbox/AgentTaskBoard";
+import { useApprovalDecisions } from "../../agent-inbox/hooks/useApprovalDecisions";
 import {
   ownerDashboardKeys,
   useOwnerBriefingQuery,
@@ -32,6 +33,7 @@ import type {
   AgentFile,
   AgentTable,
   ChatMessage,
+  InsightItem,
   PendingApproval,
   ThinkingStep,
 } from "../../agent-inbox/types";

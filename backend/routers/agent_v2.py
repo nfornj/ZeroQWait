@@ -130,11 +130,18 @@ def _get_current_pending_approval(
     effective_runnable = _SUPERVISOR_RUNNABLE if runnable is None else runnable
     if not hasattr(effective_runnable, "get_state"):
         effective_runnable = None
-    return _chat_service._get_current_pending_approval(
+    try:
+        metrics = db_interface.get_shop_live_wait_metrics(shop_id) or {}
+    except Exception as exc:
+        logger.warning("Unable to load live wait metrics for shop %s while checking pending approval: %s", shop_id, exc)
+        metrics = {}
+    pending = _chat_service._get_pending_approval_payload(
         shop_id,
         user_id,
+        metrics=metrics,
         runnable=effective_runnable,
     )
+    return pending[0] if pending else None
 
 
 def _record_approval_decision(**kwargs: Any) -> None:
@@ -592,7 +599,11 @@ def _reset_checkpoint_thread_if_idle(shop_id: int, user_id: int) -> None:
         return
 
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
-    snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
+    try:
+        snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
+    except Exception as exc:
+        logger.warning("Unable to inspect checkpoint thread tenant_%s_%s before reset: %s", shop_id, user_id, exc)
+        return
     if snapshot and snapshot.interrupts:
         return
 
@@ -1331,8 +1342,6 @@ async def chat_sync(
         )
         return response
 
-    _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
-    
     # Build checkpoint config for this tenant
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
     work_context = _create_chat_work_context(shop_id, int(user_id), message)
@@ -1581,8 +1590,6 @@ async def chat_stream(
                 yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
-
-            _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
 
             # Build checkpoint config
             checkpoint_config = build_checkpoint_config(shop_id, user_id)

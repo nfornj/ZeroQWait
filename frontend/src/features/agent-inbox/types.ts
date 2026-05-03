@@ -107,6 +107,7 @@ export interface ChatMessage {
   status: "sending" | "streaming" | "done" | "error";
   timestamp: string;
   agent?: string;
+  processingStartedAt?: string;
   retryMessage?: string;
   attachments?: readonly CompleteAttachment[];
   pendingAction?: PendingApproval;

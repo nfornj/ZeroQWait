@@ -317,9 +317,9 @@ def _local_daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, 
         return {"error": str(e)}
 
 
-def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
+def _parse_time_window(query: str, now: Optional[datetime] = None) -> Tuple[datetime, datetime, str, str]:
     """Parse common NL time-window phrases to concrete range + grouping granularity."""
-    now = datetime.now()
+    now = now or datetime.now()
     q = _normalize_window_query((query or "").lower())
 
     # Default: recent 30-day daily trend
@@ -1182,6 +1182,21 @@ def top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
 
 def customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
     return _get_finance_client().customer_metrics(shop_id, query=query)
+
+
+def answer_finance_question(
+    shop_id: int,
+    question: str,
+    *,
+    operation: Optional[str] = None,
+    mode: str = "enabled",
+) -> Dict[str, Any]:
+    return _get_finance_client().answer_finance_question(
+        shop_id,
+        question,
+        operation=operation,
+        mode=mode,
+    )
 
 
 def service_customer_counts(
