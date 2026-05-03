@@ -2,6 +2,7 @@ import unittest
 
 from langchain_core.messages import HumanMessage
 
+from agents import finance
 from agents.finance import _normalize_finance_operation
 
 
@@ -71,6 +72,54 @@ class TestFinanceOperationNormalization(unittest.TestCase):
         )
 
         self.assertEqual(operation, "trend_summary")
+
+    def test_dynamic_read_success_returns_dynamic_answer(self) -> None:
+        original_mode = finance._DYNAMIC_READS_MODE
+        original_answer = finance.finance_tools.answer_finance_question
+        try:
+            finance._DYNAMIC_READS_MODE = "enabled"
+            finance.finance_tools.answer_finance_question = lambda *args, **kwargs: {
+                "answer": "Today had 12 completed visits.",
+                "generated_sql": "SELECT count(*) FROM ai_queue_visits",
+                "row_count": 1,
+            }
+
+            result = finance._with_dynamic_read_fallback(
+                502,
+                "customer_metrics",
+                "how many customers today?",
+                lambda: {"total_customers": 0},
+            )
+        finally:
+            finance._DYNAMIC_READS_MODE = original_mode
+            finance.finance_tools.answer_finance_question = original_answer
+
+        self.assertEqual(result["dynamic_sql_answer"], "Today had 12 completed visits.")
+        self.assertFalse(result["fallback_used"])
+
+    def test_dynamic_read_failure_uses_deterministic_fallback(self) -> None:
+        original_mode = finance._DYNAMIC_READS_MODE
+        original_answer = finance.finance_tools.answer_finance_question
+        try:
+            finance._DYNAMIC_READS_MODE = "enabled"
+            finance.finance_tools.answer_finance_question = lambda *args, **kwargs: {
+                "error": "SQL rejected",
+                "error_class": "ValidationError",
+            }
+
+            result = finance._with_dynamic_read_fallback(
+                502,
+                "customer_metrics",
+                "show all users",
+                lambda: {"total_customers": 8},
+            )
+        finally:
+            finance._DYNAMIC_READS_MODE = original_mode
+            finance.finance_tools.answer_finance_question = original_answer
+
+        self.assertEqual(result["total_customers"], 8)
+        self.assertTrue(result["dynamic_sql_fallback_used"])
+        self.assertEqual(result["dynamic_sql_error_class"], "ValidationError")
 
 
 if __name__ == "__main__":

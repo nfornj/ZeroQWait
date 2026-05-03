@@ -6,3 +6,10 @@ psycopg2-binary>=2.9.9
 pydantic>=2.10.0
 python-dotenv>=1.0.0
 email-validator>=2.0.0
+langchain-core>=0.3.0
+langchain-openai>=0.3.0
+langchain-anthropic==1.4.1
+langchain-google-genai==4.2.2
+langchain-groq==1.1.2
+langchain-nvidia-ai-endpoints>=0.3.0
+langchain-ollama>=0.3.0

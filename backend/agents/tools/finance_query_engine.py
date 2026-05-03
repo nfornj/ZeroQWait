@@ -1,0 +1,409 @@
+"""Guarded dynamic SQL query engine for finance read questions."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+import json
+import logging
+import os
+import re
+import time
+from typing import Any, Dict, Iterable, Optional
+
+from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
+
+from database import DATABASE_URL
+from agents.llm_factory import create_formatter_model, create_planner_model
+
+logger = logging.getLogger(__name__)
+
+MAX_ROWS = int(os.getenv("FINANCE_QUERY_MAX_ROWS", "100"))
+STATEMENT_TIMEOUT_MS = int(os.getenv("FINANCE_QUERY_STATEMENT_TIMEOUT_MS", "5000"))
+MAX_RETRIES = int(os.getenv("FINANCE_QUERY_MAX_RETRIES", "2"))
+LLM_TIMEOUT_SECONDS = float(os.getenv("FINANCE_QUERY_LLM_TIMEOUT_SECONDS", "20"))
+
+AI_DATABASE_URL = os.getenv("AI_DATABASE_URL") or os.getenv("FINANCE_AI_DATABASE_URL")
+
+ALLOWED_VIEWS: frozenset[str] = frozenset(
+    {
+        "ai_daily_analytics",
+        "ai_services",
+        "ai_queue_visits",
+        "ai_customers",
+        "ai_appointments",
+        "ai_invoices",
+        "ai_invoice_line_items",
+        "ai_payments",
+    }
+)
+
+DISALLOWED_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "alter",
+        "call",
+        "copy",
+        "create",
+        "delete",
+        "do",
+        "drop",
+        "execute",
+        "grant",
+        "insert",
+        "merge",
+        "reset",
+        "revoke",
+        "set",
+        "truncate",
+        "update",
+        "vacuum",
+    }
+)
+
+SCHEMA_CONTEXT = """\
+You can answer finance and operations read questions with PostgreSQL SQL.
+Use only these tenant-scoped views. They already filter to the current shop:
+
+ai_daily_analytics(business_date, total_customers, completed_services, cancelled_services, total_revenue, avg_wait_time_minutes, avg_service_time_minutes, peak_hour_start, peak_hour_customers)
+ai_services(service_id, name, duration_minutes, cost, currency, is_active, created_at)
+ai_queue_visits(visit_id, queue_id, service_id, service_name, status, position, checked_in_at, service_started_at, completed_at, service_cost, assigned_employee_id)
+ai_customers(customer_id, name, visit_count, last_visit, created_at)
+ai_appointments(appointment_id, customer_id, service_id, service_name, employee_id, customer_name, scheduled_start, scheduled_end, actual_start, actual_end, status, service_cost, cancelled_at, created_at)
+ai_invoices(invoice_id, customer_id, invoice_number, status, subtotal, tax_amount, discount_amount, tip_amount, total, currency, due_date, paid_at, created_at, updated_at)
+ai_invoice_line_items(line_item_id, invoice_id, service_id, queue_item_id, appointment_id, description, quantity, unit_price, total, created_at)
+ai_payments(payment_id, invoice_id, customer_id, amount, tip_amount, currency, method, status, processed_by, processed_at, refunded_at, refund_amount, created_at, updated_at)
+
+Rules:
+- Return exactly one SELECT query.
+- Do not use raw tables.
+- Do not include INSERT, UPDATE, DELETE, DDL, SET, comments, or multiple statements.
+- Prefer current_date for relative dates such as today.
+- Add LIMIT when returning detail rows.
+"""
+
+
+class SQLPlan(BaseModel):
+    sql: str = Field(description="A single PostgreSQL SELECT query over the allowed AI views.")
+    rationale: str = Field(default="", description="Short reason for the query.")
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+    ok: bool
+    error: Optional[str] = None
+
+
+_engine: Optional[Engine] = None
+_llm_executor = ThreadPoolExecutor(max_workers=int(os.getenv("FINANCE_QUERY_LLM_WORKERS", "4")))
+
+
+def _get_engine() -> Engine:
+    global _engine
+    if _engine is None:
+        _engine = create_engine(AI_DATABASE_URL or DATABASE_URL, pool_pre_ping=True)
+    return _engine
+
+
+def _with_timeout(label: str, func):
+    future = _llm_executor.submit(func)
+    try:
+        return future.result(timeout=LLM_TIMEOUT_SECONDS)
+    except FutureTimeoutError as exc:
+        raise TimeoutError(f"{label} timed out after {LLM_TIMEOUT_SECONDS:.1f}s") from exc
+
+
+def _strip_sql_comments(sql: str) -> str:
+    sql = re.sub(r"/\*.*?\*/", " ", sql or "", flags=re.DOTALL)
+    sql = re.sub(r"--[^\n\r]*", " ", sql)
+    return sql.strip()
+
+
+def _statement_count(sql: str) -> int:
+    return len([part for part in sql.split(";") if part.strip()])
+
+
+def _normalized_table_name(raw: str) -> str:
+    value = raw.strip().strip('"').lower()
+    if "." in value:
+        value = value.split(".")[-1].strip('"')
+    return value
+
+
+def _referenced_tables(sql: str) -> set[str]:
+    refs: set[str] = set()
+    for match in re.finditer(
+        r"\b(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)",
+        sql,
+        flags=re.IGNORECASE,
+    ):
+        refs.add(_normalized_table_name(match.group(1)))
+    return refs
+
+
+def _cte_names(sql: str) -> set[str]:
+    if not re.match(r"^\s*with\b", sql, flags=re.IGNORECASE):
+        return set()
+    return {
+        match.group(1).strip().lower()
+        for match in re.finditer(r"(?:with|,)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+as\s*\(", sql, flags=re.IGNORECASE)
+    }
+
+
+def validate_sql(sql: str) -> ValidationResult:
+    cleaned = _strip_sql_comments(sql)
+    if not cleaned:
+        return ValidationResult(False, "SQL is empty")
+
+    if _statement_count(cleaned) != 1:
+        return ValidationResult(False, "SQL must be a single statement")
+
+    cleaned_no_semicolon = cleaned[:-1].strip() if cleaned.endswith(";") else cleaned
+    if not re.match(r"^(select|with)\b", cleaned_no_semicolon, flags=re.IGNORECASE):
+        return ValidationResult(False, "SQL must start with SELECT or WITH")
+
+    tokens = {token.lower() for token in re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", cleaned_no_semicolon)}
+    blocked = sorted(tokens.intersection(DISALLOWED_KEYWORDS))
+    if blocked:
+        return ValidationResult(False, f"SQL contains disallowed keyword: {blocked[0]}")
+
+    refs = _referenced_tables(cleaned_no_semicolon)
+    if not refs:
+        return ValidationResult(False, "SQL must read from at least one AI view")
+
+    allowed_refs = set(ALLOWED_VIEWS) | _cte_names(cleaned_no_semicolon)
+    disallowed_refs = sorted(ref for ref in refs if ref not in allowed_refs)
+    if disallowed_refs:
+        return ValidationResult(False, f"SQL references a non-allowlisted relation: {disallowed_refs[0]}")
+
+    return ValidationResult(True)
+
+
+def _limit_sql(sql: str) -> str:
+    cleaned = _strip_sql_comments(sql)
+    cleaned = cleaned[:-1].strip() if cleaned.endswith(";") else cleaned
+    if re.search(r"\blimit\s+\d+\b", cleaned, flags=re.IGNORECASE):
+        return cleaned
+    return f"SELECT * FROM ({cleaned}) AS ai_limited_result LIMIT {MAX_ROWS}"
+
+
+def _rows_to_dicts(rows: Iterable[Any]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        mapping = dict(row._mapping)
+        result.append(
+            {
+                key: (value.isoformat() if hasattr(value, "isoformat") else value)
+                for key, value in mapping.items()
+            }
+        )
+    return result
+
+
+def _log_query(
+    *,
+    shop_id: int,
+    question: str,
+    generated_sql: Optional[str],
+    validation_status: str,
+    execution_status: str,
+    latency_ms: int,
+    row_count: int = 0,
+    error_class: Optional[str] = None,
+    error_message: Optional[str] = None,
+    mode: str = "enabled",
+    fallback_used: bool = False,
+) -> None:
+    try:
+        with _get_engine().begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO ai_query_logs (
+                        shop_id, question, generated_sql, validation_status, execution_status,
+                        error_class, error_message, row_count, latency_ms, mode, fallback_used
+                    )
+                    VALUES (
+                        :shop_id, :question, :generated_sql, :validation_status, :execution_status,
+                        :error_class, :error_message, :row_count, :latency_ms, :mode, :fallback_used
+                    )
+                    """
+                ),
+                {
+                    "shop_id": shop_id,
+                    "question": question,
+                    "generated_sql": generated_sql,
+                    "validation_status": validation_status,
+                    "execution_status": execution_status,
+                    "error_class": error_class,
+                    "error_message": (error_message or "")[:2000] or None,
+                    "row_count": row_count,
+                    "latency_ms": latency_ms,
+                    "mode": mode,
+                    "fallback_used": fallback_used,
+                },
+            )
+    except Exception as exc:
+        logger.warning("AI query log insert failed for shop %s: %s", shop_id, exc)
+
+
+def _generate_sql(shop_id: int, question: str, previous_error: Optional[str] = None) -> SQLPlan:
+    prompt = (
+        f"{SCHEMA_CONTEXT}\n"
+        f"Today is {datetime.now().strftime('%Y-%m-%d')}.\n"
+        f"Question: {question}\n"
+    )
+    if previous_error:
+        prompt += f"The previous SQL failed with this error: {previous_error}\nRewrite the SQL to fix it.\n"
+
+    llm = create_planner_model(shop_id, temperature=0.0)
+    decision = _with_timeout(
+        "Finance SQL generation",
+        lambda: llm.with_structured_output(SQLPlan).invoke(
+            [
+                SystemMessage(content="Generate safe read-only SQL for ZeroQwait finance analytics."),
+                HumanMessage(content=prompt),
+            ]
+        ),
+    )
+    return SQLPlan.model_validate(decision)
+
+
+def _execute_sql(shop_id: int, sql: str) -> list[dict[str, Any]]:
+    limited_sql = _limit_sql(sql)
+    with _get_engine().begin() as conn:
+        conn.execute(text("SET LOCAL TRANSACTION READ ONLY"))
+        conn.execute(text("SELECT set_config('statement_timeout', :timeout_ms, true)"), {"timeout_ms": str(STATEMENT_TIMEOUT_MS)})
+        conn.execute(text("SELECT set_config('app.current_shop_id', :shop_id, true)"), {"shop_id": str(shop_id)})
+        rows = conn.execute(text(limited_sql)).fetchmany(MAX_ROWS)
+    return _rows_to_dicts(rows)
+
+
+def _synthesize_answer(shop_id: int, question: str, sql: str, rows: list[dict[str, Any]]) -> str:
+    if not rows:
+        return "I could not find matching finance data for that question."
+
+    llm = create_formatter_model(shop_id, temperature=0.2)
+    prompt = (
+        "Answer the shop owner's finance question using only these SQL results. "
+        "Be concise, include numbers when present, and do not mention SQL unless the owner asks.\n\n"
+        f"Question: {question}\n"
+        f"SQL: {sql}\n"
+        f"Rows JSON: {json.dumps(rows[:MAX_ROWS], default=str)}"
+    )
+    response = _with_timeout(
+        "Finance SQL answer synthesis",
+        lambda: llm.invoke([HumanMessage(content=prompt)]),
+    )
+    return str(getattr(response, "content", response)).strip() or "I found data, but could not summarize it cleanly."
+
+
+def answer_question(shop_id: int, question: str, *, mode: str = "enabled") -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    generated_sql: Optional[str] = None
+    previous_error: Optional[str] = None
+
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            plan = _generate_sql(shop_id, question, previous_error=previous_error)
+            generated_sql = plan.sql
+
+            validation = validate_sql(generated_sql)
+            if not validation.ok:
+                latency_ms = int((time.perf_counter() - started_at) * 1000)
+                _log_query(
+                    shop_id=shop_id,
+                    question=question,
+                    generated_sql=generated_sql,
+                    validation_status="rejected",
+                    execution_status="not_run",
+                    error_class="ValidationError",
+                    error_message=validation.error,
+                    latency_ms=latency_ms,
+                    mode=mode,
+                    fallback_used=True,
+                )
+                return {
+                    "error": validation.error,
+                    "error_class": "ValidationError",
+                    "generated_sql": generated_sql,
+                    "fallback_used": True,
+                    "shop_id": shop_id,
+                }
+
+            rows = _execute_sql(shop_id, generated_sql)
+            answer = _synthesize_answer(shop_id, question, generated_sql, rows)
+            latency_ms = int((time.perf_counter() - started_at) * 1000)
+            _log_query(
+                shop_id=shop_id,
+                question=question,
+                generated_sql=generated_sql,
+                validation_status="accepted",
+                execution_status="succeeded",
+                row_count=len(rows),
+                latency_ms=latency_ms,
+                mode=mode,
+            )
+            return {
+                "answer": answer,
+                "rows": rows,
+                "row_count": len(rows),
+                "generated_sql": generated_sql,
+                "source": "dynamic_sql",
+                "fallback_used": False,
+                "shop_id": shop_id,
+            }
+        except SQLAlchemyError as exc:
+            previous_error = str(exc)
+            if attempt < MAX_RETRIES:
+                continue
+            latency_ms = int((time.perf_counter() - started_at) * 1000)
+            _log_query(
+                shop_id=shop_id,
+                question=question,
+                generated_sql=generated_sql,
+                validation_status="accepted" if generated_sql else "not_run",
+                execution_status="failed",
+                error_class=type(exc).__name__,
+                error_message=str(exc),
+                latency_ms=latency_ms,
+                mode=mode,
+                fallback_used=True,
+            )
+            return {
+                "error": str(exc),
+                "error_class": type(exc).__name__,
+                "generated_sql": generated_sql,
+                "fallback_used": True,
+                "shop_id": shop_id,
+            }
+        except Exception as exc:
+            latency_ms = int((time.perf_counter() - started_at) * 1000)
+            _log_query(
+                shop_id=shop_id,
+                question=question,
+                generated_sql=generated_sql,
+                validation_status="not_run" if not generated_sql else "accepted",
+                execution_status="failed",
+                error_class=type(exc).__name__,
+                error_message=str(exc),
+                latency_ms=latency_ms,
+                mode=mode,
+                fallback_used=True,
+            )
+            return {
+                "error": str(exc),
+                "error_class": type(exc).__name__,
+                "generated_sql": generated_sql,
+                "fallback_used": True,
+                "shop_id": shop_id,
+            }
+
+    return {"error": "Dynamic finance query failed", "fallback_used": True, "shop_id": shop_id}
+
+
+__all__ = ["answer_question", "validate_sql", "ALLOWED_VIEWS", "DISALLOWED_KEYWORDS"]

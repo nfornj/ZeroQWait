@@ -2,8 +2,9 @@
 
 from datetime import datetime, timedelta
 import logging
+import os
 import re
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Callable, Dict, Optional, Sequence
 
 from langchain_core.messages import BaseMessage
 
@@ -11,6 +12,22 @@ from .specialist_graph import build_specialist_runnable
 from .tools import finance_tools
 
 logger = logging.getLogger(__name__)
+
+_DYNAMIC_READS_MODE = os.getenv("FINANCE_DYNAMIC_READS_MODE", "disabled").strip().lower()
+_DYNAMIC_READ_OPERATIONS = {
+    "daily_revenue",
+    "weekly_summary",
+    "trend_summary",
+    "top_services",
+    "customer_metrics",
+    "list_invoices",
+    "get_pos_summary",
+    "get_inactive_clients",
+    "get_top_clients",
+    "get_visit_frequency_summary",
+    "get_client_profile",
+    "search_clients",
+}
 
 OPERATION_ALIASES = {
     "analyze": "trend_summary",
@@ -205,6 +222,14 @@ def _looks_like_customer_metrics_request(text: str) -> bool:
         for phrase in (
             "customer metrics",
             "client metrics",
+            "how many customers",
+            "total customers",
+            "customers attended",
+            "customers came",
+            "customers visited",
+            "customers today",
+            "customer count",
+            "customer traffic",
             "repeat rate",
             "new vs repeat",
             "repeat customer",
@@ -256,6 +281,43 @@ def _extract_requested_limit(text: str) -> Optional[int]:
     return min(requested_limit, 25)
 
 
+def _dynamic_reads_enabled() -> bool:
+    return _DYNAMIC_READS_MODE in {"enabled", "on", "true", "1", "local", "test"}
+
+
+def _with_dynamic_read_fallback(
+    shop_id: int,
+    operation: str,
+    question: str,
+    fallback: Callable[[], Dict[str, Any]],
+) -> Dict[str, Any]:
+    if not _dynamic_reads_enabled() or operation not in _DYNAMIC_READ_OPERATIONS:
+        return fallback()
+
+    dynamic_result = finance_tools.answer_finance_question(
+        shop_id,
+        question or operation.replace("_", " "),
+        operation=operation,
+        mode=_DYNAMIC_READS_MODE,
+    )
+    if dynamic_result.get("answer") and not dynamic_result.get("error"):
+        return {
+            "dynamic_sql_answer": dynamic_result["answer"],
+            "dynamic_sql": dynamic_result.get("generated_sql"),
+            "dynamic_row_count": dynamic_result.get("row_count", 0),
+            "source": "dynamic_sql",
+            "fallback_used": False,
+            "shop_id": shop_id,
+            "operation": operation,
+        }
+
+    fallback_result = dict(fallback())
+    fallback_result["dynamic_sql_error"] = dynamic_result.get("error") or "Dynamic SQL did not return an answer"
+    fallback_result["dynamic_sql_error_class"] = dynamic_result.get("error_class")
+    fallback_result["dynamic_sql_fallback_used"] = True
+    return fallback_result
+
+
 def _resolve_obvious_daily_date(text: str) -> Optional[str]:
     prompt = str(text or "").lower().strip()
     if not prompt:
@@ -287,6 +349,15 @@ def _build_finance_fast_plan(messages: Sequence[BaseMessage]) -> Optional[Dict[s
             "requires_clarification": False,
             "clarification_question": "",
             "rationale": "Finance fast-path matched an obvious service ranking request.",
+        }
+
+    if _looks_like_customer_metrics_request(latest_user_text):
+        return {
+            "operation": "customer_metrics",
+            "arguments": {"query": latest_user_text},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched an obvious customer metrics request.",
         }
 
     revenue_subject_signals = any(
@@ -399,10 +470,12 @@ def _normalize_finance_operation(operation: str, plan: Dict[str, Any], messages:
         return "trend_summary"
 
     if normalized_operation in generic_operations or normalized_operation not in SUPPORTED_OPERATIONS:
-        if any(keyword in combined_text for keyword in ("invoice", "invoices")):
-            return "list_invoices"
         if latest_user_operation is not None:
             return latest_user_operation
+        if any(keyword in latest_user_text for keyword in ("invoice", "invoices")):
+            return "list_invoices"
+        if any(keyword in combined_text for keyword in ("invoice", "invoices")):
+            return "list_invoices"
         if any(keyword in combined_text for keyword in ("customer", "customers", "client", "clients", "repeat rate", "new vs repeat")):
             return "customer_metrics"
         if any(keyword in combined_text for keyword in ("service", "services", "best-selling", "most popular")):
@@ -429,35 +502,57 @@ def _normalize_finance_operation(operation: str, plan: Dict[str, Any], messages:
 
 def _build_finance_executor(shop_id: int):
     def executor(operation: str, arguments: Dict[str, Any], messages: Sequence[BaseMessage]) -> Dict[str, Any]:
-        user_text = ""
-        for message in reversed(list(messages)):
-            if hasattr(message, "content"):
-                user_text = str(message.content)
-                break
+        user_text = _latest_user_text(messages)
 
         if operation == "daily_revenue":
-            return finance_tools.daily_revenue(shop_id, _optional_str(arguments.get("date")))
+            return _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                user_text,
+                lambda: finance_tools.daily_revenue(shop_id, _optional_str(arguments.get("date"))),
+            )
         if operation == "weekly_summary":
-            result = finance_tools.weekly_summary(shop_id, _optional_str(arguments.get("week_start")))
+            result = _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                user_text,
+                lambda: finance_tools.weekly_summary(shop_id, _optional_str(arguments.get("week_start"))),
+            )
             if _prefers_structured_table(user_text):
                 result = dict(result)
                 result["preferred_presentation"] = "table"
             return result
         if operation == "trend_summary":
             query = _optional_str(arguments.get("query")) or user_text
-            result = finance_tools.trend_summary(shop_id, query)
+            result = _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                query,
+                lambda: finance_tools.trend_summary(shop_id, query),
+            )
             if _prefers_structured_table(query):
                 result = dict(result)
                 result["preferred_presentation"] = "table"
             return result
         if operation == "top_services":
-            result = finance_tools.top_services(shop_id, _to_int(arguments.get("limit")) or 5)
+            result = _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                user_text,
+                lambda: finance_tools.top_services(shop_id, _to_int(arguments.get("limit")) or 5),
+            )
             if _prefers_structured_table(user_text):
                 result = dict(result)
                 result["preferred_presentation"] = "table"
             return result
         if operation == "customer_metrics":
-            return finance_tools.customer_metrics(shop_id, _optional_str(arguments.get("query")) or user_text)
+            query = _optional_str(arguments.get("query")) or user_text
+            return _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                query,
+                lambda: finance_tools.customer_metrics(shop_id, query),
+            )
         if operation == "export_report":
             return finance_tools.export_report(shop_id, _optional_str(arguments.get("format")) or "csv")
         if operation == "create_invoice":
@@ -521,35 +616,72 @@ def _build_finance_executor(shop_id: int):
                 "message": message,
             }
         if operation == "list_invoices":
-            return finance_tools.list_invoices(
+            return _with_dynamic_read_fallback(
                 shop_id,
-                status=_optional_str(arguments.get("status")),
-                limit=_to_int(arguments.get("limit")) or 20,
+                operation,
+                user_text,
+                lambda: finance_tools.list_invoices(
+                    shop_id,
+                    status=_optional_str(arguments.get("status")),
+                    limit=_to_int(arguments.get("limit")) or 20,
+                ),
             )
         if operation == "get_pos_summary":
-            return finance_tools.get_pos_summary(shop_id, _optional_str(arguments.get("date")))
+            return _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                user_text,
+                lambda: finance_tools.get_pos_summary(shop_id, _optional_str(arguments.get("date"))),
+            )
         if operation == "get_inactive_clients":
-            return finance_tools.get_inactive_clients(shop_id, _to_int(arguments.get("days_threshold")) or 45)
+            return _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                user_text,
+                lambda: finance_tools.get_inactive_clients(shop_id, _to_int(arguments.get("days_threshold")) or 45),
+            )
         if operation == "get_top_clients":
-            return finance_tools.get_top_clients(shop_id, _to_int(arguments.get("limit")) or 10)
+            return _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                user_text,
+                lambda: finance_tools.get_top_clients(shop_id, _to_int(arguments.get("limit")) or 10),
+            )
         if operation == "get_visit_frequency_summary":
-            return finance_tools.get_visit_frequency_summary(shop_id)
+            return _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                user_text,
+                lambda: finance_tools.get_visit_frequency_summary(shop_id),
+            )
         if operation == "get_client_profile":
             client_id = _to_int(arguments.get("client_id"))
             if client_id is None:
                 return {"error": "get_client_profile requires client_id"}
-            return finance_tools.get_client_profile(shop_id, client_id)
+            return _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                user_text,
+                lambda: finance_tools.get_client_profile(shop_id, client_id),
+            )
         if operation == "search_clients":
             name = _optional_str(arguments.get("name") or arguments.get("query"))
             if not name:
                 return {"error": "search_clients requires a client name"}
-            return finance_tools.search_clients(shop_id, name)
+            return _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                user_text,
+                lambda: finance_tools.search_clients(shop_id, name),
+            )
         return {"error": f"Unsupported finance operation: {operation}"}
 
     return executor
 
 
 def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
+    if result.get("dynamic_sql_answer"):
+        return str(result["dynamic_sql_answer"])
     if result.get("error"):
         return f"I couldn't complete that finance task: {result['error']}"
     if operation == "daily_revenue":

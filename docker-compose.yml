@@ -79,6 +79,15 @@ services:
       - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET:-}
+      - TELEGRAM_MODE=${TELEGRAM_MODE:-polling}
+      - TELEGRAM_POLL_TIMEOUT=${TELEGRAM_POLL_TIMEOUT:-30}
+      - DEFAULT_BUSINESS_TIMEZONE=${DEFAULT_BUSINESS_TIMEZONE:-America/Toronto}
+      - FINANCE_DYNAMIC_READS_MODE=${FINANCE_DYNAMIC_READS_MODE:-enabled}
+      - FINANCE_QUERY_MAX_ROWS=${FINANCE_QUERY_MAX_ROWS:-100}
+      - FINANCE_QUERY_STATEMENT_TIMEOUT_MS=${FINANCE_QUERY_STATEMENT_TIMEOUT_MS:-5000}
+      - FINANCE_QUERY_MAX_RETRIES=${FINANCE_QUERY_MAX_RETRIES:-2}
+      - FINANCE_QUERY_LLM_TIMEOUT_SECONDS=${FINANCE_QUERY_LLM_TIMEOUT_SECONDS:-20}
+      - AI_DATABASE_URL=${AI_DATABASE_URL:-}
       - UV_CACHE_DIR=/tmp/uv-cache
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -115,6 +124,9 @@ services:
     build:
       context: .
       dockerfile: ./mcps/finance/Dockerfile
+    volumes:
+      - ./backend:/app/backend
+      - ./mcps/finance:/app/mcps/finance
     environment:
       - DB_HOST=db
       - DB_NAME=${DB_NAME:-zeroqwait}
@@ -122,6 +134,19 @@ services:
       - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
       - HOST=0.0.0.0
       - PORT=8891
+      - DEFAULT_BUSINESS_TIMEZONE=${DEFAULT_BUSINESS_TIMEZONE:-America/Toronto}
+      - FINANCE_DYNAMIC_READS_MODE=${FINANCE_DYNAMIC_READS_MODE:-enabled}
+      - FINANCE_QUERY_MAX_ROWS=${FINANCE_QUERY_MAX_ROWS:-100}
+      - FINANCE_QUERY_STATEMENT_TIMEOUT_MS=${FINANCE_QUERY_STATEMENT_TIMEOUT_MS:-5000}
+      - FINANCE_QUERY_MAX_RETRIES=${FINANCE_QUERY_MAX_RETRIES:-2}
+      - FINANCE_QUERY_LLM_TIMEOUT_SECONDS=${FINANCE_QUERY_LLM_TIMEOUT_SECONDS:-20}
+      - AI_DATABASE_URL=${AI_DATABASE_URL:-}
+      - LLM_CONFIG_ENCRYPTION_KEY=${LLM_CONFIG_ENCRYPTION_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-nvidia}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - NVIDIA_MODEL=${NVIDIA_MODEL:-meta/llama-3.1-8b-instruct}
+      - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
+      - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
     depends_on:
       db:
         condition: service_healthy

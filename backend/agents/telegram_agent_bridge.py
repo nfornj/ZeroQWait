@@ -10,6 +10,7 @@ The runnable is created lazily and cached as a module-level singleton.
 
 import asyncio
 import logging
+import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,15 @@ logger = logging.getLogger(__name__)
 _BRIDGE_RUNNABLE = None
 _BRIDGE_CHECKPOINTER_CM = None
 _BRIDGE_CHECKPOINTER = None
+
+_FINANCE_DIRECT_RE = re.compile(
+    r"\b("
+    r"revenue|sales|customer|customers|client|clients|repeat|invoice|invoices|"
+    r"payment|payments|pos|service|services|cash|card|refund|top services|"
+    r"visited|came|attended"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 def _get_runnable():
@@ -34,6 +44,30 @@ def _get_runnable():
     return _BRIDGE_RUNNABLE
 
 
+def _looks_like_finance_message(message: str) -> bool:
+    return bool(_FINANCE_DIRECT_RE.search(message or ""))
+
+
+def _run_finance_direct(shop_id: int, message: str) -> str:
+    from agents.finance import create_finance_runnable
+    from langchain_core.messages import HumanMessage
+
+    runnable = create_finance_runnable(shop_id=shop_id)
+    final_text = ""
+    for update in runnable.stream(
+        {"messages": [HumanMessage(content=message)], "current_agent": "finance"},
+        stream_mode="updates",
+    ):
+        if not isinstance(update, dict):
+            continue
+        for node_name, out in update.items():
+            if node_name == "format_response" and isinstance(out, dict):
+                msgs = out.get("messages") or []
+                if msgs:
+                    final_text = getattr(msgs[-1], "content", "") or ""
+    return final_text
+
+
 async def handle_telegram_message(
     shop_id: int,
     owner_user_id: int,
@@ -47,9 +81,16 @@ async def handle_telegram_message(
     from agents.checkpoints import build_checkpoint_config
     from langchain_core.messages import HumanMessage
 
+    if _looks_like_finance_message(message):
+        try:
+            finance_text = await asyncio.to_thread(_run_finance_direct, shop_id, message)
+            if finance_text:
+                return finance_text
+        except Exception as exc:
+            logger.warning("Telegram finance fast path failed for shop %s: %s", shop_id, exc)
+
     runnable = _get_runnable()
-    thread_id = f"tenant_{shop_id}_{owner_user_id}"
-    config = build_checkpoint_config(thread_id=thread_id)
+    config = build_checkpoint_config(shop_id=shop_id, user_id=owner_user_id)
 
     initial_state = AgentState(
         messages=[HumanMessage(content=message)],

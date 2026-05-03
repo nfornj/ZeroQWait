@@ -1,7 +1,9 @@
 from typing import Any, Dict, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import re
 import difflib
+import os
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from db_interface import db_interface
 from integrations.finance_mcp_client import FinanceMCPClient
@@ -66,6 +68,11 @@ _TIME_WINDOW_KEYWORDS = [
 ]
 
 _finance_mcp_client: Optional[FinanceMCPClient] = None
+_DEFAULT_BUSINESS_TIMEZONE = (
+    os.getenv("DEFAULT_BUSINESS_TIMEZONE")
+    or os.getenv("TZ")
+    or "UTC"
+)
 
 
 def _get_finance_client() -> FinanceMCPClient:
@@ -73,6 +80,50 @@ def _get_finance_client() -> FinanceMCPClient:
     if _finance_mcp_client is None:
         _finance_mcp_client = FinanceMCPClient()
     return _finance_mcp_client
+
+
+def _get_zoneinfo(tz_name: Optional[str]) -> ZoneInfo:
+    try:
+        return ZoneInfo(tz_name or _DEFAULT_BUSINESS_TIMEZONE)
+    except (ZoneInfoNotFoundError, Exception):
+        return ZoneInfo("UTC")
+
+
+def _resolve_shop_timezone_name(shop_id: int, session) -> str:
+    try:
+        from modules.shops.models import ShopOperatingHours
+
+        tz_name = (
+            session.query(ShopOperatingHours.timezone)
+            .filter(ShopOperatingHours.shop_id == shop_id)
+            .scalar()
+        )
+        return tz_name or _DEFAULT_BUSINESS_TIMEZONE
+    except Exception:
+        return _DEFAULT_BUSINESS_TIMEZONE
+
+
+def _now_for_shop(shop_id: int, session) -> datetime:
+    return datetime.now(_get_zoneinfo(_resolve_shop_timezone_name(shop_id, session)))
+
+
+def _to_utc_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _to_local_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.replace(tzinfo=None)
+
+
+def _shop_local_day_bounds_utc(local_date, tz_name: str) -> Tuple[datetime, datetime]:
+    tz = _get_zoneinfo(tz_name)
+    start_local = datetime.combine(local_date, datetime.min.time(), tzinfo=tz)
+    end_local = datetime.combine(local_date, datetime.max.time(), tzinfo=tz)
+    return _to_utc_naive(start_local), _to_utc_naive(end_local)
 
 
 def _normalize_window_query(query: str) -> str:
@@ -250,12 +301,14 @@ def _local_daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, 
         session = db_interface.get_session()
         from models import DailyAnalytics, QueueItem, Queue, QueueStatus
         from sqlalchemy import func
+        tz_name = _resolve_shop_timezone_name(shop_id, session)
+        shop_now = _now_for_shop(shop_id, session)
         
         if not date:
-            date = datetime.now().strftime("%Y-%m-%d")
+            date = shop_now.strftime("%Y-%m-%d")
         
         target_date = datetime.strptime(date, "%Y-%m-%d").date()
-        is_today = (target_date == datetime.now().date())
+        is_today = (target_date == shop_now.date())
 
         # Query batch analytics first
         analytics_list = session.query(DailyAnalytics).filter(
@@ -277,13 +330,16 @@ def _local_daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, 
                 "date": date
             }
         
+        day_start_utc, day_end_utc = _shop_local_day_bounds_utc(target_date, tz_name)
+
         # Real-time fallback: query queue_items directly
         completed_items = (
             session.query(QueueItem)
             .join(Queue)
             .filter(
                 Queue.shop_id == shop_id,
-                func.date(QueueItem.checked_in_at) == target_date,
+                QueueItem.checked_in_at >= day_start_utc,
+                QueueItem.checked_in_at <= day_end_utc,
                 QueueItem.status == QueueStatus.COMPLETED,
             )
             .all()
@@ -298,7 +354,8 @@ def _local_daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, 
             .join(Queue)
             .filter(
                 Queue.shop_id == shop_id,
-                func.date(QueueItem.checked_in_at) == target_date,
+                QueueItem.checked_in_at >= day_start_utc,
+                QueueItem.checked_in_at <= day_end_utc,
             )
             .scalar() or 0
         )
@@ -317,9 +374,9 @@ def _local_daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, 
         return {"error": str(e)}
 
 
-def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
+def _parse_time_window(query: str, now: Optional[datetime] = None) -> Tuple[datetime, datetime, str, str]:
     """Parse common NL time-window phrases to concrete range + grouping granularity."""
-    now = datetime.now()
+    now = now or datetime.now()
     q = _normalize_window_query((query or "").lower())
 
     # Default: recent 30-day daily trend
@@ -351,11 +408,11 @@ def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
         if not year_group and month > now.month:
             year -= 1
 
-        start_dt = datetime(year, month, 1, 0, 0, 0, 0)
+        start_dt = datetime(year, month, 1, 0, 0, 0, 0, tzinfo=now.tzinfo)
         if month == 12:
-            next_month = datetime(year + 1, 1, 1, 0, 0, 0, 0)
+            next_month = datetime(year + 1, 1, 1, 0, 0, 0, 0, tzinfo=now.tzinfo)
         else:
-            next_month = datetime(year, month + 1, 1, 0, 0, 0, 0)
+            next_month = datetime(year, month + 1, 1, 0, 0, 0, 0, tzinfo=now.tzinfo)
         end_dt = next_month - timedelta(microseconds=1)
         granularity = "day"
         label = f"month_{start_dt.strftime('%Y_%m')}"
@@ -374,7 +431,7 @@ def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
                 anchor_month += 12
                 anchor_year -= 1
 
-            start_dt = datetime(anchor_year, anchor_month, 1, 0, 0, 0, 0)
+            start_dt = datetime(anchor_year, anchor_month, 1, 0, 0, 0, 0, tzinfo=now.tzinfo)
             end_dt = now
             granularity = "month" if months >= 4 else "day"
             label = f"last_{months}_months"
@@ -506,11 +563,14 @@ def _local_trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
     try:
         session = db_interface.get_session()
         from models import DailyAnalytics, QueueItem, Queue, QueueStatus
-        from sqlalchemy import func
+        tz_name = _resolve_shop_timezone_name(shop_id, session)
+        shop_now = _now_for_shop(shop_id, session)
 
-        start_dt, end_dt, granularity, window = _parse_time_window(query)
+        start_dt, end_dt, granularity, window = _parse_time_window(query, now=shop_now)
+        start_db = _to_local_naive(start_dt)
+        end_db = _to_local_naive(end_dt)
 
-        today = datetime.now().date()
+        today = shop_now.date()
         window_includes_today = (start_dt.date() <= today <= end_dt.date())
 
         # Query daily_analytics (exclude today if window includes it — we'll add real-time below)
@@ -518,14 +578,14 @@ def _local_trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
             hist_end = datetime.combine(today - timedelta(days=1), datetime.max.time())
             rows = session.query(DailyAnalytics).filter(
                 DailyAnalytics.shop_id == shop_id,
-                DailyAnalytics.date >= start_dt,
+                DailyAnalytics.date >= start_db,
                 DailyAnalytics.date <= hist_end,
             ).all()
         elif not window_includes_today:
             rows = session.query(DailyAnalytics).filter(
                 DailyAnalytics.shop_id == shop_id,
-                DailyAnalytics.date >= start_dt,
-                DailyAnalytics.date <= end_dt,
+                DailyAnalytics.date >= start_db,
+                DailyAnalytics.date <= end_db,
             ).all()
         else:
             # Window is today-only — no historical rows needed
@@ -562,14 +622,15 @@ def _local_trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
 
         # Real-time today supplement from queue_items
         if window_includes_today:
-            today_start = datetime.combine(today, datetime.min.time())
+            today_start_utc, today_end_utc = _shop_local_day_bounds_utc(today, tz_name)
+            query_end_utc = min(_to_utc_naive(end_dt), today_end_utc)
             today_items = (
                 session.query(QueueItem)
                 .join(Queue)
                 .filter(
                     Queue.shop_id == shop_id,
-                    QueueItem.checked_in_at >= today_start,
-                    QueueItem.checked_in_at <= end_dt,
+                    QueueItem.checked_in_at >= today_start_utc,
+                    QueueItem.checked_in_at <= query_end_utc,
                 )
                 .all()
             )
@@ -578,7 +639,7 @@ def _local_trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
             today_completed_count = len(today_completed_items)
             today_revenue = sum(float(i.service_cost or 0.0) for i in today_completed_items)
 
-            key = _bucket_key(datetime.now(), granularity)
+            key = _bucket_key(shop_now, granularity)
             if key not in buckets:
                 buckets[key] = {"revenue": 0.0, "customers": 0, "completed": 0}
             buckets[key]["revenue"] += today_revenue
@@ -638,15 +699,16 @@ def _local_weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dic
     try:
         session = db_interface.get_session()
         from models import DailyAnalytics, QueueItem, Queue, QueueStatus
-        from sqlalchemy import func as sqlfunc
+        tz_name = _resolve_shop_timezone_name(shop_id, session)
+        shop_now = _now_for_shop(shop_id, session)
         
         if week_start:
             start_date = datetime.fromisoformat(week_start)
         else:
-            today_dt = datetime.now()
+            today_dt = shop_now
             start_date = today_dt - timedelta(days=today_dt.weekday())
         
-        today = datetime.now().date()
+        today = shop_now.date()
         total_revenue = 0.0
         total_customers = 0
         total_completed = 0
@@ -663,13 +725,13 @@ def _local_weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dic
 
             if loop_date == today:
                 # Real-time from queue_items
-                today_start = datetime.combine(today, datetime.min.time())
+                today_start_utc, _today_end_utc = _shop_local_day_bounds_utc(today, tz_name)
                 today_items = (
                     session.query(QueueItem)
                     .join(Queue)
                     .filter(
                         Queue.shop_id == shop_id,
-                        QueueItem.checked_in_at >= today_start,
+                        QueueItem.checked_in_at >= today_start_utc,
                     )
                     .all()
                 )
@@ -762,10 +824,16 @@ def _local_customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[s
         from models import DailyAnalytics, QueueItem, Queue, QueueStatus
         from modules.shops.models import ShopCustomer
         from sqlalchemy import func
+        tz_name = _resolve_shop_timezone_name(shop_id, session)
+        shop_now = _now_for_shop(shop_id, session)
 
-        start_dt, end_dt, granularity, window = _parse_time_window(query or "")
+        start_dt, end_dt, granularity, window = _parse_time_window(query or "", now=shop_now)
+        start_db = _to_local_naive(start_dt)
+        end_db = _to_local_naive(end_dt)
+        start_utc = _to_utc_naive(start_dt)
+        end_utc = _to_utc_naive(end_dt)
 
-        today = datetime.now().date()
+        today = shop_now.date()
         window_includes_today = (start_dt.date() <= today <= end_dt.date())
 
         # --- Historical portion from daily_analytics ---
@@ -775,11 +843,18 @@ def _local_customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[s
 
         if start_dt.date() < today:
             # Query daily_analytics only for dates before today
-            hist_end = min(end_dt, datetime.combine(today - timedelta(days=1), datetime.max.time()))
+            hist_end = min(
+                end_dt,
+                datetime.combine(
+                    today - timedelta(days=1),
+                    datetime.max.time(),
+                    tzinfo=end_dt.tzinfo,
+                ),
+            )
             rows = session.query(DailyAnalytics).filter(
                 DailyAnalytics.shop_id == shop_id,
-                DailyAnalytics.date >= start_dt,
-                DailyAnalytics.date <= hist_end,
+                DailyAnalytics.date >= start_db,
+                DailyAnalytics.date <= _to_local_naive(hist_end),
             ).all()
             total_customers += sum(int(getattr(row, "total_customers", 0) or 0) for row in rows)
             completed_services += sum(int(getattr(row, "completed_services", 0) or 0) for row in rows)
@@ -787,14 +862,15 @@ def _local_customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[s
 
         # --- Real-time portion from queue_items for today ---
         if window_includes_today:
-            today_start = datetime.combine(today, datetime.min.time())
+            today_start_utc, today_end_utc = _shop_local_day_bounds_utc(today, tz_name)
+            query_end_utc = min(_to_utc_naive(end_dt), today_end_utc)
             today_all = (
                 session.query(func.count(QueueItem.id))
                 .join(Queue)
                 .filter(
                     Queue.shop_id == shop_id,
-                    QueueItem.checked_in_at >= today_start,
-                    QueueItem.checked_in_at <= end_dt,
+                    QueueItem.checked_in_at >= today_start_utc,
+                    QueueItem.checked_in_at <= query_end_utc,
                 )
                 .scalar() or 0
             )
@@ -803,8 +879,8 @@ def _local_customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[s
                 .join(Queue)
                 .filter(
                     Queue.shop_id == shop_id,
-                    QueueItem.checked_in_at >= today_start,
-                    QueueItem.checked_in_at <= end_dt,
+                    QueueItem.checked_in_at >= today_start_utc,
+                    QueueItem.checked_in_at <= query_end_utc,
                     QueueItem.status == QueueStatus.COMPLETED,
                 )
                 .scalar() or 0
@@ -816,15 +892,15 @@ def _local_customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[s
 
         new_customers = session.query(ShopCustomer).filter(
             ShopCustomer.shop_id == shop_id,
-            ShopCustomer.created_at >= start_dt,
-            ShopCustomer.created_at <= end_dt,
+            ShopCustomer.created_at >= start_utc,
+            ShopCustomer.created_at <= end_utc,
         ).count()
 
         repeat_customers = session.query(ShopCustomer).filter(
             ShopCustomer.shop_id == shop_id,
             ShopCustomer.visit_count > 1,
-            ShopCustomer.last_visit >= start_dt,
-            ShopCustomer.last_visit <= end_dt,
+            ShopCustomer.last_visit >= start_utc,
+            ShopCustomer.last_visit <= end_utc,
         ).count()
 
         known_customer_pool = int(new_customers) + int(repeat_customers)
@@ -1027,6 +1103,30 @@ def _local_get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str
         return {"error": str(e)}
 
 
+def _local_answer_finance_question(
+    shop_id: int,
+    question: str,
+    operation: Optional[str] = None,
+    mode: str = "enabled",
+) -> Dict[str, Any]:
+    """Answer a finance read question through the guarded dynamic SQL engine."""
+    try:
+        from agents.tools import finance_query_engine
+
+        result = finance_query_engine.answer_question(shop_id, question, mode=mode)
+        if operation:
+            result["operation"] = operation
+        return result
+    except Exception as e:
+        return {
+            "error": str(e),
+            "error_class": type(e).__name__,
+            "fallback_used": True,
+            "shop_id": shop_id,
+            "operation": operation,
+        }
+
+
 def daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
     return _get_finance_client().daily_revenue(shop_id, date)
 
@@ -1111,6 +1211,20 @@ def list_invoices(
 
 def get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
     return _get_finance_client().get_pos_summary(shop_id, date=date)
+
+
+def answer_finance_question(
+    shop_id: int,
+    question: str,
+    operation: Optional[str] = None,
+    mode: str = "enabled",
+) -> Dict[str, Any]:
+    return _get_finance_client().answer_finance_question(
+        shop_id,
+        question,
+        operation=operation,
+        mode=mode,
+    )
 
 
 def get_inactive_clients(shop_id: int, days_threshold: int = 45) -> Dict[str, Any]:
