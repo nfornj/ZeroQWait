@@ -4,6 +4,7 @@ import {
   alpha,
   Box,
   ButtonBase,
+  Chip,
   CircularProgress,
   Stack,
   Typography,
@@ -26,6 +27,7 @@ export type AgentTaskBoardTask = {
   assignee?: string;
   createdAt: string;
   actionId?: string;
+  detailLines?: string[];
 };
 
 export type AgentTaskBoardState = {
@@ -64,6 +66,10 @@ const TASK_BOARD_STATE_SCHEMA = {
           assignee: { type: "string" },
           createdAt: { type: "string" },
           actionId: { type: "string" },
+          detailLines: {
+            type: "array",
+            items: { type: "string" },
+          },
         },
       },
     },
@@ -91,7 +97,8 @@ const areTasksEqual = (left: AgentTaskBoardTask, right: AgentTaskBoardTask) =>
   left.source === right.source &&
   left.assignee === right.assignee &&
   left.createdAt === right.createdAt &&
-  left.actionId === right.actionId;
+  left.actionId === right.actionId &&
+  (left.detailLines || []).join("\n") === (right.detailLines || []).join("\n");
 
 const normalizeExternalTask = (
   task: AgentTaskBoardExternalTask,
@@ -105,6 +112,7 @@ const normalizeExternalTask = (
   assignee: task.assignee,
   createdAt: task.createdAt,
   actionId: task.actionId,
+  detailLines: task.detailLines,
 });
 
 const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
@@ -276,12 +284,12 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
                     display: "flex",
                     width: "100%",
                     justifyContent: "flex-start",
-                    alignItems: "center",
+                    alignItems: "flex-start",
                     gap: 1.25,
                     borderRadius: 0,
                     px: 0.75,
-                    py: 0,
-                    minHeight: 36,
+                    py: 1,
+                    minHeight: task.source === "approval" ? 82 : 44,
                     textAlign: "left",
                     opacity: task.done ? 0.56 : 1,
                     transition: theme.transitions.create(["background-color", "opacity"], {
@@ -297,26 +305,82 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
                   title={task.description || task.title}
                 >
                   {task.done ? (
-                    <CheckCircleRoundedIcon sx={{ fontSize: 18, color: "primary.main", flexShrink: 0 }} />
+                    <CheckCircleRoundedIcon sx={{ mt: 0.25, fontSize: 18, color: "primary.main", flexShrink: 0 }} />
                   ) : (
                     <RadioButtonUncheckedRoundedIcon
-                      sx={{ fontSize: 18, color: "text.secondary", flexShrink: 0 }}
+                      sx={{ mt: 0.25, fontSize: 18, color: "text.secondary", flexShrink: 0 }}
                     />
                   )}
 
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      flex: 1,
-                      minWidth: 0,
-                      fontWeight: 500,
-                      color: task.done ? "text.secondary" : "text.primary",
-                      textDecoration: task.done ? "line-through" : "none",
-                      wordBreak: "break-word",
-                    }}
-                  >
-                    {task.title}
-                  </Typography>
+                  <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
+                    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          flex: 1,
+                          minWidth: 0,
+                          fontWeight: 600,
+                          color: task.done ? "text.secondary" : "text.primary",
+                          textDecoration: task.done ? "line-through" : "none",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {task.title}
+                      </Typography>
+
+                      {task.source === "approval" ? (
+                        <Chip
+                          size="small"
+                          label="Approve"
+                          sx={{
+                            height: 20,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "primary.main",
+                            backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                          }}
+                        />
+                      ) : null}
+                    </Stack>
+
+                    {task.description ? (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: alpha(theme.palette.text.secondary, 0.92),
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                          lineHeight: 1.35,
+                        }}
+                      >
+                        {task.description}
+                      </Typography>
+                    ) : null}
+
+                    {task.detailLines && task.detailLines.length > 0 ? (
+                      <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
+                        {task.detailLines.slice(0, 3).map((detail) => (
+                          <Chip
+                            key={detail}
+                            size="small"
+                            label={detail}
+                            sx={{
+                              height: 20,
+                              maxWidth: "100%",
+                              fontSize: 11,
+                              color: "text.secondary",
+                              backgroundColor:
+                                theme.palette.mode === "dark"
+                                  ? alpha(theme.palette.common.white, 0.05)
+                                  : alpha(theme.palette.text.primary, 0.05),
+                            }}
+                          />
+                        ))}
+                      </Stack>
+                    ) : null}
+                  </Stack>
                 </ButtonBase>
               </Box>
             ))}

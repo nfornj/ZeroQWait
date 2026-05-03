@@ -19,7 +19,7 @@ const StyledBreadcrumbs = styled(Breadcrumbs)(({ theme }) => ({
 const routeNameMap: { [key: string]: string } = {
   '/dashboard': 'Agent',
   '/overview': 'Overview',
-  '/services': 'Services',
+
   '/appointments': 'Appointments',
   '/queues': 'Queues',
   '/agent-inbox': 'Agent Inbox',

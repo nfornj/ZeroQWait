@@ -384,6 +384,11 @@ def _parse_time_window(query: str) -> Tuple[datetime, datetime, str, str]:
         rf"\b(?:last|past|previous)\s+({_NUMBER_WORD_PATTERN})\s+days?\b",
         q,
     )
+    if not relative_days_match:
+        relative_days_match = re.search(
+            rf"\b({_NUMBER_WORD_PATTERN})\s+days?\b",
+            q,
+        )
     if relative_days_match:
         days = _parse_relative_window_count(relative_days_match.group(1)) or 0
         if days > 0:
@@ -736,17 +741,80 @@ def _local_weekly_summary(shop_id: int, week_start: Optional[str] = None) -> Dic
 
 
 def _local_top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
-    """Get top services by revenue."""
+    """Get top services by live completed-service revenue.
+
+    Daily analytics and invoices can lag behind the simulator/local queue
+    activity, so this reads completed queue visits directly for the recent
+    live window and falls back to the service catalog only when no visits
+    exist yet.
+    """
+    session = None
     try:
-        services = db_interface.get_shop_services(shop_id, include_inactive=False)
-        top = services[:limit] if services else []
+        session = db_interface.get_session()
+        from modules.queues.models import Queue, QueueItem, QueueStatus
+        from modules.shops.models import ShopService
+        from sqlalchemy import func
+
+        safe_limit = max(1, min(int(limit or 5), 50))
+        shop_now = _now_for_shop(shop_id, session)
+        start_dt, end_dt, _granularity, window = _parse_time_window("last 30 days", now=shop_now)
+        start_utc = _to_utc_naive(start_dt)
+        end_utc = _to_utc_naive(end_dt)
+
+        rows = (
+            session.query(
+                ShopService.id.label("service_id"),
+                func.coalesce(ShopService.name, QueueItem.notes, "Unknown service").label("name"),
+                func.count(QueueItem.id).label("completed_services"),
+                func.count(QueueItem.id).label("customer_count"),
+                func.coalesce(func.sum(QueueItem.service_cost), 0.0).label("revenue"),
+                func.coalesce(func.avg(QueueItem.service_cost), 0.0).label("average_ticket"),
+            )
+            .join(Queue, QueueItem.queue_id == Queue.id)
+            .outerjoin(ShopService, QueueItem.service_id == ShopService.id)
+            .filter(
+                Queue.shop_id == shop_id,
+                QueueItem.status == QueueStatus.COMPLETED,
+                func.coalesce(QueueItem.completed_at, QueueItem.checked_in_at) >= start_utc,
+                func.coalesce(QueueItem.completed_at, QueueItem.checked_in_at) <= end_utc,
+            )
+            .group_by(ShopService.id, func.coalesce(ShopService.name, QueueItem.notes, "Unknown service"))
+            .order_by(func.coalesce(func.sum(QueueItem.service_cost), 0.0).desc(), func.count(QueueItem.id).desc())
+            .limit(safe_limit)
+            .all()
+        )
+
+        services = [
+            {
+                "id": row.service_id,
+                "service_id": row.service_id,
+                "name": row.name,
+                "completed_services": int(row.completed_services or 0),
+                "customer_count": int(row.customer_count or 0),
+                "revenue": round(float(row.revenue or 0.0), 2),
+                "average_ticket": round(float(row.average_ticket or 0.0), 2),
+            }
+            for row in rows
+        ]
+
+        if not services:
+            catalog = db_interface.get_shop_services(shop_id, include_inactive=False)
+            services = catalog[:safe_limit] if catalog else []
+
         return {
-            "services": top,
+            "services": services,
             "shop_id": shop_id,
-            "limit": limit
+            "limit": safe_limit,
+            "window": window,
+            "window_display": _describe_time_window(window, start_dt, end_dt, "day"),
+            "total_revenue": round(sum(float(item.get("revenue", 0.0) or 0.0) for item in services), 2),
+            "completed_services": sum(int(item.get("completed_services", 0) or 0) for item in services),
         }
     except Exception as e:
         return {"error": str(e)}
+    finally:
+        if session is not None:
+            session.close()
 
 
 def _local_customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
@@ -846,6 +914,75 @@ def _local_customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[s
             "repeat_customers": int(repeat_customers),
             "repeat_rate": round(float(repeat_rate), 4),
             "profile_signal_limited": profile_signal_limited,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if session is not None:
+            session.close()
+
+
+def _local_service_customer_counts(
+    shop_id: int,
+    query: Optional[str] = None,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    """Count completed customer visits grouped by service for a parsed time window."""
+    session = None
+    try:
+        session = db_interface.get_session()
+        from modules.queues.models import Queue, QueueItem, QueueStatus
+        from modules.shops.models import ShopService
+        from sqlalchemy import func
+
+        shop_now = _now_for_shop(shop_id, session)
+        tz_name = _resolve_shop_timezone_name(shop_id, session)
+        start_dt, end_dt, _granularity, window = _parse_time_window(query or "", now=shop_now)
+        start_utc = _to_utc_naive(start_dt)
+        end_utc = _to_utc_naive(end_dt)
+
+        # Completed visits are the safest definition of "attended/served".
+        # Fall back to checked_in_at only when completed_at was not recorded.
+        rows = (
+            session.query(
+                func.coalesce(ShopService.name, QueueItem.notes, "Unknown service").label("service_name"),
+                func.count(QueueItem.id).label("customer_count"),
+                func.coalesce(func.sum(QueueItem.service_cost), 0.0).label("revenue"),
+            )
+            .join(Queue, QueueItem.queue_id == Queue.id)
+            .outerjoin(ShopService, QueueItem.service_id == ShopService.id)
+            .filter(
+                Queue.shop_id == shop_id,
+                QueueItem.status == QueueStatus.COMPLETED,
+                func.coalesce(QueueItem.completed_at, QueueItem.checked_in_at) >= start_utc,
+                func.coalesce(QueueItem.completed_at, QueueItem.checked_in_at) <= end_utc,
+            )
+            .group_by(func.coalesce(ShopService.name, QueueItem.notes, "Unknown service"))
+            .order_by(func.count(QueueItem.id).desc())
+            .limit(max(1, min(int(limit or 20), 50)))
+            .all()
+        )
+
+        services = [
+            {
+                "service_name": row.service_name,
+                "customer_count": int(row.customer_count or 0),
+                "revenue": round(float(row.revenue or 0.0), 2),
+            }
+            for row in rows
+        ]
+
+        return {
+            "shop_id": shop_id,
+            "query": query or "",
+            "window": window,
+            "window_display": _describe_time_window(window, start_dt, end_dt, "day"),
+            "range_start": start_dt.strftime("%Y-%m-%d"),
+            "range_end": end_dt.strftime("%Y-%m-%d"),
+            "services": services,
+            "total_customers": sum(item["customer_count"] for item in services),
+            "total_revenue": round(sum(float(item["revenue"] or 0.0) for item in services), 2),
+            "timezone": tz_name,
         }
     except Exception as e:
         return {"error": str(e)}
@@ -1045,6 +1182,14 @@ def top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
 
 def customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
     return _get_finance_client().customer_metrics(shop_id, query=query)
+
+
+def service_customer_counts(
+    shop_id: int,
+    query: Optional[str] = None,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    return _get_finance_client().service_customer_counts(shop_id, query=query, limit=limit)
 
 
 def export_report(shop_id: int, format: str = "csv") -> Dict[str, Any]:

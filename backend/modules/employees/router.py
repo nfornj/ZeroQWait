@@ -53,6 +53,26 @@ def add_employee(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/shops/{shop_id}/employee-shifts", response_model=List[schemas.EmployeeShift])
+def list_employee_shifts(
+    shop_id: int,
+    months: int = 1,
+    employee_id: Optional[int] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    check_shop_access(shop_id, current_user, require_owner=True)
+    try:
+        from datetime import timedelta
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=30 * months)
+        shifts = db_interface.get_employee_shifts(shop_id, start_date, end_date, user_id=employee_id)
+        return shifts
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load shifts: {str(e)}")
+
+
 @router.get("/shops/{shop_id}/employees", response_model=List[schemas.ShopEmployee])
 def list_employees(
     shop_id: int,

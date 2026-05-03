@@ -10,7 +10,6 @@ import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 import QueueRoundedIcon from '@mui/icons-material/QueueRounded';
 import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
-import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded';
 import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded';
@@ -24,7 +23,6 @@ const primaryListItems = [
 ];
 
 const managementListItems = [
-  { text: 'Services', icon: <ContentCutRoundedIcon />, path: '/services' },
   { text: 'Appointments', icon: <EventNoteRoundedIcon />, path: '/appointments' },
   { text: 'Queues', icon: <QueueRoundedIcon />, path: '/queues' },
   { text: 'Shop Setup', icon: <SettingsRoundedIcon />, path: '/settings' },

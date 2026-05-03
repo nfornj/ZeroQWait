@@ -23,6 +23,8 @@ export interface PendingApproval {
   risk_level?: "low" | "medium" | "high" | string;
   urgency?: string;
   recommended_decision?: string;
+  approval_request_id?: number | null;
+  created_at?: string | null;
 }
 
 export interface ShopPolicy {

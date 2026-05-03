@@ -294,8 +294,55 @@ async def setup(
         else:
             STATE.log(f"⚠️  Barber '{emp.display_name}' login failed", "yellow")
 
-    STATE.log("🚀 Setup complete — simulation is LIVE!", "bold green")
-    STATE.log(f"   👀 Watch at http://localhost:3000", "bold cyan")
+        # If a previous test run deactivated the shop-employee link, restore it
+        # so the simulator roster and active shifts stay in sync.
+        if emp.user_id is not None:
+            try:
+                await _request(
+                    client,
+                    "PUT",
+                    f"/api/shops/{STATE.shop_id}/employees/{emp.user_id}/reactivate",
+                    token=owner.token,
+                )
+            except APIError as e:
+                if e.status not in (404, 409):
+                    STATE.log(f"⚠️  Reactivate failed for {emp.display_name}: {e}", "yellow")
+
+        # Sick-day lottery
+        if random.random() < SICK_DAY_CHANCE:
+            emp.on_sick_day = True
+            STATE.log(
+                f"🤒 Barber '{emp.display_name}' called in sick today — only one barber on duty!",
+                "bold red",
+            )
+            continue
+
+        # Clock in
+        try:
+            await _request(
+                client, "POST", f"/api/clock-in/{STATE.shop_id}",
+                token=emp.token,
+            )
+            emp.clocked_in = True
+            STATE.log(f"👷 Barber '{emp.display_name}' clocked in (id={emp.user_id})", "green")
+        except APIError as e:
+            if e.status == 400:
+                emp.clocked_in = True  # already clocked in from a previous run
+                STATE.log(f"👷 Barber '{emp.display_name}' already clocked in", "cyan")
+            else:
+                STATE.log(f"⚠️  Clock-in failed for {emp.display_name}: {e}", "yellow")
+
+    # Register upcoming close days (bank holidays, etc.)
+    await _register_upcoming_holidays(client, owner)
+
+    # Check if today is a registered close day
+    await _check_today_closed(client)
+
+    if STATE.shop_closed_today:
+        STATE.log("🔒 Today is a registered CLOSE DAY — no customers will arrive", "bold red")
+    else:
+        STATE.log("🚀 Setup complete — simulation is LIVE!", "bold green")
+        STATE.log(f"   👀 Watch at http://localhost:3000", "bold cyan")
     return True
 
 
@@ -401,11 +448,6 @@ async def employee_loop(client: httpx.AsyncClient, emp: Actor) -> None:
             else:
                 STATE.log(f"⚠️  {emp.display_name}: {str(e)[:80]}", "dim yellow")
 
-        await asyncio.sleep(delay)
-
-
-# ─── Actor: Owner ─────────────────────────────────────────────────────────────
-
 
 async def owner_loop(client: httpx.AsyncClient, owner: Actor) -> None:
     """Owner periodically chats with the AI agent about shop operations."""
@@ -502,7 +544,6 @@ def _build_dashboard() -> Layout:
 
     # ── Queue table ──
     q_table = Table(
-        box=box.SIMPLE_HEAVY,
         show_header=True,
         header_style="bold cyan",
         title="[bold]Live Queue[/bold]",

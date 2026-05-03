@@ -13,6 +13,15 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
 
+def merge_optional_dicts(left: Optional[dict], right: Optional[dict]) -> Optional[dict]:
+    merged: dict = {}
+    if isinstance(left, dict):
+        merged.update(left)
+    if isinstance(right, dict):
+        merged.update(right)
+    return merged or None
+
+
 class AgentState(TypedDict):
     """
     Unified state passed through all agent graphs.
@@ -60,7 +69,7 @@ class AgentState(TypedDict):
     tool_results: Optional[dict]
     
     # Optional metadata
-    metadata: Optional[dict]
+    metadata: Annotated[Optional[dict], merge_optional_dicts]
 
 
 # Export for graph builders

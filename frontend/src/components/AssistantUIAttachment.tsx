@@ -45,6 +45,7 @@ const useFileSrc = (file: File | undefined) => {
 const useAttachmentPreviewSrc = () => {
   const attachment = useAttachment();
   const isImage = attachment.type === "image" || attachment.contentType?.startsWith("image/");
+  const filePreview = useFileSrc(attachment.file);
   const contentPreview = useMemo(() => {
     if (!isImage) {
       return undefined;
@@ -67,7 +68,7 @@ const useAttachmentPreviewSrc = () => {
     return undefined;
   }, [attachment.content, isImage]);
 
-  return (isImage ? useFileSrc(attachment.file) : undefined) ?? contentPreview;
+  return (isImage ? filePreview : undefined) ?? contentPreview;
 };
 
 const AttachmentPreviewDialog: React.FC<React.PropsWithChildren> = ({ children }) => {

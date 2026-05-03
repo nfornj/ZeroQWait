@@ -53,6 +53,11 @@ class CustomerMetricsRequest(ShopRequest):
     query: Optional[str] = None
 
 
+class ServiceCustomerCountsRequest(ShopRequest):
+    query: Optional[str] = None
+    limit: int = 20
+
+
 class CreateInvoiceRequest(ShopRequest):
     service_name: str
     unit_price: float
@@ -123,6 +128,11 @@ async def rest_top_services(req: TopServicesRequest):
 @app.post("/customers/metrics")
 async def rest_customer_metrics(req: CustomerMetricsRequest):
     return finance_tools._local_customer_metrics(req.shop_id, req.query)
+
+
+@app.post("/services/customer-counts")
+async def rest_service_customer_counts(req: ServiceCustomerCountsRequest):
+    return finance_tools._local_service_customer_counts(req.shop_id, query=req.query, limit=req.limit)
 
 
 @app.post("/reports/export")
@@ -231,6 +241,12 @@ try:
     @mcp.tool(description="Return customer metrics for a shop.")
     async def customer_metrics(shop_id: int, query: Optional[str] = None) -> dict:
         return await rest_customer_metrics(CustomerMetricsRequest(shop_id=shop_id, query=query))
+
+    @mcp.tool(description="Return completed customer counts grouped by service for a shop.")
+    async def service_customer_counts(shop_id: int, query: Optional[str] = None, limit: int = 20) -> dict:
+        return await rest_service_customer_counts(
+            ServiceCustomerCountsRequest(shop_id=shop_id, query=query, limit=limit)
+        )
 
     @mcp.tool(description="Export a weekly finance report for a shop.")
     async def export_report(shop_id: int, format: str = "csv") -> dict:

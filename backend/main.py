@@ -17,6 +17,7 @@ from modules.testing.routes import router as testing_router
 from modules.feedback.router import router as feedback_router
 from scheduler import start_scheduler, stop_scheduler
 from audit_logger import start_worker as _audit_start, stop_worker as _audit_stop
+from telegram_polling import start_polling as _telegram_polling_start, stop_polling as _telegram_polling_stop
 import logging
 import models # Force model registration
 from websocket_manager import manager
@@ -89,6 +90,11 @@ async def lifespan(app: FastAPI):
     _audit_start()
     logger.info("Audit logger started")
 
+    try:
+        await _telegram_polling_start()
+    except Exception as _telegram_polling_err:
+        logger.warning(f"Telegram polling startup warning: {_telegram_polling_err}")
+
     logger.info("Application started")
     
     yield
@@ -96,6 +102,8 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Stopping audit logger...")
     await _audit_stop()
+    logger.info("Stopping Telegram polling...")
+    await _telegram_polling_stop()
     logger.info("Stopping analytics scheduler...")
     await stop_scheduler()
     logger.info("Application shutdown complete")

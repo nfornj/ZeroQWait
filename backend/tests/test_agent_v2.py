@@ -166,57 +166,333 @@ def test_chat_stream_route_resets_idle_checkpoint_thread_before_new_turn():
     assert "[DONE]" in body
 
 
-def test_chat_route_returns_existing_pending_approval_without_reinvoking_graph():
+def test_chat_route_allows_new_message_when_existing_approval_is_pending():
     agent_v2, client = _build_test_app_with_real_graph()
     existing_pending = {
         **_pending_policy_payload("close_queue", {"reason": "Owner requested closure"}),
         "action_id": "interrupt-123",
     }
-    fake_invoke = Mock(side_effect=AssertionError("chat_sync should not invoke the graph when approval is pending"))
+
+    def _stream(*_args, **_kwargs):
+        yield {
+            "synthesize_response": {
+                "messages": [AIMessage(content="Here is the finance answer.")],
+                "current_agent": "finance",
+            }
+        }
+
+    fake_snapshot = SimpleNamespace(
+        values={"messages": [AIMessage(content="Here is the finance answer.")]},
+        next=(),
+        interrupts=(),
+    )
+    fake_runnable = SimpleNamespace(stream=Mock(side_effect=_stream), get_state=Mock(return_value=fake_snapshot))
 
     with (
         patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
         patch.object(agent_v2, "_get_current_pending_approval", return_value=existing_pending),
-        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", SimpleNamespace(invoke=fake_invoke)),
+        patch.object(
+            agent_v2,
+            "_create_chat_work_context",
+            return_value={
+                "goal_id": 501,
+                "run_id": 601,
+                "execution_mode": "interactive",
+                "trigger_source": "chat",
+                "event_context": {"trigger_source": "chat", "goal_id": 501, "run_id": 601},
+            },
+        ),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_finalize_chat_work_context", return_value=None),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", fake_runnable),
     ):
         response = client.post(
             "/api/v2/agent/chat",
-            json={"message": "Close the queue for today", "shop_id": 41},
+            json={"message": "What was today's revenue?", "shop_id": 41},
         )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["approval_required"] is True
-    assert payload["pending_action"]["action_id"] == "interrupt-123"
-    assert "pending approval" in payload["response"]
-    fake_invoke.assert_not_called()
+    assert payload["approval_required"] is False
+    assert payload["pending_action"] is None
+    assert payload["response"] == "Here is the finance answer."
+    assert payload["metadata"]["goal_id"] == 501
+    fake_runnable.stream.assert_called_once()
 
 
-def test_chat_stream_route_returns_existing_pending_approval_without_reinvoking_graph():
+def test_chat_stream_route_allows_new_message_when_existing_approval_is_pending():
     agent_v2, client = _build_test_app_with_real_graph()
     existing_pending = {
         **_pending_policy_payload("close_queue", {"reason": "Owner requested closure"}),
         "action_id": "interrupt-123",
     }
-    fake_stream = Mock(side_effect=AssertionError("chat_stream should not start the graph when approval is pending"))
+
+    def _stream(*_args, **_kwargs):
+        yield {
+            "synthesize_response": {
+                "messages": [AIMessage(content="Fresh finance stream reply")],
+                "current_agent": "finance",
+            }
+        }
+
+    fake_snapshot = SimpleNamespace(
+        values={"messages": [AIMessage(content="Fresh finance stream reply")]},
+        next=(),
+        interrupts=(),
+    )
+    fake_runnable = SimpleNamespace(stream=Mock(side_effect=_stream), get_state=Mock(return_value=fake_snapshot))
 
     with (
         patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
         patch.object(agent_v2, "_get_current_pending_approval", return_value=existing_pending),
-        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", SimpleNamespace(stream=fake_stream)),
+        patch.object(
+            agent_v2,
+            "_create_chat_work_context",
+            return_value={
+                "goal_id": 502,
+                "run_id": 602,
+                "execution_mode": "interactive",
+                "trigger_source": "chat",
+                "event_context": {"trigger_source": "chat", "goal_id": 502, "run_id": 602},
+            },
+        ),
+        patch.object(agent_v2, "_build_memory_context", return_value=""),
+        patch.object(agent_v2, "_finalize_chat_work_context", return_value=None),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", fake_runnable),
     ):
         with client.stream(
             "POST",
             "/api/v2/agent/chat/stream",
-            json={"message": "Close the queue for today", "shop_id": 41},
+            json={"message": "Please review the shop performance dashboard", "shop_id": 41},
         ) as response:
             body = "".join(response.iter_text())
 
     assert response.status_code == 200
-    assert '"type": "approval_required"' in body
-    assert 'interrupt-123' in body
+    assert '"type": "approval_required"' not in body
+    assert '"has_text": true' in body
     assert "[DONE]" in body
-    fake_stream.assert_not_called()
+    fake_runnable.stream.assert_called_once()
+
+
+def test_chat_route_answers_service_customer_counts_without_graph():
+    agent_v2, client = _build_test_app_with_real_graph()
+    fake_runnable = SimpleNamespace(stream=Mock(side_effect=AssertionError("direct finance fastpath should not run graph")))
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2.finance_tools,
+            "_local_service_customer_counts",
+            return_value={
+                "window_display": "today",
+                "total_customers": 6,
+                "services": [
+                    {"service_name": "Haircut", "customer_count": 4, "revenue": 140.0},
+                    {"service_name": "Beard Trim", "customer_count": 2, "revenue": 50.0},
+                ],
+            },
+        ) as service_counts,
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", fake_runnable),
+    ):
+        response = client.post(
+            "/api/v2/agent/chat",
+            json={"message": "can you show me number of customers attended for each services?", "shop_id": 41},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["agent"] == "finance"
+    assert payload["approval_required"] is False
+    assert "Haircut: 4 customers" in payload["response"]
+    assert payload["metadata"]["direct_fastpath"] == "service_customer_counts"
+    service_counts.assert_called_once_with(
+        41,
+        query="can you show me number of customers attended for each services?",
+        limit=20,
+    )
+    fake_runnable.stream.assert_not_called()
+
+
+def test_chat_stream_route_answers_service_customer_counts_without_graph():
+    agent_v2, client = _build_test_app_with_real_graph()
+    fake_runnable = SimpleNamespace(stream=Mock(side_effect=AssertionError("direct finance fastpath should not run graph")))
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2.finance_tools,
+            "_local_service_customer_counts",
+            return_value={
+                "window_display": "today",
+                "total_customers": 3,
+                "services": [{"service_name": "Haircut", "customer_count": 3, "revenue": 105.0}],
+            },
+        ) as service_counts,
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", fake_runnable),
+    ):
+        with client.stream(
+            "POST",
+            "/api/v2/agent/chat/stream",
+            json={"message": "customers attended by service", "shop_id": 41},
+        ) as response:
+            body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "service_customer_counts" in body
+    assert "Haircut" in body
+    assert "[DONE]" in body
+    service_counts.assert_called_once_with(41, query="customers attended by service", limit=20)
+    fake_runnable.stream.assert_not_called()
+
+
+def test_chat_stream_route_answers_service_count_window_followup_without_graph():
+    agent_v2, client = _build_test_app_with_real_graph()
+    fake_runnable = SimpleNamespace(stream=Mock(side_effect=AssertionError("direct finance follow-up should not run graph")))
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2._redis,
+            "tenant_get",
+            return_value={"operation": "service_customer_counts", "last_message": "customers attended by service"},
+        ),
+        patch.object(agent_v2._redis, "tenant_set", return_value=True),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch.object(
+            agent_v2.finance_tools,
+            "_local_service_customer_counts",
+            return_value={
+                "window_display": "last 70 days",
+                "total_customers": 12,
+                "services": [{"service_name": "Haircut", "customer_count": 12, "revenue": 420.0}],
+            },
+        ) as service_counts,
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", fake_runnable),
+    ):
+        with client.stream(
+            "POST",
+            "/api/v2/agent/chat/stream",
+            json={"message": "what about last 70 days?", "shop_id": 41},
+        ) as response:
+            body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "service_customer_counts" in body
+    assert "last 70 days" in body
+    assert "Haircut" in body
+    assert "[DONE]" in body
+    service_counts.assert_called_once_with(41, query="what about last 70 days?", limit=20)
+    fake_runnable.stream.assert_not_called()
+
+
+def test_chat_stream_route_answers_bare_days_followup_without_graph():
+    agent_v2, client = _build_test_app_with_real_graph()
+    fake_runnable = SimpleNamespace(stream=Mock(side_effect=AssertionError("direct finance follow-up should not run graph")))
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2._redis,
+            "tenant_get",
+            return_value={"operation": "service_customer_counts", "last_message": "customers attended by service"},
+        ),
+        patch.object(agent_v2._redis, "tenant_set", return_value=True),
+        patch.object(agent_v2, "_persist_chat_turn_memory", return_value=None),
+        patch.object(
+            agent_v2.finance_tools,
+            "_local_service_customer_counts",
+            return_value={
+                "window_display": "last 90 days",
+                "total_customers": 12,
+                "services": [{"service_name": "Haircut", "customer_count": 12, "revenue": 420.0}],
+            },
+        ) as service_counts,
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", fake_runnable),
+    ):
+        with client.stream(
+            "POST",
+            "/api/v2/agent/chat/stream",
+            json={"message": "90 days", "shop_id": 41},
+        ) as response:
+            body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "service_customer_counts" in body
+    assert "last 90 days" in body
+    assert "[DONE]" in body
+    service_counts.assert_called_once_with(41, query="90 days", limit=20)
+    fake_runnable.stream.assert_not_called()
+
+
+def test_chat_stream_route_answers_today_revenue_without_graph():
+    agent_v2, client = _build_test_app_with_real_graph()
+    fake_runnable = SimpleNamespace(stream=Mock(side_effect=AssertionError("direct finance fastpath should not run graph")))
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2.finance_tools,
+            "_local_daily_revenue",
+            return_value={
+                "date": "2026-05-02",
+                "total_revenue": 245.0,
+                "completed_services": 7,
+                "total_customers": 9,
+                "average_transaction": 35.0,
+            },
+        ) as daily_revenue,
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", fake_runnable),
+    ):
+        with client.stream(
+            "POST",
+            "/api/v2/agent/chat/stream",
+            json={"message": "how much revenue today?", "shop_id": 41},
+        ) as response:
+            body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "daily_revenue" in body
+    assert "245.0" in body
+    assert "[DONE]" in body
+    daily_revenue.assert_called_once_with(41, None)
+    fake_runnable.stream.assert_not_called()
+
+
+def test_chat_stream_route_answers_top_services_without_graph():
+    agent_v2, client = _build_test_app_with_real_graph()
+    fake_runnable = SimpleNamespace(stream=Mock(side_effect=AssertionError("direct finance fastpath should not run graph")))
+
+    with (
+        patch.object(agent_v2._redis, "check_rate_limit", return_value=True),
+        patch.object(
+            agent_v2.finance_tools,
+            "_local_top_services",
+            return_value={
+                "window_display": "last 30 days",
+                "services": [
+                    {"name": "Full Service", "completed_services": 5, "revenue": 225.0},
+                    {"name": "Fade", "completed_services": 4, "revenue": 140.0},
+                ],
+            },
+        ) as top_services,
+        patch.object(agent_v2, "_SUPERVISOR_RUNNABLE", fake_runnable),
+    ):
+        with client.stream(
+            "POST",
+            "/api/v2/agent/chat/stream",
+            json={"message": "top services by revenue", "shop_id": 41},
+        ) as response:
+            body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "top_services" in body
+    assert "Full Service" in body
+    assert "225.0" in body
+    assert "[DONE]" in body
+    top_services.assert_called_once_with(41, 5)
+    fake_runnable.stream.assert_not_called()
 
 
 def test_chat_route_runs_supervisor_graph_through_finance_specialist():

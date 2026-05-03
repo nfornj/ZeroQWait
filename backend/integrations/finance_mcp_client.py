@@ -54,6 +54,17 @@ class FinanceMCPClient:
     def customer_metrics(self, shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
         return self._post("/customers/metrics", {"shop_id": shop_id, "query": query})
 
+    def service_customer_counts(
+        self,
+        shop_id: int,
+        query: Optional[str] = None,
+        limit: int = 20,
+    ) -> Dict[str, Any]:
+        return self._post(
+            "/services/customer-counts",
+            {"shop_id": shop_id, "query": query, "limit": limit},
+        )
+
     def export_report(self, shop_id: int, format: str = "csv") -> Dict[str, Any]:
         return self._post("/reports/export", {"shop_id": shop_id, "format": format})
 
