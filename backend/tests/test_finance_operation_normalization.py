@@ -34,6 +34,15 @@ class TestFinanceOperationNormalization(unittest.TestCase):
 
         self.assertEqual(operation, "customer_metrics")
 
+    def test_service_customer_count_prompt_normalizes_to_service_customer_counts(self) -> None:
+        operation = _normalize_finance_operation(
+            "answer",
+            {"rationale": "Customer count by service"},
+            [HumanMessage(content="Can you show me number of customers attended for each services?")],
+        )
+
+        self.assertEqual(operation, "service_customer_counts")
+
     def test_revenue_trend_analysis_normalizes_to_trend_summary(self) -> None:
         operation = _normalize_finance_operation(
             "revenue_trend_analysis",

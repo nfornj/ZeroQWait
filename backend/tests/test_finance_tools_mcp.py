@@ -93,3 +93,25 @@ def test_answer_finance_question_delegates_to_finance_mcp():
         operation="daily_revenue",
         mode="enabled",
     )
+
+
+def test_service_customer_counts_delegates_to_finance_mcp():
+    client = Mock()
+    client.service_customer_counts.return_value = {
+        "services": [{"service_name": "Haircut", "customer_count": 5}],
+        "shop_id": 41,
+    }
+
+    with patch("agents.tools.finance_tools._get_finance_client", return_value=client):
+        result = finance_tools.service_customer_counts(
+            41,
+            query="customers attended for each service",
+            limit=10,
+        )
+
+    assert result["services"][0]["customer_count"] == 5
+    client.service_customer_counts.assert_called_once_with(
+        41,
+        query="customers attended for each service",
+        limit=10,
+    )

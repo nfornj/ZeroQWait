@@ -37,6 +37,7 @@ from modules.agent.work_repository import AgentWorkRepository
 
 from . import approval_policy
 from .llm_factory import create_planner_model, create_formatter_model, create_ollama_fallback_planner
+from .memory_context import get_conversation_history, save_conversation_turn
 from .state import AgentState
 from .tools import booking_tools, finance_tools, hr_tools
 
@@ -54,11 +55,8 @@ _QUEUE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
 _FINANCE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:revenue|sales)\b.*\b(?:trend|trends|graph|chart|over\s+time|by\s+day|by\s+date|daily\s+breakdown)\b"),
     re.compile(r"\b(?:trend|trends|graph|chart|over\s+time|by\s+day|by\s+date|daily\s+breakdown)\b.*\b(?:revenue|sales)\b"),
-    # weeks? and week's? so "this weeks revenue" / "last week's revenue" also fast-path
-    re.compile(r"\b(?:today|today's|yesterday|yesterday's|this\s+weeks?|this\s+week's?|last\s+weeks?|last\s+week's?|this\s+month|last\s+month|this\s+quarter|last\s+quarter|this\s+year|last\s+year)\b.*\b(?:revenue|sales|earnings)\b"),
-    re.compile(r"\b(?:revenue|sales|earnings)\b.*\b(?:today|today's|yesterday|yesterday's|this\s+weeks?|this\s+week's?|last\s+weeks?|last\s+week's?|this\s+month|last\s+month|this\s+quarter|last\s+quarter|this\s+year|last\s+year)\b"),
-    re.compile(r"\b(?:weekly|monthly|quarterly|yearly)\s+(?:revenue|sales)\s+(?:summary|summaries)\b"),
-    re.compile(r"\b(?:summary|summaries)\s+of\s+(?:weekly|monthly|quarterly|yearly)\s+(?:revenue|sales)\b"),
+    re.compile(r"\b(?:customers?|clients?|visits?|attended|served)\b.*\b(?:per|by|for each|each)\s+(?:service|services)\b"),
+    re.compile(r"\b(?:service|services)\b.*\b(?:customers?|clients?|visits?|attended|served|count|counts)\b"),
 )
 
 
@@ -196,7 +194,7 @@ def _latest_user_text(state: AgentState) -> str:
 
 
 
-def classify_intent(state: AgentState) -> Command[Literal["plan_and_route"]]:
+def classify_intent(state: AgentState) -> Command[Literal["plan_and_route", "plan_execution"]]:
     """
     Classify owner's intent using LLM structured output.
 
@@ -297,7 +295,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route"]]:
 
         reasoning = f"I routed this directly to {intent} because the request clearly matched the {source.replace('_', ' ')} pattern."
         return Command(
-            goto="plan_and_route",
+            goto="plan_execution",
             update={
                 "current_agent": intent,
                 "metadata": _merge_metadata(state, {
@@ -431,6 +429,10 @@ def plan_and_route(state: AgentState) -> dict:
             },
         )
     }
+
+
+def plan_execution(state: AgentState) -> dict:
+    return plan_and_route(state)
 
 
 def execute_plan(state: AgentState) -> dict:
@@ -966,6 +968,7 @@ def build_supervisor_graph():
     
     # Add nodes
     graph.add_node("classify_intent", classify_intent)
+    graph.add_node("plan_execution", plan_execution)
     graph.add_node("plan_and_route", plan_and_route)
     graph.add_node("execute_plan", execute_plan)
     graph.add_node("approval_gate", approval_gate)
@@ -973,6 +976,7 @@ def build_supervisor_graph():
     
     # Add edges
     graph.add_edge("classify_intent", "plan_and_route")
+    graph.add_edge("plan_execution", "execute_plan")
     graph.add_edge("plan_and_route", "execute_plan")
     graph.add_edge("execute_plan", "approval_gate")
     graph.add_edge("approval_gate", "synthesize_response")

@@ -79,6 +79,8 @@ def _mask_chat_id(chat_id: Optional[str]) -> Optional[str]:
     """Show only the last 6 digits of the chat_id for the dashboard display."""
     if not chat_id:
         return None
+    if not chat_id.lstrip("-").isdigit():
+        return None
     return f"...{chat_id[-6:]}" if len(chat_id) > 6 else chat_id
 
 
@@ -208,5 +210,4 @@ async def setup_webhook(
             status_code=500, detail="Failed to register webhook with Telegram."
         )
     return {"ok": True, "webhook_url": body.webhook_url}
-
 

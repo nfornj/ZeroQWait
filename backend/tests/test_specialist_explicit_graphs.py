@@ -177,10 +177,10 @@ class TestExplicitSpecialistGraphs(unittest.TestCase):
         self.assertIn("Jordan", result["messages"][-1].content)
         mock_get_top_clients.assert_called_once_with(9, 3)
 
-    @patch("agents.specialist_graph.create_chat_model")
+    @patch("agents.specialist_graph.create_planner_model")
     @patch("agents.tools.hr_tools.list_employees")
-    def test_hr_routes_employee_listing_through_hr_tools(self, mock_list_employees, mock_create_chat_model):
-        mock_create_chat_model.return_value = _FakeLLM(
+    def test_hr_routes_employee_listing_through_hr_tools(self, mock_list_employees, mock_create_planner_model):
+        mock_create_planner_model.return_value = _FakeLLM(
             {
                 "operation": "list_employees",
                 "arguments": {},
@@ -202,6 +202,68 @@ class TestExplicitSpecialistGraphs(unittest.TestCase):
         self.assertEqual(result["tool_results"]["employees"][0]["id"], 5)
         self.assertIn("Riley", result["messages"][-1].content)
         mock_list_employees.assert_called_once_with(9, False)
+
+    @patch("agents.specialist_graph.create_planner_model")
+    @patch("agents.tools.hr_tools._local_current_staffing_status")
+    def test_hr_routes_current_staffing_question_through_live_shift_snapshot(
+        self,
+        mock_current_staffing,
+        mock_create_planner_model,
+    ):
+        mock_create_planner_model.return_value = _FakeLLM(
+            {
+                "operation": "get_shifts",
+                "arguments": {},
+                "requires_clarification": False,
+                "clarification_question": "",
+                "rationale": "Owner asked who is on shift right now and where coverage is missing.",
+            }
+        )
+        mock_current_staffing.return_value = {
+            "current_staffing": True,
+            "on_shift": [
+                {"user_id": 12, "name": "Marcus", "clock_in": "2026-05-03T03:27:21"},
+                {"user_id": 13, "name": "Elena", "clock_in": "2026-05-02T23:07:06"},
+            ],
+            "queue_length": 12,
+            "estimated_wait_minutes": 101,
+            "staffing_gap_count": 1,
+            "roster_mismatch_count": 0,
+        }
+
+        result = create_hr_runnable(shop_id=9).invoke(
+            {"messages": [HumanMessage(content="Who is on shift now and where are the staffing gaps?")]}
+        )
+
+        self.assertEqual(result["current_agent"], "hr")
+        self.assertEqual(len(result["tool_results"]["on_shift"]), 2)
+        self.assertIn("Marcus", result["messages"][-1].content)
+        self.assertIn("Coverage is short by 1 team member", result["messages"][-1].content)
+        mock_current_staffing.assert_called_once_with(9)
+
+    @patch("agents.specialist_graph.create_planner_model", side_effect=AssertionError("LLM should not be used for current staffing fast path"))
+    @patch("agents.tools.hr_tools._local_current_staffing_status")
+    def test_hr_current_staffing_fast_path_skips_planner_llm(
+        self,
+        mock_current_staffing,
+        _mock_create_planner_model,
+    ):
+        mock_current_staffing.return_value = {
+            "current_staffing": True,
+            "on_shift": [{"user_id": 12, "name": "Marcus", "clock_in": "2026-05-03T03:27:21"}],
+            "queue_length": 4,
+            "estimated_wait_minutes": 20,
+            "staffing_gap_count": 0,
+            "roster_mismatch_count": 0,
+        }
+
+        result = create_hr_runnable(shop_id=9).invoke(
+            {"messages": [HumanMessage(content="Who is on shift now and where are the staffing gaps?")]}
+        )
+
+        self.assertEqual(result["current_agent"], "hr")
+        self.assertIn("Marcus", result["messages"][-1].content)
+        mock_current_staffing.assert_called_once_with(9)
 
 
 if __name__ == "__main__":

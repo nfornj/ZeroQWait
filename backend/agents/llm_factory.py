@@ -436,6 +436,8 @@ def create_planner_model(shop_id: Optional[int], *, temperature: float = 0.1):
     safe fallback for that provider without touching the DB record.
     """
     config = load_shop_llm_config(shop_id)
+    planner_settings = dict(config.settings or {})
+    planner_settings.setdefault("max_tokens", 512)
     if config.model_name in THINKING_MODELS:
         safe_model = _PLANNER_SAFE_FALLBACK.get(config.provider, config.model_name)
         config = ResolvedLLMConfig(
@@ -443,7 +445,16 @@ def create_planner_model(shop_id: Optional[int], *, temperature: float = 0.1):
             model_name=safe_model,
             api_base_url=config.api_base_url,
             api_key=config.api_key,
-            settings=config.settings,
+            settings=planner_settings,
+            subscription_tier=config.subscription_tier,
+        )
+    else:
+        config = ResolvedLLMConfig(
+            provider=config.provider,
+            model_name=config.model_name,
+            api_base_url=config.api_base_url,
+            api_key=config.api_key,
+            settings=planner_settings,
             subscription_tier=config.subscription_tier,
         )
     return _build_model_from_config(config, temperature=temperature)
@@ -457,6 +468,16 @@ def create_formatter_model(shop_id: Optional[int], *, temperature: float = 0.7):
     so response synthesis never silently fails on API errors.
     """
     config = load_shop_llm_config(shop_id)
+    formatter_settings = dict(config.settings or {})
+    formatter_settings.setdefault("max_tokens", 1024)
+    config = ResolvedLLMConfig(
+        provider=config.provider,
+        model_name=config.model_name,
+        api_base_url=config.api_base_url,
+        api_key=config.api_key,
+        settings=formatter_settings,
+        subscription_tier=config.subscription_tier,
+    )
     primary = _build_model_from_config(config, temperature=temperature)
     if config.provider in _HOSTED_PROVIDERS:
         fallback = create_ollama_fallback_planner(temperature=temperature)

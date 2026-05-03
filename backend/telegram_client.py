@@ -190,6 +190,52 @@ async def set_webhook(webhook_url: str) -> bool:
         return False
 
 
+async def delete_webhook(drop_pending_updates: bool = False) -> bool:
+    """Remove the registered webhook so the bot can use polling mode."""
+    if not _BOT_TOKEN:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                _api("deleteWebhook"),
+                json={"drop_pending_updates": drop_pending_updates},
+            )
+        data = resp.json()
+        if resp.status_code == 200 and data.get("ok"):
+            return True
+        logger.warning("Telegram deleteWebhook failed (%s): %s", resp.status_code, resp.text[:300])
+        return False
+    except Exception as exc:
+        logger.error("Telegram deleteWebhook error: %s", exc)
+        return False
+
+
+async def get_updates(
+    offset: int | None = None,
+    timeout: int = 30,
+    allowed_updates: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch updates via long polling."""
+    if not _BOT_TOKEN:
+        return []
+    payload: dict[str, Any] = {"timeout": timeout}
+    if offset is not None:
+        payload["offset"] = offset
+    if allowed_updates is not None:
+        payload["allowed_updates"] = allowed_updates
+    try:
+        async with httpx.AsyncClient(timeout=timeout + 10.0) as client:
+            resp = await client.post(_api("getUpdates"), json=payload)
+        data = resp.json()
+        if resp.status_code == 200 and data.get("ok"):
+            return data.get("result", []) or []
+        description = data.get("description") if isinstance(data, dict) else resp.text[:300]
+        raise RuntimeError(description or f"HTTP {resp.status_code}")
+    except Exception as exc:
+        logger.error("Telegram getUpdates error: %s", exc)
+        raise
+
+
 async def get_bot_info() -> dict[str, Any]:
     """Return the bot's getMe result, or {} on error."""
     if not _BOT_TOKEN:

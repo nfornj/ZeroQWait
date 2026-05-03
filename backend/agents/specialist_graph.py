@@ -18,6 +18,14 @@ from .llm_factory import create_planner_model, create_ollama_fallback_planner
 logger = logging.getLogger(__name__)
 
 
+def create_chat_model(shop_id: int | None, *, temperature: float):
+    return create_planner_model(shop_id, temperature=temperature)
+
+
+def get_llm(shop_id: int | None, *, temperature: float):
+    return create_chat_model(shop_id, temperature=temperature)
+
+
 class SpecialistPlan(BaseModel):
     operation: str = Field(description="Exact operation name chosen from the supported specialist operations.")
     arguments: Dict[str, Any] = Field(default_factory=dict, description="Arguments needed for the chosen operation.")
@@ -204,7 +212,7 @@ def build_specialist_runnable(
             if fast_plan:
                 return _finalize_plan(dict(fast_plan), messages, source="fast_path", started_at=started_at)
 
-        llm = create_planner_model(shop_id, temperature=temperature)
+        llm = get_llm(shop_id, temperature=temperature)
         planner_prompt = (
             f"You are the {agent_name} specialist planner for ZeroQwait. "
             "Pick exactly one supported operation and extract the arguments required to run it.\n\n"

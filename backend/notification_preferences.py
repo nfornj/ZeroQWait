@@ -15,6 +15,7 @@ Functions:
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -24,6 +25,7 @@ from modules.shops.models import Shop
 from shared.crypto import encrypt_text, decrypt_text, hmac_text
 
 logger = logging.getLogger(__name__)
+_PLAINTEXT_CHAT_ID_RE = re.compile(r"^-?\d{5,20}$")
 
 
 @dataclass
@@ -47,8 +49,12 @@ def get_telegram_prefs(shop_id: int, db: Session) -> Optional[TelegramPrefs]:
         try:
             plain_chat_id = decrypt_text(shop.telegram_chat_id)
         except Exception:
-            # Stored plaintext (pre-encryption migration) — use as-is
-            plain_chat_id = shop.telegram_chat_id
+            # Only trust legacy plaintext values that still look like actual
+            # Telegram chat IDs. Encrypted blobs must not be surfaced as
+            # "connected" because inbound lookups will never match them.
+            raw_value = str(shop.telegram_chat_id)
+            if _PLAINTEXT_CHAT_ID_RE.fullmatch(raw_value):
+                plain_chat_id = raw_value
 
     return TelegramPrefs(
         shop_id=shop_id,
@@ -163,6 +169,9 @@ def find_shop_by_chat_id(plain_chat_id: str, db: Session) -> Optional[Shop]:
             return shop
 
     # 3. Fallback: plaintext (pre-encryption migration; dev/test only)
+    if not _PLAINTEXT_CHAT_ID_RE.fullmatch(str(plain_chat_id)):
+        return None
+
     shop = db.query(Shop).filter(Shop.telegram_chat_id == plain_chat_id).first()
     if shop:
         # Opportunistically migrate to encrypted storage

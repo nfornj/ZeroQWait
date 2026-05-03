@@ -367,6 +367,8 @@ const AgentInbox: React.FC = () => {
                 isVoiceEnabled={isVoiceEnabled}
                 isSpeaking={isSpeaking}
                 onToggleVoice={toggleVoice}
+                onApprovalDecision={handleApprovalDecision}
+                isApproving={isApproving}
               />
             )}
             <Box sx={{ flexShrink: 0 }}>

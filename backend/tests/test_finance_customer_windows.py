@@ -2,6 +2,7 @@ import os
 import sys
 import unittest
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # Add backend directory to import path when executed directly.
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -51,6 +52,19 @@ class TestFinanceCustomerWindows(unittest.TestCase):
 
         self.assertEqual(label, "last_8_weeks")
         self.assertEqual(granularity, "week")
+
+    def test_parse_today_uses_supplied_local_timezone_anchor(self):
+        now = datetime(2026, 5, 2, 20, 3, 0, tzinfo=ZoneInfo("America/Toronto"))
+
+        start_dt, end_dt, granularity, label = finance_tools._parse_time_window(
+            "hello whats the total customers came today",
+            now=now,
+        )
+
+        self.assertEqual(label, "today")
+        self.assertEqual(granularity, "hour")
+        self.assertEqual(start_dt.date().isoformat(), "2026-05-02")
+        self.assertEqual(end_dt.date().isoformat(), "2026-05-02")
 
 
 if __name__ == "__main__":

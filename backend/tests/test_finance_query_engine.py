@@ -60,6 +60,23 @@ def test_validate_sql_rejects_sensitive_tables():
     assert "non-allowlisted" in result.error
 
 
+def test_today_questions_reject_current_date_contextually(monkeypatch):
+    monkeypatch.setattr(finance_query_engine, "_log_query", lambda **kwargs: None)
+    monkeypatch.setattr(
+        finance_query_engine,
+        "_generate_sql",
+        lambda shop_id, question, previous_error=None: SQLPlan(
+            sql="SELECT sum(service_cost) FROM ai_queue_visits WHERE completed_at >= CURRENT_DATE"
+        ),
+    )
+
+    result = finance_query_engine.answer_question(502, "how much revenue today?")
+
+    assert result["fallback_used"] is True
+    assert result["error_class"] == "ValidationError"
+    assert "CURRENT_DATE" in result["error"]
+
+
 def test_ai_views_are_tenant_scoped_in_migration():
     migration = Path(__file__).resolve().parents[1] / "migrations" / "006_ai_finance_query_agent.sql"
     text = migration.read_text()

@@ -50,5 +50,7 @@ export const normalizePendingApproval = (
     risk_level: nested.risk_level || detailPayload.risk_level,
     urgency: nested.urgency || detailPayload.urgency,
     recommended_decision: nested.recommended_decision || detailPayload.recommended_decision,
+    approval_request_id: nested.approval_request_id || detailPayload.approval_request_id,
+    created_at: nested.created_at || detailPayload.created_at,
   };
 };

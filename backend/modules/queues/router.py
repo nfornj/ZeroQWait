@@ -451,6 +451,8 @@ async def call_next_customer(
                  result.assigned_employee = {"id": user.id, "username": user.username}
                  
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

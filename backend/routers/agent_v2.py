@@ -33,11 +33,12 @@ from fastapi.responses import StreamingResponse
 from typing import Dict, Any, cast, Optional, List
 import asyncio
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import logging
 import os
+import re
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from sqlalchemy import text
 
@@ -45,6 +46,7 @@ from redis_client import redis_client as _redis
 from langgraph.types import Command
 
 from agents import approval_policy
+from agents import chat_service as _chat_service
 from agents.supervisor import create_supervisor_runnable
 from agents.briefings import (
     build_owner_briefing,
@@ -55,21 +57,18 @@ from agents.briefings import (
 )
 from agents.memory_context import (
     format_memory_context,
+    get_conversation_history,
     merge_and_rank_memories,
 )
 from agents.state import AgentState
 from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_saver
 from agents.chat_service import (
-    _build_pending_approval_block_message,
     _create_chat_work_context,
     _finalize_chat_work_context,
-    _get_current_pending_approval,
-    _get_pending_approval_payload,
     _persist_chat_turn_memory,
-    _record_approval_decision,
-    _resume_persisted_approval,
     _state_last_text,
 )
+from agents.tools import finance_tools
 from agents.document_store import (
     _OWNER_DOCUMENT_ALLOWED_EXTENSIONS,
     _OWNER_DOCUMENT_ALLOWED_MIME_TYPES,
@@ -94,6 +93,58 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v2/agent", tags=["agent_v2"])
 db_interface = DatabaseInterface()
+
+
+def _sync_chat_service_bindings() -> None:
+    _chat_service.SessionLocal = SessionLocal
+    _chat_service.AgentWorkRepository = AgentWorkRepository
+    _chat_service.db_interface = db_interface
+
+
+def _get_pending_approval_payload(
+    shop_id: int,
+    user_id: int,
+    metrics: Optional[Dict[str, Any]] = None,
+    *,
+    runnable: Any = None,
+) -> list[Dict[str, Any]]:
+    _sync_chat_service_bindings()
+    effective_runnable = _SUPERVISOR_RUNNABLE if runnable is None else runnable
+    if not hasattr(effective_runnable, "get_state"):
+        effective_runnable = None
+    return _chat_service._get_pending_approval_payload(
+        shop_id,
+        user_id,
+        metrics=metrics,
+        runnable=effective_runnable,
+    )
+
+
+def _get_current_pending_approval(
+    shop_id: int,
+    user_id: int,
+    *,
+    runnable: Any = None,
+) -> Optional[Dict[str, Any]]:
+    _sync_chat_service_bindings()
+    effective_runnable = _SUPERVISOR_RUNNABLE if runnable is None else runnable
+    if not hasattr(effective_runnable, "get_state"):
+        effective_runnable = None
+    return _chat_service._get_current_pending_approval(
+        shop_id,
+        user_id,
+        runnable=effective_runnable,
+    )
+
+
+def _record_approval_decision(**kwargs: Any) -> None:
+    _sync_chat_service_bindings()
+    _chat_service._record_approval_decision(**kwargs)
+
+
+def _resume_persisted_approval(**kwargs: Any) -> Optional[Dict[str, Any]]:
+    _sync_chat_service_bindings()
+    return _chat_service._resume_persisted_approval(**kwargs)
 
 # ---------------------------------------------------------------------------
 # Real-time thinking-step metadata for the streaming UI
@@ -177,6 +228,219 @@ def _sync_chat_timeout_seconds() -> float:
         return max(float(raw_value), 1.0)
     except (TypeError, ValueError):
         return 50.0
+
+
+def _is_service_customer_count_question(message: str) -> bool:
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized:
+        return False
+
+    has_service_subject = bool(re.search(r"\bservices?\b", normalized))
+    has_customer_subject = bool(
+        re.search(r"\b(?:customers?|clients?|visits?|attended|served)\b", normalized)
+    )
+    wants_breakdown = bool(
+        re.search(r"\b(?:for each|each service|per service|by service|service[- ]wise|breakdown)\b", normalized)
+    )
+    return has_service_subject and has_customer_subject and wants_breakdown
+
+
+def _is_today_revenue_question(message: str) -> bool:
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized:
+        return False
+
+    has_revenue_subject = bool(re.search(r"\b(?:revenue|sales|earned|earnings|income)\b", normalized))
+    has_today_window = bool(re.search(r"\b(?:today|todays|today's|this day)\b", normalized))
+    return has_revenue_subject and has_today_window
+
+
+def _is_top_services_question(message: str) -> bool:
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized:
+        return False
+
+    has_service_subject = bool(re.search(r"\bservices?\b", normalized))
+    has_ranking_intent = bool(
+        re.search(r"\b(?:top|best|highest|most popular|best-selling|best selling|rank|ranking)\b", normalized)
+    )
+    return has_service_subject and has_ranking_intent and not _is_service_customer_count_question(message)
+
+
+def _is_time_window_followup(message: str) -> bool:
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized:
+        return False
+
+    if re.search(r"\b(?:queue|customer service|wait time|employee|employees|staff|staffing|shift|shifts|appointment|appointments|close|open|reopen|pause|resume)\b", normalized):
+        return False
+
+    has_followup_prefix = bool(re.match(r"^(?:what about|how about|and|compare)\b", normalized))
+    has_time_window = bool(
+        re.search(
+            r"\b(?:today|yesterday|this|last|past|previous)\s+(?:\d{1,3}|[a-z]+)?\s*"
+            r"(?:days?|weeks?|months?|years?|week|month|year)\b",
+            normalized,
+        )
+        or re.search(r"\b\d{1,3}\s+(?:days?|weeks?|months?|years?)\b", normalized)
+        or re.search(r"\b(?:today|yesterday|this week|last week|this month|last month)\b", normalized)
+    )
+    has_new_subject = bool(
+        re.search(
+            r"\b(?:revenue|sales|services?|customers?|clients?|visits?|invoices?|payments?|pos|refunds?)\b",
+            normalized,
+        )
+    )
+    is_bare_time_window = bool(
+        re.fullmatch(
+            r"(?:today|yesterday|this\s+week|last\s+week|this\s+month|last\s+month|"
+            r"(?:\d{1,3}|[a-z]+)\s+(?:days?|weeks?|months?|years?)|"
+            r"(?:last|past|previous)\s+(?:\d{1,3}|[a-z]+)\s+(?:days?|weeks?|months?|years?))"
+            r"[?.!]?",
+            normalized,
+        )
+    )
+    return has_time_window and (has_followup_prefix or is_bare_time_window or (normalized.startswith("for ") and not has_new_subject))
+
+
+def _finance_followup_key(user_id: int) -> str:
+    return f"agent:last_finance_context:{user_id}"
+
+
+def _remember_direct_finance_context(shop_id: int, user_id: int, operation: str, message: str) -> None:
+    _redis.tenant_set(
+        shop_id,
+        _finance_followup_key(user_id),
+        {
+            "operation": operation,
+            "last_message": message,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        ttl=3600,
+    )
+
+
+def _load_direct_finance_followup_operation(shop_id: int, user_id: int, message: str) -> Optional[str]:
+    if not _is_time_window_followup(message):
+        return None
+
+    context = _redis.tenant_get(shop_id, _finance_followup_key(user_id))
+    if not isinstance(context, dict):
+        return None
+
+    operation = str(context.get("operation") or "").strip()
+    if operation in {"service_customer_counts", "top_services"}:
+        return operation
+    return None
+
+
+def _format_service_customer_counts(result: Dict[str, Any]) -> str:
+    if result.get("error"):
+        return f"I couldn't pull the service customer counts: {result['error']}"
+
+    services = list(result.get("services") or [])
+    window = str(result.get("window_display") or result.get("window") or "the selected period")
+    if not services:
+        return f"I don't see any completed customer visits by service for {window}."
+
+    lines = []
+    for service in services[:10]:
+        name = service.get("service_name") or "Unknown service"
+        count = int(service.get("customer_count", 0) or 0)
+        revenue = float(service.get("revenue", 0.0) or 0.0)
+        lines.append(f"- {name}: {count} customer{'s' if count != 1 else ''} (${revenue:.2f})")
+
+    total = int(result.get("total_customers", 0) or 0)
+    return (
+        f"Customers served by service for {window}: {total} total customer"
+        f"{'s' if total != 1 else ''}.\n"
+        + "\n".join(lines)
+    )
+
+
+def _format_daily_revenue(result: Dict[str, Any]) -> str:
+    if result.get("error"):
+        return f"I couldn't pull today's revenue: {result['error']}"
+
+    total_revenue = float(result.get("total_revenue", 0.0) or 0.0)
+    completed_services = int(result.get("completed_services", 0) or 0)
+    total_customers = int(result.get("total_customers", 0) or 0)
+    average_transaction = float(result.get("average_transaction", 0.0) or 0.0)
+    date = result.get("date") or "today"
+    if completed_services == 0 and total_revenue <= 0:
+        return f"I don't see any completed services or recorded revenue for {date} yet."
+    return (
+        f"Revenue for {date} is ${total_revenue:.2f} across {completed_services} completed service"
+        f"{'s' if completed_services != 1 else ''}"
+        f" and {total_customers} customer visit{'s' if total_customers != 1 else ''}. "
+        f"Average transaction is ${average_transaction:.2f}."
+    )
+
+
+def _format_top_services(result: Dict[str, Any]) -> str:
+    if result.get("error"):
+        return f"I couldn't pull top services: {result['error']}"
+
+    services = list(result.get("services") or [])
+    window = str(result.get("window_display") or result.get("window") or "the selected period")
+    if not services:
+        return f"I couldn't find completed services to rank for {window}."
+
+    lines = []
+    for service in services[:8]:
+        name = service.get("name") or service.get("service_name") or "Unknown service"
+        count = int(service.get("completed_services", service.get("customer_count", 0)) or 0)
+        revenue = float(service.get("revenue", service.get("cost", 0.0)) or 0.0)
+        if "revenue" in service or "completed_services" in service or "customer_count" in service:
+            lines.append(f"- {name}: ${revenue:.2f} from {count} completed service{'s' if count != 1 else ''}")
+        else:
+            lines.append(f"- {name}: ${revenue:.2f}")
+    return f"Top services for {window}:\n" + "\n".join(lines)
+
+
+def _direct_service_customer_counts_response(shop_id: int, message: str) -> Dict[str, Any]:
+    result = finance_tools._local_service_customer_counts(shop_id, query=message, limit=20)
+    return {
+        "response": _format_service_customer_counts(result),
+        "agent": "finance",
+        "approval_required": False,
+        "pending_action": None,
+        "metadata": {
+            "shop_id": shop_id,
+            "direct_fastpath": "service_customer_counts",
+            "tool_results": result,
+        },
+    }
+
+
+def _direct_today_revenue_response(shop_id: int) -> Dict[str, Any]:
+    result = finance_tools._local_daily_revenue(shop_id, None)
+    return {
+        "response": _format_daily_revenue(result),
+        "agent": "finance",
+        "approval_required": False,
+        "pending_action": None,
+        "metadata": {
+            "shop_id": shop_id,
+            "direct_fastpath": "daily_revenue",
+            "tool_results": result,
+        },
+    }
+
+
+def _direct_top_services_response(shop_id: int, limit: int = 5) -> Dict[str, Any]:
+    result = finance_tools._local_top_services(shop_id, limit=limit)
+    return {
+        "response": _format_top_services(result),
+        "agent": "finance",
+        "approval_required": False,
+        "pending_action": None,
+        "metadata": {
+            "shop_id": shop_id,
+            "direct_fastpath": "top_services",
+            "tool_results": result,
+        },
+    }
 
 
 async def _invoke_supervisor_sync(initial_state: AgentState, checkpoint_config: Any) -> Dict[str, Any]:
@@ -324,6 +588,9 @@ def _select_document_reference_memories(
 
 
 def _reset_checkpoint_thread_if_idle(shop_id: int, user_id: int) -> None:
+    if not hasattr(_SUPERVISOR_RUNNABLE, "get_state"):
+        return
+
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
     snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
     if snapshot and snapshot.interrupts:
@@ -461,13 +728,13 @@ def _serialize_checkpoint_messages(state_values: Dict[str, Any]) -> list[Dict[st
         # Use the message's additional_kwargs timestamp if present; else omit
         additional = getattr(message, "additional_kwargs", {}) or {}
         timestamp = additional.get("timestamp") or None
-        serialized.append(
-            {
-                "role": role,
-                "content": content,
-                "timestamp": timestamp,
-            }
-        )
+        payload = {
+            "role": role,
+            "content": content,
+        }
+        if timestamp is not None:
+            payload["timestamp"] = timestamp
+        serialized.append(payload)
     return serialized
 
 
@@ -1003,15 +1270,66 @@ async def chat_sync(
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
 
+    _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
+
     existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
-    if existing_pending is not None:
-        return {
-            "response": _build_pending_approval_block_message(existing_pending),
-            "agent": "supervisor",
-            "approval_required": True,
-            "pending_action": existing_pending,
-            "metadata": {"pending_conflict": True},
-        }
+    followup_operation = None if existing_pending else _load_direct_finance_followup_operation(shop_id, int(user_id), message)
+    if followup_operation == "service_customer_counts":
+        response = _direct_service_customer_counts_response(shop_id, message)
+        _remember_direct_finance_context(shop_id, int(user_id), "service_customer_counts", message)
+        _persist_chat_turn_memory(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            user_message=message,
+            assistant_response=str(response.get("response") or ""),
+            route="/api/v2/agent/chat",
+        )
+        return response
+    if followup_operation == "top_services":
+        response = _direct_top_services_response(shop_id)
+        _remember_direct_finance_context(shop_id, int(user_id), "top_services", message)
+        _persist_chat_turn_memory(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            user_message=message,
+            assistant_response=str(response.get("response") or ""),
+            route="/api/v2/agent/chat",
+        )
+        return response
+
+    if existing_pending is None and _is_service_customer_count_question(message):
+        response = _direct_service_customer_counts_response(shop_id, message)
+        _remember_direct_finance_context(shop_id, int(user_id), "service_customer_counts", message)
+        _persist_chat_turn_memory(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            user_message=message,
+            assistant_response=str(response.get("response") or ""),
+            route="/api/v2/agent/chat",
+        )
+        return response
+    if existing_pending is None and _is_today_revenue_question(message):
+        response = _direct_today_revenue_response(shop_id)
+        _remember_direct_finance_context(shop_id, int(user_id), "daily_revenue", message)
+        _persist_chat_turn_memory(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            user_message=message,
+            assistant_response=str(response.get("response") or ""),
+            route="/api/v2/agent/chat",
+        )
+        return response
+    if existing_pending is None and _is_top_services_question(message):
+        response = _direct_top_services_response(shop_id)
+        _remember_direct_finance_context(shop_id, int(user_id), "top_services", message)
+        _persist_chat_turn_memory(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            user_message=message,
+            assistant_response=str(response.get("response") or ""),
+            route="/api/v2/agent/chat",
+        )
+        return response
 
     # Build checkpoint config for this tenant
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
@@ -1182,16 +1500,83 @@ async def chat_stream(
 
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
+
+    _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
+
+    existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
+    followup_operation = None if existing_pending else _load_direct_finance_followup_operation(shop_id, int(user_id), message)
     
     # Create streaming generator
     async def event_generator():
         try:
-            existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
-            if existing_pending is not None:
-                block_message = _build_pending_approval_block_message(existing_pending)
-                yield f"data: {json.dumps({'type': 'approval_required', 'action': existing_pending.get('action'), 'details': existing_pending})}\n\n"
-                for char in block_message:
+            if followup_operation == "service_customer_counts" or (existing_pending is None and _is_service_customer_count_question(message)):
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Reading completed visits by service…', 'status': 'active', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'agent_switch', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'tool_call', 'tool': 'service_customer_counts', 'agent': 'finance', 'label': 'Counting customers by service'})}\n\n"
+                result = await asyncio.to_thread(
+                    finance_tools._local_service_customer_counts,
+                    shop_id,
+                    query=message,
+                    limit=20,
+                )
+                response_text = _format_service_customer_counts(result)
+                yield f"data: {json.dumps({'type': 'tool_result', 'tool': 'service_customer_counts', 'result': result, 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Service customer counts ready', 'status': 'done', 'agent': 'finance'})}\n\n"
+                for char in response_text:
                     yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+                _remember_direct_finance_context(shop_id, int(user_id), "service_customer_counts", message)
+                _persist_chat_turn_memory(
+                    shop_id=shop_id,
+                    user_id=int(user_id),
+                    user_message=message,
+                    assistant_response=response_text,
+                    route="/api/v2/agent/chat/stream",
+                )
+                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            if existing_pending is None and _is_today_revenue_question(message):
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Reading live revenue…', 'status': 'active', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'agent_switch', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'tool_call', 'tool': 'daily_revenue', 'agent': 'finance', 'label': 'Reading today revenue'})}\n\n"
+                result = await asyncio.to_thread(finance_tools._local_daily_revenue, shop_id, None)
+                response_text = _format_daily_revenue(result)
+                yield f"data: {json.dumps({'type': 'tool_result', 'tool': 'daily_revenue', 'result': result, 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Revenue ready', 'status': 'done', 'agent': 'finance'})}\n\n"
+                for char in response_text:
+                    yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+                _remember_direct_finance_context(shop_id, int(user_id), "daily_revenue", message)
+                _persist_chat_turn_memory(
+                    shop_id=shop_id,
+                    user_id=int(user_id),
+                    user_message=message,
+                    assistant_response=response_text,
+                    route="/api/v2/agent/chat/stream",
+                )
+                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            if followup_operation == "top_services" or (existing_pending is None and _is_top_services_question(message)):
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Ranking live services…', 'status': 'active', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'agent_switch', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'tool_call', 'tool': 'top_services', 'agent': 'finance', 'label': 'Ranking top services'})}\n\n"
+                result = await asyncio.to_thread(finance_tools._local_top_services, shop_id, 5)
+                response_text = _format_top_services(result)
+                yield f"data: {json.dumps({'type': 'tool_result', 'tool': 'top_services', 'result': result, 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Top services ready', 'status': 'done', 'agent': 'finance'})}\n\n"
+                for char in response_text:
+                    yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+                _remember_direct_finance_context(shop_id, int(user_id), "top_services", message)
+                _persist_chat_turn_memory(
+                    shop_id=shop_id,
+                    user_id=int(user_id),
+                    user_message=message,
+                    assistant_response=response_text,
+                    route="/api/v2/agent/chat/stream",
+                )
+                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
@@ -1751,11 +2136,13 @@ async def get_history(
     snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
     values = cast(Dict[str, Any], snapshot.values or {}) if snapshot else {}
     checkpoint_messages = _serialize_checkpoint_messages(values)
+    if not checkpoint_messages:
+        checkpoint_messages = get_conversation_history(_redis, str(shop_id), str(user_id))
 
     return {
         "messages": checkpoint_messages,
         "checkpoint_id": f"tenant_{shop_id}_{user_id}",
-        "pending": _get_pending_approval_payload(shop_id, user_id, runnable=_SUPERVISOR_RUNNABLE),
+        "pending": _get_pending_approval_payload(shop_id, user_id),
     }
 
 
@@ -1839,7 +2226,7 @@ async def get_pending_approvals(
         raise HTTPException(status_code=403, detail="Not owner of this shop")
 
     metrics = db_interface.get_shop_live_wait_metrics(shop_id) or {}
-    return {"pending": _get_pending_approval_payload(shop_id, user_id, metrics, runnable=_SUPERVISOR_RUNNABLE)}
+    return {"pending": _get_pending_approval_payload(shop_id, user_id, metrics=metrics)}
 
 
 @router.get("/briefing")
@@ -1881,7 +2268,7 @@ async def get_owner_briefing(
         employees = db_interface.get_shop_employees(shop_id, is_active=True) or []
         metrics["active_employees"] = len(employees)
 
-    pending = _get_pending_approval_payload(shop_id, user_id, live_metrics or metrics, runnable=_SUPERVISOR_RUNNABLE)
+    pending = _get_pending_approval_payload(shop_id, user_id, metrics=live_metrics or metrics)
 
     active_services = int(metrics.get("active_services", 0) or 0)
     active_employees = int(metrics.get("active_employees", 0) or 0)

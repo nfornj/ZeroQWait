@@ -20,7 +20,9 @@ Security:
   - No internal error details are ever sent to the Telegram chat user.
 """
 
+import asyncio
 import logging
+import os
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -33,6 +35,7 @@ from modules.shops.models import Shop
 logger = logging.getLogger(__name__)
 
 _REDIS_PREFIX: str = "zq:tg_connect:"
+_OWNER_REPLY_TIMEOUT_SECONDS: float = float(os.getenv("TELEGRAM_OWNER_REPLY_TIMEOUT_SECONDS", "45"))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -111,6 +114,14 @@ async def _handle_start(chat_id: str, text: str, db: Session) -> None:
                     shop = None  # expired
 
     if not shop:
+        existing_shop = find_shop_by_chat_id(chat_id, db)
+        if existing_shop:
+            await tgc.send_text(
+                chat_id,
+                f"✅ *{existing_shop.name}* is already connected.\n\n"
+                "You can just send me a message whenever you need something.",
+            )
+            return
         await tgc.send_text(
             chat_id,
             "❌ This link has expired.\n\n"
@@ -237,12 +248,21 @@ async def _handle_free_text(
         await tgc.send_text(chat_id, "⏳ _Thinking…_")
         try:
             from agents.telegram_agent_bridge import handle_telegram_message
-            response = await handle_telegram_message(
-                shop_id=shop.id,
-                owner_user_id=shop.owner_id,
-                message=text,
+            response = await asyncio.wait_for(
+                handle_telegram_message(
+                    shop_id=shop.id,
+                    owner_user_id=shop.owner_id,
+                    message=text,
+                ),
+                timeout=_OWNER_REPLY_TIMEOUT_SECONDS,
             )
             await tgc.send_text(chat_id, response or "_No response generated._")
+        except asyncio.TimeoutError:
+            logger.warning("Telegram owner message timed out for shop %s", shop.id)
+            await tgc.send_text(
+                chat_id,
+                "⏱️ I'm still working on that request. Please try again in a moment or use the dashboard chat for a fuller reply.",
+            )
         except Exception as exc:
             logger.error("Telegram owner message routing error: %s", exc)
             await tgc.send_text(

@@ -108,6 +108,41 @@ def _normalize_hr_operation(operation: str, plan: Dict[str, Any], messages: Sequ
     return "list_employees"
 
 
+def _looks_like_current_staffing_request(text: str) -> bool:
+    normalized = str(text or "").lower()
+    if not normalized:
+        return False
+
+    mentions_current_shift = any(
+        phrase in normalized
+        for phrase in (
+            "who is on shift now",
+            "who's on shift now",
+            "on shift now",
+            "on duty",
+            "right now",
+            "currently on shift",
+            "current staffing",
+        )
+    )
+    mentions_staffing_gap = "staffing gap" in normalized or "staffing gaps" in normalized
+    mentions_shift_and_now = "shift" in normalized and any(token in normalized for token in ("now", "current", "right now"))
+    return mentions_current_shift or mentions_staffing_gap or mentions_shift_and_now
+
+
+def _build_hr_fast_plan(messages: Sequence[BaseMessage]) -> Optional[Dict[str, Any]]:
+    conversation_text = _recent_conversation_text(messages)
+    if _looks_like_current_staffing_request(conversation_text):
+        return {
+            "operation": "get_shifts",
+            "arguments": {},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Selected get shifts for this HR request because the owner is asking who is on shift now and where staffing coverage is missing.",
+        }
+    return None
+
+
 def _build_hr_executor(shop_id: int):
     def executor(operation: str, arguments: Dict[str, Any], messages: Sequence[BaseMessage]) -> Dict[str, Any]:
         if operation == "list_employees":
@@ -141,6 +176,8 @@ def _build_hr_executor(shop_id: int):
                 "message": f"Removing employee (user_id={user_id}) has been submitted for owner approval.",
             }
         if operation == "get_shifts":
+            if _looks_like_current_staffing_request(_recent_conversation_text(messages)):
+                return hr_tools._local_current_staffing_status(shop_id)
             return hr_tools.get_shifts(shop_id, _optional_str(arguments.get("date")), _to_int(arguments.get("user_id")))
         if operation == "assign_shift":
             user_id = _to_int(arguments.get("user_id"))
@@ -211,13 +248,45 @@ def _format_hr_response(operation: str, result: Dict[str, Any]) -> str:
             lines.append(f"- #{employee.get('id')}: {employee.get('name')} — {employee.get('role', 'employee')}")
         return f"I found {len(employees)} employee(s):\n" + "\n".join(lines)
     if operation == "get_shifts":
+        if result.get("current_staffing"):
+            on_shift = list(result.get("on_shift") or [])
+            if not on_shift:
+                return "No one is clocked in right now."
+
+            lines = []
+            for shift in on_shift[:10]:
+                lines.append(f"- {shift.get('name')} since {shift.get('clock_in')}")
+
+            queue_length = int(result.get("queue_length", 0) or 0)
+            wait_minutes = int(result.get("estimated_wait_minutes", 0) or 0)
+            staffing_gap_count = int(result.get("staffing_gap_count", 0) or 0)
+            coverage_line = (
+                f"Coverage is short by {staffing_gap_count} team member{'s' if staffing_gap_count != 1 else ''} "
+                f"for the current queue."
+                if staffing_gap_count > 0
+                else "Current staffing covers the present queue load."
+            )
+            roster_mismatch_count = int(result.get("roster_mismatch_count", 0) or 0)
+            mismatch_line = (
+                f" I also found {roster_mismatch_count} active shift"
+                f"{'s' if roster_mismatch_count != 1 else ''} not reflected in the active employee roster."
+                if roster_mismatch_count > 0
+                else ""
+            )
+            return (
+                f"{len(on_shift)} team member{'s are' if len(on_shift) != 1 else ' is'} on shift right now.\n"
+                + "\n".join(lines)
+                + f"\nQueue load: {queue_length} in queue, about {wait_minutes} minutes estimated wait. "
+                + coverage_line
+                + mismatch_line
+            )
         shifts = list(result.get("shifts") or [])
         if not shifts:
             return "No shifts matched that request."
         lines = []
         for shift in shifts[:10]:
             lines.append(
-                f"- Employee {shift.get('user_id')} on {shift.get('date')}: {shift.get('start_time')} to {shift.get('end_time')}"
+                f"- {shift.get('name') or f'Employee {shift.get('user_id')}'} on {shift.get('date')}: {shift.get('start_time')} to {shift.get('end_time')}"
             )
         return f"I found {len(shifts)} shift(s):\n" + "\n".join(lines)
     if result.get("message"):
@@ -238,6 +307,7 @@ def create_hr_runnable(shop_id: int | None = None):
         supported_operations=SUPPORTED_OPERATIONS,
         operation_aliases=OPERATION_ALIASES,
         operation_normalizer=_normalize_hr_operation,
+        fast_plan_builder=_build_hr_fast_plan,
         executor=_build_hr_executor(shop_id),
         formatter=_format_hr_response,
     )

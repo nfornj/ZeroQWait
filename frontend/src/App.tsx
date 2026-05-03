@@ -27,7 +27,7 @@ import ShopLayout from "./layouts/ShopLayout";
 // PublicShopPage is used via SubdomainHandler (subdomain routing only)
 import PublicLayout from "./layouts/PublicLayout";
 import MasterDashboardPage from "./features/admin/pages/MasterDashboardPage";
-import ServicesManagementPage from "./features/shop-dashboard/pages/ServicesManagementPage";
+
 import AppointmentsPage from "./features/shop-dashboard/pages/AppointmentsPage";
 import OwnerDashboardPage from "./features/shop-dashboard/pages/OwnerDashboardPage";
 import AgentBrainPage from "./features/agent-brain/AgentBrainPage";
@@ -105,7 +105,6 @@ function App() {
             <Route path="/settings" element={<OwnerOnly><ShopSettingsPage /></OwnerOnly>} />
             <Route path="/queues" element={<OwnerOnly><QueueManagementPage /></OwnerOnly>} />
             <Route path="/queues/:queueId" element={<OwnerOnly><QueueDetailPage /></OwnerOnly>} />
-            <Route path="/services" element={<OwnerOnly><ServicesManagementPage /></OwnerOnly>} />
             <Route path="/appointments" element={<OwnerOnly><AppointmentsPage /></OwnerOnly>} />
             <Route path="/agent-inbox" element={<DashboardEntry />} />
             <Route path="/agent-brain" element={<OwnerOnly><AgentBrainPage /></OwnerOnly>} />

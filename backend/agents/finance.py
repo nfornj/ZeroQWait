@@ -55,6 +55,7 @@ SUPPORTED_OPERATIONS = [
     "get_visit_frequency_summary",
     "get_client_profile",
     "search_clients",
+    "service_customer_counts",
 ]
 
 PLANNER_INSTRUCTIONS = """\
@@ -74,6 +75,7 @@ PLANNER_INSTRUCTIONS = """\
 - get_visit_frequency_summary: use for regulars, at-risk, and lapsed client mix.
 - get_client_profile: use when a specific client id is already known.
 - search_clients: use when the owner gives a client name rather than an id.
+- service_customer_counts: use when the owner asks how many customers/visits were served per service; arguments: query(optional), limit(optional).
 - Never output analyze, analyse, answer, respond, summarize, or review as the operation. Pick the closest supported operation instead.
 """
 
@@ -244,6 +246,40 @@ def _looks_like_customer_metrics_request(text: str) -> bool:
     )
 
 
+def _looks_like_service_customer_count_request(text: str) -> bool:
+    prompt = str(text or "").lower()
+    if not prompt:
+        return False
+
+    has_service_subject = any(keyword in prompt for keyword in ("service", "services"))
+    has_customer_subject = any(
+        keyword in prompt
+        for keyword in (
+            "customer",
+            "customers",
+            "client",
+            "clients",
+            "attended",
+            "served",
+            "visit",
+            "visits",
+        )
+    )
+    wants_breakdown = any(
+        phrase in prompt
+        for phrase in (
+            "for each",
+            "each service",
+            "per service",
+            "by service",
+            "service wise",
+            "service-wise",
+            "breakdown",
+        )
+    )
+    return has_service_subject and has_customer_subject and wants_breakdown
+
+
 def _looks_like_weekly_revenue_breakdown_request(text: str) -> bool:
     prompt = str(text or "").lower()
     if not prompt or not _prefers_weekly_summary(prompt):
@@ -300,11 +336,12 @@ def _with_dynamic_read_fallback(
         operation=operation,
         mode=_DYNAMIC_READS_MODE,
     )
-    if dynamic_result.get("answer") and not dynamic_result.get("error"):
+    dynamic_row_count = int(dynamic_result.get("row_count", 0) or 0)
+    if dynamic_result.get("answer") and not dynamic_result.get("error") and dynamic_row_count > 0:
         return {
             "dynamic_sql_answer": dynamic_result["answer"],
             "dynamic_sql": dynamic_result.get("generated_sql"),
-            "dynamic_row_count": dynamic_result.get("row_count", 0),
+            "dynamic_row_count": dynamic_row_count,
             "source": "dynamic_sql",
             "fallback_used": False,
             "shop_id": shop_id,
@@ -312,7 +349,10 @@ def _with_dynamic_read_fallback(
         }
 
     fallback_result = dict(fallback())
-    fallback_result["dynamic_sql_error"] = dynamic_result.get("error") or "Dynamic SQL did not return an answer"
+    fallback_result["dynamic_sql_error"] = (
+        dynamic_result.get("error")
+        or ("Dynamic SQL returned no rows" if dynamic_row_count == 0 else "Dynamic SQL did not return an answer")
+    )
     fallback_result["dynamic_sql_error_class"] = dynamic_result.get("error_class")
     fallback_result["dynamic_sql_fallback_used"] = True
     return fallback_result
@@ -342,6 +382,18 @@ def _build_finance_fast_plan(messages: Sequence[BaseMessage]) -> Optional[Dict[s
         return None
 
     prompt = latest_user_text.lower()
+    if _looks_like_service_customer_count_request(latest_user_text):
+        return {
+            "operation": "service_customer_counts",
+            "arguments": {
+                "query": latest_user_text,
+                "limit": _extract_requested_limit(latest_user_text) or 20,
+            },
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched a service-level customer count request.",
+        }
+
     if _looks_like_top_services_request(latest_user_text):
         return {
             "operation": "top_services",
@@ -349,15 +401,6 @@ def _build_finance_fast_plan(messages: Sequence[BaseMessage]) -> Optional[Dict[s
             "requires_clarification": False,
             "clarification_question": "",
             "rationale": "Finance fast-path matched an obvious service ranking request.",
-        }
-
-    if _looks_like_customer_metrics_request(latest_user_text):
-        return {
-            "operation": "customer_metrics",
-            "arguments": {"query": latest_user_text},
-            "requires_clarification": False,
-            "clarification_question": "",
-            "rationale": "Finance fast-path matched an obvious customer metrics request.",
         }
 
     revenue_subject_signals = any(
@@ -393,7 +436,7 @@ def _build_finance_fast_plan(messages: Sequence[BaseMessage]) -> Optional[Dict[s
             "arguments": {"date": specific_date},
             "requires_clarification": False,
             "clarification_question": "",
-            "rationale": "Finance fast-path matched an obvious single-day revenue request.",
+            "rationale": "Single-day finance question.",
         }
 
     if _prefers_weekly_summary(latest_user_text):
@@ -438,6 +481,8 @@ def _normalize_finance_operation(operation: str, plan: Dict[str, Any], messages:
     )
 
     def _latest_user_operation() -> Optional[str]:
+        if _looks_like_service_customer_count_request(latest_user_text):
+            return "service_customer_counts"
         if user_revenue_signals and not user_customer_signals:
             if _requests_finance_trend(latest_user_text):
                 return "trend_summary"
@@ -476,6 +521,8 @@ def _normalize_finance_operation(operation: str, plan: Dict[str, Any], messages:
             return "list_invoices"
         if any(keyword in combined_text for keyword in ("invoice", "invoices")):
             return "list_invoices"
+        if _looks_like_service_customer_count_request(combined_text):
+            return "service_customer_counts"
         if any(keyword in combined_text for keyword in ("customer", "customers", "client", "clients", "repeat rate", "new vs repeat")):
             return "customer_metrics"
         if any(keyword in combined_text for keyword in ("service", "services", "best-selling", "most popular")):
@@ -552,6 +599,13 @@ def _build_finance_executor(shop_id: int):
                 operation,
                 query,
                 lambda: finance_tools.customer_metrics(shop_id, query),
+            )
+        if operation == "service_customer_counts":
+            query = _optional_str(arguments.get("query")) or user_text
+            return finance_tools.service_customer_counts(
+                shop_id,
+                query=query,
+                limit=_to_int(arguments.get("limit")) or 20,
             )
         if operation == "export_report":
             return finance_tools.export_report(shop_id, _optional_str(arguments.get("format")) or "csv")
@@ -735,11 +789,21 @@ def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
         if not services:
             return "I couldn't find any active services to rank right now."
         if str(result.get("preferred_presentation") or "").lower() == "table":
-            return "Here is the service table I found for the current catalog."
+            return "Here is the top-services table I found."
         lines = []
         for service in services[:8]:
-            lines.append(f"- {service.get('name')} — ${float(service.get('cost', 0.0) or 0.0):.2f}")
-        return "Top services:\n" + "\n".join(lines)
+            name = service.get("name") or service.get("service_name") or "Unknown service"
+            revenue = service.get("revenue")
+            count = service.get("completed_services", service.get("customer_count"))
+            if revenue is not None or count is not None:
+                lines.append(
+                    f"- {name}: ${float(revenue or 0.0):.2f} from {int(count or 0)} completed service"
+                    f"{'s' if int(count or 0) != 1 else ''}"
+                )
+            else:
+                lines.append(f"- {name} — ${float(service.get('cost', 0.0) or 0.0):.2f}")
+        window_label = _humanize_window_label(result.get("window_display") or result.get("window"))
+        return f"Top services for {window_label}:\n" + "\n".join(lines)
     if operation == "customer_metrics":
         total_customers = int(result.get('total_customers', 0) or 0)
         new_customers = int(result.get('new_customers', 0) or 0)
@@ -755,6 +819,18 @@ def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
             f"{new_customers} new, {repeat_customers} repeat. "
             f"Repeat rate: {round(float(result.get('repeat_rate', 0.0) or 0.0) * 100, 1)}%."
         )
+    if operation == "service_customer_counts":
+        services = list(result.get("services") or [])
+        window_label = _humanize_window_label(result.get("window_display") or result.get("window"))
+        if not services:
+            return f"I don't see any completed customer visits by service for {window_label}."
+        lines = []
+        for service in services[:10]:
+            name = service.get("service_name") or "Unknown service"
+            count = int(service.get("customer_count", 0) or 0)
+            revenue = float(service.get("revenue", 0.0) or 0.0)
+            lines.append(f"- {name}: {count} customer{'s' if count != 1 else ''} (${revenue:.2f})")
+        return f"Customers served by service for {window_label}:\n" + "\n".join(lines)
     if operation in {"get_inactive_clients", "get_top_clients", "search_clients"}:
         clients = list(result.get("clients") or [])
         if not clients:

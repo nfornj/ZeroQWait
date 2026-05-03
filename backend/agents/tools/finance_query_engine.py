@@ -83,6 +83,9 @@ Rules:
 - Do not use raw tables.
 - Do not include INSERT, UPDATE, DELETE, DDL, SET, comments, or multiple statements.
 - Prefer current_date for relative dates such as today.
+- For live/today revenue or simulator-backed questions, prefer ai_queue_visits with completed_at/check-in time and service_cost; ai_daily_analytics may lag and can be empty for today.
+- For top services by revenue or customer count, prefer grouping ai_queue_visits by service_id/service_name instead of invoice line items unless the user specifically asks about invoices.
+- Queue visit status values are normalized to lowercase strings such as 'completed', 'waiting', and 'cancelled'.
 - Add LIMIT when returning detail rows.
 """
 
@@ -183,6 +186,19 @@ def validate_sql(sql: str) -> ValidationResult:
     return ValidationResult(True)
 
 
+def _contextual_sql_error(sql: str, question: str) -> Optional[str]:
+    normalized_question = " ".join(str(question or "").lower().split())
+    normalized_sql = str(sql or "").lower()
+
+    if re.search(r"\b(?:today|today's|todays)\b", normalized_question) and "current_date" in normalized_sql:
+        return (
+            "Do not use CURRENT_DATE for today because the database timezone may differ from the shop timezone. "
+            "Use the shop-local UTC timestamp bounds provided in the prompt."
+        )
+
+    return None
+
+
 def _limit_sql(sql: str) -> str:
     cleaned = _strip_sql_comments(sql)
     cleaned = cleaned[:-1].strip() if cleaned.endswith(";") else cleaned
@@ -252,9 +268,30 @@ def _log_query(
 
 
 def _generate_sql(shop_id: int, question: str, previous_error: Optional[str] = None) -> SQLPlan:
+    today_hint = ""
+    try:
+        from agents.tools import finance_tools
+
+        session = db_interface.get_session()
+        try:
+            shop_now = finance_tools._now_for_shop(shop_id, session)
+            tz_name = finance_tools._resolve_shop_timezone_name(shop_id, session)
+            start_utc, end_utc = finance_tools._shop_local_day_bounds_utc(shop_now.date(), tz_name)
+            today_hint = (
+                f"Shop local today is {shop_now.strftime('%Y-%m-%d')} in timezone {tz_name}. "
+                "For questions about today, filter completed_at or checked_in_at with "
+                f">= TIMESTAMP '{start_utc.strftime('%Y-%m-%d %H:%M:%S')}' "
+                f"and < TIMESTAMP '{end_utc.strftime('%Y-%m-%d %H:%M:%S')}' instead of CURRENT_DATE.\n"
+            )
+        finally:
+            session.close()
+    except Exception as exc:
+        logger.debug("Could not build shop-local SQL date hint for shop %s: %s", shop_id, exc)
+
     prompt = (
         f"{SCHEMA_CONTEXT}\n"
         f"Today is {datetime.now().strftime('%Y-%m-%d')}.\n"
+        f"{today_hint}"
         f"Question: {question}\n"
     )
     if previous_error:
@@ -311,6 +348,33 @@ def answer_question(shop_id: int, question: str, *, mode: str = "enabled") -> Di
         try:
             plan = _generate_sql(shop_id, question, previous_error=previous_error)
             generated_sql = plan.sql
+
+            contextual_error = _contextual_sql_error(generated_sql, question)
+            if contextual_error:
+                previous_error = contextual_error
+                if attempt < MAX_RETRIES:
+                    continue
+
+                latency_ms = int((time.perf_counter() - started_at) * 1000)
+                _log_query(
+                    shop_id=shop_id,
+                    question=question,
+                    generated_sql=generated_sql,
+                    validation_status="rejected",
+                    execution_status="not_run",
+                    error_class="ValidationError",
+                    error_message=contextual_error,
+                    latency_ms=latency_ms,
+                    mode=mode,
+                    fallback_used=True,
+                )
+                return {
+                    "error": contextual_error,
+                    "error_class": "ValidationError",
+                    "generated_sql": generated_sql,
+                    "fallback_used": True,
+                    "shop_id": shop_id,
+                }
 
             validation = validate_sql(generated_sql)
             if not validation.ok:

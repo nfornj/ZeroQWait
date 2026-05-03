@@ -399,6 +399,20 @@ async def setup(
             STATE.log(f"⚠️  Barber '{emp.display_name}' login failed", "yellow")
             continue
 
+        # If a previous test run deactivated the shop-employee link, restore it
+        # so the simulator roster and active shifts stay in sync.
+        if emp.user_id is not None:
+            try:
+                await _request(
+                    client,
+                    "PUT",
+                    f"/api/shops/{STATE.shop_id}/employees/{emp.user_id}/reactivate",
+                    token=owner.token,
+                )
+            except APIError as e:
+                if e.status not in (404, 409):
+                    STATE.log(f"⚠️  Reactivate failed for {emp.display_name}: {e}", "yellow")
+
         # Sick-day lottery
         if random.random() < SICK_DAY_CHANCE:
             emp.on_sick_day = True
