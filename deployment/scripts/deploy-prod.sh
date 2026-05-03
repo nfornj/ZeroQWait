@@ -165,6 +165,7 @@ kctl apply -f "${K8S_MANIFESTS}/postgres-statefulset.yaml"
 kctl apply -f "${K8S_MANIFESTS}/redis-pvc.yaml"
 kctl apply -f "${K8S_MANIFESTS}/redis-service.yaml"
 kctl apply -f "${K8S_MANIFESTS}/redis-statefulset.yaml"
+kctl apply -f "${K8S_MANIFESTS}/network-policy.yaml"
 kctl apply -f "${K8S_MANIFESTS}/temporal-configmap.yaml"
 kctl apply -f "${K8S_MANIFESTS}/temporal-deployment.yaml"
 
@@ -187,7 +188,6 @@ kctl apply -f "${K8S_MANIFESTS}/booking-mcp-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/finance-mcp-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/hr-mcp-deployment.yaml"
 kctl apply -f "${K8S_MANIFESTS}/ingress-traefik.yaml"
-kctl apply -f "${K8S_MANIFESTS}/network-policy.yaml"
 kctl apply -f "${K8S_MANIFESTS}/backend-pdb.yaml"
 
 # run-local-pipeline.sh already updated the backend image tag in the manifest
