@@ -42,7 +42,7 @@ LOCAL_GID="$(id -g)"
 # Limit compose parallelism on heavy hosts to reduce peak RAM during build/start.
 COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}"
 export COMPOSE_PARALLEL_LIMIT
-DB_HOST_PORT="5432"
+DB_HOST_PORT="5433"
 BACKEND_HOST_PORT="8000"
 FRONTEND_HOST_PORT="3000"
 FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
