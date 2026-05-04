@@ -29,3 +29,9 @@ data:
   # voice-mcp proxies to tts-service:8880 and asr-service:8000 internally.
   TTS_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881"
   ASR_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881/transcribe"
+  # Telegram — bot runs in long-polling mode (no public webhook needed).
+  TELEGRAM_MODE: "polling"
+  TELEGRAM_POLL_TIMEOUT: "30"
+  # Dev/test: auto-link any unknown Telegram user to this shop (shop id=501 = "Test" shop).
+  # Remove or set to "" to disable in production.
+  TELEGRAM_DEV_SHOP_ID: "501"
