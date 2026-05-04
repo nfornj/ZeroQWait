@@ -13,6 +13,7 @@ services:
       POSTGRES_DB: zeroqwait
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backend/sql/000_extensions.sql:/docker-entrypoint-initdb.d/000_extensions.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s

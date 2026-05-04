@@ -13,6 +13,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
 import { useNavigate } from 'react-router-dom';
 import api from '../../../../services/api';
+import { useAuth } from '../../../../contexts/AuthContext';
 import AppTheme from '../auth-shared-theme/AppTheme';
 
 const Card = styled(MuiCard)(({ theme }) => ({
@@ -84,6 +85,7 @@ const formatApiError = (detail: unknown) => {
 
 export default function ShopOwnerSignUp() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
 
@@ -138,17 +140,8 @@ export default function ShopOwnerSignUp() {
         role: 'shop_owner',
       });
 
-      // Step 2: Login to get token
-      const loginFormData = new URLSearchParams();
-      loginFormData.append('username', formData.username);
-      loginFormData.append('password', formData.password);
-
-      const tokenResponse = await api.post('/auth/token', loginFormData, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      });
-
-      const token = tokenResponse.data.access_token;
-      localStorage.setItem('token', token);
+      // Step 2: Login via AuthContext so isAuthenticated + user state are updated
+      await login(formData.username, formData.password);
 
       // Step 3: Create shop (api interceptor adds Bearer token from localStorage automatically)
       await api.post('/shops/', {
