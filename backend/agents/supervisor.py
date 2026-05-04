@@ -45,6 +45,30 @@ from .tools import booking_tools, finance_tools, hr_tools
 logger = logging.getLogger(__name__)
 
 
+_GREETING_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    # Standalone greetings (the whole message is just a greeting)
+    re.compile(r"^\s*(?:hello|hi|hey|howdy|hiya|greetings|yo)\s*[!?.,]*\s*$", re.IGNORECASE),
+    re.compile(r"^\s*good\s+(?:morning|afternoon|evening|day|night)\s*[!?.,]*\s*$", re.IGNORECASE),
+    # "how are you" (may have trailing punctuation)
+    re.compile(r"^\s*how\s+are\s+you\b[^a-z]*$", re.IGNORECASE),
+    # "what can you do" / "what do you do" / "what can you help with"
+    re.compile(r"^\s*what\s+can\s+you\b", re.IGNORECASE),
+    re.compile(r"^\s*what\s+(?:do|does)\s+you\b", re.IGNORECASE),
+    # Bare "help" or "help me"
+    re.compile(r"^\s*help(?:\s+me)?\s*[!?.,]*\s*$", re.IGNORECASE),
+    # "what's up" / "sup"
+    re.compile(r"^\s*(?:what(?:'s|\s+is)\s+up|sup)\s*[!?.,]*\s*$", re.IGNORECASE),
+)
+
+_GREETING_RESPONSE = (
+    "Hey! I'm your ZeroQwait shop assistant. Here's what I can help you with:\n\n"
+    "• **Queue & Bookings** — check the queue, call next customer, close or open the queue, manage appointments\n"
+    "• **Finance & Analytics** — daily/weekly revenue, top services, customer visit history, export reports\n"
+    "• **Employees & Shifts** — add staff, view schedules, assign shifts, clock in/out\n"
+    "• **CRM** — contacts, leads, pipeline, invoices (via Odoo)\n\n"
+    "What would you like to do?"
+)
+
 _QUEUE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:close|open|reopen|pause|resume)\s+(?:the\s+)?queue\b"),
     re.compile(r"\b(?:call|serve)\s+(?:the\s+)?next(?:\s+customer)?\b"),
@@ -145,6 +169,10 @@ def _classify_intent_fastpath(user_input: str) -> Optional[Tuple[str, str]]:
     normalized = " ".join(str(user_input or "").lower().split())
     if not normalized:
         return None
+
+    # Greetings — resolved instantly, no LLM needed
+    if any(p.match(normalized) for p in _GREETING_PATTERNS):
+        return "general", "fastpath_greeting"
 
     queue_match = any(p.search(normalized) for p in _QUEUE_OPERATION_PATTERNS)
     finance_match = any(p.search(normalized) for p in _FINANCE_OPERATION_PATTERNS)
@@ -565,6 +593,16 @@ def synthesize_response(state: AgentState) -> dict:
             "messages": messages + [clarifier],
             "tool_results": state.get("tool_results"),
             "metadata": _merge_metadata(state, {"requires_clarification": False}),
+        }
+
+    # Greeting fast-path — return canned response with zero LLM calls
+    if (
+        current_agent in {"supervisor", "general"}
+        and metadata.get("classification_source") == "fastpath_greeting"
+    ):
+        return {
+            "messages": messages + [AIMessage(content=_GREETING_RESPONSE)],
+            "tool_results": state.get("tool_results"),
         }
 
     # Deterministic specialist synthesis: keep tool-grounded specialist answer
