@@ -255,8 +255,8 @@ const BrainCanvas: React.FC<BrainCanvasProps> = ({ activeEdgeIds, activeNodeIds,
 
   // Update node activity / status without resetting positions
   useEffect(() => {
-    setNodes((current) =>
-      current.map((n) => ({
+    setNodes((current: Node[]) =>
+      current.map((n: Node) => ({
         ...n,
         data: {
           ...n.data,
@@ -269,8 +269,8 @@ const BrainCanvas: React.FC<BrainCanvasProps> = ({ activeEdgeIds, activeNodeIds,
 
   // Update edge animation/style live
   useEffect(() => {
-    setEdges((current) =>
-      current.map((e) => {
+    setEdges((current: Edge[]) =>
+      current.map((e: Edge) => {
         const active = activeEdgeIds.has(e.id);
         return {
           ...e,
@@ -316,7 +316,7 @@ const BrainCanvas: React.FC<BrainCanvasProps> = ({ activeEdgeIds, activeNodeIds,
         pannable
         zoomable
         nodeStrokeWidth={2}
-        nodeColor={(n) => (n.data as BrainNodeData).color}
+        nodeColor={(n: Node) => (n.data as BrainNodeData).color}
         maskColor={isDark ? "rgba(2,6,23,0.6)" : "rgba(241,245,249,0.7)"}
         style={{ width: 160, height: 110 }}
       />

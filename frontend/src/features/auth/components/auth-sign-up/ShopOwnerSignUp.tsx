@@ -12,7 +12,7 @@ import { styled } from '@mui/material/styles';
 import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../../../../services/api';
 import AppTheme from '../auth-shared-theme/AppTheme';
 
 const Card = styled(MuiCard)(({ theme }) => ({
@@ -131,7 +131,7 @@ export default function ShopOwnerSignUp() {
 
     try {
       // Step 1: Create user account
-      const userResponse = await axios.post('users', {
+      await api.post('/users', {
         username: formData.username,
         email: formData.email,
         password: formData.password,
@@ -143,15 +143,15 @@ export default function ShopOwnerSignUp() {
       loginFormData.append('username', formData.username);
       loginFormData.append('password', formData.password);
 
-      const tokenResponse = await axios.post('auth/token', loginFormData, {
+      const tokenResponse = await api.post('/auth/token', loginFormData, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
 
       const token = tokenResponse.data.access_token;
       localStorage.setItem('token', token);
 
-      // Step 3: Create shop
-      await axios.post('shops/', {
+      // Step 3: Create shop (api interceptor adds Bearer token from localStorage automatically)
+      await api.post('/shops/', {
         name: formData.shopName,
         shop_type: formData.shop_type,
         description: formData.description,
@@ -164,8 +164,6 @@ export default function ShopOwnerSignUp() {
         email: formData.shopEmail || formData.email,
         website: formData.website,
         average_service_time: parseInt(formData.average_service_time.toString()),
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       // Success! Redirect to dashboard

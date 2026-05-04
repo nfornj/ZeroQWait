@@ -16,6 +16,7 @@ import {
   useAssistantInteractable,
   useInteractableState,
 } from "@assistant-ui/react";
+import type { JSONSchema7 } from "json-schema";
 
 export type AgentTaskBoardTask = {
   id: string;
@@ -41,7 +42,7 @@ interface AgentTaskBoardProps {
   externalTasks?: AgentTaskBoardExternalTask[];
 }
 
-const TASK_BOARD_STATE_SCHEMA = {
+const TASK_BOARD_STATE_SCHEMA: JSONSchema7 = {
   type: "object",
   additionalProperties: false,
   required: ["tasks"],
@@ -68,7 +69,7 @@ const TASK_BOARD_STATE_SCHEMA = {
       },
     },
   },
-} as const;
+};
 
 const TASK_BOARD_INITIAL_STATE: AgentTaskBoardState = {
   tasks: [],

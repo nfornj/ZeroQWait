@@ -67,7 +67,8 @@ const useAttachmentPreviewSrc = () => {
     return undefined;
   }, [attachment.content, isImage]);
 
-  return (isImage ? useFileSrc(attachment.file) : undefined) ?? contentPreview;
+  const fileSrc = useFileSrc(isImage ? attachment.file : undefined);
+  return fileSrc ?? contentPreview;
 };
 
 const AttachmentPreviewDialog: React.FC<React.PropsWithChildren> = ({ children }) => {
