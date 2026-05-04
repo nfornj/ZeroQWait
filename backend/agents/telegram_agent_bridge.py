@@ -19,12 +19,21 @@ _BRIDGE_RUNNABLE = None
 _BRIDGE_CHECKPOINTER_CM = None
 _BRIDGE_CHECKPOINTER = None
 
+# Unambiguous finance-only keywords — words that can ONLY mean a revenue/analytics query.
+# Do NOT include: customer(s), service(s), client(s) — these appear in booking/queue context too.
 _FINANCE_DIRECT_RE = re.compile(
     r"\b("
-    r"revenue|sales|customer|customers|client|clients|repeat|invoice|invoices|"
-    r"payment|payments|pos|service|services|cash|card|refund|top services|"
+    r"revenue|sales|repeat|invoice|invoices|"
+    r"payment|payments|pos|cash|card|refund|top services|"
     r"visited|came|attended"
     r")\b",
+    re.IGNORECASE,
+)
+
+# Words that signal a live booking/queue question — exclude from finance fast-path even if
+# finance keywords are also present.
+_BOOKING_CONTEXT_RE = re.compile(
+    r"\b(queue|waiting|wait time|position|on queue|in queue|call next|serve|join|slot|appointment|book|booked|today.?s queue)\b",
     re.IGNORECASE,
 )
 
@@ -45,7 +54,15 @@ def _get_runnable():
 
 
 def _looks_like_finance_message(message: str) -> bool:
-    return bool(_FINANCE_DIRECT_RE.search(message or ""))
+    """Return True only for unambiguous finance queries.
+
+    Excludes messages that also mention queue/booking context so that questions
+    like 'how many customers are on queue?' are NOT misrouted to the finance agent.
+    """
+    msg = message or ""
+    if _BOOKING_CONTEXT_RE.search(msg):
+        return False
+    return bool(_FINANCE_DIRECT_RE.search(msg))
 
 
 def _run_finance_direct(shop_id: int, message: str) -> str:

@@ -32,6 +32,9 @@ data:
   # Telegram — bot runs in long-polling mode (no public webhook needed).
   TELEGRAM_MODE: "polling"
   TELEGRAM_POLL_TIMEOUT: "30"
+  # Allow 120 s per owner message (NVIDIA NIM can take 30-40 s per LLM call;
+  # classify_intent + receptionist + synthesize = up to 3 calls ≈ 90-120 s).
+  TELEGRAM_OWNER_REPLY_TIMEOUT_SECONDS: "120"
   # Dev/test: auto-link any unknown Telegram user to this shop (shop id=501 = "Test" shop).
   # Remove or set to "" to disable in production.
   TELEGRAM_DEV_SHOP_ID: "501"

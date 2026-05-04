@@ -35,7 +35,7 @@ from modules.shops.models import Shop
 logger = logging.getLogger(__name__)
 
 _REDIS_PREFIX: str = "zq:tg_connect:"
-_OWNER_REPLY_TIMEOUT_SECONDS: float = float(os.getenv("TELEGRAM_OWNER_REPLY_TIMEOUT_SECONDS", "45"))
+_OWNER_REPLY_TIMEOUT_SECONDS: float = float(os.getenv("TELEGRAM_OWNER_REPLY_TIMEOUT_SECONDS", "120"))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
