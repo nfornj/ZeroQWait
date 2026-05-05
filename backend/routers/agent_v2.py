@@ -2439,31 +2439,57 @@ async def health_check():
     Health check for LangGraph agent.
     
     Verifies:
-    - Ollama LLM connectivity
+    - LLM connectivity (provider-aware: ollama, nvidia, openai-compatible)
     - PostgreSQL checkpoint connectivity
+    - Redis connectivity
     - Agent graph buildability
     """
-    
+    import httpx
+    from agents.llm_factory import normalize_provider, default_api_base_url_for_provider, _default_api_key
+
     health = {
         "status": "ok",
         "components": {}
     }
-    
-    # Check LLM (Ollama) — real HTTP ping to /api/tags
+
+    # Check LLM — provider-aware probe
+    llm_provider = normalize_provider(os.getenv("LLM_PROVIDER", "ollama"))
     try:
-        import httpx
-        ollama_base = os.getenv("OLLAMA_URL", "http://localhost:11434/v1").rstrip("/")
-        if ollama_base.endswith("/v1"):
-            ollama_base = ollama_base[:-3]
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{ollama_base}/api/tags")
-            resp.raise_for_status()
-            models = [m.get("name", "") for m in resp.json().get("models", [])]
-        health["components"]["ollama"] = f"ok ({len(models)} model(s))"
+        if llm_provider == "ollama":
+            ollama_base = os.getenv("OLLAMA_URL", "http://localhost:11434/v1").rstrip("/")
+            if ollama_base.endswith("/v1"):
+                ollama_base = ollama_base[:-3]
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{ollama_base}/api/tags")
+                resp.raise_for_status()
+                models = [m.get("name", "") for m in resp.json().get("models", [])]
+            health["components"]["llm"] = f"ok (ollama, {len(models)} model(s))"
+        elif llm_provider == "nvidia":
+            api_key = _default_api_key("nvidia") or ""
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get(
+                    "https://integrate.api.nvidia.com/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                resp.raise_for_status()
+                model_count = len(resp.json().get("data", []))
+            health["components"]["llm"] = f"ok (nvidia nim, {model_count} model(s))"
+        else:
+            # OpenAI-compatible: probe /v1/models on the configured base URL
+            base_url = default_api_base_url_for_provider(llm_provider) or os.getenv("OPENAI_BASE_URL", "")
+            if base_url:
+                api_key = _default_api_key(llm_provider) or ""
+                headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(f"{base_url.rstrip('/')}/models", headers=headers)
+                    resp.raise_for_status()
+                health["components"]["llm"] = f"ok ({llm_provider})"
+            else:
+                health["components"]["llm"] = f"skipped (no base url for {llm_provider})"
     except Exception as e:
         health["status"] = "degraded"
-        health["components"]["ollama"] = f"error: {str(e)}"
-    
+        health["components"]["llm"] = f"error ({llm_provider}): {str(e)[:120]}"
+
     # Check PostgreSQL (checkpoints)
     try:
         from agents.checkpoints import get_checkpoint_saver
@@ -2472,7 +2498,20 @@ async def health_check():
     except Exception as e:
         health["status"] = "degraded"
         health["components"]["postgres"] = f"error: {str(e)}"
-    
+
+    # Check Redis
+    try:
+        from redis_client import redis_client as _redis
+        if _redis.client is not None:
+            _redis.client.ping()
+            health["components"]["redis"] = "ok"
+        else:
+            health["status"] = "degraded"
+            health["components"]["redis"] = "disabled (no connection)"
+    except Exception as e:
+        health["status"] = "degraded"
+        health["components"]["redis"] = f"error: {str(e)[:80]}"
+
     # Check graph compilation
     try:
         from agents.supervisor import create_supervisor_runnable
