@@ -10,13 +10,13 @@ spec:
   ingressClassName: traefik
   tls:
   - hosts:
-    - "192.168.2.88.nip.io"
-    - "*.192.168.2.88.nip.io"
+    - "192.168.2.134.nip.io"
+    - "*.192.168.2.134.nip.io"
     - "zeroqwait.com"
     - "*.zeroqwait.com"
     secretName: zeroqwait-wildcard-tls
   rules:
-  - host: "192.168.2.88.nip.io"
+  - host: "192.168.2.134.nip.io"
     http:
       paths:
       - path: /docs
@@ -26,7 +26,7 @@ spec:
             name: backend
             port:
               number: 8000
-  - host: "*.192.168.2.88.nip.io"
+  - host: "*.192.168.2.134.nip.io"
     http:
       paths:
       - path: /docs
