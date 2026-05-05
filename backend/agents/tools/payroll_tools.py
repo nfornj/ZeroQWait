@@ -17,6 +17,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from agents.payroll_calculator import (
@@ -57,7 +58,7 @@ def _load_constants(session: Session, tax_year: int, province: str) -> PayrollCo
     Raises ValueError if the row is not found.
     """
     result = session.execute(
-        "SELECT * FROM payroll_constants WHERE tax_year = :y AND province = :p",
+        text("SELECT * FROM payroll_constants WHERE tax_year = :y AND province = :p"),
         {"y": tax_year, "p": province},
     ).fetchone()
     if result is None:
@@ -246,7 +247,7 @@ def draft_payslip(
         result: PayslipResult = calculate_payslip(inp, constants)
 
         session.execute(
-            """
+            text("""
             INSERT INTO payslips (
                 shop_id, shop_employee_id,
                 period_start, period_end, pay_date,
@@ -262,7 +263,7 @@ def draft_payslip(
                 :other_ded, :total_ded, :net_pay,
                 'draft', NOW(), NOW()
             )
-            """,
+            """),
             {
                 "shop_id": shop_id,
                 "shop_employee_id": shop_employee_id,
@@ -285,7 +286,7 @@ def draft_payslip(
         session.commit()
 
         row = session.execute(
-            "SELECT * FROM payslips WHERE shop_employee_id=:id ORDER BY id DESC LIMIT 1",
+            text("SELECT * FROM payslips WHERE shop_employee_id=:id ORDER BY id DESC LIMIT 1"),
             {"id": shop_employee_id},
         ).fetchone()
         return dict(row)
@@ -326,7 +327,7 @@ def list_payslips(
             p_lower = period.lower().strip()
             if p_lower in ("last pay period", "last period", "last payroll"):
                 row = session.execute(
-                    "SELECT MAX(period_end) FROM payslips WHERE shop_id=:s",
+                    text("SELECT MAX(period_end) FROM payslips WHERE shop_id=:s"),
                     {"s": shop_id},
                 ).fetchone()
                 last_end = row[0] if row and row[0] else None
@@ -360,7 +361,7 @@ def list_payslips(
         q += " ORDER BY period_end DESC, id DESC LIMIT :lim"
         params["lim"] = limit
 
-        rows = session.execute(q, params).fetchall()
+        rows = session.execute(text(q), params).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -371,7 +372,7 @@ def approve_payslip(payslip_id: int, approved_by_user_id: int) -> Dict[str, Any]
     """
     with SessionLocal() as session:
         row = session.execute(
-            "SELECT * FROM payslips WHERE id=:id", {"id": payslip_id}
+            text("SELECT * FROM payslips WHERE id=:id"), {"id": payslip_id}
         ).fetchone()
         if row is None:
             raise ValueError(f"Payslip id={payslip_id} not found.")
@@ -379,15 +380,15 @@ def approve_payslip(payslip_id: int, approved_by_user_id: int) -> Dict[str, Any]
             raise ValueError(f"Payslip id={payslip_id} is not in 'draft' status.")
 
         session.execute(
-            """UPDATE payslips SET status='approved', approved_by=:u, approved_at=NOW(), updated_at=NOW()
-               WHERE id=:id""",
+            text("""UPDATE payslips SET status='approved', approved_by=:u, approved_at=NOW(), updated_at=NOW()
+               WHERE id=:id"""),
             {"u": approved_by_user_id, "id": payslip_id},
         )
 
         # Update YTD accumulators
         d = dict(row)
         session.execute(
-            """UPDATE employee_payroll_profiles SET
+            text("""UPDATE employee_payroll_profiles SET
                 ytd_gross    = ytd_gross + :gross,
                 ytd_cpp      = ytd_cpp   + :cpp,
                 ytd_ei       = ytd_ei    + :ei,
@@ -395,7 +396,7 @@ def approve_payslip(payslip_id: int, approved_by_user_id: int) -> Dict[str, Any]
                 ytd_prov_tax = ytd_prov_tax + :prov,
                 ytd_tips     = ytd_tips  + :tips,
                 updated_at   = NOW()
-               WHERE shop_employee_id = :se_id""",
+               WHERE shop_employee_id = :se_id"""),
             {
                 "gross": d["gross_pay"],
                 "cpp": d["cpp_deduction"],
@@ -407,7 +408,7 @@ def approve_payslip(payslip_id: int, approved_by_user_id: int) -> Dict[str, Any]
             },
         )
         session.commit()
-        updated = session.execute("SELECT * FROM payslips WHERE id=:id", {"id": payslip_id}).fetchone()
+        updated = session.execute(text("SELECT * FROM payslips WHERE id=:id"), {"id": payslip_id}).fetchone()
         return dict(updated)
 
 
@@ -449,8 +450,8 @@ def log_tip(
             raise ValueError(f"No active employee named '{employee_name}' in shop {shop_id}.")
 
         session.execute(
-            """INSERT INTO tips_log (shop_id, shop_employee_id, queue_item_id, amount, tip_type, note, tip_date)
-               VALUES (:shop_id, :se_id, :qi_id, :amt, :ttype, :note, :tdate)""",
+            text("""INSERT INTO tips_log (shop_id, shop_employee_id, queue_item_id, amount, tip_type, note, tip_date)
+               VALUES (:shop_id, :se_id, :qi_id, :amt, :ttype, :note, :tdate)"""),
             {
                 "shop_id": shop_id,
                 "se_id": target.id,
@@ -463,7 +464,7 @@ def log_tip(
         )
         session.commit()
         row = session.execute(
-            "SELECT * FROM tips_log WHERE shop_id=:s ORDER BY id DESC LIMIT 1",
+            text("SELECT * FROM tips_log WHERE shop_id=:s ORDER BY id DESC LIMIT 1"),
             {"s": shop_id},
         ).fetchone()
         return dict(row)
@@ -500,7 +501,7 @@ def get_tips_summary(
         if since:
             q += " AND tip_date >= :since"
             params["since"] = since
-        row = session.execute(q, params).fetchone()
+        row = session.execute(text(q), params).fetchone()
         return {
             "total": float(row[0] or 0),
             "count": int(row[1] or 0),
@@ -521,13 +522,13 @@ def create_tip_pool(
     """Create a new tip pool row (status='open')."""
     with SessionLocal() as session:
         session.execute(
-            """INSERT INTO tip_pools (shop_id, pool_date, total_amount, split_method)
-               VALUES (:s, :d, :a, :m)""",
+            text("""INSERT INTO tip_pools (shop_id, pool_date, total_amount, split_method)
+               VALUES (:s, :d, :a, :m)"""),
             {"s": shop_id, "d": pool_date, "a": total_amount, "m": split_method},
         )
         session.commit()
         row = session.execute(
-            "SELECT * FROM tip_pools WHERE shop_id=:s ORDER BY id DESC LIMIT 1",
+            text("SELECT * FROM tip_pools WHERE shop_id=:s ORDER BY id DESC LIMIT 1"),
             {"s": shop_id},
         ).fetchone()
         return dict(row)
@@ -544,7 +545,7 @@ def split_tip_pool(
     """
     with SessionLocal() as session:
         pool = session.execute(
-            "SELECT * FROM tip_pools WHERE id=:id", {"id": tip_pool_id}
+            text("SELECT * FROM tip_pools WHERE id=:id"), {"id": tip_pool_id}
         ).fetchone()
         if pool is None:
             raise ValueError(f"Tip pool id={tip_pool_id} not found.")
@@ -554,14 +555,14 @@ def split_tip_pool(
 
         for s in splits:
             session.execute(
-                """INSERT INTO tip_pool_splits (tip_pool_id, shop_employee_id, hours_worked, split_amount)
-                   VALUES (:pid, :se_id, :hrs, :amt)""",
+                text("""INSERT INTO tip_pool_splits (tip_pool_id, shop_employee_id, hours_worked, split_amount)
+                   VALUES (:pid, :se_id, :hrs, :amt)"""),
                 {"pid": tip_pool_id, "se_id": s["shop_employee_id"], "hrs": s.get("hours_worked", 0), "amt": s["split_amount"]},
             )
             # Log each split as a 'pooled' tip
             session.execute(
-                """INSERT INTO tips_log (shop_id, shop_employee_id, amount, tip_type, note, tip_date)
-                   VALUES (:shop_id, :se_id, :amt, 'pooled', :note, :d)""",
+                text("""INSERT INTO tips_log (shop_id, shop_employee_id, amount, tip_type, note, tip_date)
+                   VALUES (:shop_id, :se_id, :amt, 'pooled', :note, :d)"""),
                 {
                     "shop_id": pool_dict["shop_id"],
                     "se_id": s["shop_employee_id"],
@@ -572,12 +573,12 @@ def split_tip_pool(
             )
 
         session.execute(
-            """UPDATE tip_pools SET status='split', approved_by=:u, approved_at=NOW(), updated_at=NOW()
-               WHERE id=:id""",
+            text("""UPDATE tip_pools SET status='split', approved_by=:u, approved_at=NOW(), updated_at=NOW()
+               WHERE id=:id"""),
             {"u": approved_by_user_id, "id": tip_pool_id},
         )
         session.commit()
-        updated = session.execute("SELECT * FROM tip_pools WHERE id=:id", {"id": tip_pool_id}).fetchone()
+        updated = session.execute(text("SELECT * FROM tip_pools WHERE id=:id"), {"id": tip_pool_id}).fetchone()
         return dict(updated)
 
 
@@ -604,15 +605,15 @@ def upsert_remittance(
     total = round(cpp_employee + cpp_employer + ei_employee + ei_employer + fed_tax + prov_tax, 2)
     with SessionLocal() as session:
         existing = session.execute(
-            "SELECT id FROM remittances WHERE shop_id=:s AND period_start=:ps AND period_end=:pe",
+            text("SELECT id FROM remittances WHERE shop_id=:s AND period_start=:ps AND period_end=:pe"),
             {"s": shop_id, "ps": period_start, "pe": period_end},
         ).fetchone()
         if existing:
             session.execute(
-                """UPDATE remittances SET
+                text("""UPDATE remittances SET
                     cpp_employee=:ce, cpp_employer=:cr, ei_employee=:ee, ei_employer=:er,
                     fed_tax=:ft, prov_tax=:pt, total_owing=:tot, due_date=:dd, updated_at=NOW()
-                   WHERE id=:id""",
+                   WHERE id=:id"""),
                 {
                     "ce": cpp_employee, "cr": cpp_employer,
                     "ee": ei_employee, "er": ei_employer,
@@ -623,11 +624,11 @@ def upsert_remittance(
             rid = existing[0]
         else:
             session.execute(
-                """INSERT INTO remittances
+                text("""INSERT INTO remittances
                    (shop_id, period_start, period_end, due_date,
                     cpp_employee, cpp_employer, ei_employee, ei_employer,
                     fed_tax, prov_tax, total_owing)
-                   VALUES (:s, :ps, :pe, :dd, :ce, :cr, :ee, :er, :ft, :pt, :tot)""",
+                   VALUES (:s, :ps, :pe, :dd, :ce, :cr, :ee, :er, :ft, :pt, :tot)"""),
                 {
                     "s": shop_id, "ps": period_start, "pe": period_end, "dd": due_date,
                     "ce": cpp_employee, "cr": cpp_employer,
@@ -636,11 +637,11 @@ def upsert_remittance(
                 },
             )
             rid = session.execute(
-                "SELECT id FROM remittances WHERE shop_id=:s ORDER BY id DESC LIMIT 1",
+                text("SELECT id FROM remittances WHERE shop_id=:s ORDER BY id DESC LIMIT 1"),
                 {"s": shop_id},
             ).fetchone()[0]
         session.commit()
-        row = session.execute("SELECT * FROM remittances WHERE id=:id", {"id": rid}).fetchone()
+        row = session.execute(text("SELECT * FROM remittances WHERE id=:id"), {"id": rid}).fetchone()
         return dict(row)
 
 
@@ -648,8 +649,8 @@ def get_pending_remittances(shop_id: int) -> List[Dict[str, Any]]:
     """Return all pending/overdue remittances ordered by due_date ascending."""
     with SessionLocal() as session:
         rows = session.execute(
-            """SELECT * FROM remittances WHERE shop_id=:s AND status IN ('pending','overdue')
-               ORDER BY due_date ASC""",
+            text("""SELECT * FROM remittances WHERE shop_id=:s AND status IN ('pending','overdue')
+               ORDER BY due_date ASC"""),
             {"s": shop_id},
         ).fetchall()
         return [dict(r) for r in rows]
@@ -660,9 +661,9 @@ def remittance_due_soon(shop_id: int, days_ahead: int = 3) -> List[Dict[str, Any
     with SessionLocal() as session:
         cutoff = date.today() + timedelta(days=days_ahead)
         rows = session.execute(
-            """SELECT * FROM remittances
+            text("""SELECT * FROM remittances
                WHERE shop_id=:s AND status='pending' AND due_date <= :cutoff
-               ORDER BY due_date ASC""",
+               ORDER BY due_date ASC"""),
             {"s": shop_id, "cutoff": cutoff},
         ).fetchall()
         return [dict(r) for r in rows]
@@ -672,11 +673,11 @@ def mark_remittance_paid(remittance_id: int) -> Dict[str, Any]:
     """Mark a remittance record as paid."""
     with SessionLocal() as session:
         session.execute(
-            "UPDATE remittances SET status='paid', paid_at=NOW(), updated_at=NOW() WHERE id=:id",
+            text("UPDATE remittances SET status='paid', paid_at=NOW(), updated_at=NOW() WHERE id=:id"),
             {"id": remittance_id},
         )
         session.commit()
-        row = session.execute("SELECT * FROM remittances WHERE id=:id", {"id": remittance_id}).fetchone()
+        row = session.execute(text("SELECT * FROM remittances WHERE id=:id"), {"id": remittance_id}).fetchone()
         return dict(row)
 
 
@@ -708,11 +709,11 @@ def draft_t4(shop_id: int, shop_employee_id: int, tax_year: int) -> Dict[str, An
             tips       = float(profile.ytd_tips)
         else:
             rows = session.execute(
-                """SELECT SUM(gross_pay), SUM(cpp_deduction), SUM(ei_deduction),
+                text("""SELECT SUM(gross_pay), SUM(cpp_deduction), SUM(ei_deduction),
                           SUM(fed_tax), SUM(prov_tax), SUM(tips_included)
                    FROM payslips
                    WHERE shop_employee_id=:se_id AND status='approved'
-                     AND EXTRACT(YEAR FROM period_start)=:y""",
+                     AND EXTRACT(YEAR FROM period_start)=:y"""),
                 {"se_id": shop_employee_id, "y": tax_year},
             ).fetchone()
             emp_income = float(rows[0] or 0)
@@ -723,7 +724,7 @@ def draft_t4(shop_id: int, shop_employee_id: int, tax_year: int) -> Dict[str, An
             tips       = float(rows[5] or 0)
 
         existing = session.execute(
-            "SELECT id FROM t4_records WHERE shop_employee_id=:se AND tax_year=:y",
+            text("SELECT id FROM t4_records WHERE shop_employee_id=:se AND tax_year=:y"),
             {"se": shop_employee_id, "y": tax_year},
         ).fetchone()
 
@@ -743,7 +744,7 @@ def draft_t4(shop_id: int, shop_employee_id: int, tax_year: int) -> Dict[str, An
 
         if existing:
             session.execute(
-                """UPDATE t4_records SET
+                text("""UPDATE t4_records SET
                     box_14_employment_income=:emp_income,
                     box_16_cpp_contributions=:cpp,
                     box_18_ei_premiums=:ei,
@@ -753,29 +754,29 @@ def draft_t4(shop_id: int, shop_employee_id: int, tax_year: int) -> Dict[str, An
                     box_40_tips_gratuities=:tips,
                     province=:prov,
                     updated_at=NOW()
-                   WHERE shop_employee_id=:se_id AND tax_year=:yr""",
+                   WHERE shop_employee_id=:se_id AND tax_year=:yr"""),
                 values,
             )
             rid = existing[0]
         else:
             session.execute(
-                """INSERT INTO t4_records
+                text("""INSERT INTO t4_records
                    (shop_id, shop_employee_id, tax_year,
                     box_14_employment_income, box_16_cpp_contributions,
                     box_18_ei_premiums, box_22_income_tax_deducted,
                     box_24_ei_insurable_earnings, box_26_cpp_pensionable_earnings,
                     box_40_tips_gratuities, province)
                    VALUES (:shop_id,:se_id,:yr,:emp_income,:cpp,:ei,:fed_tax,
-                           :ei_insurable,:cpp_pensionable,:tips,:prov)""",
+                           :ei_insurable,:cpp_pensionable,:tips,:prov)"""),
                 values,
             )
             rid = session.execute(
-                "SELECT id FROM t4_records WHERE shop_employee_id=:se AND tax_year=:yr",
+                text("SELECT id FROM t4_records WHERE shop_employee_id=:se AND tax_year=:yr"),
                 {"se": shop_employee_id, "yr": tax_year},
             ).fetchone()[0]
 
         session.commit()
-        row = session.execute("SELECT * FROM t4_records WHERE id=:id", {"id": rid}).fetchone()
+        row = session.execute(text("SELECT * FROM t4_records WHERE id=:id"), {"id": rid}).fetchone()
         return dict(row)
 
 
@@ -788,7 +789,7 @@ def list_t4_records(shop_id: int, tax_year: Optional[int] = None) -> List[Dict[s
             q += " AND tax_year=:yr"
             params["yr"] = tax_year
         q += " ORDER BY tax_year DESC, shop_employee_id ASC"
-        rows = session.execute(q, params).fetchall()
+        rows = session.execute(text(q), params).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -803,11 +804,11 @@ def reset_ytd_for_shop(shop_id: int, new_year: int) -> int:
     """
     with SessionLocal() as session:
         result = session.execute(
-            """UPDATE employee_payroll_profiles SET
+            text("""UPDATE employee_payroll_profiles SET
                 ytd_gross=0, ytd_cpp=0, ytd_ei=0,
                 ytd_fed_tax=0, ytd_prov_tax=0, ytd_tips=0,
                 ytd_year=:yr, updated_at=NOW()
-               WHERE shop_id=:s""",
+               WHERE shop_id=:s"""),
             {"yr": new_year, "s": shop_id},
         )
         session.commit()
