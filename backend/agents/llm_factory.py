@@ -330,7 +330,8 @@ def _build_model_from_config(config: ResolvedLLMConfig, *, temperature: float):
             temperature=temperature,
             top_p=float(settings.get("top_p", 0.9)),
             num_gpu=int(settings.get("num_gpu", -1)),
-            timeout=120,
+            timeout=180,
+            think=False,
         )
 
     if config.provider == "openai":

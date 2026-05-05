@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 MAX_ROWS = int(os.getenv("FINANCE_QUERY_MAX_ROWS", "100"))
 STATEMENT_TIMEOUT_MS = int(os.getenv("FINANCE_QUERY_STATEMENT_TIMEOUT_MS", "5000"))
 MAX_RETRIES = int(os.getenv("FINANCE_QUERY_MAX_RETRIES", "2"))
-LLM_TIMEOUT_SECONDS = float(os.getenv("FINANCE_QUERY_LLM_TIMEOUT_SECONDS", "60"))
+LLM_TIMEOUT_SECONDS = float(os.getenv("FINANCE_QUERY_LLM_TIMEOUT_SECONDS", "180"))
 
 AI_DATABASE_URL = os.getenv("AI_DATABASE_URL") or os.getenv("FINANCE_AI_DATABASE_URL")
 
@@ -94,6 +94,10 @@ Rules:
 - For percentage or ratio calculations always wrap the denominator in NULLIF(expr, 0) to avoid division by zero.
 - Add LIMIT when returning detail rows.
 - ai_queue_visits has NO customer_id column. Never reference customer_id on ai_queue_visits. To count customers who visited in a period, use: SELECT COUNT(*) FROM ai_customers WHERE last_visit >= <date>. Do not JOIN ai_queue_visits to ai_customers.
+- For the highest-spending customer or top customers by invoice total: SELECT customer_id, SUM(total) AS invoice_total FROM ai_invoices GROUP BY customer_id ORDER BY invoice_total DESC LIMIT 1.
+- When using a subquery alias, only reference column names that are explicitly listed in the subquery SELECT clause. Never reference outer-table aliases inside an aggregate that lives outside the subquery.
+- To link ai_payments to ai_queue_visits, join through ai_invoice_line_items: ai_payments.invoice_id = ai_invoice_line_items.invoice_id AND ai_invoice_line_items.queue_item_id = ai_queue_visits.visit_id. ai_payments has NO line_item_id column and ai_queue_visits has NO line_item_id column — never join them directly on line_item_id.
+- For payment conversion rate (queue visits that became paid), use: SELECT COUNT(DISTINCT ili.queue_item_id) * 100.0 / NULLIF(COUNT(DISTINCT v.visit_id), 0) AS pct FROM ai_queue_visits v LEFT JOIN ai_invoice_line_items ili ON ili.queue_item_id = v.visit_id LEFT JOIN ai_payments p ON p.invoice_id = ili.invoice_id AND p.status = 'completed' WHERE v.checked_in_at >= <date>.
 """
 
 
