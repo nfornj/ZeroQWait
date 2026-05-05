@@ -99,6 +99,7 @@ Rules:
 - When using a subquery alias, only reference column names that are explicitly listed in the subquery SELECT clause. Never reference outer-table aliases inside an aggregate that lives outside the subquery.
 - To link ai_payments to ai_queue_visits, join through ai_invoice_line_items: ai_payments.invoice_id = ai_invoice_line_items.invoice_id AND ai_invoice_line_items.queue_item_id = ai_queue_visits.visit_id. ai_payments has NO line_item_id column and ai_queue_visits has NO line_item_id column — never join them directly on line_item_id.
 - For payment conversion rate (queue visits that became paid), use: SELECT COUNT(DISTINCT ili.queue_item_id) * 100.0 / NULLIF(COUNT(DISTINCT v.visit_id), 0) AS pct FROM ai_queue_visits v LEFT JOIN ai_invoice_line_items ili ON ili.queue_item_id = v.visit_id LEFT JOIN ai_payments p ON p.invoice_id = ili.invoice_id AND p.status = 'completed' WHERE v.checked_in_at >= <date>.
+- For average revenue per visit broken down by service, use service_cost from ai_queue_visits directly without nesting aggregates: SELECT service_name, AVG(service_cost) AS avg_revenue_per_visit, COUNT(*) AS visit_count FROM ai_queue_visits WHERE service_cost IS NOT NULL GROUP BY service_name ORDER BY avg_revenue_per_visit DESC. Never nest aggregate functions like AVG(SUM(...)) — PostgreSQL does not allow nested aggregates.
 """
 
 
