@@ -2386,12 +2386,17 @@ async def health_check():
         "components": {}
     }
     
-    # Check LLM (Ollama)
+    # Check LLM (Ollama) — real HTTP ping to /api/tags
     try:
-        from agents.supervisor import get_llm
-        llm = get_llm()
-        # TODO: Actual ping
-        health["components"]["ollama"] = "ok"
+        import httpx
+        ollama_base = os.getenv("OLLAMA_URL", "http://localhost:11434/v1").rstrip("/")
+        if ollama_base.endswith("/v1"):
+            ollama_base = ollama_base[:-3]
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{ollama_base}/api/tags")
+            resp.raise_for_status()
+            models = [m.get("name", "") for m in resp.json().get("models", [])]
+        health["components"]["ollama"] = f"ok ({len(models)} model(s))"
     except Exception as e:
         health["status"] = "degraded"
         health["components"]["ollama"] = f"error: {str(e)}"
