@@ -1,17 +1,6 @@
 import React, { useMemo, useState } from "react";
-import {
-  alpha,
-  Box,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TableSortLabel,
-  Typography,
-  useTheme,
-} from "@mui/material";
+import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { cn } from "../lib/utils";
 
 type TableFormatKind = "currency" | "delta" | "percent" | "number";
 
@@ -45,30 +34,19 @@ const compareValues = (left: unknown, right: unknown) => {
   if (left == null && right == null) return 0;
   if (left == null) return 1;
   if (right == null) return -1;
-
-  if (typeof left === "number" && typeof right === "number") {
-    return left - right;
-  }
-
+  if (typeof left === "number" && typeof right === "number") return left - right;
   return String(left).localeCompare(String(right), undefined, {
     numeric: true,
     sensitivity: "base",
   });
 };
 
-const formatValue = (value: unknown, format?: DataTableColumnFormat) => {
-  if (value == null || value === "") {
-    return "-";
-  }
+const formatValue = (value: unknown, format?: DataTableColumnFormat): string => {
+  if (value == null || value === "") return "-";
+  if (!format) return String(value);
 
-  if (!format) {
-    return String(value);
-  }
-
-  const numberValue = typeof value === "number" ? value : Number(value);
-  if (Number.isNaN(numberValue)) {
-    return String(value);
-  }
+  const num = typeof value === "number" ? value : Number(value);
+  if (Number.isNaN(num)) return String(value);
 
   const decimals = format.decimals ?? 0;
 
@@ -78,146 +56,129 @@ const formatValue = (value: unknown, format?: DataTableColumnFormat) => {
       currency: format.currency || "USD",
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
-    }).format(numberValue);
+    }).format(num);
   }
 
   if (format.kind === "percent") {
-    const percentValue = format.basis === "unit" ? numberValue : numberValue * 100;
-    const prefix = format.showSign && percentValue > 0 ? "+" : "";
-    return `${prefix}${percentValue.toFixed(decimals)}%`;
+    const pct = format.basis === "unit" ? num : num * 100;
+    const prefix = format.showSign && pct > 0 ? "+" : "";
+    return `${prefix}${pct.toFixed(decimals)}%`;
   }
 
   if (format.kind === "delta") {
-    const prefix = format.showSign && numberValue > 0 ? "+" : "";
-    return `${prefix}${numberValue.toFixed(decimals)}`;
+    const prefix = format.showSign && num > 0 ? "+" : "";
+    return `${prefix}${num.toFixed(decimals)}`;
   }
 
   return new Intl.NumberFormat("en-US", {
     notation: format.compact ? "compact" : "standard",
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
-  }).format(numberValue);
+  }).format(num);
 };
 
-const getCellColor = (value: unknown, format: DataTableColumnFormat | undefined, themeMode: "light" | "dark") => {
-  if (!format || (format.kind !== "delta" && format.kind !== "percent")) {
-    return undefined;
-  }
-
-  const numberValue = typeof value === "number" ? value : Number(value);
-  if (Number.isNaN(numberValue) || numberValue === 0) {
-    return undefined;
-  }
-
-  const positive = format.upIsPositive === false ? numberValue < 0 : numberValue > 0;
-  if (positive) {
-    return themeMode === "dark" ? "#6fe09b" : "#138a36";
-  }
-
-  return themeMode === "dark" ? "#ff8d8d" : "#d11f1f";
+const getCellColor = (value: unknown, format?: DataTableColumnFormat): string | undefined => {
+  if (!format || (format.kind !== "delta" && format.kind !== "percent")) return undefined;
+  const num = typeof value === "number" ? value : Number(value);
+  if (Number.isNaN(num) || num === 0) return undefined;
+  const positive = format.upIsPositive === false ? num < 0 : num > 0;
+  return positive ? "text-emerald-400" : "text-red-400";
 };
+
+const alignClass = { left: "text-left", center: "text-center", right: "text-right" };
 
 const DataTable: React.FC<DataTableProps> = ({ columns, data, rowIdKey }) => {
-  const muiTheme = useTheme();
   const [sortKey, setSortKey] = useState<string>(columns[0]?.key || rowIdKey);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   const sortedRows = useMemo(() => {
-    const nextRows = [...data];
-    nextRows.sort((left, right) => {
-      const result = compareValues(left[sortKey], right[sortKey]);
+    const rows = [...data];
+    rows.sort((a, b) => {
+      const result = compareValues(a[sortKey], b[sortKey]);
       return sortDirection === "asc" ? result : -result;
     });
-    return nextRows;
+    return rows;
   }, [data, sortDirection, sortKey]);
 
-  const handleSort = (columnKey: string) => {
-    if (sortKey === columnKey) {
-      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
-      return;
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDirection("asc");
     }
+  };
 
-    setSortKey(columnKey);
-    setSortDirection("asc");
+  const SortIcon = ({ columnKey }: { columnKey: string }) => {
+    if (sortKey !== columnKey) return <ChevronsUpDown className="ml-1 h-3 w-3 opacity-40" />;
+    return sortDirection === "asc"
+      ? <ChevronUp className="ml-1 h-3 w-3" />
+      : <ChevronDown className="ml-1 h-3 w-3" />;
   };
 
   return (
-    <TableContainer
-      sx={{
-        borderRadius: 2.5,
-        border: "1px solid",
-        borderColor: alpha(muiTheme.palette.divider, 0.9),
-        bgcolor: muiTheme.palette.background.paper,
-        overflowX: "auto",
-      }}
-    >
-      <Table size="small" stickyHeader>
-        <TableHead>
-          <TableRow>
-            {columns.map((column) => (
-              <TableCell
-                key={column.key}
-                align={column.align || "left"}
-                sortDirection={sortKey === column.key ? sortDirection : false}
-                sx={{
-                  bgcolor: muiTheme.palette.background.paper,
-                  borderBottomColor: alpha(muiTheme.palette.divider, 0.9),
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <TableSortLabel
-                  active={sortKey === column.key}
-                  direction={sortKey === column.key ? sortDirection : "asc"}
-                  onClick={() => handleSort(column.key)}
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              {columns.map((col) => (
+                <th
+                  key={col.key}
+                  className={cn(
+                    "whitespace-nowrap px-4 py-3 text-xs font-semibold text-muted-foreground",
+                    alignClass[col.align || "left"],
+                  )}
                 >
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {column.label}
-                  </Typography>
-                </TableSortLabel>
-              </TableCell>
-            ))}
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {sortedRows.map((row, rowIndex) => {
-            const fallbackId = row[rowIdKey] ?? rowIndex;
-            return (
-              <TableRow
-                key={String(fallbackId)}
-                hover
-                sx={{
-                  "&:last-child td": { borderBottom: 0 },
-                }}
-              >
-                {columns.map((column) => {
-                  const value = row[column.key];
-                  return (
-                    <TableCell
-                      key={column.key}
-                      align={column.align || "left"}
-                      sx={{
-                        borderBottomColor: alpha(muiTheme.palette.divider, 0.7),
-                        color: getCellColor(value, column.format, muiTheme.palette.mode),
-                        whiteSpace: column.priority === "primary" ? "normal" : "nowrap",
-                      }}
-                    >
-                      {formatValue(value, column.format)}
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-      {sortedRows.length === 0 ? (
-        <Box sx={{ px: 2, py: 3 }}>
-          <Typography variant="body2" color="text.secondary">
-            No rows available.
-          </Typography>
-        </Box>
-      ) : null}
-    </TableContainer>
+                  <button
+                    type="button"
+                    onClick={() => handleSort(col.key)}
+                    className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors"
+                  >
+                    {col.label}
+                    <SortIcon columnKey={col.key} />
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedRows.map((row, rowIndex) => {
+              const id = row[rowIdKey] ?? rowIndex;
+              return (
+                <tr
+                  key={String(id)}
+                  className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors"
+                >
+                  {columns.map((col) => {
+                    const value = row[col.key];
+                    const colorClass = getCellColor(value, col.format);
+                    return (
+                      <td
+                        key={col.key}
+                        className={cn(
+                          "px-4 py-3 text-foreground",
+                          alignClass[col.align || "left"],
+                          col.priority !== "primary" && "whitespace-nowrap",
+                          colorClass,
+                        )}
+                      >
+                        {formatValue(value, col.format)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {sortedRows.length === 0 && (
+        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+          No rows available.
+        </div>
+      )}
+    </div>
   );
 };
 

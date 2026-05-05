@@ -1,6 +1,7 @@
 import React from "react";
 import { Routes, Route } from "react-router-dom";
 import { Navigate } from "react-router-dom";
+import { Toaster } from "./components/ui/sonner";
 // ThemeProvider is now imported from our context which handles dynamic theming
 import { ThemeProvider } from "./contexts/ThemeContext";
 
@@ -59,6 +60,7 @@ function App() {
   return (
     <ShopProvider>
       <ThemeProvider>
+        <Toaster richColors position="bottom-right" />
         <Routes>
           {/* Auth Pages (No Navbar) */}
           <Route path="/login" element={<SignInSide />} />

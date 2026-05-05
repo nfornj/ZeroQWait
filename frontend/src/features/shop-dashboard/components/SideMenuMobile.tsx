@@ -1,9 +1,9 @@
-import Divider from '@mui/material/Divider';
-import Drawer, { drawerClasses } from '@mui/material/Drawer';
-import Stack from '@mui/material/Stack';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Separator } from '@/components/ui/separator';
 import MenuContent from './MenuContent';
 import CardAlert from './CardAlert';
 import OwnerAccountPanel from './OwnerAccountPanel';
+import SelectContent from './SelectContent';
 
 interface SideMenuMobileProps {
   open: boolean | undefined;
@@ -12,33 +12,20 @@ interface SideMenuMobileProps {
 
 export default function SideMenuMobile({ open, toggleDrawer }: SideMenuMobileProps) {
   return (
-    <Drawer
-      anchor="right"
-      open={open}
-      onClose={toggleDrawer(false)}
-      sx={{
-        zIndex: (theme) => theme.zIndex.drawer + 1,
-        [`& .${drawerClasses.paper}`]: {
-          backgroundImage: 'none',
-          backgroundColor: 'background.paper',
-        },
-      }}
-    >
-      <Stack
-        sx={{
-          maxWidth: '70dvw',
-          height: '100%',
-        }}
-      >
-        <Stack sx={{ flexGrow: 1 }}>
+    <Sheet open={open} onOpenChange={(v) => toggleDrawer(v)()}>
+      <SheetContent side="right" className="flex w-[260px] flex-col p-0">
+        <div className="border-b border-border px-3 py-1">
+          <SelectContent />
+        </div>
+        <div className="flex flex-1 flex-col overflow-hidden">
           <MenuContent />
-          <Divider />
-        </Stack>
+        </div>
+        <Separator />
         <CardAlert />
-        <Stack sx={{ p: 2, pt: 0 }}>
+        <div className="p-3">
           <OwnerAccountPanel />
-        </Stack>
-      </Stack>
-    </Drawer>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

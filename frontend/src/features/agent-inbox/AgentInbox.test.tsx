@@ -1,7 +1,6 @@
 import React from "react";
 import "@testing-library/jest-dom";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { CompleteAttachment } from "@assistant-ui/react";
 
@@ -275,42 +274,20 @@ jest.mock("../../services/api", () => ({
   },
 }));
 
-jest.mock("@mui/x-charts/LineChart", () => ({
+jest.mock("recharts", () => ({
   __esModule: true,
-  LineChart: ({ series = [], xAxis = [] }: { series?: Array<{ label?: string }>; xAxis?: Array<{ data?: string[] }> }) => (
-    <svg data-testid="line-chart" data-series-count={String(series.length)}>
-      {series.map((entry, index) => (
-        <text key={`${entry.label || "series"}_${index}`}>{entry.label || `series-${index}`}</text>
-      ))}
-      {(xAxis[0]?.data || []).map((label, index) => (
-        <text key={`${label}_${index}`}>{label}</text>
-      ))}
-    </svg>
-  ),
-}));
-
-jest.mock("@mui/x-charts/BarChart", () => ({
-  __esModule: true,
-  BarChart: ({ series = [], xAxis = [] }: { series?: Array<{ label?: string }>; xAxis?: Array<{ data?: string[] }> }) => (
-    <svg data-testid="bar-chart" data-series-count={String(series.length)}>
-      {series.map((entry, index) => (
-        <text key={`${entry.label || "series"}_${index}`}>{entry.label || `series-${index}`}</text>
-      ))}
-      {(xAxis[0]?.data || []).map((label, index) => (
-        <text key={`${label}_${index}`}>{label}</text>
-      ))}
-    </svg>
-  ),
-}));
-
-jest.mock("@mui/x-charts/PieChart", () => ({
-  __esModule: true,
-  PieChart: () => <svg data-testid="pie-chart" />,
-}));
-
-jest.mock("@mui/x-charts/SparkLineChart", () => ({
-  __esModule: true,
-  SparkLineChart: () => <svg data-testid="sparkline-chart" />,
+  ResponsiveContainer: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  BarChart: ({ children }: { children?: React.ReactNode }) => <svg data-testid="bar-chart">{children}</svg>,
+  Bar: () => null,
+  LineChart: ({ children }: { children?: React.ReactNode }) => <svg data-testid="line-chart">{children}</svg>,
+  Line: () => null,
+  PieChart: ({ children }: { children?: React.ReactNode }) => <svg data-testid="pie-chart">{children}</svg>,
+  Pie: () => null,
+  Cell: () => null,
+  XAxis: () => null,
+  YAxis: () => null,
+  Tooltip: () => null,
+  ReferenceLine: () => null,
 }));
 
 const mockedApi = api as unknown as {
@@ -417,22 +394,18 @@ const renderInbox = () =>
 
     return render(
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider theme={createTheme()}>
-          <AgentInbox />
-        </ThemeProvider>
+        <AgentInbox />
       </QueryClientProvider>
     );
   };
 
 const renderChat = (messages: React.ComponentProps<typeof AgentChat>["messages"]) =>
   render(
-    <ThemeProvider theme={createTheme()}>
-      <AgentChat
-        messages={messages}
-        isStreaming={false}
-        onSend={jest.fn(async () => undefined)}
-      />
-    </ThemeProvider>
+    <AgentChat
+      messages={messages}
+      isStreaming={false}
+      onSend={jest.fn(async () => undefined)}
+    />
   );
 
 describe("AgentInbox", () => {

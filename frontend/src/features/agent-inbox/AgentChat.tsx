@@ -1,28 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  alpha,
-  Avatar,
-  Box,
-  Button,
-  IconButton,
-  Stack,
-  Typography,
-  useTheme,
-} from "@mui/material";
-import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
-import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
-import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
-import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
-import MicNoneRoundedIcon from "@mui/icons-material/MicNoneRounded";
-import NavigateBeforeRoundedIcon from "@mui/icons-material/NavigateBeforeRounded";
-import NavigateNextRoundedIcon from "@mui/icons-material/NavigateNextRounded";
-import PsychologyAltOutlinedIcon from "@mui/icons-material/PsychologyAltOutlined";
-import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
-import StopRoundedIcon from "@mui/icons-material/StopRounded";
-import BuildCircleOutlinedIcon from "@mui/icons-material/BuildCircleOutlined";
-import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
-import VolumeUpRoundedIcon from "@mui/icons-material/VolumeUpRounded";
-import VolumeOffRoundedIcon from "@mui/icons-material/VolumeOffRounded";
+  ChevronRight,
+  Copy,
+  Edit2,
+  ChevronDown,
+  Mic,
+  ChevronLeft,
+  ChevronRight as ChevronRightNav,
+  Brain,
+  RefreshCw,
+  Square,
+  Wrench,
+  FolderOpen,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import {
   AuiIf,
   ActionBarPrimitive,
@@ -49,10 +41,19 @@ import {
   useThreadComposer,
   useThreadRuntime,
 } from "@assistant-ui/react";
-import { BarChart } from "@mui/x-charts/BarChart";
-import { LineChart } from "@mui/x-charts/LineChart";
-import { PieChart } from "@mui/x-charts/PieChart";
-import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from "recharts";
 import ReactMarkdown from "react-markdown";
 import DataTable from "../../components/DataTable";
 import {
@@ -61,6 +62,8 @@ import {
   UserMessageAttachments,
 } from "../../components/AssistantUIAttachment";
 import { Composer } from "../../components/assistant-ui/thread";
+import { cn } from "../../lib/utils";
+import { useOwnerBrand } from "../../hooks/useOwnerBrand";
 import { resolveAgentChart } from "./types";
 import type { AgentChart, AgentFile, AgentTable, ChatMessage, ResolvedAgentChart } from "./types";
 import { useShop } from "../../contexts/ShopContext";
@@ -118,11 +121,7 @@ type PersistedInteractablesState = Record<string, { name: string; state: unknown
 
 type InteractablesMethods = {
   setPersistenceAdapter: (
-    adapter:
-      | {
-          save: (state: PersistedInteractablesState) => void | Promise<void>;
-        }
-      | undefined,
+    adapter: { save: (state: PersistedInteractablesState) => void | Promise<void> } | undefined,
   ) => void;
   importState: (saved: PersistedInteractablesState) => void;
   flush: () => Promise<void>;
@@ -135,185 +134,58 @@ type InteractablesAuiClient = AssistantClient & {
 const CHAIN_OF_THOUGHT_PARENT_SUFFIX = "reasoning";
 
 const GENERIC_REASONING_PREFIXES = [
-  "thinking",
-  "analyzing",
-  "reviewing",
-  "checking",
-  "gathering",
-  "working",
-  "planning",
+  "thinking", "analyzing", "reviewing", "checking", "gathering", "working", "planning",
 ];
 
 const DOCUMENT_ATTACHMENT_ACCEPT = [
-  ".txt",
-  ".md",
-  ".markdown",
-  ".csv",
-  ".json",
-  ".html",
-  ".htm",
-  ".xml",
-  ".yml",
-  ".yaml",
-  ".tsv",
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-  "application/json",
-  "text/html",
-  "text/xml",
-  "application/xml",
+  ".txt", ".md", ".markdown", ".csv", ".json", ".html", ".htm", ".xml", ".yml", ".yaml", ".tsv",
+  "text/plain", "text/markdown", "text/csv", "application/json", "text/html", "text/xml", "application/xml",
 ].join(",");
 
-const ComposerDictationButton: React.FC<{ disabled?: boolean; supported: boolean }> = ({ disabled = false, supported }) => {
-  const muiTheme = useTheme();
-  const getDictationState = (state: unknown) =>
-    ((state as { composer?: { dictation?: unknown } } | null)?.composer?.dictation ?? null);
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-  const baseSx = {
-    width: 34,
-    height: 34,
-    borderRadius: 2.5,
-    color: muiTheme.palette.mode === "dark" ? alpha("#f5f3ef", 0.82) : "#6f6a63",
-    "&:hover": {
-      backgroundColor:
-        muiTheme.palette.mode === "dark"
-          ? alpha("#f5f3ef", 0.08)
-          : alpha("#1f1d1a", 0.06),
-    },
-    "&.Mui-disabled": {
-      color: alpha(muiTheme.palette.text.secondary, 0.4),
-    },
-  } as const;
-
-  if (!supported) {
-    return (
-      <IconButton size="small" disabled sx={baseSx} aria-label="Dictation unavailable">
-        <MicNoneRoundedIcon fontSize="small" />
-      </IconButton>
-    );
-  }
-
-  return (
-    <>
-      <AuiIf condition={(s) => getDictationState(s) == null}>
-        <ComposerPrimitive.Dictate asChild>
-          <IconButton size="small" disabled={disabled} sx={baseSx} aria-label="Start dictation">
-            <MicNoneRoundedIcon fontSize="small" />
-          </IconButton>
-        </ComposerPrimitive.Dictate>
-      </AuiIf>
-
-      <AuiIf condition={(s) => getDictationState(s) != null}>
-        <ComposerPrimitive.StopDictation asChild>
-          <IconButton
-            size="small"
-            disabled={disabled}
-            aria-label="Stop dictation"
-            sx={{
-              ...baseSx,
-              color: muiTheme.palette.mode === "dark" ? "#f5f3ef" : muiTheme.palette.error.main,
-            }}
-          >
-            <StopRoundedIcon sx={{ fontSize: 18 }} />
-          </IconButton>
-        </ComposerPrimitive.StopDictation>
-      </AuiIf>
-    </>
-  );
-};
-
-const formatAgentName = (value: string) => {
-  return value
-    .replace(/[_-]+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-};
+const formatAgentName = (value: string) =>
+  value.replace(/[_-]+/g, " ").trim().replace(/\b\w/g, (c) => c.toUpperCase());
 
 const formatAssistantLabel = (agent?: string | null) => {
-  if (!agent?.trim()) {
-    return "Assistant";
-  }
-
+  if (!agent?.trim()) return "Assistant";
   const formatted = formatAgentName(agent);
-
-  if (/assistant$/i.test(formatted)) {
-    return formatted;
-  }
-
-  return `${formatted} Assistant`;
+  return /assistant$/i.test(formatted) ? formatted : `${formatted} Assistant`;
 };
 
-const getAgentInitials = (label: string) => {
-  const initials = label
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-
-  return initials || "AI";
-};
+const getAgentInitials = (label: string) =>
+  label.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("") || "AI";
 
 const formatTimestamp = (timestamp?: string) => {
   if (!timestamp) return "";
-
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "";
-
-  return date.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 };
 
-const getRenderableMessageText = (message?: ChatMessage) => {
-  if (!message?.content) {
-    return "";
-  }
+const getRenderableMessageText = (message?: ChatMessage) =>
+  message?.content ? message.content.replace(/▊/g, "").trim() : "";
 
-  return message.content.replace(/▊/g, "").trim();
-};
-
-const hasRenderableMessagePayload = (message?: ChatMessage) => {
-  return Boolean(
+const hasRenderableMessagePayload = (message?: ChatMessage) =>
+  Boolean(
     getRenderableMessageText(message) ||
       (message?.charts && message.charts.length > 0) ||
       (message?.tables && message.tables.length > 0) ||
       (message?.files && message.files.length > 0),
   );
-};
 
 const getTransientStatusLabel = (message?: ChatMessage, isRunning?: boolean) => {
-  if (!message || message.role !== "assistant") {
-    return null;
-  }
-
-  if (!isRunning && (message.status === "done" || message.status === "error")) {
-    return null;
-  }
-
+  if (!message || message.role !== "assistant") return null;
+  if (!isRunning && (message.status === "done" || message.status === "error")) return null;
   const hasProgressSignal = Boolean(
     isRunning || (message.thinkingSteps && message.thinkingSteps.length > 0) || message.status === "streaming",
   );
-  if (!hasProgressSignal) {
-    return null;
-  }
-
-  const hasRenderablePayload = hasRenderableMessagePayload(message);
-  if (hasRenderablePayload) {
-    return null;
-  }
-
-  const activeStep = [...(message.thinkingSteps || [])]
-    .reverse()
-    .find((step) => step.status === "active" || step.status === "pending");
-
-  if (activeStep?.label?.trim()) {
-    return activeStep.label.trim();
-  }
-
-  return "Thinking";
+  if (!hasProgressSignal) return null;
+  if (hasRenderableMessagePayload(message)) return null;
+  const activeStep = [...(message.thinkingSteps || [])].reverse().find(
+    (step) => step.status === "active" || step.status === "pending",
+  );
+  return activeStep?.label?.trim() || "Thinking";
 };
 
 const mapMessageStatus = (status: ChatMessage["status"]): MessageStatus | undefined => {
@@ -331,60 +203,27 @@ const mapMessageStatus = (status: ChatMessage["status"]): MessageStatus | undefi
 };
 
 const buildChainOfThoughtParts = (message: ChatMessage): MutableThreadPart[] => {
-  if (message.role !== "assistant" || !message.thinkingSteps?.length) {
-    return [];
-  }
-
+  if (message.role !== "assistant" || !message.thinkingSteps?.length) return [];
   const parentId = `${message.id}_${CHAIN_OF_THOUGHT_PARENT_SUFFIX}`;
 
   return message.thinkingSteps.flatMap((step) => {
     const label = step.label.trim();
     const toolName = step.toolName?.trim();
-
-    if (step.id.startsWith("step_")) {
-      return [];
-    }
-
+    if (step.id.startsWith("step_")) return [];
     if (toolName) {
-      return [
-        {
-        type: "tool-call",
-        toolCallId: `${message.id}_${step.id}`,
-        toolName,
-        args: {},
-        argsText: "{}",
-        parentId,
-        } as MutableThreadPart,
-      ];
+      return [{ type: "tool-call", toolCallId: `${message.id}_${step.id}`, toolName, args: {}, argsText: "{}", parentId } as MutableThreadPart];
     }
-
-    if (!label) {
-      return [];
-    }
-
+    if (!label) return [];
     const lowerLabel = label.toLowerCase();
-    const isGenericStatusLabel = GENERIC_REASONING_PREFIXES.some((prefix) => lowerLabel.startsWith(prefix));
-    if (isGenericStatusLabel && label.length < 60) {
-      return [];
-    }
-
-    return [
-      {
-        type: "reasoning",
-        text: label,
-        parentId,
-      } as MutableThreadPart,
-    ];
+    if (GENERIC_REASONING_PREFIXES.some((p) => lowerLabel.startsWith(p)) && label.length < 60) return [];
+    return [{ type: "reasoning", text: label, parentId } as MutableThreadPart];
   });
 };
 
-const hasChainOfThoughtParts = (message?: ThreadMessage) => {
-  if (!message || message.role !== "assistant") {
-    return false;
-  }
+const hasChainOfThoughtParts = (message?: ThreadMessage) =>
+  message?.role === "assistant" && message.content.some((p) => p.type === "reasoning" || p.type === "tool-call");
 
-  return message.content.some((part) => part.type === "reasoning" || part.type === "tool-call");
-};
+// ── Attachment adapter ────────────────────────────────────────────────────────
 
 class KnowledgeBaseAttachmentAdapter implements AttachmentAdapter {
   accept = DOCUMENT_ATTACHMENT_ACCEPT;
@@ -410,24 +249,20 @@ class KnowledgeBaseAttachmentAdapter implements AttachmentAdapter {
     return {
       ...attachment,
       status: { type: "complete" } as const,
-      content: [
-        {
-          type: "data" as const,
-          name: "attachment",
-          data: {
-            filename: attachment.name,
-            contentType: attachment.contentType || null,
-            sizeBytes: attachment.file.size,
-            textContent,
-          },
+      content: [{
+        type: "data" as const,
+        name: "attachment",
+        data: {
+          filename: attachment.name,
+          contentType: attachment.contentType || null,
+          sizeBytes: attachment.file.size,
+          textContent,
         },
-      ],
+      }],
     };
   }
 
-  async remove() {
-    return;
-  }
+  async remove() { return; }
 }
 
 const attachmentAdapter = new CompositeAttachmentAdapter([new KnowledgeBaseAttachmentAdapter()]);
@@ -435,41 +270,13 @@ const attachmentAdapter = new CompositeAttachmentAdapter([new KnowledgeBaseAttac
 const buildThreadMessage = (message: ChatMessage): ThreadMessageLike => {
   const content: MutableThreadPart[] = [...buildChainOfThoughtParts(message)];
   const renderableText = message.role === "assistant" ? getRenderableMessageText(message) : message.content;
-
   if (renderableText || message.role !== "assistant") {
-    content.push({
-      type: "text",
-      text: renderableText,
-    });
+    content.push({ type: "text", text: renderableText });
   }
-
-  for (const chart of message.charts || []) {
-    content.push({
-      type: "data",
-      name: "chart",
-      data: chart,
-    });
-  }
-
-  for (const table of message.tables || []) {
-    content.push({
-      type: "data",
-      name: "table",
-      data: table,
-    });
-  }
-
-  for (const file of message.files || []) {
-    content.push({
-      type: "data",
-      name: "file",
-      data: file,
-    });
-  }
-
-  if (content.length === 0) {
-    content.push({ type: "text", text: "" });
-  }
+  for (const chart of message.charts || []) content.push({ type: "data", name: "chart", data: chart });
+  for (const table of message.tables || []) content.push({ type: "data", name: "table", data: table });
+  for (const file of message.files || []) content.push({ type: "data", name: "file", data: file });
+  if (content.length === 0) content.push({ type: "text", text: "" });
 
   return {
     id: message.id,
@@ -478,379 +285,273 @@ const buildThreadMessage = (message: ChatMessage): ThreadMessageLike => {
     attachments: message.role === "user" ? message.attachments || [] : undefined,
     createdAt: new Date(message.timestamp),
     status: message.role === "assistant" ? mapMessageStatus(message.status) : undefined,
-    metadata:
-      message.role === "assistant"
-        ? {
-            custom: {
-              agent: message.agent,
-            },
-          }
-        : undefined,
+    metadata: message.role === "assistant" ? { custom: { agent: message.agent } } : undefined,
   };
 };
 
-const getAppendMessageText = (message: AppendMessage) => {
-  const textPart = message.content.find(
-    (part): part is { type: "text"; text: string } => part.type === "text",
-  );
+const getAppendMessageText = (message: AppendMessage) =>
+  message.content.find((p): p is { type: "text"; text: string } => p.type === "text")?.text.trim() || "";
 
-  return textPart?.text.trim() || "";
+const getAppendMessageAttachments = (message: AppendMessage) =>
+  message.role === "user" ? message.attachments || [] : [];
+
+// ── Chart components (recharts) ───────────────────────────────────────────────
+
+const buildChartPalette = (chart: ResolvedAgentChart, accent: string): string[] => {
+  const explicit = Array.isArray(chart.colors)
+    ? chart.colors.filter((v) => typeof v === "string" && v.trim())
+    : [];
+  return explicit.length > 0 ? explicit : [accent, "#0284c7", "#0f766e", "#ca8a04"];
 };
-
-const getAppendMessageAttachments = (message: AppendMessage) => {
-  return message.role === "user" ? message.attachments || [] : [];
-};
-
-const buildChartPalette = (chart: ResolvedAgentChart, accent: string, fallbackColors: string[]) => {
-  const explicit = Array.isArray(chart.colors) ? chart.colors.filter((value) => typeof value === "string" && value.trim()) : [];
-  return explicit.length > 0 ? explicit : [accent, ...fallbackColors];
-};
-
-const toChartSeries = (chart: ResolvedAgentChart, palette: string[]) =>
-  chart.series.map((series, index) => ({
-    data: chart.data.map((point) => {
-      const rawValue = point[series.key];
-      return typeof rawValue === "number" ? rawValue : Number(rawValue ?? 0);
-    }),
-    label: series.label,
-    color: series.color || palette[index % palette.length],
-  }));
 
 const InlineChart: React.FC<{ chart: AgentChart; accent: string }> = ({ chart, accent }) => {
-  const muiTheme = useTheme();
   const resolvedChart = resolveAgentChart(chart);
+  if (!resolvedChart) return null;
 
-  if (!resolvedChart) {
-    return null;
+  const palette = buildChartPalette(resolvedChart, accent);
+  const primaryColor = palette[0] ?? accent;
+
+  if (resolvedChart.chartType === "sparkline") {
+    const sparkData = resolvedChart.data.map((point, i) => {
+      const key = resolvedChart.series[0]?.key;
+      const val = key ? point[key] : 0;
+      return { i, value: typeof val === "number" ? val : Number(val ?? 0) };
+    });
+    return (
+      <div className="mt-2 w-full">
+        <div className="mb-1">
+          <p className="text-sm font-bold">{resolvedChart.title}</p>
+          {resolvedChart.description && <p className="text-xs text-muted-foreground">{resolvedChart.description}</p>}
+        </div>
+        <ResponsiveContainer width="100%" height={56}>
+          <LineChart data={sparkData}>
+            <Line type="monotone" dataKey="value" stroke={primaryColor} dot={false} strokeWidth={2} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    );
   }
 
-  const labels = resolvedChart.data.map((point) => String(point[resolvedChart.xKey] ?? ""));
-  const palette = buildChartPalette(resolvedChart, accent, [
-    muiTheme.palette.info.main,
-    muiTheme.palette.success.main,
-    muiTheme.palette.warning.main,
-  ]);
-  const chartSeries = toChartSeries(resolvedChart, palette);
-  const primarySeries = chartSeries[0];
+  if (resolvedChart.chartType === "pie") {
+    const key = resolvedChart.series[0]?.key;
+    const pieData = resolvedChart.data.map((point, i) => ({
+      name: String(point[resolvedChart.xKey] ?? i),
+      value: key ? (typeof point[key] === "number" ? point[key] as number : Number(point[key] ?? 0)) : 0,
+    }));
+    return (
+      <div className="mt-2 w-full">
+        <div className="mb-1">
+          <p className="text-sm font-bold">{resolvedChart.title}</p>
+          {resolvedChart.description && <p className="text-xs text-muted-foreground">{resolvedChart.description}</p>}
+        </div>
+        <ResponsiveContainer width="100%" height={180}>
+          <PieChart>
+            <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={32} outerRadius={72}>
+              {pieData.map((_, i) => <Cell key={i} fill={palette[i % palette.length]} />)}
+            </Pie>
+            {resolvedChart.showLegend && <Tooltip />}
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  if (resolvedChart.chartType === "line") {
+    return (
+      <div className="mt-2 w-full">
+        <div className="mb-1">
+          <p className="text-sm font-bold">{resolvedChart.title}</p>
+          {resolvedChart.description && <p className="text-xs text-muted-foreground">{resolvedChart.description}</p>}
+        </div>
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={resolvedChart.data} margin={{ top: 8, right: 12, bottom: 28, left: 36 }}>
+            <XAxis dataKey={resolvedChart.xKey} tick={{ fontSize: 10 }} />
+            {resolvedChart.showGrid && <YAxis tick={{ fontSize: 10 }} />}
+            {resolvedChart.series.map((s, i) => (
+              <Line key={s.key} type="monotone" dataKey={s.key}
+                stroke={s.color || palette[i % palette.length]} dot={false} strokeWidth={2} name={s.label} />
+            ))}
+            {resolvedChart.showLegend && <Tooltip />}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
 
   return (
-    <Box
-      sx={{
-        mt: 1,
-        width: "100%",
-        maxWidth: "100%",
-      }}
-    >
-      <Box sx={{ mb: 1 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-          {resolvedChart.title}
-        </Typography>
-        {resolvedChart.description ? (
-          <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            {resolvedChart.description}
-          </Typography>
-        ) : null}
-      </Box>
-      {resolvedChart.chartType === "sparkline" && primarySeries ? (
-        <SparkLineChart data={primarySeries.data} height={56} curve="natural" area color={primarySeries.color} />
-      ) : resolvedChart.chartType === "pie" && primarySeries ? (
-        <PieChart
-          series={[
-            {
-              data: resolvedChart.data.map((point, index) => ({
-                id: index,
-                value: primarySeries.data[index] ?? 0,
-                label: String(point[resolvedChart.xKey] ?? ""),
-              })),
-            },
-          ]}
-          height={180}
-          margin={{ top: 8, right: 8, bottom: 8, left: 8 }}
-          hideLegend={!resolvedChart.showLegend}
-        />
-      ) : resolvedChart.chartType === "line" ? (
-        <LineChart
-          xAxis={[{ data: labels, scaleType: "band" }]}
-          series={chartSeries}
-          height={180}
-          margin={{ top: 8, right: 12, bottom: 28, left: 36 }}
-          hideLegend={!resolvedChart.showLegend}
-          grid={{ horizontal: resolvedChart.showGrid, vertical: false }}
-        />
-      ) : (
-        <BarChart
-          xAxis={[{ data: labels, scaleType: "band" }]}
-          series={chartSeries}
-          height={180}
-          margin={{ top: 8, right: 12, bottom: 28, left: 36 }}
-          hideLegend={!resolvedChart.showLegend}
-          grid={{ horizontal: resolvedChart.showGrid, vertical: false }}
-        />
-      )}
-    </Box>
+    <div className="mt-2 w-full">
+      <div className="mb-1">
+        <p className="text-sm font-bold">{resolvedChart.title}</p>
+        {resolvedChart.description && <p className="text-xs text-muted-foreground">{resolvedChart.description}</p>}
+      </div>
+      <ResponsiveContainer width="100%" height={180}>
+        <BarChart data={resolvedChart.data} margin={{ top: 8, right: 12, bottom: 28, left: 36 }}>
+          <XAxis dataKey={resolvedChart.xKey} tick={{ fontSize: 10 }} />
+          {resolvedChart.showGrid && <YAxis tick={{ fontSize: 10 }} />}
+          {resolvedChart.series.map((s, i) => (
+            <Bar key={s.key} dataKey={s.key} fill={s.color || palette[i % palette.length]}
+              name={s.label} radius={[3, 3, 0, 0]} />
+          ))}
+          {resolvedChart.showLegend && <Tooltip />}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 };
 
-const InlineFile: React.FC<{ file: AgentFile; accent: string }> = ({ file, accent }) => {
+const InlineFile: React.FC<{ file: AgentFile; accent: string }> = ({ file }) => {
   const href =
     file.content.startsWith("http://") || file.content.startsWith("https://")
       ? file.content
       : `data:${file.mimeType};base64,${file.content}`;
 
   return (
-    <Box
-      component="a"
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      download={file.filename}
-      sx={{
-        mt: 1,
-        p: 0,
-        display: "flex",
-        flexDirection: "column",
-        gap: 0.35,
-        color: "inherit",
-        textDecoration: "none",
-      }}
-    >
-      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-        {file.filename}
-      </Typography>
-      <Typography variant="caption" color="text.secondary">
-        Open attachment
-      </Typography>
-    </Box>
+    <a href={href} target="_blank" rel="noreferrer" download={file.filename}
+      className="mt-2 flex flex-col gap-1 text-inherit no-underline">
+      <p className="text-sm font-bold">{file.filename}</p>
+      <p className="text-xs text-muted-foreground">Open attachment</p>
+    </a>
   );
 };
 
-const InlineTable: React.FC<{ table: AgentTable; accent: string }> = ({ table, accent }) => {
-  return (
-    <Box
-      sx={{
-        mt: 1,
-        width: "100%",
-        maxWidth: "100%",
+const InlineTable: React.FC<{ table: AgentTable }> = ({ table }) => (
+  <div className="mt-2 w-full max-w-full">
+    <p className="text-sm font-bold mb-2">{table.title}</p>
+    <DataTable columns={table.columns} data={table.data} rowIdKey={table.rowIdKey} />
+  </div>
+);
+
+// ── Status indicator ──────────────────────────────────────────────────────────
+
+const StatusIndicator: React.FC<{ label: string; brandPrimary: string }> = ({ label, brandPrimary }) => (
+  <>
+    <style>{`
+      @keyframes agent-status-pulse {
+        0%, 100% { opacity: 0.26; transform: scale(0.84); }
+        50% { opacity: 1; transform: scale(1); }
+      }
+    `}</style>
+    <div
+      className="inline-flex items-center gap-2.5 rounded-full border px-2.5 py-2"
+      style={{
+        color: "hsl(var(--foreground) / 0.9)",
+        backgroundColor: `${brandPrimary}14`,
+        borderColor: `${brandPrimary}24`,
       }}
     >
-      <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
-        {table.title}
-      </Typography>
-      <DataTable columns={table.columns} data={table.data} rowIdKey={table.rowIdKey} />
-    </Box>
-  );
-};
-
-const StatusIndicator: React.FC<{ label: string; brandPrimary: string }> = ({ label, brandPrimary }) => {
-  const muiTheme = useTheme();
-
-  return (
-    <Box
-      sx={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 1.1,
-        px: 1.1,
-        py: 0.85,
-        borderRadius: 999,
-        color: alpha(muiTheme.palette.text.primary, 0.9),
-        bgcolor: alpha(brandPrimary, muiTheme.palette.mode === "dark" ? 0.14 : 0.08),
-        border: "1px solid",
-        borderColor: alpha(brandPrimary, 0.14),
-      }}
-    >
-      <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.55 }}>
-        {[0, 1, 2].map((dotIndex) => (
-          <Box
-            key={dotIndex}
-            component="span"
-            sx={{
-              width: 9,
-              height: 9,
-              borderRadius: "50%",
-              bgcolor: alpha(brandPrimary, 0.9),
-              animation: `agent-status-pulse 1.1s ${dotIndex * 0.14}s ease-in-out infinite`,
+      <div className="inline-flex items-center gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="inline-block rounded-full w-2 h-2"
+            style={{
+              backgroundColor: `${brandPrimary}e6`,
+              animation: `agent-status-pulse 1.1s ${i * 0.14}s ease-in-out infinite`,
             }}
           />
         ))}
-      </Box>
-      <Typography variant="body2" sx={{ fontWeight: 600, letterSpacing: "0.01em" }}>
-        {label}
-      </Typography>
-    </Box>
-  );
-};
+      </div>
+      <span className="text-sm font-semibold tracking-[0.01em]">{label}</span>
+    </div>
+  </>
+);
+
+// ── Chain of thought ──────────────────────────────────────────────────────────
 
 const MessageChainOfThought: React.FC<{ brandPrimary: string }> = ({ brandPrimary }) => {
-  const muiTheme = useTheme();
   const [isExpanded, setIsExpanded] = useState(true);
 
   return (
-    <ChainOfThoughtPrimitive.Root
-      style={{
-        width: "100%",
-        marginTop: 8,
-      }}
-    >
+    <ChainOfThoughtPrimitive.Root className="w-full mt-2">
       <ChainOfThoughtPrimitive.AccordionTrigger
-        onClick={() => setIsExpanded((current) => !current)}
-        style={{
-          width: "100%",
-          border: "none",
-          background: "transparent",
-          padding: 0,
-          textAlign: "left",
-          cursor: "pointer",
-        }}
+        onClick={() => setIsExpanded((c) => !c)}
+        className="w-full border-none bg-transparent p-0 text-left cursor-pointer"
       >
-        <Box
-          sx={{
-            px: 1.25,
-            py: 1,
-            borderRadius: 3,
-            background:
-              muiTheme.palette.mode === "dark"
-                ? alpha(muiTheme.palette.background.paper, 0.62)
-                : alpha(brandPrimary, 0.035),
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 1,
-          }}
+        <div
+          className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl"
+          style={{ backgroundColor: `${brandPrimary}09` }}
         >
-          <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.8 }}>
-            <PsychologyAltOutlinedIcon sx={{ fontSize: 16, color: alpha(brandPrimary, 0.9) }} />
-            <Typography variant="body2" sx={{ fontWeight: 600, color: "text.primary" }}>
-              Chain of thought
-            </Typography>
-          </Box>
-          <ExpandMoreRoundedIcon sx={{ fontSize: 18, color: alpha(muiTheme.palette.text.secondary, 0.9) }} />
-        </Box>
+          <div className="flex items-center gap-2">
+            <Brain className="h-4 w-4" style={{ color: `${brandPrimary}e6` }} />
+            <span className="text-sm font-semibold text-foreground">Chain of thought</span>
+          </div>
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </div>
       </ChainOfThoughtPrimitive.AccordionTrigger>
-      {isExpanded ? (
+      {isExpanded && (
         <ChainOfThoughtPrimitive.Parts>
           {({ part }: { part: ThreadMessage["content"][number] }) => {
             if (part.type === "reasoning") {
               const text = typeof part.text === "string" ? part.text.trim() : "";
-              if (!text) {
-                return null;
-              }
-
+              if (!text) return null;
               return (
-                <Box
-                  sx={{
-                    mt: 0.85,
-                    pl: 1.4,
-                    pr: 1.25,
-                    py: 0.85,
-                    borderLeft: `2px solid ${alpha(brandPrimary, 0.16)}`,
-                  }}
+                <div
+                  className="mt-2 pl-4 pr-3 py-2 border-l-2"
+                  style={{ borderColor: `${brandPrimary}29` }}
                 >
-                  <Typography variant="body2" sx={{ color: "text.secondary", lineHeight: 1.55 }}>
-                    {text}
-                  </Typography>
-                </Box>
+                  <p className="text-sm text-muted-foreground leading-[1.55]">{text}</p>
+                </div>
               );
             }
-
             if (part.type === "tool-call") {
               const toolName = typeof part.toolName === "string" ? part.toolName : "tool";
-
               return (
-                <Box
-                  sx={{
-                    mt: 0.85,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 0.85,
-                    pl: 1.15,
-                    pr: 1.25,
-                    py: 0.8,
-                    borderRadius: 2,
-                    bgcolor: alpha(brandPrimary, muiTheme.palette.mode === "dark" ? 0.12 : 0.05),
-                  }}
+                <div
+                  className="mt-2 flex items-center gap-2 pl-3 pr-4 py-2 rounded-lg"
+                  style={{ backgroundColor: `${brandPrimary}1f` }}
                 >
-                  <BuildCircleOutlinedIcon sx={{ fontSize: 16, color: alpha(brandPrimary, 0.92) }} />
-                  <Typography variant="body2" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                  <Wrench className="h-4 w-4 flex-shrink-0" style={{ color: `${brandPrimary}eb` }} />
+                  <span className="text-sm text-muted-foreground font-semibold">
                     {formatAgentName(toolName)}
-                  </Typography>
-                </Box>
+                  </span>
+                </div>
               );
             }
-
             return null;
           }}
         </ChainOfThoughtPrimitive.Parts>
-      ) : null}
+      )}
     </ChainOfThoughtPrimitive.Root>
   );
 };
 
-const MarkdownMessageText: React.FC<{ text: string; role: ChatMessage["role"] }> = ({ text, role }) => {
-  const muiTheme = useTheme();
-  const linkColor = role === "user" ? alpha("#ffffff", 0.92) : muiTheme.palette.text.primary;
+// ── Markdown message ──────────────────────────────────────────────────────────
 
-  if (!text.trim()) {
-    return null;
-  }
+const MarkdownMessageText: React.FC<{ text: string; role: ChatMessage["role"] }> = ({ text, role }) => {
+  if (!text.trim()) return null;
 
   return (
-    <Box
-      sx={{
-        color: "inherit",
-        fontSize: "0.97rem",
-        lineHeight: 1.65,
-        "& p": { m: 0 },
-        "& p + p": { mt: 1.2 },
-        "& ul, & ol": { my: 0.4, pl: 2.6 },
-        "& li + li": { mt: 0.35 },
-        "& strong": { fontWeight: 700 },
-        "& code": {
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-          fontSize: "0.88em",
-          px: 0.45,
-          py: 0.15,
-          borderRadius: 1,
-          bgcolor: role === "user" ? alpha("#ffffff", 0.16) : alpha(muiTheme.palette.text.primary, 0.08),
-        },
-        "& pre": {
-          m: 0,
-          mt: 1.2,
-          p: 1.25,
-          borderRadius: 2,
-          overflowX: "auto",
-          bgcolor: role === "user" ? alpha("#ffffff", 0.12) : alpha(muiTheme.palette.text.primary, 0.06),
-        },
-        "& pre code": {
-          p: 0,
-          bgcolor: "transparent",
-        },
-      }}
-    >
+    <div className={cn(
+      "text-[0.97rem] leading-[1.65]",
+      "[&_p]:m-0 [&_p+p]:mt-4",
+      "[&_ul,&_ol]:my-1 [&_ul,&_ol]:pl-8",
+      "[&_li+li]:mt-1",
+      "[&_strong]:font-bold",
+      "[&_code]:font-mono [&_code]:text-[0.88em] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded",
+      "[&_pre]:m-0 [&_pre]:mt-4 [&_pre]:p-3 [&_pre]:rounded-xl [&_pre]:overflow-x-auto",
+      "[&_pre_code]:p-0",
+      role === "user"
+        ? "[&_code]:bg-white/20 [&_pre]:bg-white/10"
+        : "[&_code]:bg-foreground/[0.08] [&_pre]:bg-foreground/[0.06]",
+    )}>
       <ReactMarkdown
         components={{
           a: ({ href, children }) => (
-            <Box
-              component="a"
-              href={href}
-              target="_blank"
-              rel="noreferrer"
-              sx={{
-                color: linkColor,
-                fontWeight: 600,
-                textDecorationColor: alpha(linkColor, 0.45),
-              }}
+            <a href={href} target="_blank" rel="noreferrer"
+              className={cn("font-semibold", role === "user" ? "text-white/90" : "text-foreground")}
             >
               {children}
-            </Box>
+            </a>
           ),
         }}
       >
         {text}
       </ReactMarkdown>
-    </Box>
+    </div>
   );
 };
+
+// ── Message rich content ──────────────────────────────────────────────────────
 
 const MessageRichContent: React.FC<{
   accent: string;
@@ -863,269 +564,141 @@ const MessageRichContent: React.FC<{
   const files = externalMessage?.files || [];
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+    <div className="flex flex-col gap-2">
       <MessagePrimitive.Parts
         components={{
           Text: ({ text }: TextMessagePartProps) => <MarkdownMessageText text={text} role={role} />,
           ChainOfThought: enableChainOfThought ? () => <MessageChainOfThought brandPrimary={accent} /> : undefined,
         }}
       />
-      {charts.map((chart) => (
-        <InlineChart key={chart.id} chart={chart} accent={accent} />
-      ))}
-      {tables.map((table) => (
-        <InlineTable key={table.id} table={table} accent={accent} />
-      ))}
-      {files.map((file) => (
-        <InlineFile key={file.id} file={file} accent={accent} />
-      ))}
-    </Box>
+      {charts.map((chart) => <InlineChart key={chart.id} chart={chart} accent={accent} />)}
+      {tables.map((table) => <InlineTable key={table.id} table={table} />)}
+      {files.map((file) => <InlineFile key={file.id} file={file} accent={accent} />)}
+    </div>
   );
 };
 
-const MessageBranchPicker: React.FC = () => {
-  const muiTheme = useTheme();
+// ── Branch picker ─────────────────────────────────────────────────────────────
 
-  return (
-    <BranchPickerPrimitive.Root
-      hideWhenSingleBranch
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 2,
-        color: alpha(muiTheme.palette.text.secondary, 0.78),
-        fontSize: "0.75rem",
-        lineHeight: 1,
-      }}
-    >
-      <BranchPickerPrimitive.Previous asChild>
-        <IconButton
-          size="small"
-          sx={{
-            width: 24,
-            height: 24,
-            color: "inherit",
-          }}
-        >
-          <NavigateBeforeRoundedIcon sx={{ fontSize: 16 }} />
-        </IconButton>
-      </BranchPickerPrimitive.Previous>
-      <Typography component="span" variant="caption" sx={{ color: "inherit", fontWeight: 600 }}>
-        <BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count />
-      </Typography>
-      <BranchPickerPrimitive.Next asChild>
-        <IconButton
-          size="small"
-          sx={{
-            width: 24,
-            height: 24,
-            color: "inherit",
-          }}
-        >
-          <NavigateNextRoundedIcon sx={{ fontSize: 16 }} />
-        </IconButton>
-      </BranchPickerPrimitive.Next>
-    </BranchPickerPrimitive.Root>
-  );
-};
+const MessageBranchPicker: React.FC = () => (
+  <BranchPickerPrimitive.Root hideWhenSingleBranch
+    className="inline-flex items-center gap-0.5 text-muted-foreground/78 text-xs">
+    <BranchPickerPrimitive.Previous asChild>
+      <button type="button" aria-label="Previous branch"
+        className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted transition-colors">
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+    </BranchPickerPrimitive.Previous>
+    <span className="font-semibold">
+      <BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count />
+    </span>
+    <BranchPickerPrimitive.Next asChild>
+      <button type="button" aria-label="Next branch"
+        className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted transition-colors">
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </BranchPickerPrimitive.Next>
+  </BranchPickerPrimitive.Root>
+);
 
-const UserActionBar: React.FC = () => {
-  const muiTheme = useTheme();
+// ── Action bars ───────────────────────────────────────────────────────────────
 
-  return (
-    <ActionBarPrimitive.Root
-      hideWhenRunning
-      autohide="not-last"
-      style={{ display: "flex", alignItems: "center", gap: 4 }}
-    >
-      <ActionBarPrimitive.Edit asChild>
-        <IconButton
-          size="small"
-          aria-label="Edit message"
-          sx={{
-            width: 28,
-            height: 28,
-            color: alpha(muiTheme.palette.text.secondary, 0.88),
-          }}
-        >
-          <EditOutlinedIcon sx={{ fontSize: 16 }} />
-        </IconButton>
-      </ActionBarPrimitive.Edit>
-    </ActionBarPrimitive.Root>
-  );
-};
+const iconBtnCls = "flex h-7 w-7 items-center justify-center rounded text-muted-foreground/88 hover:bg-muted transition-colors";
 
-const AssistantActionBar: React.FC = () => {
-  const muiTheme = useTheme();
+const UserActionBar: React.FC = () => (
+  <ActionBarPrimitive.Root hideWhenRunning autohide="not-last"
+    className="flex items-center gap-1">
+    <ActionBarPrimitive.Edit asChild>
+      <button type="button" aria-label="Edit message" className={iconBtnCls}>
+        <Edit2 className="h-4 w-4" />
+      </button>
+    </ActionBarPrimitive.Edit>
+  </ActionBarPrimitive.Root>
+);
 
-  return (
-    <ActionBarPrimitive.Root
-      hideWhenRunning
-      autohide="not-last"
-      style={{ display: "flex", alignItems: "center", gap: 4 }}
-    >
-      <ActionBarPrimitive.Copy asChild>
-        <IconButton
-          size="small"
-          aria-label="Copy response"
-          sx={{
-            width: 28,
-            height: 28,
-            color: alpha(muiTheme.palette.text.secondary, 0.88),
-          }}
-        >
-          <ContentCopyRoundedIcon sx={{ fontSize: 16 }} />
-        </IconButton>
-      </ActionBarPrimitive.Copy>
+const AssistantActionBar: React.FC = () => (
+  <ActionBarPrimitive.Root hideWhenRunning autohide="not-last"
+    className="flex items-center gap-1">
+    <ActionBarPrimitive.Copy asChild>
+      <button type="button" aria-label="Copy response" className={iconBtnCls}>
+        <Copy className="h-4 w-4" />
+      </button>
+    </ActionBarPrimitive.Copy>
+    <ActionBarPrimitive.Reload asChild>
+      <button type="button" aria-label="Regenerate response" className={iconBtnCls}>
+        <RefreshCw className="h-4 w-4" />
+      </button>
+    </ActionBarPrimitive.Reload>
+  </ActionBarPrimitive.Root>
+);
 
-      <ActionBarPrimitive.Reload asChild>
-        <IconButton
-          size="small"
-          aria-label="Regenerate response"
-          sx={{
-            width: 28,
-            height: 28,
-            color: alpha(muiTheme.palette.text.secondary, 0.88),
-          }}
-        >
-          <RefreshRoundedIcon sx={{ fontSize: 16 }} />
-        </IconButton>
-      </ActionBarPrimitive.Reload>
-    </ActionBarPrimitive.Root>
-  );
-};
+// ── Edit composer ─────────────────────────────────────────────────────────────
 
-const EditComposerMessage: React.FC<{ brandPrimary: string }> = ({ brandPrimary }) => {
-  const muiTheme = useTheme();
-
-  return (
-    <MessagePrimitive.Root>
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "flex-end",
-          width: "100%",
-          px: { xs: 1.25, md: 1.5 },
-          py: 0.45,
-        }}
+const EditComposerMessage: React.FC<{ brandPrimary: string }> = ({ brandPrimary }) => (
+  <MessagePrimitive.Root>
+    <div className="flex justify-end w-full px-4 py-1.5">
+      <ComposerPrimitive.Root
+        className="w-full max-w-[82%] flex flex-col rounded-2xl border bg-background/95"
+        style={{ borderColor: `${brandPrimary}2e` }}
       >
-        <ComposerPrimitive.Root
-          style={{
-            width: "100%",
-            maxWidth: "82%",
-            display: "flex",
-            flexDirection: "column",
-            borderRadius: 20,
-            border: `1px solid ${alpha(brandPrimary, 0.18)}`,
-            background: muiTheme.palette.mode === "dark" ? alpha("#1f1f21", 0.96) : "#fcfbf9",
-          }}
-        >
-          <ComposerPrimitive.Input asChild>
-            <textarea
-              rows={1}
-              style={{
-                minHeight: 72,
-                maxHeight: 240,
-                border: "none",
-                outline: "none",
-                resize: "none",
-                background: "transparent",
-                color: muiTheme.palette.text.primary,
-                fontFamily: "inherit",
-                fontSize: "0.98rem",
-                lineHeight: 1.55,
-                padding: "14px 16px 8px",
-              }}
-            />
-          </ComposerPrimitive.Input>
+        <ComposerPrimitive.Input asChild>
+          <textarea
+            rows={1}
+            className="min-h-[72px] max-h-60 border-none outline-none resize-none bg-transparent text-foreground font-inherit text-[0.98rem] leading-[1.55] p-4 pb-2"
+          />
+        </ComposerPrimitive.Input>
+        <div className="flex justify-end gap-2 px-4 pb-4">
+          <ComposerPrimitive.Cancel asChild>
+            <button type="button" className="rounded-full px-4 py-1.5 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors">
+              Cancel
+            </button>
+          </ComposerPrimitive.Cancel>
+          <ComposerPrimitive.Send asChild>
+            <button type="button" className="rounded-full px-4 py-1.5 text-sm font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+              Update
+            </button>
+          </ComposerPrimitive.Send>
+        </div>
+      </ComposerPrimitive.Root>
+    </div>
+  </MessagePrimitive.Root>
+);
 
-          <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1, px: 1.5, pb: 1.5 }}>
-            <ComposerPrimitive.Cancel asChild>
-              <Button
-                size="small"
-                variant="text"
-                sx={{ borderRadius: 999, textTransform: "none", fontWeight: 700 }}
-              >
-                Cancel
-              </Button>
-            </ComposerPrimitive.Cancel>
-            <ComposerPrimitive.Send asChild>
-              <Button
-                size="small"
-                variant="contained"
-                sx={{
-                  borderRadius: 999,
-                  textTransform: "none",
-                  fontWeight: 700,
-                  boxShadow: "none",
-                }}
-              >
-                Update
-              </Button>
-            </ComposerPrimitive.Send>
-          </Box>
-        </ComposerPrimitive.Root>
-      </Box>
-    </MessagePrimitive.Root>
-  );
-};
+// ── Thread messages ───────────────────────────────────────────────────────────
 
 const UserThreadMessage = React.memo<{
   brandPrimary: string;
   externalMessage?: ChatMessage;
 }>(({ brandPrimary, externalMessage }) => {
-  const muiTheme = useTheme();
   const hasText = Boolean(externalMessage?.content.trim());
   const hasAttachments = Boolean(externalMessage?.attachments?.length);
 
   return (
     <MessagePrimitive.Root>
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "flex-end",
-          width: "100%",
-          px: { xs: 1.25, md: 1.5 },
-          py: 0.45,
-        }}
-      >
-        <Box
-          sx={{
-            maxWidth: { xs: "90%", sm: "82%" },
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
-            gap: 0.35,
-          }}
-        >
-          <Box
-            sx={{
-              px: 1.6,
-              py: 1.2,
-              borderRadius: "22px 22px 8px 22px",
-              bgcolor: brandPrimary,
-              color: muiTheme.palette.getContrastText(brandPrimary),
-              display: "flex",
-              flexDirection: "column",
-              gap: hasAttachments && hasText ? 1 : 0.25,
+      <div className="flex justify-end w-full px-4 md:px-5 py-1.5">
+        <div className="max-w-[90%] sm:max-w-[82%] flex flex-col items-end gap-1">
+          <div
+            className="flex flex-col rounded-[22px_22px_8px_22px] px-5 py-4"
+            style={{
+              backgroundColor: brandPrimary,
+              color: "#fff",
+              gap: hasAttachments && hasText ? 8 : 4,
             }}
           >
-            {hasAttachments ? (
-              <UserMessageAttachments />
-            ) : null}
-            {hasText ? <MessageRichContent accent={brandPrimary} role="user" externalMessage={externalMessage} /> : null}
-          </Box>
+            {hasAttachments && <UserMessageAttachments />}
+            {hasText && <MessageRichContent accent={brandPrimary} role="user" externalMessage={externalMessage} />}
+          </div>
           {externalMessage?.timestamp && (
-            <Typography variant="caption" sx={{ color: alpha(muiTheme.palette.text.secondary, 0.84) }}>
+            <span className="text-xs text-muted-foreground/84">
               {formatTimestamp(externalMessage.timestamp)}
-            </Typography>
+            </span>
           )}
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <div className="flex items-center gap-1.5">
             <MessageBranchPicker />
             <UserActionBar />
-          </Box>
-        </Box>
-      </Box>
+          </div>
+        </div>
+      </div>
     </MessagePrimitive.Root>
   );
 });
@@ -1135,7 +708,6 @@ const AssistantThreadMessage = React.memo<{
   threadMessage?: ThreadMessage;
   brandPrimary: string;
 }>(({ externalMessage, threadMessage, brandPrimary }) => {
-  const muiTheme = useTheme();
   const isRunning = threadMessage?.status?.type === "running";
   const statusLabel = getTransientStatusLabel(externalMessage, isRunning);
   const hasRenderablePayload = hasRenderableMessagePayload(externalMessage);
@@ -1143,79 +715,54 @@ const AssistantThreadMessage = React.memo<{
   const label = formatAssistantLabel(externalMessage?.agent);
   const initials = getAgentInitials(label);
 
-  if (!hasRenderablePayload && !statusLabel && !showChainOfThought) {
-    return null;
-  }
+  if (!hasRenderablePayload && !statusLabel && !showChainOfThought) return null;
 
   return (
     <MessagePrimitive.Root>
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "flex-start",
-          alignItems: "flex-start",
-          gap: 1.1,
-          width: "100%",
-          px: { xs: 1.25, md: 1.5 },
-          py: 0.55,
-        }}
-      >
-        <Avatar
-          sx={{
-            width: 32,
-            height: 32,
-            mt: 0.15,
-            fontSize: "0.78rem",
-            fontWeight: 700,
-            bgcolor: alpha(brandPrimary, 0.12),
+      <div className="flex justify-start items-start gap-3 w-full px-4 md:px-5 py-2">
+        {/* Avatar */}
+        <div
+          className="w-8 h-8 mt-0.5 rounded-full flex items-center justify-center flex-shrink-0 border text-xs font-bold"
+          style={{
+            backgroundColor: `${brandPrimary}1f`,
             color: brandPrimary,
-            border: "1px solid",
-            borderColor: alpha(brandPrimary, 0.14),
+            borderColor: `${brandPrimary}24`,
           }}
         >
           {initials}
-        </Avatar>
-        <Box
-          sx={{
-            maxWidth: { xs: "96%", sm: "88%" },
-            width: "100%",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-start",
-            gap: 0.5,
-          }}
-        >
-          <Typography variant="caption" sx={{ color: alpha(muiTheme.palette.text.secondary, 0.9), fontWeight: 600 }}>
-            {label}
-          </Typography>
+        </div>
+
+        {/* Content */}
+        <div className="max-w-[96%] sm:max-w-[88%] w-full flex flex-col items-start gap-1.5">
+          <span className="text-xs font-semibold text-muted-foreground/90">{label}</span>
 
           {statusLabel && !hasRenderablePayload && !showChainOfThought ? (
             <StatusIndicator label={statusLabel} brandPrimary={brandPrimary} />
           ) : (
             <>
-              {hasRenderablePayload || showChainOfThought ? (
-                <Box sx={{ width: "100%", color: "text.primary", pr: { xs: 0.5, sm: 1.5 } }}>
+              {(hasRenderablePayload || showChainOfThought) && (
+                <div className="w-full text-foreground pr-2 sm:pr-6">
                   <MessageRichContent
                     accent={brandPrimary}
                     role="assistant"
                     enableChainOfThought={showChainOfThought}
                     externalMessage={externalMessage}
                   />
-                </Box>
-              ) : null}
-              {externalMessage?.timestamp && (
-                <Typography variant="caption" sx={{ color: alpha(muiTheme.palette.text.secondary, 0.88) }}>
-                  {formatTimestamp(externalMessage.timestamp)}
-                </Typography>
+                </div>
               )}
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              {externalMessage?.timestamp && (
+                <span className="text-xs text-muted-foreground/88">
+                  {formatTimestamp(externalMessage.timestamp)}
+                </span>
+              )}
+              <div className="flex items-center gap-1.5">
                 <MessageBranchPicker />
                 <AssistantActionBar />
-              </Box>
+              </div>
             </>
           )}
-        </Box>
-      </Box>
+        </div>
+      </div>
     </MessagePrimitive.Root>
   );
 });
@@ -1224,48 +771,67 @@ const SystemThreadMessage = React.memo<{
   externalMessage?: ChatMessage;
   brandPrimary: string;
   brandSecondary: string;
-}>(({ externalMessage, brandPrimary, brandSecondary }) => {
-  const muiTheme = useTheme();
-
-  return (
-    <MessagePrimitive.Root>
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "flex-start",
-          width: "100%",
-          px: { xs: 1.25, md: 1.5 },
-          py: 0.35,
-        }}
-      >
-        <Box
-          sx={{
-            maxWidth: { xs: "94%", sm: "84%" },
-            display: "flex",
-            flexDirection: "column",
-            gap: 0.5,
+}>(({ externalMessage, brandPrimary, brandSecondary }) => (
+  <MessagePrimitive.Root>
+    <div className="flex justify-start w-full px-4 md:px-5 py-1.5">
+      <div className="max-w-[94%] sm:max-w-[84%] flex flex-col gap-1.5">
+        <span className="text-xs text-muted-foreground/90">System</span>
+        <div
+          className="rounded-xl border border-dashed p-3"
+          style={{
+            borderColor: `${brandPrimary}2e`,
+            backgroundColor: `${brandSecondary}1f`,
+            color: "hsl(var(--muted-foreground))",
           }}
         >
-          <Typography variant="caption" sx={{ color: alpha(muiTheme.palette.text.secondary, 0.9) }}>
-            System
-          </Typography>
-          <Box
-            sx={{
-              p: 1.35,
-              borderRadius: 3,
-              border: "1px dashed",
-              borderColor: alpha(brandPrimary, 0.18),
-              bgcolor: muiTheme.palette.mode === "dark" ? alpha(brandSecondary, 0.12) : alpha(brandPrimary, 0.05),
-              color: "text.secondary",
-            }}
-          >
-            <MessageRichContent accent={brandPrimary} role="system" externalMessage={externalMessage} />
-          </Box>
-        </Box>
-      </Box>
-    </MessagePrimitive.Root>
+          <MessageRichContent accent={brandPrimary} role="system" externalMessage={externalMessage} />
+        </div>
+      </div>
+    </div>
+  </MessagePrimitive.Root>
+));
+
+// ── Dictation button ──────────────────────────────────────────────────────────
+
+const ComposerDictationButton: React.FC<{ disabled?: boolean; supported: boolean }> = ({
+  disabled = false,
+  supported,
+}) => {
+  const baseCls = "flex h-[34px] w-[34px] items-center justify-center rounded-[10px] text-muted-foreground/82 hover:bg-white/[0.08] disabled:opacity-40 transition-colors";
+
+  if (!supported) {
+    return (
+      <button type="button" disabled className={baseCls} aria-label="Dictation unavailable">
+        <Mic className="h-4 w-4" />
+      </button>
+    );
+  }
+
+  const getDictationState = (state: unknown) =>
+    ((state as { composer?: { dictation?: unknown } } | null)?.composer?.dictation ?? null);
+
+  return (
+    <>
+      <AuiIf condition={(s) => getDictationState(s) == null}>
+        <ComposerPrimitive.Dictate asChild>
+          <button type="button" disabled={disabled} aria-label="Start dictation" className={baseCls}>
+            <Mic className="h-4 w-4" />
+          </button>
+        </ComposerPrimitive.Dictate>
+      </AuiIf>
+      <AuiIf condition={(s) => getDictationState(s) != null}>
+        <ComposerPrimitive.StopDictation asChild>
+          <button type="button" disabled={disabled} aria-label="Stop dictation"
+            className={cn(baseCls, "text-red-400")}>
+            <Square className="h-4 w-4" />
+          </button>
+        </ComposerPrimitive.StopDictation>
+      </AuiIf>
+    </>
   );
-});
+};
+
+// ── Inner chat ────────────────────────────────────────────────────────────────
 
 const AgentChatInner: React.FC<AgentChatInnerProps> = ({
   isStreaming,
@@ -1281,63 +847,36 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
   isSpeaking = false,
   onToggleVoice,
 }) => {
-  const muiTheme = useTheme();
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const threadRuntime = useThreadRuntime();
   const composerText = useThreadComposer((state) => state.text);
-  const panelBorder = alpha(brandPrimary, muiTheme.palette.mode === "dark" ? 0.24 : 0.16);
   const showWelcomeState = messageCount === 0;
-  const promptGroups = useMemo<AgentChatPromptSection[]>(() => {
-    if (promptSections.length > 0) {
-      return promptSections.filter((section) => section.prompts.length > 0);
-    }
 
-    return [
-      {
-        id: "default",
-        title: "Start with",
-        prompts: [
-          {
-            id: "queue-summary",
-            label: "Give me today's queue summary",
-            prompt: "Give me today's queue summary",
-          },
-          {
-            id: "revenue-trend",
-            label: "Show this week's revenue trend",
-            prompt: "Show this week's revenue trend",
-          },
-          {
-            id: "shift-now",
-            label: "Who is on shift now?",
-            prompt: "Who is on shift now?",
-          },
-          {
-            id: "crm-pipeline",
-            label: "Show my CRM pipeline summary",
-            prompt: "Show my CRM pipeline summary",
-          },
-        ],
-      },
-    ];
+  const promptGroups = useMemo<AgentChatPromptSection[]>(() => {
+    if (promptSections.length > 0) return promptSections.filter((s) => s.prompts.length > 0);
+    return [{
+      id: "default",
+      title: "Start with",
+      prompts: [
+        { id: "queue-summary", label: "Give me today's queue summary", prompt: "Give me today's queue summary" },
+        { id: "revenue-trend", label: "Show this week's revenue trend", prompt: "Show this week's revenue trend" },
+        { id: "shift-now", label: "Who is on shift now?", prompt: "Who is on shift now?" },
+        { id: "crm-pipeline", label: "Show my CRM pipeline summary", prompt: "Show my CRM pipeline summary" },
+      ],
+    }];
   }, [promptSections]);
-  const suggestionCards = useMemo(() => {
-    return promptGroups
-      .flatMap((section) => section.prompts)
-      .filter((prompt, index, allPrompts) => allPrompts.findIndex((candidate) => candidate.id === prompt.id) === index)
-      .slice(0, 3);
-  }, [promptGroups]);
+
+  const suggestionCards = useMemo(() =>
+    promptGroups.flatMap((s) => s.prompts)
+      .filter((p, i, arr) => arr.findIndex((c) => c.id === p.id) === i)
+      .slice(0, 3),
+  [promptGroups]);
 
   const insertPrompt = useCallback(
     (prompt: string) => {
       const trimmed = composerText.trim();
-      if (!trimmed) {
-        threadRuntime.composer.setText(prompt);
-        return;
-      }
-      if (trimmed.includes(prompt)) {
-        return;
-      }
+      if (!trimmed) { threadRuntime.composer.setText(prompt); return; }
+      if (trimmed.includes(prompt)) return;
       threadRuntime.composer.setText(`${trimmed}\n${prompt}`);
     },
     [composerText, threadRuntime],
@@ -1347,16 +886,9 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const selectedFiles = Array.from(event.target.files || []);
       event.target.value = "";
-      if (selectedFiles.length === 0 || isUploading || isStreaming) {
-        return;
-      }
-
+      if (selectedFiles.length === 0 || isUploading || isStreaming) return;
       for (const file of selectedFiles) {
-        try {
-          await threadRuntime.composer.addAttachment(file);
-        } catch {
-          continue;
-        }
+        try { await threadRuntime.composer.addAttachment(file); } catch { continue; }
       }
     },
     [isStreaming, isUploading, threadRuntime],
@@ -1371,283 +903,144 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
   }, []);
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        width: "100%",
-        height: "100%",
-        minHeight: 0,
-        px: { xs: 1, md: 2 },
-        pb: 0,
-        "@keyframes agent-status-pulse": {
-          "0%, 100%": {
-            opacity: 0.26,
-            transform: "scale(0.84)",
-          },
-          "50%": {
-            opacity: 1,
-            transform: "scale(1)",
-          },
-        },
-      }}
-    >
-      <Box
-        sx={{
-          width: "100%",
-          maxWidth: { xs: "100%", lg: 900 },
-          mx: "auto",
-          display: "flex",
-          flexDirection: "column",
-          flex: 1,
-          minHeight: 0,
-          position: "relative",
-        }}
-      >
-          <input
-            ref={folderInputRef}
-            type="file"
-            hidden
-            multiple
-            accept={DOCUMENT_ATTACHMENT_ACCEPT}
-            onChange={handleFolderSelection}
-          />
+    <div className="flex flex-col w-full h-full min-h-0 px-3 md:px-6 pb-0">
+      <style>{`
+        @keyframes agent-status-pulse {
+          0%, 100% { opacity: 0.26; transform: scale(0.84); }
+          50% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes voice-pulse {
+          0%, 100% { opacity: 0.7; }
+          50% { opacity: 1; }
+        }
+      `}</style>
 
-          <ThreadPrimitive.Root
+      <div className="w-full max-w-[900px] lg:max-w-none mx-auto flex flex-col flex-1 min-h-0 relative">
+        <input
+          ref={folderInputRef}
+          type="file"
+          hidden
+          multiple
+          accept={DOCUMENT_ATTACHMENT_ACCEPT}
+          onChange={handleFolderSelection}
+        />
+
+        <ThreadPrimitive.Root
+          className="flex-1 min-h-0 flex flex-col"
+          style={{ fontFamily: "inherit" }}
+        >
+          <ThreadPrimitive.Viewport
+            autoScroll
+            className="flex-1 min-h-0 rounded-3xl bg-transparent overflow-x-hidden overflow-y-auto"
+            style={{ paddingTop: showWelcomeState ? 0 : 10 }}
+          >
+            {showWelcomeState ? (
+              <div className="min-h-full flex items-stretch justify-start px-3 md:px-4 pt-4 md:pt-6 pb-3 md:pb-4">
+                <div className="w-full max-w-2xl mx-auto flex flex-col gap-6">
+                  <div className="flex flex-col gap-1">
+                    <h2 className="text-3xl font-bold tracking-[-0.035em] text-foreground">{title}</h2>
+                    <p className="text-xl font-normal text-muted-foreground tracking-[-0.02em]">{subtitle}</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full">
+                    {suggestionCards.map((prompt) => (
+                      <button
+                        key={prompt.id}
+                        type="button"
+                        onClick={() => insertPrompt(prompt.prompt)}
+                        disabled={isStreaming || isUploading}
+                        className={cn(
+                          "p-4 rounded-xl border text-left transition-all duration-150",
+                          "hover:-translate-y-px disabled:opacity-70 disabled:cursor-default",
+                        )}
+                        style={{
+                          borderColor: `${brandPrimary}24`,
+                          backgroundColor: "hsl(var(--background) / 0.74)",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isStreaming && !isUploading) {
+                            (e.currentTarget as HTMLElement).style.borderColor = `${brandPrimary}47`;
+                            (e.currentTarget as HTMLElement).style.backgroundColor = `${brandPrimary}0f`;
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLElement).style.borderColor = `${brandPrimary}24`;
+                          (e.currentTarget as HTMLElement).style.backgroundColor = "hsl(var(--background) / 0.74)";
+                        }}
+                      >
+                        <p className="text-base font-semibold text-foreground">{prompt.label}</p>
+                        <p className="mt-1 text-sm text-muted-foreground leading-[1.45]">{prompt.prompt}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <ThreadPrimitive.Messages>
+                {({ message }: { message: ThreadMessage }) => {
+                  const [externalMessage] = getExternalStoreMessages(message) as ChatMessage[];
+                  const isEditing = Boolean((message as ThreadMessage & { composer?: { isEditing?: boolean } }).composer?.isEditing);
+
+                  if (externalMessage?.role === "user") {
+                    if (isEditing) return <EditComposerMessage brandPrimary={brandPrimary} />;
+                    return <UserThreadMessage externalMessage={externalMessage} brandPrimary={brandPrimary} />;
+                  }
+                  if (externalMessage?.role === "system") {
+                    return <SystemThreadMessage externalMessage={externalMessage} brandPrimary={brandPrimary} brandSecondary={brandSecondary} />;
+                  }
+                  return <AssistantThreadMessage externalMessage={externalMessage} threadMessage={message} brandPrimary={brandPrimary} />;
+                }}
+              </ThreadPrimitive.Messages>
+            )}
+          </ThreadPrimitive.Viewport>
+
+          {/* Composer footer */}
+          <div
+            className="w-full max-w-[760px] mx-auto mt-auto pt-2 pb-2 md:pb-3 border-t"
             style={{
-              flex: 1,
-              minHeight: 0,
-              display: "flex",
-              flexDirection: "column",
-              fontFamily: "inherit",
+              borderColor: "rgba(255,255,255,0.08)",
+              background: "linear-gradient(180deg, transparent 0%, hsl(var(--background) / 0.92) 22%)",
             }}
           >
-            <ThreadPrimitive.Viewport
-              autoScroll
-              style={{
-                flex: "1 1 0",
-                minHeight: 0,
-                borderRadius: 32,
-                border: "none",
-                background: "transparent",
-                overflowX: "hidden",
-                overflowY: "auto",
-                paddingTop: showWelcomeState ? 0 : 10,
-              }}
-            >
-              {showWelcomeState ? (
-                <Box
-                  sx={{
-                    minHeight: "100%",
-                    display: "flex",
-                    alignItems: "stretch",
-                    justifyContent: "flex-start",
-                    px: { xs: 1, md: 1.5 },
-                    pt: { xs: 1.5, md: 2 },
-                    pb: { xs: 1, md: 1.5 },
-                  }}
-                >
-                  <Stack spacing={2.5} sx={{ width: "100%", maxWidth: 720, mx: "auto" }}>
-                    <Stack spacing={0.5}>
-                      <Typography
-                        variant="h2"
-                        sx={{
-                          fontWeight: 700,
-                          letterSpacing: "-0.035em",
-                          color: "text.primary",
-                        }}
-                      >
-                        {title}
-                      </Typography>
-                      <Typography
-                        variant="h5"
-                        sx={{
-                          fontWeight: 400,
-                          color: "text.secondary",
-                          letterSpacing: "-0.02em",
-                        }}
-                      >
-                        {subtitle}
-                      </Typography>
-                    </Stack>
-
-                    <Box
-                      sx={{
-                        display: "grid",
-                        gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
-                        gap: 1,
-                        width: "100%",
-                      }}
-                    >
-                      {suggestionCards.map((prompt) => (
-                        <Box
-                          key={prompt.id}
-                          component="button"
-                          type="button"
-                          onClick={() => insertPrompt(prompt.prompt)}
-                          disabled={isStreaming || isUploading}
-                          sx={{
-                            p: 1.75,
-                            borderRadius: 3,
-                            border: "1px solid",
-                            borderColor: alpha(brandPrimary, 0.14),
-                            bgcolor:
-                              muiTheme.palette.mode === "dark"
-                                ? alpha(muiTheme.palette.background.paper, 0.72)
-                                : alpha(muiTheme.palette.common.white, 0.74),
-                            textAlign: "left",
-                            cursor: isStreaming || isUploading ? "default" : "pointer",
-                            transition: "background-color 140ms ease, border-color 140ms ease, transform 140ms ease",
-                            "&:hover": isStreaming || isUploading ? undefined : {
-                              borderColor: alpha(brandPrimary, 0.28),
-                              backgroundColor: alpha(brandPrimary, 0.06),
-                              transform: "translateY(-1px)",
-                            },
-                            "&:disabled": {
-                              opacity: 0.72,
-                            },
-                          }}
-                        >
-                          <Typography variant="subtitle1" sx={{ fontWeight: 600, color: "text.primary" }}>
-                            {prompt.label}
-                          </Typography>
-                          <Typography
-                            variant="body1"
-                            sx={{
-                              mt: 0.4,
-                              color: "text.secondary",
-                              lineHeight: 1.45,
-                            }}
-                          >
-                            {prompt.prompt}
-                          </Typography>
-                        </Box>
-                      ))}
-                    </Box>
-                  </Stack>
-                </Box>
-              ) : (
-                <ThreadPrimitive.Messages>
-                  {({ message }: { message: ThreadMessage }) => {
-                    const [externalMessage] = getExternalStoreMessages(message) as ChatMessage[];
-                    const isEditing = Boolean((message as ThreadMessage & { composer?: { isEditing?: boolean } }).composer?.isEditing);
-
-                    if (externalMessage?.role === "user") {
-                      if (isEditing) {
-                        return <EditComposerMessage brandPrimary={brandPrimary} />;
-                      }
-
-                      return <UserThreadMessage externalMessage={externalMessage} brandPrimary={brandPrimary} />;
-                    }
-
-                    if (externalMessage?.role === "system") {
-                      return (
-                        <SystemThreadMessage
-                          externalMessage={externalMessage}
-                          brandPrimary={brandPrimary}
-                          brandSecondary={brandSecondary}
-                        />
-                      );
-                    }
-
-                    return (
-                      <AssistantThreadMessage
-                        externalMessage={externalMessage}
-                        threadMessage={message}
-                        brandPrimary={brandPrimary}
-                      />
-                    );
-                  }}
-                </ThreadPrimitive.Messages>
-              )}
-            </ThreadPrimitive.Viewport>
-
-            <Box
-              sx={{
-                width: "100%",
-                maxWidth: 760,
-                mx: "auto",
-                mt: "auto",
-                pt: 1,
-                pb: { xs: 0.75, md: 1 },
-                borderTop: "1px solid",
-                borderColor:
-                  muiTheme.palette.mode === "dark"
-                    ? alpha(muiTheme.palette.common.white, 0.08)
-                    : alpha(muiTheme.palette.text.primary, 0.08),
-                background:
-                  muiTheme.palette.mode === "dark"
-                    ? `linear-gradient(180deg, ${alpha("#111214", 0)} 0%, ${alpha("#111214", 0.92)} 22%)`
-                    : `linear-gradient(180deg, ${alpha("#ffffff", 0)} 0%, ${alpha("#faf8f5", 0.98)} 22%)`,
-              }}
-            >
-              <ThreadPrimitive.ViewportFooter
-                style={{
-                  width: "100%",
-                  padding: 0,
-                }}
-              >
-                <Composer
-                  placeholder="Ask a follow-up"
-                  disabled={isUploading || isStreaming}
-                  isRunning={isStreaming}
-                  onOpenFolderPicker={openFolderPicker}
-                  dictationControl={
-                    <>
-                      {onToggleVoice && (
-                        <IconButton
-                          size="small"
-                          onClick={onToggleVoice}
-                          disabled={isUploading || isStreaming}
-                          aria-label={isVoiceEnabled ? "Disable voice" : "Enable voice"}
-                          sx={{
-                            width: 34,
-                            height: 34,
-                            borderRadius: 2.5,
-                            color: isVoiceEnabled
-                              ? brandPrimary
-                              : muiTheme.palette.mode === "dark"
-                              ? alpha("#f5f3ef", 0.82)
-                              : "#6f6a63",
-                            bgcolor: isVoiceEnabled
-                              ? alpha(brandPrimary, muiTheme.palette.mode === "dark" ? 0.18 : 0.1)
-                              : "transparent",
-                            "@keyframes voice-pulse": {
-                              "0%, 100%": { opacity: 0.7 },
-                              "50%": { opacity: 1 },
-                            },
-                            animation: isSpeaking ? "voice-pulse 1s ease-in-out infinite" : "none",
-                            "&:hover": {
-                              backgroundColor: isVoiceEnabled
-                                ? alpha(brandPrimary, 0.22)
-                                : muiTheme.palette.mode === "dark"
-                                ? alpha("#f5f3ef", 0.08)
-                                : alpha("#1f1d1a", 0.06),
-                            },
-                            "&.Mui-disabled": { color: alpha(muiTheme.palette.text.secondary, 0.4) },
-                          }}
-                        >
-                          {isVoiceEnabled ? (
-                            <VolumeUpRoundedIcon fontSize="small" />
-                          ) : (
-                            <VolumeOffRoundedIcon fontSize="small" />
-                          )}
-                        </IconButton>
-                      )}
-                      <ComposerDictationButton
+            <ThreadPrimitive.ViewportFooter className="w-full p-0">
+              <Composer
+                placeholder="Ask a follow-up"
+                disabled={isUploading || isStreaming}
+                isRunning={isStreaming}
+                onOpenFolderPicker={openFolderPicker}
+                dictationControl={
+                  <>
+                    {onToggleVoice && (
+                      <button
+                        type="button"
+                        onClick={onToggleVoice}
                         disabled={isUploading || isStreaming}
-                        supported={hasDictation}
-                      />
-                    </>
-                  }
-                />
-              </ThreadPrimitive.ViewportFooter>
-            </Box>
-          </ThreadPrimitive.Root>
-      </Box>
-    </Box>
+                        aria-label={isVoiceEnabled ? "Disable voice" : "Enable voice"}
+                        className={cn(
+                          "flex h-[34px] w-[34px] items-center justify-center rounded-[10px] transition-colors disabled:opacity-40",
+                          isVoiceEnabled ? "bg-white/[0.18]" : "hover:bg-white/[0.08]",
+                        )}
+                        style={{
+                          color: isVoiceEnabled ? brandPrimary : undefined,
+                          animation: isSpeaking ? "voice-pulse 1s ease-in-out infinite" : "none",
+                        }}
+                      >
+                        {isVoiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                      </button>
+                    )}
+                    <ComposerDictationButton disabled={isUploading || isStreaming} supported={hasDictation} />
+                  </>
+                }
+              />
+            </ThreadPrimitive.ViewportFooter>
+          </div>
+        </ThreadPrimitive.Root>
+      </div>
+    </div>
   );
 };
+
+// ── AgentChat (outer) ─────────────────────────────────────────────────────────
 
 const AgentChat: React.FC<AgentChatProps> = ({
   messages,
@@ -1665,20 +1058,17 @@ const AgentChat: React.FC<AgentChatProps> = ({
   isSpeaking = false,
   onToggleVoice,
 }) => {
-  const muiTheme = useTheme();
   const { shop } = useShop();
+  const brand = useOwnerBrand();
   const aui = useAui({ interactables: Interactables() } as any) as InteractablesAuiClient;
   const lastInteractablesStorageKeyRef = useRef<string | null>(null);
-  const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
+  const brandPrimary = shop?.primary_color || brand.primary;
   const brandSecondary = shop?.secondary_color || brandPrimary;
+
   const dictationAdapter = useMemo(
     () =>
       WebSpeechDictationAdapter.isSupported()
-        ? new WebSpeechDictationAdapter({
-            language: "en-US",
-            continuous: true,
-            interimResults: true,
-          })
+        ? new WebSpeechDictationAdapter({ language: "en-US", continuous: true, interimResults: true })
         : undefined,
     [],
   );
@@ -1689,11 +1079,7 @@ const AgentChat: React.FC<AgentChatProps> = ({
     async (message: AppendMessage) => {
       const trimmed = getAppendMessageText(message);
       const attachments = getAppendMessageAttachments(message);
-
-      if ((!trimmed && attachments.length === 0) || isStreaming || isUploading) {
-        return;
-      }
-
+      if ((!trimmed && attachments.length === 0) || isStreaming || isUploading) return;
       await onSend({ text: trimmed, attachments });
     },
     [isStreaming, isUploading, onSend],
@@ -1703,13 +1089,7 @@ const AgentChat: React.FC<AgentChatProps> = ({
     async (message: AppendMessage) => {
       const trimmed = getAppendMessageText(message);
       const attachments = getAppendMessageAttachments(message);
-
-      if ((!trimmed && attachments.length === 0) || isStreaming || isUploading) {
-        return;
-      }
-
-      // Edits send the revised text as a new conversation turn rather than patching history —
-      // intentional until the backend supports message-id-based re-runs.
+      if ((!trimmed && attachments.length === 0) || isStreaming || isUploading) return;
       await onSend({ text: trimmed, attachments });
     },
     [isStreaming, isUploading, onSend],
@@ -1717,25 +1097,15 @@ const AgentChat: React.FC<AgentChatProps> = ({
 
   const handleReloadMessage = useCallback(
     async (parentId: string | null) => {
-      if (!parentId || isStreaming || isUploading) {
-        return;
-      }
-
-      const targetIndex = messages.findIndex((message) => message.id === parentId);
-      if (targetIndex === -1) {
-        return;
-      }
-
+      if (!parentId || isStreaming || isUploading) return;
+      const targetIndex = messages.findIndex((m) => m.id === parentId);
+      if (targetIndex === -1) return;
       const targetMessage = messages[targetIndex];
       const retryText =
         targetMessage?.retryMessage ||
-        [...messages.slice(0, targetIndex)].reverse().find((message) => message.role === "user")?.content ||
+        [...messages.slice(0, targetIndex)].reverse().find((m) => m.role === "user")?.content ||
         "";
-
-      if (!retryText.trim()) {
-        return;
-      }
-
+      if (!retryText.trim()) return;
       await onSend({ text: retryText.trim() });
     },
     [isStreaming, isUploading, messages, onSend],
@@ -1748,10 +1118,7 @@ const AgentChat: React.FC<AgentChatProps> = ({
     onEdit: handleEditMessage,
     onReload: handleReloadMessage,
     isDisabled: isStreaming || isUploading,
-    adapters: {
-      attachments: attachmentAdapter,
-      dictation: dictationAdapter,
-    },
+    adapters: { attachments: attachmentAdapter, dictation: dictationAdapter },
   });
 
   useEffect(() => {
@@ -1759,59 +1126,32 @@ const AgentChat: React.FC<AgentChatProps> = ({
       aui.interactables().setPersistenceAdapter(undefined);
       return;
     }
-
     aui.interactables().setPersistenceAdapter({
       save: async (state: PersistedInteractablesState) => {
         window.localStorage.setItem(interactablesStorageKey, JSON.stringify(state));
       },
     });
-
     if (lastInteractablesStorageKeyRef.current !== interactablesStorageKey) {
       const savedState = window.localStorage.getItem(interactablesStorageKey);
-
       if (savedState) {
-        try {
-          aui.interactables().importState(JSON.parse(savedState));
-        } catch {
-          window.localStorage.removeItem(interactablesStorageKey);
-        }
+        try { aui.interactables().importState(JSON.parse(savedState)); }
+        catch { window.localStorage.removeItem(interactablesStorageKey); }
       }
-
       lastInteractablesStorageKeyRef.current = interactablesStorageKey;
     }
-
-    return () => {
-      void aui.interactables().flush();
-    };
+    return () => { void aui.interactables().flush(); };
   }, [aui, interactablesStorageKey]);
 
   return (
     <AssistantRuntimeProvider runtime={runtime} aui={aui}>
-      <Box
-        sx={{
-          display: "flex",
-          flexDirection: { xs: "column", md: "row" },
-          gap: { xs: 1.5, md: 0 },
-          flex: 1,
-          minHeight: 0,
-          width: "100%",
-        }}
-      >
-        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-          {header ? (
-            <Box
-              sx={{
-                px: { xs: 1, md: 2 },
-                pt: { xs: 1, md: 1.25 },
-                pb: { xs: 0.5, md: 0.75 },
-                flexShrink: 0,
-              }}
-            >
+      <div className="flex flex-col md:flex-row gap-0 flex-1 min-h-0 w-full">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+          {header && (
+            <div className="px-3 md:px-6 pt-3 md:pt-4 pb-2 md:pb-2.5 flex-shrink-0">
               {header}
-            </Box>
-          ) : null}
-
-          <Box sx={{ flex: 1, minHeight: 0 }}>
+            </div>
+          )}
+          <div className="flex-1 min-h-0">
             <AgentChatInner
               isStreaming={isStreaming}
               isUploading={isUploading}
@@ -1827,26 +1167,15 @@ const AgentChat: React.FC<AgentChatProps> = ({
               isSpeaking={isSpeaking}
               onToggleVoice={onToggleVoice}
             />
-          </Box>
-        </Box>
+          </div>
+        </div>
 
-        {sidebar ? (
-          <Box
-            sx={{
-              width: { xs: "100%", md: 360 },
-              minWidth: { md: 320 },
-              maxWidth: { md: 400 },
-              flexShrink: 0,
-              minHeight: { xs: 320, md: 0 },
-              display: "flex",
-              alignSelf: "stretch",
-              height: { xs: "auto", md: "100%" },
-            }}
-          >
+        {sidebar && (
+          <div className="w-full md:w-[360px] md:min-w-[320px] md:max-w-[400px] flex-shrink-0 min-h-[320px] md:min-h-0 flex self-stretch md:h-full">
             {sidebar}
-          </Box>
-        ) : null}
-      </Box>
+          </div>
+        )}
+      </div>
     </AssistantRuntimeProvider>
   );
 };

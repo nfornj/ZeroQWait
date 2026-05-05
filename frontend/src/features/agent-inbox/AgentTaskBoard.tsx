@@ -1,22 +1,11 @@
 import React, { useCallback, useEffect, useMemo } from "react";
-import {
-  Alert,
-  alpha,
-  Box,
-  ButtonBase,
-  CircularProgress,
-  Stack,
-  Typography,
-  useTheme,
-} from "@mui/material";
-import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
-import ChecklistRoundedIcon from "@mui/icons-material/ChecklistRounded";
-import RadioButtonUncheckedRoundedIcon from "@mui/icons-material/RadioButtonUncheckedRounded";
+import { CheckCircle2, Circle, ClipboardList } from "lucide-react";
 import {
   useAssistantInteractable,
   useInteractableState,
 } from "@assistant-ui/react";
 import type { JSONSchema7 } from "json-schema";
+import { cn } from "../../lib/utils";
 
 export type AgentTaskBoardTask = {
   id: string;
@@ -58,10 +47,7 @@ const TASK_BOARD_STATE_SCHEMA: JSONSchema7 = {
           title: { type: "string" },
           description: { type: "string" },
           done: { type: "boolean" },
-          source: {
-            type: "string",
-            enum: ["manual", "approval", "agent"],
-          },
+          source: { type: "string", enum: ["manual", "approval", "agent"] },
           assignee: { type: "string" },
           createdAt: { type: "string" },
           actionId: { type: "string" },
@@ -71,16 +57,11 @@ const TASK_BOARD_STATE_SCHEMA: JSONSchema7 = {
   },
 };
 
-const TASK_BOARD_INITIAL_STATE: AgentTaskBoardState = {
-  tasks: [],
-};
+const TASK_BOARD_INITIAL_STATE: AgentTaskBoardState = { tasks: [] };
 
 const sortTasks = (tasks: AgentTaskBoardTask[]) =>
   [...tasks].sort((left, right) => {
-    if (left.done !== right.done) {
-      return left.done ? 1 : -1;
-    }
-
+    if (left.done !== right.done) return left.done ? 1 : -1;
     return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
   });
 
@@ -112,8 +93,6 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
   interactableId,
   externalTasks = [],
 }) => {
-  const theme = useTheme();
-
   const registeredId = useAssistantInteractable("taskBoard", {
     id: interactableId,
     description:
@@ -126,9 +105,7 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
     useInteractableState<AgentTaskBoardState>(registeredId, TASK_BOARD_INITIAL_STATE);
 
   useEffect(() => {
-    if (externalTasks.length === 0) {
-      return;
-    }
+    if (externalTasks.length === 0) return;
 
     setState((prev: AgentTaskBoardState) => {
       const existingTasks = prev.tasks || [];
@@ -140,16 +117,13 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
       externalTasks.forEach((task) => {
         const current = taskMap.get(task.id);
         const next = normalizeExternalTask(task, current);
-
         if (!current || !areTasksEqual(current, next)) {
           taskMap.set(next.id, next);
           changed = true;
         }
       });
 
-      if (!changed) {
-        return prev;
-      }
+      if (!changed) return prev;
 
       const nextTasks = sortTasks(Array.from(taskMap.values()));
       if (
@@ -181,150 +155,75 @@ const AgentTaskBoard: React.FC<AgentTaskBoardProps> = ({
   );
 
   return (
-    <Box
+    <div
       onClick={() => setSelected(true)}
-      sx={{
-        width: "100%",
-        height: "100%",
-        minHeight: { xs: 320, md: 0 },
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        borderLeft: "1px solid",
-        borderColor: "divider",
-        backgroundColor:
-          theme.palette.mode === "dark"
-            ? alpha(theme.palette.common.white, 0.02)
-            : alpha(theme.palette.text.primary, 0.02),
-      }}
+      className="w-full h-full flex flex-col overflow-hidden border-l border-border bg-background/[0.02] min-h-[320px] md:min-h-0"
     >
-      <Stack
-        alignItems="center"
-        direction="row"
-        spacing={1}
-        sx={{ px: 1.25, pt: 0, pb: 0, borderBottom: "1px solid", borderColor: "divider" }}
-      >
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flex: 1 }}>
-          <ChecklistRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
-          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-            Task Board
-          </Typography>
-        </Stack>
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <ClipboardList className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <p className="text-sm font-semibold">Task Board</p>
+        </div>
 
-        {isPending ? <CircularProgress size={12} sx={{ color: "text.secondary" }} /> : null}
+        {isPending && (
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-border border-t-primary" />
+        )}
 
-        {tasks.length > 0 ? (
-          <Box
-            sx={{
-              ml: "auto",
-              borderRadius: 999,
-              px: 1,
-              py: 0.25,
-              fontSize: 12,
-              fontWeight: 600,
-              color: "primary.main",
-              backgroundColor: alpha(theme.palette.primary.main, 0.1),
-            }}
-          >
+        {tasks.length > 0 && (
+          <span className="ml-auto rounded-full px-2 py-0.5 text-xs font-semibold text-primary bg-primary/10">
             {doneCount}/{tasks.length}
-          </Box>
-        ) : null}
-      </Stack>
+          </span>
+        )}
+      </div>
 
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 0, pt: 0, pb: 0 }}>
-        {error ? (
-          <Alert severity="error" sx={{ mb: 1.5 }}>
+      {/* Body */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {Boolean(error) && (
+          <div className="mx-3 mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
             Failed to sync task board state.
-          </Alert>
-        ) : null}
+          </div>
+        )}
 
         {tasks.length === 0 ? (
-          <Stack
-            spacing={0.5}
-            alignItems="center"
-            justifyContent="center"
-            sx={{
-              minHeight: "100%",
-              color: "text.secondary",
-              textAlign: "center",
-              px: 2,
-            }}
-          >
-            <ChecklistRoundedIcon
-              sx={{
-                mb: 0.5,
-                fontSize: 32,
-                color: alpha(theme.palette.text.secondary, 0.3),
-              }}
-            />
-            <Typography variant="body2" sx={{ fontWeight: 500, color: "text.secondary" }}>
-              No tasks yet.
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{ color: alpha(theme.palette.text.secondary, 0.8) }}
-            >
-              Ask the assistant to add some!
-            </Typography>
-          </Stack>
+          <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-1.5 text-center px-6">
+            <ClipboardList className="h-8 w-8 text-muted-foreground/30 mb-1" />
+            <p className="text-sm font-medium text-muted-foreground">No tasks yet.</p>
+            <p className="text-xs text-muted-foreground/70">Ask the assistant to add some!</p>
+          </div>
         ) : (
-          <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none" }}>
+          <ul className="m-0 p-0 list-none">
             {tasks.map((task) => (
-              <Box component="li" key={task.id}>
-                <ButtonBase
+              <li key={task.id}>
+                <button
+                  type="button"
                   onClick={() => handleToggleTask(task.id)}
-                  sx={{
-                    display: "flex",
-                    width: "100%",
-                    justifyContent: "flex-start",
-                    alignItems: "center",
-                    gap: 1.25,
-                    borderRadius: 0,
-                    px: 0.75,
-                    py: 0,
-                    minHeight: 36,
-                    textAlign: "left",
-                    opacity: task.done ? 0.56 : 1,
-                    transition: theme.transitions.create(["background-color", "opacity"], {
-                      duration: theme.transitions.duration.shorter,
-                    }),
-                    "&:hover": {
-                      backgroundColor:
-                        theme.palette.mode === "dark"
-                          ? alpha(theme.palette.common.white, 0.04)
-                          : alpha(theme.palette.text.primary, 0.04),
-                    },
-                  }}
                   title={task.description || task.title}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-none px-3 py-0 min-h-9 text-left transition-opacity hover:bg-muted/50",
+                    task.done && "opacity-50",
+                  )}
                 >
                   {task.done ? (
-                    <CheckCircleRoundedIcon sx={{ fontSize: 18, color: "primary.main", flexShrink: 0 }} />
+                    <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
                   ) : (
-                    <RadioButtonUncheckedRoundedIcon
-                      sx={{ fontSize: 18, color: "text.secondary", flexShrink: 0 }}
-                    />
+                    <Circle className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                   )}
-
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      flex: 1,
-                      minWidth: 0,
-                      fontWeight: 500,
-                      color: task.done ? "text.secondary" : "text.primary",
-                      textDecoration: task.done ? "line-through" : "none",
-                      wordBreak: "break-word",
-                    }}
+                  <span
+                    className={cn(
+                      "flex-1 min-w-0 text-sm font-medium break-words",
+                      task.done ? "text-muted-foreground line-through" : "text-foreground",
+                    )}
                   >
                     {task.title}
-                  </Typography>
-                </ButtonBase>
-              </Box>
+                  </span>
+                </button>
+              </li>
             ))}
-          </Box>
+          </ul>
         )}
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 };
 

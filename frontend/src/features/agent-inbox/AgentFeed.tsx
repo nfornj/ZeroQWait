@@ -1,20 +1,9 @@
 import React from "react";
-import {
-  alpha,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Divider,
-  Skeleton,
-  Stack,
-  Typography,
-  useTheme,
-} from "@mui/material";
+import { cn } from "../../lib/utils";
+import { Button } from "../../components/ui/button";
+import { Skeleton } from "../../components/ui/skeleton";
+import { useOwnerBrand } from "../../hooks/useOwnerBrand";
 import type { AgentFeedEvent } from "./types";
-import { useShop } from "../../contexts/ShopContext";
 
 type MaxHeightValue = string | number | Record<string, string | number>;
 
@@ -29,16 +18,24 @@ interface AgentFeedProps {
   isLoading?: boolean;
 }
 
-const typeColorMap: Record<AgentFeedEvent["type"], "default" | "primary" | "success" | "warning" | "error" | "info"> = {
-  chat: "default",
-  agent_switch: "info",
-  tool_call: "primary",
-  tool_result: "success",
-  approval_required: "warning",
-  approval_decision: "success",
-  queue_update: "info",
-  error: "error",
-  system: "default",
+const typeChipClass: Record<AgentFeedEvent["type"], string> = {
+  chat: "bg-muted text-muted-foreground",
+  agent_switch: "bg-blue-500/10 text-blue-400 border border-blue-500/20",
+  tool_call: "bg-violet-500/10 text-violet-400 border border-violet-500/20",
+  tool_result: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+  approval_required: "bg-amber-500/10 text-amber-400 border border-amber-500/20",
+  approval_decision: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+  queue_update: "bg-blue-500/10 text-blue-400 border border-blue-500/20",
+  error: "bg-red-500/10 text-red-400 border border-red-500/20",
+  system: "bg-muted text-muted-foreground",
+};
+
+const maxHeightToStyle = (value: MaxHeightValue): string => {
+  if (typeof value === "number") return `${value}px`;
+  if (typeof value === "string") return value;
+  const md = (value as Record<string, string | number>).md;
+  if (md !== undefined) return typeof md === "number" ? `${md}px` : md;
+  return "240px";
 };
 
 const AgentFeed: React.FC<AgentFeedProps> = ({
@@ -51,128 +48,130 @@ const AgentFeed: React.FC<AgentFeedProps> = ({
   maxHeight = 160,
   isLoading = false,
 }) => {
-  const muiTheme = useTheme();
-  const { shop } = useShop();
-  const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
-  const brandSecondary = shop?.secondary_color || brandPrimary;
-  const cardBg =
-    muiTheme.palette.mode === "dark"
-      ? "rgba(255, 255, 255, 0.05)"
-      : alpha("#ffffff", 0.68);
-  const cardBorder =
-    muiTheme.palette.mode === "dark"
-      ? alpha(brandPrimary, 0.24)
-      : alpha(brandPrimary, 0.16);
+  const brand = useOwnerBrand();
 
   return (
-    <Card
-      variant="outlined"
-      sx={{
-        borderRadius: 3,
-        borderColor: cardBorder,
-        bgcolor: cardBg,
-        backdropFilter: "blur(20px)",
-        boxShadow: `0 18px 50px ${alpha(brandPrimary, 0.08)}`,
+    <div
+      className="rounded-2xl border backdrop-blur-xl"
+      style={{
+        borderColor: brand.glass.border,
+        backgroundColor: brand.glass.bg,
+        boxShadow: brand.glass.shadow,
       }}
     >
-      <CardContent sx={{ py: 1.25, "&:last-child": { pb: 1.25 } }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1} spacing={1}>
-          <Typography variant="subtitle2" fontWeight={600}>
-            Activity Feed
-          </Typography>
-          <Stack direction="row" spacing={1} alignItems="center">
+      <div className="px-4 py-3">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <p className="text-sm font-semibold">Activity Feed</p>
+          <div className="flex items-center gap-2">
             {unreadCount > 0 && (
-              <Chip
-                size="small"
-                color="warning"
-                label={`${unreadCount} unread`}
-                sx={{ fontWeight: 700 }}
-              />
+              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                {unreadCount} unread
+              </span>
             )}
             {onMarkAllAsRead && unreadCount > 0 && (
               <Button
-                size="small"
-                variant="text"
+                size="sm"
+                variant="ghost"
                 disabled={isMarkingAllRead}
                 onClick={onMarkAllAsRead}
+                className="h-7 text-xs"
               >
                 {isMarkingAllRead ? "Clearing..." : "Clear unread"}
               </Button>
             )}
-          </Stack>
-        </Stack>
+          </div>
+        </div>
 
-        <Stack spacing={1} sx={{ maxHeight, overflowY: "auto", pr: 0.5 }}>
+        {/* Events */}
+        <div
+          className="flex flex-col gap-2 overflow-y-auto pr-1"
+          style={{ maxHeight: maxHeightToStyle(maxHeight) }}
+        >
           {events.length === 0 ? (
             isLoading ? (
-              <Stack spacing={1} py={0.5}>
-                {[0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={52} sx={{ borderRadius: 1.5 }} />)}
-              </Stack>
+              <div className="flex flex-col gap-2 py-1">
+                {[0, 1, 2].map((i) => (
+                  <Skeleton key={i} className="h-12 w-full rounded-xl" />
+                ))}
+              </div>
             ) : (
-              <Box py={2}>
-                <Typography variant="body2" color="text.secondary">
+              <div className="py-4">
+                <p className="text-sm text-muted-foreground">
                   No activity yet. Send a message to start the feed.
-                </Typography>
-              </Box>
+                </p>
+              </div>
             )
           ) : (
             events.map((event, index) => (
               <React.Fragment key={event.id}>
-                <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between">
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Stack direction="row" spacing={1} alignItems="center" mb={0.5}>
-                      <Chip
-                        size="small"
-                        label={event.type.replace(/_/g, " ")}
-                        color={typeColorMap[event.type]}
-                        sx={event.type === "system" || event.type === "chat"
-                          ? {
-                              bgcolor: alpha(brandPrimary, 0.12),
-                              color: brandPrimary,
-                              border: `1px solid ${alpha(brandPrimary, 0.2)}`,
-                            }
-                          : undefined}
-                      />
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize",
+                          event.type === "system" || event.type === "chat"
+                            ? "border"
+                            : typeChipClass[event.type],
+                        )}
+                        style={
+                          event.type === "system" || event.type === "chat"
+                            ? {
+                                backgroundColor: `${brand.primary}1f`,
+                                color: brand.primary,
+                                borderColor: `${brand.primary}33`,
+                              }
+                            : undefined
+                        }
+                      >
+                        {event.type.replace(/_/g, " ")}
+                      </span>
                       {event.notification_id && event.status === "unread" && (
-                        <Chip size="small" label="unread" color="warning" variant="outlined" />
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          unread
+                        </span>
                       )}
-                      <Typography variant="caption" color="text.secondary">
+                      <span className="text-xs text-muted-foreground">
                         {new Date(event.timestamp).toLocaleTimeString()}
-                      </Typography>
-                    </Stack>
-                    <Typography
-                      variant="subtitle2"
-                      sx={{ color: event.type === "error" ? muiTheme.palette.error.main : brandSecondary }}
+                      </span>
+                    </div>
+                    <p
+                      className={cn(
+                        "text-sm font-semibold",
+                        event.type === "error" ? "text-red-400" : "",
+                      )}
+                      style={event.type !== "error" ? { color: brand.secondary } : undefined}
                     >
                       {event.title}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {event.description}
-                    </Typography>
-                  </Box>
+                    </p>
+                    <p className="text-xs text-muted-foreground">{event.description}</p>
+                  </div>
                   {event.notification_id && event.status === "unread" && onMarkAsRead && (
                     <Button
-                      size="small"
-                      variant="text"
+                      size="sm"
+                      variant="ghost"
                       disabled={markingNotificationId === event.notification_id}
                       onClick={() => onMarkAsRead(event.notification_id as number)}
-                      sx={{ minWidth: 90 }}
+                      className="h-7 text-xs flex-shrink-0"
                     >
                       {markingNotificationId === event.notification_id ? (
-                        <CircularProgress size={14} />
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-border border-t-primary" />
                       ) : (
                         "Mark read"
                       )}
                     </Button>
                   )}
-                </Stack>
-                {index < events.length - 1 && <Divider sx={{ borderColor: alpha(brandPrimary, 0.12) }} />}
+                </div>
+                {index < events.length - 1 && (
+                  <hr className="border-border/40" />
+                )}
               </React.Fragment>
             ))
           )}
-        </Stack>
-      </CardContent>
-    </Card>
+        </div>
+      </div>
+    </div>
   );
 };
 

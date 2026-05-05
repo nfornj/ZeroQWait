@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Box, Button, Stack, Typography } from "@mui/material";
+import { Button } from "./ui/button";
 
 interface AppErrorBoundaryState {
   hasError: boolean;
@@ -37,30 +37,20 @@ class AppErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <Box
-          sx={{
-            minHeight: "100vh",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            p: 3,
-          }}
-        >
-          <Stack spacing={2} sx={{ maxWidth: 640, width: "100%" }}>
-            <Typography variant="h5">Dashboard failed to load</Typography>
-            <Alert severity="error">
+        <div className="flex min-h-screen items-center justify-center p-6">
+          <div className="flex w-full max-w-xl flex-col gap-4">
+            <h2 className="text-xl font-semibold text-foreground">Dashboard failed to load</h2>
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
               {this.state.errorMessage || "Unexpected runtime error"}
-            </Alert>
-            <Stack direction="row" spacing={1.5}>
-              <Button variant="contained" onClick={this.handleReload}>
-                Reload
-              </Button>
-              <Button variant="outlined" onClick={this.handleGoToLogin}>
+            </div>
+            <div className="flex gap-3">
+              <Button onClick={this.handleReload}>Reload</Button>
+              <Button variant="outline" onClick={this.handleGoToLogin}>
                 Go to Login
               </Button>
-            </Stack>
-          </Stack>
-        </Box>
+            </div>
+          </div>
+        </div>
       );
     }
 

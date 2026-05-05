@@ -1,58 +1,33 @@
-// RESTYLED: Perplexity-style
-import { styled } from '@mui/material/styles';
-import MuiDrawer, { drawerClasses } from '@mui/material/Drawer';
-import Box from '@mui/material/Box';
 import SelectContent from './SelectContent';
 import MenuContent from './MenuContent';
 import CardAlert from './CardAlert';
 import OwnerAccountPanel from './OwnerAccountPanel';
 
-const drawerWidth = 240;
-
-const Drawer = styled(MuiDrawer)({
-  width: drawerWidth,
-  flexShrink: 0,
-  boxSizing: 'border-box',
-  mt: 10,
-  [`& .${drawerClasses.paper}`]: {
-    width: drawerWidth,
-    boxSizing: 'border-box',
-  },
-});
+export const SIDEBAR_WIDTH = 240;
 
 export default function SideMenu() {
   return (
-    <Drawer
-      variant="permanent"
-      sx={{
-        display: { xs: 'none', md: 'block' },
-        [`& .${drawerClasses.paper}`]: {
-          backgroundColor: 'background.paper',
-          backdropFilter: 'none',
-          borderRight: '1px solid',
-          borderColor: 'divider',
-          boxShadow: 'none',
-        },
-      }}
+    <aside
+      className="hidden md:flex flex-col flex-shrink-0 border-r border-border bg-background"
+      style={{ width: SIDEBAR_WIDTH }}
     >
-      <Box
-        sx={{
-          overflow: 'auto',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          mt: 'calc(var(--template-frame-height, 0px) + 4px)',
-        }}
-      >
-        <Box sx={{ p: 1.25, pb: 0 }}>
-          <SelectContent />
-        </Box>
+      {/* Shop identity */}
+      <div className="border-b border-border px-3 py-1">
+        <SelectContent />
+      </div>
+
+      {/* Nav items */}
+      <div className="flex flex-1 flex-col overflow-hidden">
         <MenuContent />
-        <CardAlert />
-        <Box sx={{ p: 1.25, pt: 0, mt: 'auto' }}>
-          <OwnerAccountPanel />
-        </Box>
-      </Box>
-    </Drawer>
+      </div>
+
+      {/* Tip card */}
+      <CardAlert />
+
+      {/* Account panel */}
+      <div className="border-t border-border p-3">
+        <OwnerAccountPanel />
+      </div>
+    </aside>
   );
 }

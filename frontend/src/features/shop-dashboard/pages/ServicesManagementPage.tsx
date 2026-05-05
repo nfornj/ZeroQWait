@@ -1,311 +1,482 @@
 import React, { useState, useEffect } from 'react';
+import { Plus, Clock, Pencil, Copy, Trash2, MoreHorizontal, Scissors, TrendingUp } from 'lucide-react';
+import { toast } from 'sonner';
 import api from '../../../services/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
-    Box,
-    Typography,
-    Button,
-    Paper,
-    Card,
-    CardContent,
-    Grid,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    TextField,
-    IconButton,
-    Alert,
-    CircularProgress,
-    InputAdornment
-} from '@mui/material';
-import { DataGrid, GridColDef, GridActionsCellItem, GridToolbar } from '@mui/x-data-grid';
-import AddIcon from '@mui/icons-material/Add';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
-import Header from '../components/Header';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useShop } from '../../../contexts/ShopContext';
 
 interface ShopService {
-    id: number;
-    shop_id: number;
-    name: string;
-    description: string;
-    duration_minutes: number;
-    cost: number;
-    currency: string;
-    is_active: boolean;
+  id: number;
+  shop_id: number;
+  name: string;
+  description: string;
+  duration_minutes: number;
+  cost: number;
+  currency: string;
+  is_active: boolean;
 }
 
+const emptyForm = { id: undefined as number | undefined, name: '', description: '', duration_minutes: 30, cost: 0 };
+
+// ─── Service Card ─────────────────────────────────────────────────────────────
+function ServiceCard({
+  service,
+  onEdit,
+  onDuplicate,
+  onDelete,
+}: {
+  service: ShopService;
+  onEdit: (s: ShopService) => void;
+  onDuplicate: (s: ShopService) => void;
+  onDelete: (id: number) => void;
+}) {
+  return (
+    <div className="flex flex-col rounded-2xl border border-border bg-card p-5 shadow-none transition-shadow hover:shadow-sm">
+      {/* Top row: icon + price + menu */}
+      <div className="mb-4 flex items-start justify-between">
+        <div
+          className="flex h-12 w-12 items-center justify-center rounded-full"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--owner-primary) 12%, transparent)' }}
+        >
+          <Scissors className="h-5 w-5" style={{ color: 'var(--owner-primary)' }} />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-base font-semibold" style={{ color: 'var(--owner-primary)' }}>
+            ${Number(service.cost).toFixed(2)}
+          </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onEdit(service)}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDuplicate(service)}>
+                <Copy className="mr-2 h-4 w-4" />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => onDelete(service.id)}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Service name */}
+      <h3 className="mb-1 text-base font-semibold leading-tight text-foreground">{service.name}</h3>
+
+      {/* Duration */}
+      <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Clock className="h-3.5 w-3.5" />
+        {service.duration_minutes} min
+      </div>
+
+      {/* Description */}
+      <p className="mb-5 flex-1 text-sm text-muted-foreground leading-relaxed line-clamp-2">
+        {service.description || 'No description provided.'}
+      </p>
+
+      {/* Action bar */}
+      <div className="flex items-center gap-1 border-t border-border pt-3">
+        <button
+          type="button"
+          onClick={() => onEdit(service)}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={() => onDuplicate(service)}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+        >
+          <Copy className="h-3.5 w-3.5" />
+          Duplicate
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(service.id)}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Add New Service Card ─────────────────────────────────────────────────────
+function AddServiceCard({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border bg-card p-8 text-center transition-colors hover:border-muted-foreground/40 hover:bg-accent"
+    >
+      <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-border bg-background">
+        <Plus className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-foreground">Add a new service</p>
+        <p className="mt-1 text-xs text-muted-foreground">Expand your offerings and delight your clients.</p>
+      </div>
+      <span
+        className="inline-flex items-center gap-1 text-xs font-medium"
+        style={{ color: 'var(--owner-primary)' }}
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add Service
+      </span>
+    </button>
+  );
+}
+
+// ─── Skeleton Cards ───────────────────────────────────────────────────────────
+function ServiceCardSkeleton() {
+  return (
+    <div className="flex flex-col rounded-2xl border border-border bg-card p-5">
+      <div className="mb-4 flex items-start justify-between">
+        <Skeleton className="h-12 w-12 rounded-full" />
+        <Skeleton className="h-5 w-16" />
+      </div>
+      <Skeleton className="mb-2 h-5 w-3/4" />
+      <Skeleton className="mb-2 h-4 w-1/3" />
+      <Skeleton className="mb-5 h-10 w-full" />
+      <Skeleton className="h-8 w-full" />
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 const ServicesManagementPage: React.FC = () => {
-    const { shop } = useShop();
-    const [services, setServices] = useState<ShopService[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [openDialog, setOpenDialog] = useState(false);
-    const [formData, setFormData] = useState({
-        id: undefined as number | undefined,
-        name: '',
-        description: '',
-        duration_minutes: 30,
-        cost: 0.0
+  const { shop } = useShop();
+  const [services, setServices] = useState<ShopService[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+  const [formData, setFormData] = useState(emptyForm);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (shop) fetchServices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shop]);
+
+  const fetchServices = async () => {
+    if (!shop) return;
+    setLoading(true);
+    try {
+      const res = await api.get(`/shops/${shop.id}/services`);
+      setServices(res.data);
+    } catch {
+      toast.error('Failed to load services');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openAdd = () => {
+    setFormData(emptyForm);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (service: ShopService) => {
+    setFormData({
+      id: service.id,
+      name: service.name,
+      description: service.description || '',
+      duration_minutes: service.duration_minutes,
+      cost: service.cost,
     });
-    const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState<string | null>(null);
-    const [submitting, setSubmitting] = useState(false);
-    const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+    setDialogOpen(true);
+  };
 
-    useEffect(() => {
-        if (shop) {
-            fetchServices();
-        }
-    }, [shop]);
+  const handleDuplicate = async (service: ShopService) => {
+    if (!shop) return;
+    try {
+      await api.post(`/shops/${shop.id}/services`, {
+        name: `${service.name} (copy)`,
+        description: service.description,
+        duration_minutes: service.duration_minutes,
+        cost: service.cost,
+      });
+      toast.success('Service duplicated');
+      fetchServices();
+    } catch {
+      toast.error('Failed to duplicate service');
+    }
+  };
 
-    const fetchServices = async () => {
-        if (!shop) return;
-        try {
-            const response = await api.get(`/shops/${shop.id}/services`);
-            setServices(response.data);
-            setLoading(false);
-        } catch (err: any) {
-            setError('Failed to load services');
-            setLoading(false);
-        }
-    };
+  const handleSubmit = async () => {
+    if (!shop || !formData.name.trim()) return;
+    setSubmitting(true);
+    try {
+      if (formData.id) {
+        await api.put(`/shops/${shop.id}/services/${formData.id}`, formData);
+        toast.success('Service updated');
+      } else {
+        await api.post(`/shops/${shop.id}/services`, formData);
+        toast.success('Service created');
+      }
+      setDialogOpen(false);
+      fetchServices();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to save service');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-    const handleOpenDialog = (service?: ShopService) => {
-        if (service) {
-            setFormData({
-                id: service.id,
-                name: service.name,
-                description: service.description || '',
-                duration_minutes: service.duration_minutes,
-                cost: service.cost
-            });
-        } else {
-            setFormData({
-                id: undefined,
-                name: '',
-                description: '',
-                duration_minutes: 30,
-                cost: 0.0
-            });
-        }
-        setError(null);
-        setOpenDialog(true);
-    };
+  const handleDeleteClick = (id: number) => {
+    setDeleteTargetId(id);
+    setDeleteDialogOpen(true);
+  };
 
-    const handleSubmit = async () => {
-        if (!shop) return;
-        setSubmitting(true);
-        setError(null);
+  const confirmDelete = async () => {
+    if (!shop || deleteTargetId === null) return;
+    try {
+      await api.delete(`/shops/${shop.id}/services/${deleteTargetId}`);
+      toast.success('Service deleted');
+      setDeleteDialogOpen(false);
+      setDeleteTargetId(null);
+      fetchServices();
+    } catch {
+      toast.error('Failed to delete service');
+    }
+  };
 
-        try {
-            if (formData.id) {
-                // Update
-                await api.put(`/shops/${shop.id}/services/${formData.id}`, formData);
-                setSuccess('Service updated successfully');
-            } else {
-                // Create
-                await api.post(`/shops/${shop.id}/services`, formData);
-                setSuccess('Service created successfully');
-            }
+  const activeServices = services.filter((s) => s.is_active);
+  const mostBooked = services[0]?.name ?? null;
 
-            setOpenDialog(false);
-            fetchServices();
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to save service');
-        } finally {
-            setSubmitting(false);
-        }
-    };
+  return (
+    <div className="w-full max-w-[1700px]">
 
-    const handleDelete = (id: number) => {
-        setDeleteConfirmId(id);
-    };
+      {/* Page header — 3-column row matching mockup */}
+      <div className="mb-8 flex items-center gap-6">
 
-    const confirmDelete = async () => {
-        if (!shop || deleteConfirmId === null) return;
-        try {
-            await api.delete(`/shops/${shop.id}/services/${deleteConfirmId}`);
-            setSuccess('Service deleted successfully');
-            setDeleteConfirmId(null);
-            fetchServices();
-        } catch (err: any) {
-            setError('Failed to delete service');
-            setDeleteConfirmId(null);
-        }
-    };
+        {/* Left: title + subtitle */}
+        <div className="flex-1 min-w-0">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Service Catalog</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
+            Curate your menu with pricing, duration,<br className="hidden sm:block" />
+            and descriptions for your clients.
+          </p>
+        </div>
 
-    const columns: GridColDef[] = [
-        { field: 'name', headerName: 'Service Name', flex: 1, minWidth: 150 },
-        {
-            field: 'cost',
-            headerName: 'Cost',
-            width: 100,
-            valueFormatter: (value) => `$${Number(value).toFixed(2)}`
-        },
-        {
-            field: 'duration_minutes',
-            headerName: 'Duration',
-            width: 100,
-            valueFormatter: (value) => `${value} min`
-        },
-        { field: 'description', headerName: 'Description', flex: 2, minWidth: 200 },
-        {
-            field: 'actions',
-            type: 'actions',
-            headerName: 'Actions',
-            width: 100,
-            getActions: (params) => [
-                <GridActionsCellItem
-                    icon={<EditIcon />}
-                    label="Edit"
-                    onClick={() => handleOpenDialog(params.row)}
-                />,
-                <GridActionsCellItem
-                    icon={<DeleteIcon color="error" />}
-                    label="Delete"
-                    onClick={() => handleDelete(params.row.id)}
-                />,
-            ],
-        },
-    ];
+        {/* Center: Add Service button */}
+        <div className="flex flex-shrink-0 items-center justify-center">
+          <Button
+            size="lg"
+            onClick={openAdd}
+            className="rounded-xl px-6 font-semibold shadow-none"
+            style={{ backgroundColor: 'var(--owner-primary)', color: '#fff' }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Service
+          </Button>
+        </div>
 
-    return (
-        <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
-            <Header />
+        {/* Right: info card — icon left, text right (matches mockup) */}
+        <div className="flex w-72 flex-shrink-0 items-center gap-4 rounded-2xl border border-border bg-card px-5 py-4">
+          <div
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full"
+            style={{ backgroundColor: 'color-mix(in srgb, var(--owner-primary) 10%, #f0f0f0)' }}
+          >
+            <TrendingUp className="h-4 w-4" style={{ color: 'var(--owner-primary)' }} />
+          </div>
+          <div className="min-w-0">
+            {loading ? (
+              <>
+                <Skeleton className="h-4 w-36 mb-1.5" />
+                <Skeleton className="h-3.5 w-28 mb-2" />
+                <Skeleton className="h-3.5 w-20" />
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-foreground">
+                  You have {activeServices.length} active service{activeServices.length !== 1 ? 's' : ''}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Most booked: {mostBooked ?? '—'}
+                </p>
+                <button
+                  type="button"
+                  className="mt-1.5 text-xs font-medium hover:underline"
+                  style={{ color: 'var(--owner-primary)' }}
+                >
+                  View insights →
+                </button>
+              </>
+            )}
+          </div>
+        </div>
 
-            <Grid container spacing={2} sx={{ mb: 2 }}>
-                <Grid size={{ xs: 12, md: 8 }}>
-                    <Card variant="outlined" sx={{ borderRadius: 3 }}>
-                        <CardContent>
-                            <Box display="flex" justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} flexDirection={{ xs: 'column', md: 'row' }} gap={2}>
-                                <Box>
-                                    <Typography variant="h5" sx={{ mb: 0.5, fontWeight: 700 }}>Service Catalog</Typography>
-                                    <Typography color="text.secondary">
-                                        Curate your menu with pricing, duration, and descriptions for customers.
-                                    </Typography>
-                                </Box>
-                                <Button
-                                    variant="contained"
-                                    startIcon={<AddIcon />}
-                                    onClick={() => handleOpenDialog()}
-                                >
-                                    Add Service
-                                </Button>
-                            </Box>
-                        </CardContent>
-                    </Card>
-                </Grid>
-                <Grid size={{ xs: 12, md: 4 }}>
-                    <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
-                        <CardContent>
-                            <Typography variant="body2" color="text.secondary">Published Services</Typography>
-                            <Typography variant="h4" sx={{ fontWeight: 700, mt: 0.5 }}>{services.length}</Typography>
-                        </CardContent>
-                    </Card>
-                </Grid>
-            </Grid>
+      </div>
 
-            {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>{error}</Alert>}
-            {success && <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>{success}</Alert>}
+      {/* Services section label */}
+      <div className="mb-4 flex items-center gap-2">
+        <Scissors className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-semibold text-foreground">
+          {loading ? 'Loading…' : `All Services (${services.length})`}
+        </h2>
+      </div>
 
-            <Paper variant="outlined" sx={{ width: '100%', overflow: 'hidden', borderRadius: 3 }}>
-                <DataGrid
-                    rows={services}
-                    columns={columns}
-                    autoHeight
-                    slots={{ toolbar: GridToolbar }}
-                    slotProps={{ toolbar: { showQuickFilter: true, quickFilterProps: { debounceMs: 250 } } }}
-                    pageSizeOptions={[10, 25]}
-                    initialState={{
-                        pagination: { paginationModel: { pageSize: 10 } },
-                    }}
-                    loading={loading}
-                    disableRowSelectionOnClick
-                    sx={{
-                        border: 0,
-                        '& .MuiDataGrid-columnHeaders': {
-                            bgcolor: 'background.default',
-                            borderBottom: '1px solid',
-                            borderColor: 'divider',
-                        },
-                        '& .MuiDataGrid-toolbarContainer': {
-                            p: 1,
-                            borderBottom: '1px solid',
-                            borderColor: 'divider',
-                        },
-                    }}
+      {/* Card grid */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {loading ? (
+          <>
+            <ServiceCardSkeleton />
+            <ServiceCardSkeleton />
+            <ServiceCardSkeleton />
+          </>
+        ) : (
+          <>
+            {services.map((service) => (
+              <ServiceCard
+                key={service.id}
+                service={service}
+                onEdit={openEdit}
+                onDuplicate={handleDuplicate}
+                onDelete={handleDeleteClick}
+              />
+            ))}
+            <AddServiceCard onClick={openAdd} />
+          </>
+        )}
+      </div>
+
+      {/* ── Add / Edit Dialog ── */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{formData.id ? 'Edit Service' : 'Add New Service'}</DialogTitle>
+            <DialogDescription>
+              {formData.id
+                ? 'Update the details for this service.'
+                : 'Fill in the details to add a new service to your catalog.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-4 py-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="svc-name">Service name *</Label>
+              <Input
+                id="svc-name"
+                placeholder="e.g. Deep Tissue Massage"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="svc-cost">Price ($)</Label>
+                <Input
+                  id="svc-cost"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="0.00"
+                  value={formData.cost}
+                  onChange={(e) => setFormData({ ...formData, cost: parseFloat(e.target.value) || 0 })}
                 />
-            </Paper>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="svc-duration">Duration (min)</Label>
+                <Input
+                  id="svc-duration"
+                  type="number"
+                  min={1}
+                  placeholder="30"
+                  value={formData.duration_minutes}
+                  onChange={(e) => setFormData({ ...formData, duration_minutes: parseInt(e.target.value) || 30 })}
+                />
+              </div>
+            </div>
 
-            <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>{formData.id ? 'Edit Service' : 'Add New Service'}</DialogTitle>
-                <DialogContent>
-                    <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <TextField
-                            label="Service Name"
-                            value={formData.name}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            fullWidth
-                            required
-                        />
-                        <TextField
-                            label="Price"
-                            type="number"
-                            value={formData.cost}
-                            onChange={(e) => setFormData({ ...formData, cost: parseFloat(e.target.value) })}
-                            fullWidth
-                            required
-                            InputProps={{
-                                startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                            }}
-                        />
-                        <TextField
-                            label="Duration (minutes)"
-                            type="number"
-                            value={formData.duration_minutes}
-                            onChange={(e) => setFormData({ ...formData, duration_minutes: parseInt(e.target.value) })}
-                            fullWidth
-                            required
-                            InputProps={{
-                                endAdornment: <InputAdornment position="end">min</InputAdornment>,
-                            }}
-                        />
-                        <TextField
-                            label="Description"
-                            value={formData.description}
-                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                            fullWidth
-                            multiline
-                            rows={3}
-                        />
-                    </Box>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
-                    <Button
-                        onClick={handleSubmit}
-                        variant="contained"
-                        disabled={submitting || !formData.name || formData.cost < 0}
-                    >
-                        {submitting ? 'Saving...' : 'Save'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <div className="grid gap-1.5">
+              <Label htmlFor="svc-desc">Description</Label>
+              <Textarea
+                id="svc-desc"
+                placeholder="Describe what this service includes…"
+                rows={3}
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              />
+            </div>
+          </div>
 
-            {/* Delete Service Confirmation Dialog */}
-            <Dialog open={deleteConfirmId !== null} onClose={() => setDeleteConfirmId(null)}>
-                <DialogTitle>Delete Service</DialogTitle>
-                <DialogContent>
-                    <Typography>Are you sure you want to delete this service? This cannot be undone.</Typography>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
-                    <Button variant="contained" color="error" onClick={confirmDelete}>Delete</Button>
-                </DialogActions>
-            </Dialog>
-        </Box>
-    );
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting || !formData.name.trim() || formData.cost < 0}
+              style={{ backgroundColor: 'var(--owner-primary)', color: '#fff' }}
+            >
+              {submitting ? 'Saving…' : formData.id ? 'Save changes' : 'Add service'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Confirmation Dialog ── */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete service?</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. The service will be permanently removed from your catalog.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 };
 
 export default ServicesManagementPage;

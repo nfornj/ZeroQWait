@@ -1,10 +1,5 @@
-/**
- * Shared owner-brand token source for shop-aware UI surfaces.
- */
-import { alpha, useTheme } from "@mui/material";
-import type { PaletteMode } from "@mui/material";
-
 import { useShop } from "../contexts/ShopContext";
+import { useThemeContext } from "../contexts/ThemeContext";
 
 export interface OwnerBrandTokens {
   primary: string;
@@ -17,8 +12,26 @@ export interface OwnerBrandTokens {
   };
 }
 
+function hexAlpha(color: string, opacity: number): string {
+  if (color.startsWith("#")) {
+    const hex = color.slice(1);
+    const full = hex.length === 3
+      ? hex.split("").map((c) => c + c).join("")
+      : hex;
+    const r = parseInt(full.slice(0, 2), 16);
+    const g = parseInt(full.slice(2, 4), 16);
+    const b = parseInt(full.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  }
+  return `color-mix(in srgb, ${color} ${Math.round(opacity * 100)}%, transparent)`;
+}
+
+const DEFAULT_PRIMARY = "#7c3aed";
+
+export type ColorMode = "light" | "dark";
+
 export const createOwnerBrandTokens = (
-  mode: PaletteMode,
+  mode: ColorMode,
   fallbackPrimary: string,
   primaryColor?: string | null,
   secondaryColor?: string | null,
@@ -30,34 +43,35 @@ export const createOwnerBrandTokens = (
     primary,
     secondary,
     glass: {
-      bg: mode === "dark" ? "rgba(255,255,255,0.05)" : alpha("#ffffff", 0.68),
-      bgStrong: mode === "dark" ? "rgba(15,18,28,0.82)" : alpha("#ffffff", 0.82),
-      border: mode === "dark" ? alpha(primary, 0.24) : alpha(primary, 0.16),
-      shadow: `0 18px 60px ${alpha(primary, mode === "dark" ? 0.18 : 0.1)}`,
+      bg: mode === "dark" ? "rgba(255,255,255,0.05)" : hexAlpha("#ffffff", 0.68),
+      bgStrong: mode === "dark" ? "rgba(15,18,28,0.82)" : hexAlpha("#ffffff", 0.82),
+      border: mode === "dark" ? hexAlpha(primary, 0.24) : hexAlpha(primary, 0.16),
+      shadow: `0 18px 60px ${hexAlpha(primary, mode === "dark" ? 0.18 : 0.1)}`,
     },
   };
 };
 
-declare module "@mui/material/styles" {
-  interface Theme {
-    ownerBrand: OwnerBrandTokens;
-  }
-
-  interface ThemeOptions {
-    ownerBrand?: OwnerBrandTokens;
-  }
-}
-
 export const useOwnerBrand = (): OwnerBrandTokens => {
-  const theme = useTheme();
+  const { mode } = useThemeContext();
   const { shop } = useShop();
 
   return createOwnerBrandTokens(
-    theme.palette.mode,
-    theme.palette.primary.main,
+    mode,
+    DEFAULT_PRIMARY,
     shop?.primary_color,
     shop?.secondary_color,
   );
 };
 
 export default useOwnerBrand;
+
+// Keep MUI theme augmentation so ThemeContext can put ownerBrand on the theme
+// (ThemeContext is migrated in Phase 11 — remove this block then)
+declare module "@mui/material/styles" {
+  interface Theme {
+    ownerBrand: OwnerBrandTokens;
+  }
+  interface ThemeOptions {
+    ownerBrand?: OwnerBrandTokens;
+  }
+}
