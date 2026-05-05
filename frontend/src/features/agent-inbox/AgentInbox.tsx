@@ -566,6 +566,7 @@ const AgentInbox: React.FC = () => {
                   void operationsSnapshot.queries.appointmentsQuery.refetch();
                   void operationsSnapshot.queries.employeeAvailabilityQuery.refetch();
                 }}
+                onQuickAction={(message) => void handleSend({ text: message })}
               />
               <Box
                 sx={{

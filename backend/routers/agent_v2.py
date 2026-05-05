@@ -764,6 +764,24 @@ def _serialize_checkpoint_messages(state_values: Dict[str, Any]) -> list[Dict[st
 
 
 def _notification_feed_type(notification_type: str, severity: str, title: str, message: str) -> str:
+    # Direct notification_type mapping takes priority — prevents haystack
+    # heuristics from misclassifying briefings that mention "approval", etc.
+    _ntype = notification_type.lower()
+    if _ntype.endswith("_briefing") or _ntype in (
+        "morning_briefing", "evening_briefing", "midday_briefing",
+        "finance_summary_ready", "commitment_due", "commitment_resolved",
+        "shop_open", "shop_close", "pre_close_awareness",
+        "remittance_due", "employee_hired", "custom_schedule_fired",
+    ):
+        return "system"
+    if _ntype in (
+        "payroll_approval_required", "tip_split_approval_required",
+        "capacity_borderline_approval", "policy_action_executed",
+    ):
+        return "approval_decision"
+    if _ntype in ("capacity_overload_lock", "queue_alert"):
+        return "queue_update"
+    # Haystack fallback for unknown notification types
     haystack = " ".join([notification_type, severity, title, message]).lower()
     if "error" in haystack:
         return "error"

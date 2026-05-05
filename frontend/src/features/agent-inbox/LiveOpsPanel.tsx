@@ -15,6 +15,7 @@ import {
   useTheme,
 } from "@mui/material";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
+import BoltRoundedIcon from "@mui/icons-material/BoltRounded";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
@@ -43,6 +44,8 @@ interface LiveOpsPanelProps {
   isLoading?: boolean;
   isFetching?: boolean;
   onRefresh?: () => void;
+  /** Called when the owner clicks a contextual quick-action chip */
+  onQuickAction?: (message: string) => void;
 }
 
 const APPOINTMENT_STATUS_COLOR: Record<
@@ -134,6 +137,59 @@ const StatChip: React.FC<{
   );
 };
 
+/** Derive up to 3 contextually relevant quick-action prompts from live ops stats. */
+function buildQuickActions(stats: LiveOpsPanelProps["stats"]): { label: string; prompt: string }[] {
+  const actions: { label: string; prompt: string }[] = [];
+
+  if (stats.clockedInEmployees === 0 && stats.totalEmployees > 0) {
+    actions.push({
+      label: "No staff clocked in",
+      prompt: "No staff are clocked in right now. What are my options to handle service today?",
+    });
+  }
+
+  if (stats.waiting >= 8) {
+    actions.push({
+      label: "Queue is very long",
+      prompt: `The queue has ${stats.waiting} people waiting. What should I do to manage this backlog?`,
+    });
+  } else if (stats.waiting >= 4) {
+    actions.push({
+      label: "Queue is building up",
+      prompt: `There are ${stats.waiting} people waiting in the queue. Should I notify them about the wait?`,
+    });
+  }
+
+  if (stats.etaMinutes > 25) {
+    actions.push({
+      label: `ETA ${stats.etaMinutes} min — notify?`,
+      prompt: `Wait time is currently ${stats.etaMinutes} minutes. Can you send a friendly heads-up to customers in the queue?`,
+    });
+  }
+
+  if (stats.waiting === 0 && stats.clockedInEmployees > 0) {
+    actions.push({
+      label: "Queue empty — promote walk-ins",
+      prompt: "The queue is empty but staff are available. How can I attract more walk-in customers right now?",
+    });
+  }
+
+  if (stats.confirmedAppointments > 0) {
+    actions.push({
+      label: `${stats.confirmedAppointments} appointment${stats.confirmedAppointments === 1 ? "" : "s"} today`,
+      prompt: "Give me a quick rundown of today's scheduled appointments.",
+    });
+  }
+
+  // Always offer a revenue check
+  actions.push({
+    label: "Today's revenue so far",
+    prompt: "What's today's revenue so far?",
+  });
+
+  return actions.slice(0, 3);
+}
+
 const LiveOpsPanel: React.FC<LiveOpsPanelProps> = ({
   queueMetrics,
   appointments = [],
@@ -142,6 +198,7 @@ const LiveOpsPanel: React.FC<LiveOpsPanelProps> = ({
   isLoading = false,
   isFetching = false,
   onRefresh,
+  onQuickAction,
 }) => {
   const muiTheme = useTheme();
   const { shop } = useShop();
@@ -162,6 +219,8 @@ const LiveOpsPanel: React.FC<LiveOpsPanelProps> = ({
   );
 
   const peopleBeingServed = queueMetrics?.people_being_served ?? 0;
+
+  const quickActions = useMemo(() => buildQuickActions(stats), [stats]);
 
   return (
     <Card
@@ -340,6 +399,42 @@ const LiveOpsPanel: React.FC<LiveOpsPanelProps> = ({
                   +{employeeAvailability.length - 4} more
                 </Typography>
               )}
+            </Stack>
+          </>
+        )}
+
+        {/* Contextual quick-action prompts */}
+        {!isLoading && onQuickAction && quickActions.length > 0 && (
+          <>
+            <Divider sx={{ my: 0.75 }} />
+            <Stack direction="row" spacing={0.5} alignItems="center" mb={0.5}>
+              <BoltRoundedIcon sx={{ fontSize: 12, color: brandPrimary }} />
+              <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                Quick actions
+              </Typography>
+            </Stack>
+            <Stack direction="row" flexWrap="wrap" gap={0.5}>
+              {quickActions.map((action) => (
+                <Chip
+                  key={action.label}
+                  label={action.label}
+                  size="small"
+                  clickable
+                  onClick={() => onQuickAction(action.prompt)}
+                  sx={{
+                    height: 22,
+                    fontSize: 10,
+                    fontWeight: 600,
+                    borderRadius: 999,
+                    bgcolor: alpha(brandPrimary, 0.09),
+                    color: brandPrimary,
+                    border: `1px solid ${alpha(brandPrimary, 0.2)}`,
+                    "& .MuiChip-label": { px: 1 },
+                    "&:hover": { bgcolor: alpha(brandPrimary, 0.16) },
+                    cursor: "pointer",
+                  }}
+                />
+              ))}
             </Stack>
           </>
         )}
