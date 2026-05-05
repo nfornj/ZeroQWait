@@ -91,6 +91,55 @@ def build_briefing_alerts(
     return [_normalize_alert(alert, created_at=created_at) for alert in alerts[:3]]
 
 
+def _get_payroll_alerts(shop_id: int) -> List[Dict[str, Any]]:
+    """Return payroll-specific alert dicts for the daily briefing.
+
+    Checks:
+    - CRA remittances due within 3 days → severity "warning"
+    - February T4 filing reminder (Feb 1–28) → severity "info"
+
+    Returns at most 2 entries to avoid crowding the main alerts list.
+    """
+    from datetime import date
+    alerts: List[Dict[str, Any]] = []
+    try:
+        from agents.tools.payroll_tools import remittance_due_soon
+        due = remittance_due_soon(shop_id, days_ahead=3)
+        if due:
+            total = sum(float(r.get("amount") or 0) for r in due)
+            earliest = min((r.get("due_date") or "") for r in due)
+            alerts.append(
+                {
+                    "severity": "warning",
+                    "title": "CRA remittance due soon",
+                    "body": (
+                        f"${total:,.2f} in source deductions due by {earliest}. "
+                        "Review the remittance summary and arrange payment."
+                    ),
+                }
+            )
+    except Exception:  # noqa: BLE001 — never crash the briefing for payroll issues
+        pass
+
+    try:
+        today = date.today()
+        if today.month == 2:
+            alerts.append(
+                {
+                    "severity": "info",
+                    "title": "T4 filing month",
+                    "body": (
+                        "February is T4 month. Generate and distribute T4 slips to employees "
+                        "and file with CRA by Feb 28."
+                    ),
+                }
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+    return alerts[:2]
+
+
 def build_briefing_recommendations(
     metrics: Dict[str, Any],
     pending_count: int,
@@ -403,6 +452,24 @@ def refresh_shop_briefing_cache(
         alert_history=existing_history,
         source="scheduled",
     )
+
+    # Inject payroll alerts (remittance due, T4 month)
+    payroll_alerts = _get_payroll_alerts(shop_id)
+    if payroll_alerts:
+        created_at = _utcnow_iso()
+        normalized_payroll = [_normalize_alert(a, created_at=created_at) for a in payroll_alerts]
+        # Prepend payroll alerts (they are time-sensitive); keep overall cap at 5
+        briefing["alerts"] = (normalized_payroll + briefing.get("alerts", []))[:5]
+        # Also inject a "Run Payroll" quick-action when a remittance is due soon
+        if any(a.get("severity") == "warning" for a in payroll_alerts):
+            payroll_action = {
+                "label": "Run Payroll",
+                "payload": "Show me the payroll remittance summary and help me run payroll for this period.",
+                "description": "Review remittances and draft this period's payslips.",
+            }
+            existing_actions = briefing.get("actions", [])
+            if not any(a.get("label") == "Run Payroll" for a in existing_actions):
+                briefing["actions"] = [payroll_action] + existing_actions
 
     alert_history = _merge_alert_history(existing_history, briefing.get("alerts", []))
     briefing["alert_history"] = alert_history

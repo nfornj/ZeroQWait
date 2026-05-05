@@ -1,0 +1,3 @@
+FROM localhost:5000/prod/backend:v20260503113937-b770dc7
+COPY agents/llm_factory.py /app/agents/llm_factory.py
+COPY agents/tools/finance_query_engine.py /app/agents/tools/finance_query_engine.py

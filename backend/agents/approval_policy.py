@@ -91,6 +91,55 @@ _ACTION_CATALOG: Dict[str, Dict[str, str]] = {
         "urgency": "normal",
         "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
     },
+    # ── Payroll actions ────────────────────────────────────────────────────────
+    "onboard_employee": {
+        "policy_key": "approval.onboard_employee",
+        "category": "payroll",
+        "title": "Onboard Employee (Payroll)",
+        "risk_level": "medium",
+        "urgency": "normal",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
+    "update_pay_rate": {
+        "policy_key": "approval.update_pay_rate",
+        "category": "payroll",
+        "title": "Update Employee Pay Rate",
+        "risk_level": "medium",
+        "urgency": "normal",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
+    "run_payroll": {
+        "policy_key": "approval.run_payroll",
+        "category": "payroll",
+        "title": "Run Payroll",
+        "risk_level": "high",
+        "urgency": "high",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
+    "finalize_payroll": {
+        "policy_key": "approval.finalize_payroll",
+        "category": "payroll",
+        "title": "Finalize & Pay Payroll",
+        "risk_level": "high",
+        "urgency": "high",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
+    "split_tips": {
+        "policy_key": "approval.split_tips",
+        "category": "payroll",
+        "title": "Split Tip Pool",
+        "risk_level": "low",
+        "urgency": "normal",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
+    "generate_t4": {
+        "policy_key": "approval.generate_t4",
+        "category": "payroll",
+        "title": "Generate T4 Slips",
+        "risk_level": "medium",
+        "urgency": "normal",
+        "default_mode": PolicyMode.REQUIRE_APPROVAL.value,
+    },
 }
 
 
@@ -145,6 +194,35 @@ def _summary_for_action(action: str, details: Dict[str, Any]) -> str:
         customer = str(details.get("customer_name") or "a customer")
         discount = details.get("discount_percent") or details.get("discount_amount")
         return f"Apply a discount of {discount} for {customer}."
+    if action == "onboard_employee":
+        employee_name = str(details.get("name") or "a new employee")
+        rate = details.get("hourly_rate") or details.get("annual_salary")
+        rate_str = f" at ${float(rate):.2f}/hr" if details.get("hourly_rate") else (f" at ${float(rate):,.2f}/yr" if rate else "")
+        return f"Create payroll profile for {employee_name}{rate_str}."
+    if action == "update_pay_rate":
+        employee_name = str(details.get("employee_name") or "the employee")
+        new_rate = details.get("new_rate") or details.get("hourly_rate")
+        return f"Update pay rate for {employee_name} to ${float(new_rate or 0):.2f}/hr."
+    if action == "run_payroll":
+        period = str(details.get("period") or "this pay period")
+        count = details.get("employee_count", "")
+        count_str = f" for {count} employees" if count else ""
+        return f"Calculate draft payslips{count_str} for {period}."
+    if action == "finalize_payroll":
+        period = str(details.get("period") or "this pay period")
+        total = details.get("total_net_pay")
+        total_str = f" (${float(total):,.2f} total net pay)" if total else ""
+        return f"Approve and mark payroll as paid for {period}{total_str}."
+    if action == "split_tips":
+        pool_date = str(details.get("pool_date") or "today")
+        amount = details.get("total_amount")
+        amount_str = f" ${float(amount):.2f}" if amount else ""
+        return f"Split{amount_str} tip pool from {pool_date} among staff."
+    if action == "generate_t4":
+        tax_year = details.get("tax_year", "")
+        count = details.get("employee_count", "")
+        count_str = f" for {count} employees" if count else ""
+        return f"Generate T4 slips{count_str} for tax year {tax_year}."
     return "A business action needs a policy decision before the agent can continue."
 
 
@@ -194,6 +272,30 @@ def _rationale_for_action(action: str, details: Dict[str, Any]) -> str:
         discount = details.get("discount_percent") or details.get("discount_amount")
         service = str(details.get("service_name") or "their service")
         return f"Apply a discount of {discount} on {service} for {customer}."
+    if action == "onboard_employee":
+        employee_name = str(details.get("name") or "the new employee")
+        pay_freq = str(details.get("pay_frequency") or "biweekly")
+        return f"Create a payroll profile for {employee_name} with {pay_freq} pay schedule."
+    if action == "update_pay_rate":
+        employee_name = str(details.get("employee_name") or "the employee")
+        old_rate = details.get("old_rate")
+        new_rate = details.get("new_rate") or details.get("hourly_rate")
+        old_str = f" from ${float(old_rate):.2f}" if old_rate else ""
+        return f"Change hourly rate for {employee_name}{old_str} to ${float(new_rate or 0):.2f}."
+    if action == "run_payroll":
+        period = str(details.get("period") or "this pay period")
+        return f"Draft payslips for all active employees covering {period}."
+    if action == "finalize_payroll":
+        period = str(details.get("period") or "this pay period")
+        total = details.get("total_net_pay")
+        total_str = f" totalling ${float(total):,.2f}" if total else ""
+        return f"Approve all draft payslips for {period}{total_str} and mark as paid."
+    if action == "split_tips":
+        method = str(details.get("split_method") or "hours_worked")
+        return f"Split the tip pool using the '{method}' method and log individual tip entries."
+    if action == "generate_t4":
+        tax_year = details.get("tax_year", "the selected year")
+        return f"Generate draft T4 slips from YTD accumulator data for {tax_year}."
     return "The agent flagged this change as operationally significant."
 
 
@@ -218,6 +320,18 @@ def _impact_for_action(action: str, details: Dict[str, Any]) -> str:
         return "All future customers will see and be charged the new price immediately."
     if action == "apply_discount":
         return "The discount will be applied to the invoice and will reduce revenue for this transaction."
+    if action == "onboard_employee":
+        return "The employee's pay rate and T4 province will be set permanently until updated."
+    if action == "update_pay_rate":
+        return "All future payslips for this employee will use the new rate immediately."
+    if action == "run_payroll":
+        return "Draft payslips will be created. No money moves until the owner approves and finalizes."
+    if action == "finalize_payroll":
+        return "Payslips are marked as paid and YTD accumulators are updated. This cannot be easily reversed."
+    if action == "split_tips":
+        return "Tips are distributed to staff and logged. The pool is closed."
+    if action == "generate_t4":
+        return "T4 drafts are created. Filing with CRA requires a separate step."
     return "Shop operations will change immediately after execution."
 
 

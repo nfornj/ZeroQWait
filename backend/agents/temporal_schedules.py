@@ -215,3 +215,80 @@ async def ensure_brain_schedules(client: Client) -> None:
         commitment_schedule,
         "Periodic commitment sweep.",
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Payroll schedules
+# ──────────────────────────────────────────────────────────────────────────────
+
+DEFAULT_PAYROLL_ANNUAL_RESET_CRON = "1 0 1 1 *"   # Jan 1 at 00:01
+DEFAULT_PAYROLL_REMITTANCE_CRON  = "0 9 * * *"    # Daily 09:00 — check remittances
+DEFAULT_PAYROLL_REMITTANCE_DAYS  = 3               # Warn when due within 3 days
+
+
+async def ensure_payroll_schedules(client: Client) -> None:
+    """Register recurring payroll-related Temporal schedules (idempotent)."""
+    from agents.payroll_workflows import AnnualPayrollResetWorkflow, RemittanceReminderWorkflow
+
+    timezone = os.getenv("TEMPORAL_BRIEFING_TIMEZONE", DEFAULT_TIMEZONE)
+
+    # 1 — Annual YTD reset (Jan 1)
+    annual_cron = os.getenv("TEMPORAL_PAYROLL_ANNUAL_RESET_CRON", DEFAULT_PAYROLL_ANNUAL_RESET_CRON)
+    annual_schedule = Schedule(
+        action=ScheduleActionStartWorkflow(
+            AnnualPayrollResetWorkflow.run,
+            {"new_year": 0},   # worker resolves year at runtime
+            task_queue=TEMPORAL_TASK_QUEUE,
+            execution_timeout=timedelta(minutes=30),
+        ),
+        spec=ScheduleSpec(
+            cron_expressions=[annual_cron],
+            time_zone_name=timezone,
+        ),
+        policy=SchedulePolicy(
+            overlap=ScheduleOverlapPolicy.SKIP,
+            catchup_window=timedelta(hours=2),
+            pause_on_failure=True,
+        ),
+        state=ScheduleState(
+            note="Jan 1: reset YTD accumulators for all active shops.",
+            paused=False,
+        ),
+    )
+    await _create_or_skip(
+        client,
+        "zeroqwait-payroll-annual-reset",
+        annual_schedule,
+        "Annual YTD reset for all active shops.",
+    )
+
+    # 2 — Daily remittance reminder
+    remittance_cron = os.getenv("TEMPORAL_PAYROLL_REMITTANCE_CRON", DEFAULT_PAYROLL_REMITTANCE_CRON)
+    days_ahead = int(os.getenv("TEMPORAL_PAYROLL_REMITTANCE_DAYS", str(DEFAULT_PAYROLL_REMITTANCE_DAYS)))
+    remittance_schedule = Schedule(
+        action=ScheduleActionStartWorkflow(
+            RemittanceReminderWorkflow.run,
+            {"days_ahead": days_ahead},
+            task_queue=TEMPORAL_TASK_QUEUE,
+            execution_timeout=timedelta(minutes=15),
+        ),
+        spec=ScheduleSpec(
+            cron_expressions=[remittance_cron],
+            time_zone_name=timezone,
+        ),
+        policy=SchedulePolicy(
+            overlap=ScheduleOverlapPolicy.SKIP,
+            catchup_window=timedelta(hours=4),
+            pause_on_failure=False,
+        ),
+        state=ScheduleState(
+            note="Daily 09:00: remind owners of remittances due within 3 days.",
+            paused=False,
+        ),
+    )
+    await _create_or_skip(
+        client,
+        "zeroqwait-payroll-remittance-reminder",
+        remittance_schedule,
+        "Daily remittance due-soon reminder for all active shops.",
+    )
