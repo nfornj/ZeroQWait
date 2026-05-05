@@ -13,11 +13,13 @@ import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded';
+import InboxRoundedIcon from '@mui/icons-material/InboxRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 
 const primaryListItems = [
   { text: 'Agent', icon: <SmartToyRoundedIcon />, path: '/dashboard' },
+  { text: 'Inbox', icon: <InboxRoundedIcon />, path: '/agent-inbox' },
   { text: 'Brain', icon: <AccountTreeRoundedIcon />, path: '/agent-brain' },
   { text: 'Overview', icon: <InsightsRoundedIcon />, path: '/overview' },
 ];

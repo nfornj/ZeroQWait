@@ -31,6 +31,7 @@ import MasterDashboardPage from "./features/admin/pages/MasterDashboardPage";
 import AppointmentsPage from "./features/shop-dashboard/pages/AppointmentsPage";
 import OwnerDashboardPage from "./features/shop-dashboard/pages/OwnerDashboardPage";
 import AgentBrainPage from "./features/agent-brain/AgentBrainPage";
+import AgentInbox from "./features/agent-inbox/AgentInbox";
 import { useAuth } from "./contexts/AuthContext";
 
 import SignInSide from "./features/auth/components/auth-sign-in/SignInSide";
@@ -106,7 +107,7 @@ function App() {
             <Route path="/queues" element={<OwnerOnly><QueueManagementPage /></OwnerOnly>} />
             <Route path="/queues/:queueId" element={<OwnerOnly><QueueDetailPage /></OwnerOnly>} />
             <Route path="/appointments" element={<OwnerOnly><AppointmentsPage /></OwnerOnly>} />
-            <Route path="/agent-inbox" element={<DashboardEntry />} />
+            <Route path="/agent-inbox" element={<OwnerOnly><AgentInbox /></OwnerOnly>} />
             <Route path="/agent-brain" element={<OwnerOnly><AgentBrainPage /></OwnerOnly>} />
           </Route>
 
