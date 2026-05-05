@@ -452,6 +452,35 @@ export const useAgentStream = ({
         return;
       }
 
+      if (eventType === "reasoning") {
+        // Surface the supervisor's routing/classification reasoning as a
+        // completed thinking step so the owner can see why the agent routed.
+        if (assistantMessageId) {
+          const rawText = typeof event.text === "string" ? event.text.trim() : "";
+          if (rawText) {
+            const label = rawText.length > 90 ? `${rawText.slice(0, 87)}…` : rawText;
+            const stepId = `reasoning-${typeof event.id === "string" ? event.id : Date.now()}`;
+            const stepAgent = typeof event.agent === "string" ? event.agent : null;
+            setMessages((prev) =>
+              prev.map((message) => {
+                if (message.id !== assistantMessageId) return message;
+                const existing = message.thinkingSteps || [];
+                // Avoid duplicate reasoning steps with the same id
+                if (existing.some((s) => s.id === stepId)) return message;
+                return {
+                  ...message,
+                  thinkingSteps: [
+                    ...existing,
+                    { id: stepId, label, status: "completed" as const, agent: stepAgent },
+                  ],
+                };
+              }),
+            );
+          }
+        }
+        return;
+      }
+
       if (eventType === "suggestions") {
         const raw = event.suggestions;
         if (assistantMessageId && Array.isArray(raw) && raw.length > 0) {

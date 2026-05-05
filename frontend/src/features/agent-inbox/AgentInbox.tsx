@@ -448,6 +448,7 @@ const AgentInbox: React.FC = () => {
               >
                 <Box sx={{ height: 220, flexShrink: 0 }}>
                   <AgentTaskBoard
+                    standalone
                     interactableId={shop?.id ? `owner-task-board-${shop.id}` : "owner-task-board"}
                     externalTasks={taskBoardApprovals}
                     onApprovalTaskClick={handleTaskBoardApprovalClick}
