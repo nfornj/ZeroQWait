@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 MAX_ROWS = int(os.getenv("FINANCE_QUERY_MAX_ROWS", "100"))
 STATEMENT_TIMEOUT_MS = int(os.getenv("FINANCE_QUERY_STATEMENT_TIMEOUT_MS", "5000"))
 MAX_RETRIES = int(os.getenv("FINANCE_QUERY_MAX_RETRIES", "2"))
-LLM_TIMEOUT_SECONDS = float(os.getenv("FINANCE_QUERY_LLM_TIMEOUT_SECONDS", "20"))
+LLM_TIMEOUT_SECONDS = float(os.getenv("FINANCE_QUERY_LLM_TIMEOUT_SECONDS", "60"))
 
 AI_DATABASE_URL = os.getenv("AI_DATABASE_URL") or os.getenv("FINANCE_AI_DATABASE_URL")
 
@@ -119,7 +119,7 @@ class ValidationResult:
 
 
 _engine: Optional[Engine] = None
-_llm_executor = ThreadPoolExecutor(max_workers=int(os.getenv("FINANCE_QUERY_LLM_WORKERS", "1")))
+_llm_executor = ThreadPoolExecutor(max_workers=int(os.getenv("FINANCE_QUERY_LLM_WORKERS", "4")))
 
 
 def _get_engine() -> Engine:
@@ -155,10 +155,12 @@ def _normalized_table_name(raw: str) -> str:
 
 
 def _referenced_tables(sql: str) -> set[str]:
+    # Mask EXTRACT(... FROM ...) so the FROM inside EXTRACT is not treated as a table reference.
+    masked = re.sub(r"\bEXTRACT\s*\([^)]+\)", "__EXTRACT__", sql, flags=re.IGNORECASE)
     refs: set[str] = set()
     for match in re.finditer(
         r"\b(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)",
-        sql,
+        masked,
         flags=re.IGNORECASE,
     ):
         refs.add(_normalized_table_name(match.group(1)))
