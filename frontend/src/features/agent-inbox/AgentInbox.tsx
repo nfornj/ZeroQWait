@@ -20,6 +20,7 @@ import AgentFeed from "./AgentFeed";
 import AgentInsights from "./AgentInsights";
 import AgentTaskBoard, { type AgentTaskBoardExternalTask } from "./AgentTaskBoard";
 import InsightsPanel from "./InsightsPanel";
+import LiveOpsPanel from "./LiveOpsPanel";
 import OwnerBriefing from "./OwnerBriefing";
 import OwnerDocumentsPanel from "./OwnerDocumentsPanel";
 import PendingApprovalsPanel from "./PendingApprovalsPanel";
@@ -33,6 +34,7 @@ import {
   useOwnerBriefingQuery,
   useOwnerDocumentsQuery,
   useOwnerFeedQuery,
+  useOwnerOperationsSnapshot,
   useOwnerPoliciesQuery,
   usePendingApprovalsQuery,
 } from "./ownerDashboardQueries";
@@ -76,6 +78,7 @@ const AgentInbox: React.FC = () => {
   const feedQuery = useOwnerFeedQuery(shop?.id);
   const policiesQuery = useOwnerPoliciesQuery(shop?.id);
   const documentsQuery = useOwnerDocumentsQuery(shop?.id);
+  const operationsSnapshot = useOwnerOperationsSnapshot(shop?.id);
 
   const addPendingApproval = useCallback((approval: PendingApproval) => {
     setPendingApprovals((prev) => {
@@ -551,6 +554,19 @@ const AgentInbox: React.FC = () => {
           >
             <Stack spacing={1.25} sx={{ flex: 1, minHeight: 0, height: { md: "100%" } }}>
               <OwnerBriefing briefing={briefing} onAction={handleBriefingAction} isLoading={briefingQuery.isLoading} />
+              <LiveOpsPanel
+                queueMetrics={operationsSnapshot.queueMetrics}
+                appointments={operationsSnapshot.appointments}
+                employeeAvailability={operationsSnapshot.employeeAvailability}
+                stats={operationsSnapshot.stats}
+                isLoading={operationsSnapshot.isLoading}
+                isFetching={operationsSnapshot.isFetching}
+                onRefresh={() => {
+                  void operationsSnapshot.queries.queueMetricsQuery.refetch();
+                  void operationsSnapshot.queries.appointmentsQuery.refetch();
+                  void operationsSnapshot.queries.employeeAvailabilityQuery.refetch();
+                }}
+              />
               <Box
                 sx={{
                   flex: 1,
