@@ -262,18 +262,18 @@ def _format_receptionist_response(operation: str, result: Dict[str, Any]) -> str
         if not items:
             return (
                 "There is no active queue right now. "
-                f"Next operational action: {_suggest_queue_next_action(result)}"
+                f"{_suggest_queue_next_action(result)}"
             )
         names = [str(item.get("customer_name") or "customer") for item in items[:5]]
         names_text = ", ".join(names)
         if wait_minutes is not None:
             return (
                 f"There are {queue_length} people waiting. Estimated wait time is about {wait_minutes} minutes. "
-                f"First in line: {names_text}. Next operational action: {_suggest_queue_next_action(result)}"
+                f"First in line: {names_text}. {_suggest_queue_next_action(result)}"
             )
         return (
             f"There are {queue_length} people waiting. First in line: {names_text}. "
-            f"Next operational action: {_suggest_queue_next_action(result)}"
+            f"{_suggest_queue_next_action(result)}"
         )
     if operation == "get_wait_time":
         return (
