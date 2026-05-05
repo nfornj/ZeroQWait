@@ -89,7 +89,7 @@ Rules:
 - For top services by revenue or customer count, prefer grouping ai_queue_visits by service_id/service_name instead of invoice line items unless the user specifically asks about invoices.
 - Queue visit status values are normalized to lowercase strings such as 'completed', 'waiting', and 'cancelled'.
 - For employee questions (who handled most visits, top performers, etc.), JOIN ai_queue_visits.assigned_employee_id = ai_employees.employee_id to get the employee username.
-- ai_daily_analytics does NOT have a service_id column. Never JOIN ai_daily_analytics on service_id. For average wait time per service type, use ai_queue_visits and compute wait as EXTRACT(EPOCH FROM (service_started_at - checked_in_at)) / 60.
+- ai_daily_analytics does NOT have a service_id column. Never JOIN ai_daily_analytics on service_id. For average wait time per service type, query ai_queue_visits DIRECTLY without a subquery: SELECT service_name, AVG(EXTRACT(EPOCH FROM (service_started_at - checked_in_at)) / 60) AS avg_wait_time_minutes FROM ai_queue_visits WHERE service_started_at IS NOT NULL AND checked_in_at IS NOT NULL GROUP BY service_name ORDER BY avg_wait_time_minutes DESC. Do NOT wrap this in a subquery.
 - business_date only exists in ai_daily_analytics. For day-of-week analysis on queue visits, use EXTRACT(DOW FROM completed_at) from ai_queue_visits, not ai_daily_analytics.business_date.
 - For percentage or ratio calculations always wrap the denominator in NULLIF(expr, 0) to avoid division by zero.
 - Add LIMIT when returning detail rows.
@@ -344,6 +344,33 @@ def _execute_sql(shop_id: int, sql: str) -> list[dict[str, Any]]:
     return _rows_to_dicts(rows)
 
 
+def _format_rows_as_answer(question: str, rows: list[dict[str, Any]]) -> str:
+    """Template-based fallback when LLM answer synthesis is unavailable."""
+    if not rows:
+        return "I could not find matching finance data for that question."
+    row = rows[0]
+    keys = list(row.keys())
+    # Single-column single-row result (COUNT, SUM, etc.)
+    if len(rows) == 1 and len(keys) == 1:
+        val = row[keys[0]]
+        col = keys[0].lower()
+        if col in ("count", "count(*)") or col.startswith("count"):
+            return f"The count for your query was {val}."
+        if col in ("sum", "total", "revenue", "total_revenue") or col.startswith("sum"):
+            try:
+                return f"The total was ${float(val):,.2f}."
+            except (TypeError, ValueError):
+                pass
+        return f"The result was: {val}."
+    # Multi-row or multi-column: list up to 5 rows
+    lines = [f"Here are the results for your query:"]
+    for r in rows[:5]:
+        lines.append("  " + ", ".join(f"{k}: {v}" for k, v in r.items()))
+    if len(rows) > 5:
+        lines.append(f"  ... and {len(rows) - 5} more rows.")
+    return "\n".join(lines)
+
+
 def _synthesize_answer(shop_id: int, question: str, sql: str, rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "I could not find matching finance data for that question."
@@ -356,11 +383,14 @@ def _synthesize_answer(shop_id: int, question: str, sql: str, rows: list[dict[st
         f"SQL: {sql}\n"
         f"Rows JSON: {json.dumps(rows[:MAX_ROWS], default=str)}"
     )
-    response = _with_timeout(
-        "Finance SQL answer synthesis",
-        lambda: llm.invoke([HumanMessage(content=prompt)]),
-    )
-    return str(getattr(response, "content", response)).strip() or "I found data, but could not summarize it cleanly."
+    try:
+        response = _with_timeout(
+            "Finance SQL answer synthesis",
+            lambda: llm.invoke([HumanMessage(content=prompt)]),
+        )
+        return str(getattr(response, "content", response)).strip() or "I found data, but could not summarize it cleanly."
+    except TimeoutError:
+        return _format_rows_as_answer(question, rows)
 
 
 def answer_question(shop_id: int, question: str, *, mode: str = "enabled") -> Dict[str, Any]:
