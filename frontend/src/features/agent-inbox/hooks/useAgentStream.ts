@@ -411,6 +411,61 @@ export const useAgentStream = ({
         }
         return;
       }
+
+      if (eventType === "thinking_step") {
+        if (assistantMessageId) {
+          const stepId = typeof event.step === "string" ? event.step : `step_${Date.now()}`;
+          const stepLabel = typeof event.label === "string" ? event.label : stepId;
+          const stepStatus = event.status === "done" ? "completed" : "active";
+          const stepAgent = typeof event.agent === "string" ? event.agent : null;
+          setMessages((prev) =>
+            prev.map((message) => {
+              if (message.id !== assistantMessageId) return message;
+              const existing = message.thinkingSteps || [];
+              if (stepStatus === "active") {
+                const newStep: ThinkingStep = {
+                  id: stepId,
+                  label: stepLabel,
+                  status: "active",
+                  agent: stepAgent,
+                };
+                return {
+                  ...message,
+                  thinkingSteps: [
+                    ...existing.map((s) => (s.status === "active" ? { ...s, status: "completed" as const } : s)),
+                    newStep,
+                  ],
+                  thinkingComplete: false,
+                };
+              } else {
+                // Mark the matching step (or last active) as completed
+                const updated = existing.map((s) =>
+                  s.id === stepId || (s.label === stepLabel && s.status === "active")
+                    ? { ...s, status: "completed" as const }
+                    : s,
+                );
+                return { ...message, thinkingSteps: updated };
+              }
+            }),
+          );
+        }
+        return;
+      }
+
+      if (eventType === "suggestions") {
+        const raw = event.suggestions;
+        if (assistantMessageId && Array.isArray(raw) && raw.length > 0) {
+          const suggestions = raw.filter((s): s is string => typeof s === "string").slice(0, 4);
+          if (suggestions.length > 0) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId ? { ...message, suggestions } : message,
+              ),
+            );
+          }
+        }
+        return;
+      }
     },
     [addFeedEvent, addPendingApproval, prependInsightItem, shopId, setMessages],
   );

@@ -119,6 +119,8 @@ export interface ChatMessage {
   charts?: AgentChart[];
   tables?: AgentTable[];
   files?: AgentFile[];
+  /** Context-aware follow-up suggestions emitted by the backend after a completed response */
+  suggestions?: string[];
 }
 
 export interface AgentFeedEvent {

@@ -4,6 +4,7 @@ import {
   Avatar,
   Box,
   Button,
+  Chip,
   IconButton,
   Stack,
   Typography,
@@ -112,6 +113,7 @@ type AgentChatInnerProps = Omit<AgentChatProps, "messages" | "onSend"> & {
   brandSecondary: string;
   hasDictation: boolean;
   messageCount: number;
+  dynamicSuggestions: string[];
   sidebar?: React.ReactNode;
 };
 
@@ -1434,6 +1436,7 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
   brandSecondary,
   hasDictation,
   messageCount,
+  dynamicSuggestions,
   isVoiceEnabled = false,
   isSpeaking = false,
   onToggleVoice,
@@ -1723,6 +1726,41 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
               )}
             </ThreadPrimitive.Viewport>
 
+            {/* Dynamic follow-up suggestions from the last agent response */}
+            {dynamicSuggestions.length > 0 && !isStreaming && (
+              <Box
+                sx={{
+                  width: "100%",
+                  maxWidth: 760,
+                  mx: "auto",
+                  px: { xs: 1.5, md: 2 },
+                  py: 0.75,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 0.75,
+                }}
+              >
+                {dynamicSuggestions.map((s) => (
+                  <Chip
+                    key={s}
+                    label={s}
+                    size="small"
+                    variant="outlined"
+                    onClick={() => insertPrompt(s)}
+                    disabled={isStreaming || isUploading}
+                    sx={{
+                      borderRadius: 3,
+                      fontSize: "0.78rem",
+                      borderColor: alpha(brandPrimary, 0.35),
+                      color: "text.secondary",
+                      cursor: "pointer",
+                      "&:hover": { borderColor: brandPrimary, color: brandPrimary, bgcolor: alpha(brandPrimary, 0.06) },
+                    }}
+                  />
+                ))}
+              </Box>
+            )}
+
             <Box
               sx={{
                 width: "100%",
@@ -1917,6 +1955,15 @@ const AgentChat: React.FC<AgentChatProps> = ({
     },
   });
 
+  // Derive context-aware follow-up suggestions from the last completed assistant message
+  const dynamicSuggestions = useMemo<string[]>(() => {
+    if (isStreaming) return [];
+    const lastDone = [...messages].reverse().find(
+      (m) => m.role === "assistant" && m.status === "done" && m.suggestions && m.suggestions.length > 0,
+    );
+    return lastDone?.suggestions ?? [];
+  }, [messages, isStreaming]);
+
   useEffect(() => {
     if (!interactablesStorageKey || typeof window === "undefined") {
       aui.interactables().setPersistenceAdapter(undefined);
@@ -1986,6 +2033,7 @@ const AgentChat: React.FC<AgentChatProps> = ({
               brandSecondary={brandSecondary}
               hasDictation={Boolean(dictationAdapter)}
               messageCount={messages.length}
+              dynamicSuggestions={dynamicSuggestions}
               isVoiceEnabled={isVoiceEnabled}
               isSpeaking={isSpeaking}
               onToggleVoice={onToggleVoice}
