@@ -179,3 +179,131 @@ def sentiment_alert(data: dict[str, Any]) -> tuple[str, None]:
         f"Consider reaching out personally — a quick message can turn this around."
     )
     return text, None
+
+
+# ── 8. Booking confirmed (customer-facing) ─────────────────────────────────────
+
+def booking_confirmed(data: dict[str, Any]) -> tuple[str, None]:
+    """Sent to customer when their online booking is confirmed."""
+    customer: str = data.get("customer_name", "there")
+    service: str = data.get("service_name", "your appointment")
+    shop_name: str = data.get("shop_name", "the shop")
+    scheduled_time: str = data.get("scheduled_time", "your scheduled time")
+    cancel_url: str = data.get("cancel_url", "")
+
+    cancel_line = f"\n\n🔗 Need to cancel? {cancel_url}" if cancel_url else ""
+
+    text = (
+        f"✅ *Booking Confirmed!*\n\n"
+        f"Hi *{customer}*, your booking at *{shop_name}* is confirmed.\n\n"
+        f"📋 *Service:* {service}\n"
+        f"🕐 *Time:* {scheduled_time}"
+        f"{cancel_line}\n\n"
+        f"_We look forward to seeing you!_"
+    )
+    return text, None
+
+
+# ── 9. Reminder — 24 hours before appointment ─────────────────────────────────
+
+def reminder_24h(data: dict[str, Any]) -> tuple[str, None]:
+    """Sent to customer 24 hours before their appointment."""
+    customer: str = data.get("customer_name", "there")
+    service: str = data.get("service_name", "your appointment")
+    shop_name: str = data.get("shop_name", "the shop")
+    scheduled_time: str = data.get("scheduled_time", "tomorrow")
+    cancel_url: str = data.get("cancel_url", "")
+
+    cancel_line = f"\n🔗 Need to cancel? {cancel_url}" if cancel_url else ""
+
+    text = (
+        f"⏰ *Appointment Reminder — Tomorrow*\n\n"
+        f"Hi *{customer}*, just a reminder that you have *{service}* at *{shop_name}* tomorrow.\n\n"
+        f"🕐 *{scheduled_time}*"
+        f"{cancel_line}"
+    )
+    return text, None
+
+
+# ── 10. Reminder — 1 hour before appointment ─────────────────────────────────
+
+def reminder_1h(data: dict[str, Any]) -> tuple[str, None]:
+    """Sent to customer 1 hour before their appointment."""
+    customer: str = data.get("customer_name", "there")
+    service: str = data.get("service_name", "your appointment")
+    shop_name: str = data.get("shop_name", "the shop")
+    scheduled_time: str = data.get("scheduled_time", "soon")
+
+    text = (
+        f"🔔 *Your appointment is in 1 hour!*\n\n"
+        f"Hi *{customer}*, see you soon at *{shop_name}* for *{service}* at *{scheduled_time}*. 🙌"
+    )
+    return text, None
+
+
+# ── 11. You're next in queue ───────────────────────────────────────────────────
+
+def youre_next(data: dict[str, Any]) -> tuple[str, None]:
+    """Sent to customer when they are about to be called from the queue."""
+    customer: str = data.get("customer_name", "there")
+    shop_name: str = data.get("shop_name", "the shop")
+    service: str = data.get("service_name", "your service")
+
+    text = (
+        f"🎉 *You're next!*\n\n"
+        f"Hi *{customer}*, you're next up at *{shop_name}* for *{service}*. Please make your way to the front!"
+    )
+    return text, None
+
+
+# ── 12. Receipt / Checkout summary ────────────────────────────────────────────
+
+def receipt(data: dict[str, Any]) -> tuple[str, None]:
+    """Sent to customer after a POS checkout is completed."""
+    customer: str = data.get("customer_name", "there")
+    shop_name: str = data.get("shop_name", "the shop")
+    subtotal: float = data.get("subtotal", 0.0)
+    hst: float = data.get("hst", 0.0)
+    tip: float = data.get("tip", 0.0)
+    total: float = data.get("total", 0.0)
+    payment_method: str = data.get("payment_method", "cash")
+    items: list = data.get("items", [])
+
+    item_lines = ""
+    if items:
+        item_lines = "\n" + "\n".join(f"  • {i}" for i in items[:10]) + "\n"
+
+    text = (
+        f"🧾 *Receipt from {shop_name}*\n\n"
+        f"Hi *{customer}*, thank you for your visit!\n"
+        f"{item_lines}\n"
+        f"💰 Subtotal: ${subtotal:.2f}\n"
+        + (f"🏛️ HST: ${hst:.2f}\n" if hst > 0 else "")
+        + (f"💝 Tip: ${tip:.2f}\n" if tip > 0 else "")
+        + f"✅ *Total: ${total:.2f}* ({payment_method})\n\n"
+        f"_See you next time!_"
+    )
+    return text, None
+
+
+# ── 13. Low stock alert (owner-facing) ────────────────────────────────────────
+
+def low_stock_alert(data: dict[str, Any]) -> tuple[str, None]:
+    """Sent to shop owner when inventory items fall below reorder threshold."""
+    shop_name: str = data.get("shop_name", "your shop")
+    alerts: list = data.get("alerts", [])
+
+    if not alerts:
+        return f"📦 *Inventory Check* — All items are well stocked at {shop_name}.", None
+
+    lines = []
+    for a in alerts[:10]:
+        lines.append(f"• *{a.get('name', 'Item')}*: {a.get('current_stock', 0)} {a.get('unit', 'units')} remaining")
+
+    text = (
+        f"📦 *Low Stock Alert — {shop_name}*\n\n"
+        f"The following {len(alerts)} item(s) need restocking:\n\n"
+        + "\n".join(lines)
+        + "\n\n_Order soon to avoid running out during busy periods._"
+    )
+    return text, None

@@ -7,6 +7,11 @@ import uvicorn
 from contextlib import asynccontextmanager
 from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments, llm_settings, payroll
 from routers.telegram_router import router as telegram_router
+from routers.services_router import router as services_v1_router
+from routers.inventory_router import router as inventory_router
+from routers.public_booking_router import router as public_booking_router
+from routers.booking_page_router import router as booking_page_router
+from routers.pos_router import router as pos_router
 from modules.auth.router import router as auth_router
 from modules.users.router import router as users_router
 from modules.shops.router import router as shops_router
@@ -316,11 +321,20 @@ app.include_router(payroll.router, prefix="/api/payroll", tags=["Payroll"])
 app.include_router(testing_router, tags=["Testing Feedback"])
 app.include_router(feedback_router, prefix="/api", tags=["Chat Feedback"])
 app.include_router(telegram_router, prefix="/api", tags=["Telegram"])
+# Critical 5 routers
+app.include_router(services_v1_router, tags=["Service Catalogue"])
+app.include_router(inventory_router, tags=["Inventory"])
+app.include_router(public_booking_router, tags=["Public Booking"])
+app.include_router(booking_page_router, tags=["Booking Page"])
+app.include_router(pos_router, tags=["POS"])
 
 # Serve Docsify-based documentation site at /docs
 import os as _os
 _docs_site_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "docs_site")
 app.mount("/docs", StaticFiles(directory=_docs_site_dir, html=True), name="docs")
+
+# Serve public booking page at /book (no auth required)
+app.mount("/book", StaticFiles(directory="static/book", html=True), name="book")
 
 @app.websocket("/ws/{shop_id}")
 async def websocket_endpoint(websocket: WebSocket, shop_id: str):

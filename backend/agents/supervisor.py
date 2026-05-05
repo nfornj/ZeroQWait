@@ -93,6 +93,23 @@ _HR_PAYROLL_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:labour\s+cost|payroll\s+expense|payroll\s+cost)\b", re.IGNORECASE),
 )
 
+_INVENTORY_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:inventory|stock|restock|restocking)\b", re.IGNORECASE),
+    re.compile(r"\bsuppl(?:y|ies)\b", re.IGNORECASE),
+    re.compile(r"\breorder\b", re.IGNORECASE),
+    re.compile(r"\b(?:items?\s+in\s+stock|in[\s-]stock|out[\s-]of[\s-]stock|low\s+stock)\b", re.IGNORECASE),
+    re.compile(r"\b(?:cogs|cost\s+of\s+goods|usage\s+report)\b", re.IGNORECASE),
+)
+
+_POS_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:checkout|check[\s-]out|ring\s+(?:up|out))\b", re.IGNORECASE),
+    re.compile(r"\b(?:receipt|payment|cash\s+out)\b", re.IGNORECASE),
+    re.compile(r"\b(?:point[\s-]of[\s-]sale|pos)\b", re.IGNORECASE),
+    re.compile(r"\b(?:total\s+bill|charge\s+(?:the\s+)?customer|complete\s+sale)\b", re.IGNORECASE),
+    re.compile(r"\b(?:end[\s-]of[\s-]day|eod|daily\s+sales?\s+summary|today[''s]*\s+sales)\b", re.IGNORECASE),
+    re.compile(r"\brefund\b", re.IGNORECASE),
+)
+
 
 def _create_policy_notification(state: AgentState, pending: Dict[str, Any], message: str) -> None:
     shop_id = int(pending.get("shop_id") or state.get("tenant_id") or 0)
@@ -200,6 +217,14 @@ def _classify_intent_fastpath(user_input: str) -> Optional[Tuple[str, str]]:
     payroll_match = any(p.search(normalized) for p in _HR_PAYROLL_PATTERNS)
     if payroll_match:
         return "hr", "fastpath_payroll_operation"
+
+    inventory_match = any(p.search(normalized) for p in _INVENTORY_PATTERNS)
+    if inventory_match:
+        return "inventory", "fastpath_inventory_operation"
+
+    pos_match = any(p.search(normalized) for p in _POS_PATTERNS)
+    if pos_match:
+        return "pos", "fastpath_pos_operation"
 
     return None
 
@@ -446,6 +471,8 @@ def plan_and_route(state: AgentState) -> dict:
         "finance": "finance",
         "hr": "hr",
         "crm": "crm",
+        "inventory": "inventory",
+        "pos": "pos",
         "multi": "multi",
         "general": "general",
     }
@@ -522,6 +549,44 @@ def execute_plan(state: AgentState) -> dict:
         merged_metadata.update(result.get("metadata") or {})
         merged_metadata["last_specialist_target"] = "crm"
         return {**result, "metadata": merged_metadata}
+
+    if target == "inventory":
+        from .inventory import create_inventory_runnable
+        shop_id = int(state.get("tenant_id") or 0)
+        runnable = create_inventory_runnable(shop_id)
+        user_input = _latest_user_text(state)
+        try:
+            inv_result = runnable.invoke({"input": user_input})
+            answer = inv_result.get("output") or inv_result.get("answer") or str(inv_result)
+        except Exception as exc:
+            logger.warning("inventory specialist failed: %s", exc)
+            answer = f"I had trouble accessing inventory data: {exc}"
+        merged_metadata = dict(metadata)
+        merged_metadata["last_specialist_target"] = "inventory"
+        return {
+            "messages": list(state.get("messages") or []) + [AIMessage(content=answer)],
+            "current_agent": "inventory",
+            "metadata": merged_metadata,
+        }
+
+    if target == "pos":
+        from .pos_agent import create_pos_runnable
+        shop_id = int(state.get("tenant_id") or 0)
+        runnable = create_pos_runnable(shop_id)
+        user_input = _latest_user_text(state)
+        try:
+            pos_result = runnable.invoke({"input": user_input})
+            answer = pos_result.get("output") or pos_result.get("answer") or str(pos_result)
+        except Exception as exc:
+            logger.warning("POS specialist failed: %s", exc)
+            answer = f"I had trouble with the POS operation: {exc}"
+        merged_metadata = dict(metadata)
+        merged_metadata["last_specialist_target"] = "pos"
+        return {
+            "messages": list(state.get("messages") or []) + [AIMessage(content=answer)],
+            "current_agent": "pos",
+            "metadata": merged_metadata,
+        }
 
     if target == "multi":
         multi_agents = list(metadata.get("multi_agents") or ["receptionist", "finance"])
@@ -621,7 +686,7 @@ def synthesize_response(state: AgentState) -> dict:
 
     # Deterministic specialist synthesis: keep tool-grounded specialist answer
     # intact (without forced boilerplate suffix).
-    if current_agent in {"receptionist", "finance", "hr", "crm"} and messages:
+    if current_agent in {"receptionist", "finance", "hr", "crm", "inventory", "pos"} and messages:
         last_message = messages[-1]
         if isinstance(last_message, AIMessage):
             mixed_intents = list(metadata.get("mixed_intents") or [])

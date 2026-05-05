@@ -91,6 +91,26 @@ def build_briefing_alerts(
     return [_normalize_alert(alert, created_at=created_at) for alert in alerts[:3]]
 
 
+def _get_low_stock_alerts(shop_id: int) -> List[Dict[str, Any]]:
+    """Return low-stock alert dicts for the daily briefing."""
+    alerts: List[Dict[str, Any]] = []
+    try:
+        from agents.tools.inventory_tools import get_low_stock_alerts
+        items = get_low_stock_alerts(shop_id)
+        if items:
+            names = ", ".join(i.get("name", "item") for i in items[:5])
+            alerts.append(
+                {
+                    "severity": "warning",
+                    "title": f"{len(items)} item{'s' if len(items) != 1 else ''} running low",
+                    "body": f"Low stock: {names}. Reorder before you run out during busy periods.",
+                }
+            )
+    except Exception:  # noqa: BLE001 — never crash the briefing
+        pass
+    return alerts[:1]
+
+
 def _get_payroll_alerts(shop_id: int) -> List[Dict[str, Any]]:
     """Return payroll-specific alert dicts for the daily briefing.
 
@@ -221,6 +241,14 @@ def build_owner_briefing_actions(
             "label": "Review revenue",
             "payload": "Show this week's revenue trend and any operational concerns I should know about.",
             "description": "Check commercial performance for the week.",
+        }
+    )
+
+    actions.append(
+        {
+            "label": "POS summary",
+            "payload": "Show me today's POS summary: number of transactions, total revenue, and top services.",
+            "description": "Review today's point-of-sale totals.",
         }
     )
 
@@ -470,6 +498,22 @@ def refresh_shop_briefing_cache(
             existing_actions = briefing.get("actions", [])
             if not any(a.get("label") == "Run Payroll" for a in existing_actions):
                 briefing["actions"] = [payroll_action] + existing_actions
+
+    # Inject low stock alerts (inventory)
+    low_stock_alerts = _get_low_stock_alerts(shop_id)
+    if low_stock_alerts:
+        created_at = _utcnow_iso()
+        normalized_stock = [_normalize_alert(a, created_at=created_at) for a in low_stock_alerts]
+        briefing["alerts"] = (briefing.get("alerts", []) + normalized_stock)[:5]
+        existing_actions = briefing.get("actions", [])
+        if not any(a.get("label") == "Restock inventory" for a in existing_actions):
+            briefing["actions"] = existing_actions + [
+                {
+                    "label": "Restock inventory",
+                    "payload": "Show me which supplies are running low and help me record restocks.",
+                    "description": "Review low-stock items and log incoming supplies.",
+                }
+            ]
 
     alert_history = _merge_alert_history(existing_history, briefing.get("alerts", []))
     briefing["alert_history"] = alert_history
