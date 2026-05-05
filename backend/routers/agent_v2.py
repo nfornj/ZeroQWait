@@ -2419,6 +2419,19 @@ async def health_check():
         health["status"] = "error"
         health["components"]["graph"] = f"error: {str(e)}"
 
+    # Check Temporal connectivity
+    try:
+        from temporalio.client import Client as TemporalClient
+        temporal_host = os.getenv("TEMPORAL_HOST", "temporal.zeroqwait.svc.cluster.local:7233")
+        t_client = await asyncio.wait_for(
+            TemporalClient.connect(temporal_host, namespace="default"),
+            timeout=4.0,
+        )
+        await t_client.close()
+        health["components"]["temporal"] = "ok"
+    except Exception as e:
+        health["components"]["temporal"] = f"error: {str(e)[:80]}"
+
     # Check Odoo ERP
     try:
         from integrations.odoo_client import odoo_client

@@ -17,8 +17,7 @@ import xmlrpc.client
 
 logger = logging.getLogger(__name__)
 
-# Odoo is always enabled — no conditional toggle.
-ODOO_ENABLED = True
+ODOO_ENABLED = os.getenv("ODOO_ENABLED", "false").lower() in ("1", "true", "yes")
 ODOO_URL = os.getenv("ODOO_URL", "http://odoo:8069")
 ODOO_DB = os.getenv("ODOO_DB", "odoo")
 ODOO_USER = os.getenv("ODOO_USER", "admin")
