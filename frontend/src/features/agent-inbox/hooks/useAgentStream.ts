@@ -449,6 +449,7 @@ export const useAgentStream = ({
         status: "streaming",
         retryMessage: messageText,
         timestamp: nowIso(),
+        processingStartedAt: nowIso(),
         thinkingSteps: [],
         thinkingComplete: false,
       };
@@ -547,6 +548,16 @@ export const useAgentStream = ({
                 const status = String(event.status || "");
                 if (status === "completed") {
                   streamTerminalStatus = "completed";
+                  const durationMs = typeof event.duration_ms === "number" ? event.duration_ms : undefined;
+                  if (assistantMessageId && durationMs !== undefined) {
+                    setMessages((prev) =>
+                      prev.map((message) =>
+                        message.id === assistantMessageId
+                          ? { ...message, processingDuration: durationMs }
+                          : message,
+                      ),
+                    );
+                  }
                   addFeedEvent({
                     type: "system",
                     title: "Stream completed",

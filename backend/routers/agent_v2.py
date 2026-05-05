@@ -38,6 +38,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 import re
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from sqlalchemy import text
@@ -1532,6 +1533,7 @@ async def chat_stream(
     
     # Create streaming generator
     async def event_generator():
+        _stream_t0 = time.monotonic()
         try:
             logger.info(
                 "chat/stream start shop_id=%s user_id=%s msg_len=%d fast_path=%s",
@@ -1980,6 +1982,7 @@ async def chat_stream(
                 "has_text": bool(final_response_text),
                 "has_tool_results": bool(final_tool_results),
                 "approval_required": approval_required,
+                "duration_ms": int((time.monotonic() - _stream_t0) * 1000),
             }
             yield f"data: {json.dumps(completion_event)}\n\n"
             logger.info(
