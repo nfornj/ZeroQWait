@@ -779,6 +779,10 @@ def _serialize_notification_feed_event(notification: Any) -> Dict[str, Any]:
     notification_type = str(getattr(notification, "notification_type", "system") or "system")
     severity = str(getattr(notification, "severity", "info") or "info")
     created_at = getattr(notification, "created_at", None)
+    _status = getattr(notification, "status", "unread")
+    # Use .value so that str-enum instances (NotificationStatus.UNREAD) emit
+    # "unread" rather than the Python 3.11+ repr "NotificationStatus.UNREAD".
+    status_str = _status.value if hasattr(_status, "value") else str(_status)
     return {
         "id": f"notification_{getattr(notification, 'id', 'unknown')}",
         "type": _notification_feed_type(
@@ -791,7 +795,7 @@ def _serialize_notification_feed_event(notification: Any) -> Dict[str, Any]:
         "description": str(getattr(notification, "message", "")),
         "timestamp": created_at.isoformat() if created_at is not None else datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
         "severity": severity,
-        "status": str(getattr(notification, "status", "unread")),
+        "status": status_str,
         "notification_type": notification_type,
         "notification_id": getattr(notification, "id", None),
         "payload": payload,
