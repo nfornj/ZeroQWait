@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Typography, Grid, Paper, CircularProgress, Stack, useTheme } from '@mui/material';
+import { Box, Typography, Grid, Paper, CircularProgress, Stack, useTheme, Divider } from '@mui/material';
 import Header from '../components/Header';
 import StatCard from '../components/StatCard';
 import { LineChart } from '@mui/x-charts/LineChart';
@@ -37,6 +37,7 @@ export default function ShopAnalyticsPage() {
     const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
     const [peakHours, setPeakHours] = useState<PeakHoursData | null>(null);
     const [serviceStats, setServiceStats] = useState<ServiceStat[]>([]);
+    const [payrollExpense, setPayrollExpense] = useState<any>(null);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -51,6 +52,14 @@ export default function ShopAnalyticsPage() {
                 setAnalytics(analyticsRes.data);
                 setPeakHours(peakRes.data);
                 setServiceStats(servicesRes.data);
+
+                // Payroll expense (non-blocking — may 404 if no approved payslips yet)
+                try {
+                    const payrollRes = await api.get(`/payroll/shop/${shop.id}/expense-summary?months=3`);
+                    setPayrollExpense(payrollRes.data);
+                } catch {
+                    // No payroll data yet — ignore
+                }
             } catch (error) {
                 console.error("Error fetching analytics:", error);
             } finally {
@@ -182,6 +191,73 @@ export default function ShopAnalyticsPage() {
                         </Box>
                     </Paper>
                 </Grid>
+
+                {/* Payroll Expenses */}
+                {payrollExpense && (
+                    <Grid size={{ xs: 12 }}>
+                        <Paper sx={{ p: 3 }}>
+                            <Typography variant="h6" gutterBottom>Payroll Expenses (Last 3 Months)</Typography>
+                            <Divider sx={{ mb: 2 }} />
+                            <Grid container spacing={3} mb={3}>
+                                <Grid size={{ xs: 12, sm: 4 }}>
+                                    <StatCard
+                                        title="Total Gross Pay"
+                                        value={`$${parseFloat(payrollExpense.summary?.total_gross_pay || 0).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                        interval={`${payrollExpense.summary?.payslip_count || 0} payslips`}
+                                        trend="neutral"
+                                        data={[parseFloat(payrollExpense.summary?.total_gross_pay || 0)]}
+                                    />
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 4 }}>
+                                    <StatCard
+                                        title="Net Pay Out"
+                                        value={`$${parseFloat(payrollExpense.summary?.total_net_pay || 0).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                        interval="Employee take-home"
+                                        trend="neutral"
+                                        data={[parseFloat(payrollExpense.summary?.total_net_pay || 0)]}
+                                    />
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 4 }}>
+                                    <StatCard
+                                        title="Employer Obligations"
+                                        value={`$${parseFloat(payrollExpense.summary?.total_cra_remittance || 0).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                        interval="CPP + EI + Income Tax"
+                                        trend="neutral"
+                                        data={[parseFloat(payrollExpense.summary?.total_cra_remittance || 0)]}
+                                    />
+                                </Grid>
+                            </Grid>
+                            {payrollExpense.monthly_breakdown?.length > 0 && (
+                                <Box sx={{ height: 280, width: '100%' }}>
+                                    <BarChart
+                                        xAxis={[{
+                                            scaleType: 'band',
+                                            data: payrollExpense.monthly_breakdown.map((r: any) => r.month)
+                                        }]}
+                                        series={[
+                                            {
+                                                data: payrollExpense.monthly_breakdown.map((r: any) => parseFloat(r.gross || 0)),
+                                                label: 'Gross Pay',
+                                                color: theme.palette.primary.main
+                                            },
+                                            {
+                                                data: payrollExpense.monthly_breakdown.map((r: any) => parseFloat(r.net || 0)),
+                                                label: 'Net Pay',
+                                                color: theme.palette.success.main
+                                            },
+                                            {
+                                                data: payrollExpense.monthly_breakdown.map((r: any) => parseFloat(r.employer_obligations || 0)),
+                                                label: 'Employer Obligations',
+                                                color: theme.palette.warning.main
+                                            }
+                                        ]}
+                                        height={280}
+                                    />
+                                </Box>
+                            )}
+                        </Paper>
+                    </Grid>
+                )}
             </Grid>
         </Box>
     );

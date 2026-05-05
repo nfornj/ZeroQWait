@@ -83,6 +83,16 @@ _FINANCE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:service|services)\b.*\b(?:customers?|clients?|visits?|attended|served|count|counts)\b"),
 )
 
+_HR_PAYROLL_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:payroll|payslip|pay\s*slip|pay\s*stub|paystub)\b", re.IGNORECASE),
+    re.compile(r"\b(?:net\s*pay|gross\s*pay|take[- ]home)\b", re.IGNORECASE),
+    re.compile(r"\b(?:run\s+pay(?:roll)?|draft\s+pay(?:roll)?|process\s+pay(?:roll)?)\b", re.IGNORECASE),
+    re.compile(r"\b(?:cpp|ei|source\s+deductions?|remittance)\b", re.IGNORECASE),
+    re.compile(r"\bT4\b", re.IGNORECASE),
+    re.compile(r"\b(?:employee\s+wages?|staff\s+pay(?:ment)?|salary\s+payment)\b", re.IGNORECASE),
+    re.compile(r"\b(?:labour\s+cost|payroll\s+expense|payroll\s+cost)\b", re.IGNORECASE),
+)
+
 
 def _create_policy_notification(state: AgentState, pending: Dict[str, Any], message: str) -> None:
     shop_id = int(pending.get("shop_id") or state.get("tenant_id") or 0)
@@ -186,6 +196,10 @@ def _classify_intent_fastpath(user_input: str) -> Optional[Tuple[str, str]]:
 
     if finance_match:
         return "finance", "fastpath_finance_operation"
+
+    payroll_match = any(p.search(normalized) for p in _HR_PAYROLL_PATTERNS)
+    if payroll_match:
+        return "hr", "fastpath_payroll_operation"
 
     return None
 

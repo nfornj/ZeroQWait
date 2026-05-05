@@ -44,6 +44,8 @@ dependencies = [
     # Utilities
     "python-slugify>=8.0.0",
     "python-dateutil>=2.9.0",
+    # PDF generation (Canadian payslips)
+    "reportlab>=4.1.0",
     # Scripts (seed data)
     "faker>=20.0.0",
     "requests>=2.31.0",

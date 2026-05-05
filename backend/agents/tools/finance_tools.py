@@ -1390,3 +1390,108 @@ def get_client_profile(shop_id: int, client_id: int) -> Dict[str, Any]:
 
 def search_clients(shop_id: int, name: str) -> Dict[str, Any]:
     return _get_finance_client().search_clients(shop_id, name)
+
+
+# ─── Payroll expense analytics ────────────────────────────────────────────────
+
+def payroll_expense_summary(
+    shop_id: int,
+    months: int = 3,
+) -> Dict[str, Any]:
+    """
+    Return aggregated payroll expense totals for approved payslips over the last
+    *months* calendar months, plus a month-by-month breakdown.
+
+    Suitable for the Finance agent's payroll_expense operation.
+    """
+    from datetime import date
+    from sqlalchemy import text
+    from database import SessionLocal
+
+    since = date.today().replace(day=1)
+    # Go back (months-1) full months
+    for _ in range(months - 1):
+        since = (since - timedelta(days=1)).replace(day=1)
+
+    with SessionLocal() as session:
+        totals = session.execute(
+            text(
+                """
+                SELECT
+                    COALESCE(SUM(gross_pay), 0)           AS total_gross,
+                    COALESCE(SUM(net_pay), 0)             AS total_net,
+                    COALESCE(SUM(cpp_deduction), 0)       AS emp_cpp,
+                    COALESCE(SUM(ei_deduction), 0)        AS emp_ei,
+                    COALESCE(SUM(fed_tax), 0)             AS fed_tax,
+                    COALESCE(SUM(prov_tax), 0)            AS prov_tax,
+                    COALESCE(SUM(other_deductions), 0)    AS other_ded,
+                    COALESCE(SUM(cpp_deduction), 0)       AS employer_cpp,
+                    COALESCE(SUM(ei_deduction) * 1.4, 0)  AS employer_ei,
+                    COUNT(*) AS payslip_count
+                FROM payslips
+                WHERE shop_id = :s AND status = 'approved'
+                  AND period_start >= :since
+                """
+            ),
+            {"s": shop_id, "since": since},
+        ).fetchone()
+
+        monthly = session.execute(
+            text(
+                """
+                SELECT
+                    TO_CHAR(period_start, 'YYYY-MM') AS month,
+                    COALESCE(SUM(gross_pay), 0)       AS gross,
+                    COALESCE(SUM(net_pay), 0)         AS net,
+                    COALESCE(SUM(cpp_deduction + ei_deduction + fed_tax + prov_tax), 0) AS deductions,
+                    COALESCE(SUM(cpp_deduction) + SUM(ei_deduction) * 1.4, 0) AS employer_obligations,
+                    COUNT(*) AS payslip_count
+                FROM payslips
+                WHERE shop_id = :s AND status = 'approved'
+                  AND period_start >= :since
+                GROUP BY month
+                ORDER BY month DESC
+                """
+            ),
+            {"s": shop_id, "since": since},
+        ).fetchall()
+
+    t = dict(totals) if totals else {}
+    employer_cpp = float(t.get("employer_cpp") or 0)
+    employer_ei  = float(t.get("employer_ei") or 0)
+    total_gross  = float(t.get("total_gross") or 0)
+
+    return {
+        "shop_id": shop_id,
+        "period_months": months,
+        "since": since.isoformat(),
+        "total_gross_pay":      total_gross,
+        "total_net_pay":        float(t.get("total_net") or 0),
+        "employee_cpp":         float(t.get("emp_cpp") or 0),
+        "employee_ei":          float(t.get("emp_ei") or 0),
+        "federal_tax":          float(t.get("fed_tax") or 0),
+        "provincial_tax":       float(t.get("prov_tax") or 0),
+        "employer_cpp":         employer_cpp,
+        "employer_ei":          employer_ei,
+        "total_cra_remittance": (
+            float(t.get("emp_cpp") or 0)
+            + employer_cpp
+            + float(t.get("emp_ei") or 0)
+            + employer_ei
+            + float(t.get("fed_tax") or 0)
+            + float(t.get("prov_tax") or 0)
+        ),
+        "total_labour_cost":    total_gross + employer_cpp + employer_ei,
+        "payslip_count":        int(t.get("payslip_count") or 0),
+        "monthly_breakdown": [
+            {
+                "month":                row.month,
+                "gross":                float(row.gross),
+                "net":                  float(row.net),
+                "deductions":           float(row.deductions),
+                "employer_obligations": float(row.employer_obligations),
+                "payslip_count":        int(row.payslip_count),
+            }
+            for row in monthly
+        ],
+    }

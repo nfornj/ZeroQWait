@@ -56,6 +56,7 @@ SUPPORTED_OPERATIONS = [
     "get_client_profile",
     "search_clients",
     "service_customer_counts",
+    "payroll_expense_summary",
 ]
 
 PLANNER_INSTRUCTIONS = """\
@@ -76,6 +77,7 @@ PLANNER_INSTRUCTIONS = """\
 - get_client_profile: use when a specific client id is already known.
 - search_clients: use when the owner gives a client name rather than an id.
 - service_customer_counts: use when the owner asks how many customers/visits were served per service; arguments: query(optional), limit(optional).
+- payroll_expense_summary: use when the owner asks about payroll costs, total wages paid, gross/net payroll, source deductions, employer CPP/EI obligations, CRA remittance, labour costs, or payroll history/trends; arguments: months(optional, default 3).
 - Never output analyze, analyse, answer, respond, summarize, or review as the operation. Pick the closest supported operation instead.
 """
 
@@ -728,6 +730,14 @@ def _build_finance_executor(shop_id: int):
                 user_text,
                 lambda: finance_tools.search_clients(shop_id, name),
             )
+        if operation == "payroll_expense_summary":
+            months = _to_int(arguments.get("months")) or 3
+            return _with_dynamic_read_fallback(
+                shop_id,
+                operation,
+                user_text,
+                lambda: finance_tools.payroll_expense_summary(shop_id, months=months),
+            )
         return {"error": f"Unsupported finance operation: {operation}"}
 
     return executor
@@ -860,6 +870,37 @@ def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
         return f"I found {len(invoices)} invoice(s)."
     if operation == "export_report":
         return f"Report prepared: {result.get('filename')} ({result.get('format')})."
+    if operation == "payroll_expense_summary":
+        total_gross  = float(result.get("total_gross_pay") or 0)
+        total_net    = float(result.get("total_net_pay") or 0)
+        labour_cost  = float(result.get("total_labour_cost") or 0)
+        remittance   = float(result.get("total_cra_remittance") or 0)
+        slip_count   = int(result.get("payslip_count") or 0)
+        months       = int(result.get("period_months") or 3)
+        since        = result.get("since") or ""
+        summary = (
+            f"Payroll expense summary (last {months} month{'s' if months != 1 else ''}, since {since}):\n"
+            f"- Total gross wages paid: ${total_gross:,.2f} across {slip_count} payslip{'s' if slip_count != 1 else ''}\n"
+            f"- Total net pay (employee take-home): ${total_net:,.2f}\n"
+            f"- Employee CPP: ${float(result.get('employee_cpp') or 0):,.2f} | "
+            f"Employer CPP: ${float(result.get('employer_cpp') or 0):,.2f}\n"
+            f"- Employee EI: ${float(result.get('employee_ei') or 0):,.2f} | "
+            f"Employer EI: ${float(result.get('employer_ei') or 0):,.2f}\n"
+            f"- Federal income tax remitted: ${float(result.get('federal_tax') or 0):,.2f}\n"
+            f"- Provincial income tax remitted: ${float(result.get('provincial_tax') or 0):,.2f}\n"
+            f"- Total CRA remittance obligation: ${remittance:,.2f}\n"
+            f"- Total labour cost (wages + employer contributions): ${labour_cost:,.2f}"
+        )
+        breakdown = result.get("monthly_breakdown") or []
+        if breakdown:
+            summary += "\n\nMonthly breakdown:"
+            for row in breakdown:
+                summary += (
+                    f"\n  {row['month']}: gross ${float(row['gross']):,.2f}, "
+                    f"net ${float(row['net']):,.2f}, "
+                    f"employer obligations ${float(row['employer_obligations']):,.2f}"
+                )
+        return summary
     if result.get("message"):
         return str(result["message"])
     return f"The finance specialist completed {operation.replace('_', ' ')}."
