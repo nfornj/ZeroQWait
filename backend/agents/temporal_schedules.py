@@ -75,6 +75,7 @@ async def ensure_briefing_schedules(client: Client) -> None:
             action=ScheduleActionStartWorkflow(
                 AllShopBriefingsWorkflow.run,
                 _schedule_payload(workflow_type),
+                id=f"{schedule_id}-${{SCHEDULED_TIME}}",
                 task_queue=TEMPORAL_TASK_QUEUE,
                 execution_timeout=timedelta(minutes=30),
             ),
@@ -126,6 +127,7 @@ async def ensure_shop_ops_schedules(client: Client) -> None:
             action=ScheduleActionStartWorkflow(
                 workflow_fn,
                 {},
+                id=f"{schedule_id}-${{SCHEDULED_TIME}}",
                 task_queue=TEMPORAL_TASK_QUEUE,
                 execution_timeout=timedelta(minutes=15),
             ),
@@ -163,6 +165,7 @@ async def ensure_brain_schedules(client: Client) -> None:
         action=ScheduleActionStartWorkflow(
             AllShopsSoulEvolutionWorkflow.run,
             {"reason": "scheduled"},
+            id="zeroqwait-soul-evolution-${SCHEDULED_TIME}",
             task_queue=TEMPORAL_TASK_QUEUE,
             execution_timeout=timedelta(minutes=45),
         ),
@@ -192,6 +195,7 @@ async def ensure_brain_schedules(client: Client) -> None:
         action=ScheduleActionStartWorkflow(
             CommitmentResolverWorkflow.run,
             {"trigger": "periodic"},
+            id="zeroqwait-commitment-sweep-${SCHEDULED_TIME}",
             task_queue=TEMPORAL_TASK_QUEUE,
             execution_timeout=timedelta(minutes=5),
         ),
@@ -238,6 +242,7 @@ async def ensure_payroll_schedules(client: Client) -> None:
         action=ScheduleActionStartWorkflow(
             AnnualPayrollResetWorkflow.run,
             {"new_year": 0},   # worker resolves year at runtime
+            id="zeroqwait-payroll-annual-reset-${SCHEDULED_TIME}",
             task_queue=TEMPORAL_TASK_QUEUE,
             execution_timeout=timedelta(minutes=30),
         ),
@@ -269,6 +274,7 @@ async def ensure_payroll_schedules(client: Client) -> None:
         action=ScheduleActionStartWorkflow(
             RemittanceReminderWorkflow.run,
             {"days_ahead": days_ahead},
+            id="zeroqwait-payroll-remittance-${SCHEDULED_TIME}",
             task_queue=TEMPORAL_TASK_QUEUE,
             execution_timeout=timedelta(minutes=15),
         ),

@@ -80,6 +80,8 @@ async def _poll_loop(stop_event: asyncio.Event) -> None:
 
     from telegram_webhook import process_update
 
+    _conflict_backoff: float = 0.0  # exponential backoff counter for 409 conflicts
+
     while not stop_event.is_set():
         try:
             updates = await tgc.get_updates(
@@ -87,6 +89,8 @@ async def _poll_loop(stop_event: asyncio.Event) -> None:
                 timeout=TELEGRAM_POLL_TIMEOUT,
                 allowed_updates=["message", "callback_query"],
             )
+
+            _conflict_backoff = 0.0  # reset on success
 
             if not updates:
                 continue
@@ -110,8 +114,25 @@ async def _poll_loop(stop_event: asyncio.Event) -> None:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.warning("Telegram polling loop retrying after error: %s", exc)
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=TELEGRAM_POLL_RETRY_DELAY)
-            except asyncio.TimeoutError:
-                pass
+            err_str = str(exc)
+            if "Conflict" in err_str:
+                # Another instance is polling the same token.  Back off
+                # exponentially (30 s → 60 s → 120 s … cap 300 s) so we stop
+                # hammering the Telegram API and give the competing instance
+                # time to die.
+                _conflict_backoff = min(300.0, max(30.0, _conflict_backoff * 2 or 30.0))
+                logger.warning(
+                    "Telegram polling conflict — another instance is polling. "
+                    "Backing off %.0f s before retrying.",
+                    _conflict_backoff,
+                )
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=_conflict_backoff)
+                except asyncio.TimeoutError:
+                    pass
+            else:
+                logger.warning("Telegram polling loop retrying after error: %s", exc)
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=TELEGRAM_POLL_RETRY_DELAY)
+                except asyncio.TimeoutError:
+                    pass
