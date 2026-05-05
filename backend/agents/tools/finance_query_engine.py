@@ -18,7 +18,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-from database import DATABASE_URL
+from database import DATABASE_URL, SessionLocal
 from agents.llm_factory import create_formatter_model, create_planner_model
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,7 @@ ALLOWED_VIEWS: frozenset[str] = frozenset(
         "ai_invoices",
         "ai_invoice_line_items",
         "ai_payments",
+        "ai_employees",
     }
 )
 
@@ -77,6 +78,7 @@ ai_appointments(appointment_id, customer_id, service_id, service_name, employee_
 ai_invoices(invoice_id, customer_id, invoice_number, status, subtotal, tax_amount, discount_amount, tip_amount, total, currency, due_date, paid_at, created_at, updated_at)
 ai_invoice_line_items(line_item_id, invoice_id, service_id, queue_item_id, appointment_id, description, quantity, unit_price, total, created_at)
 ai_payments(payment_id, invoice_id, customer_id, amount, tip_amount, currency, method, status, processed_by, processed_at, refunded_at, refund_amount, created_at, updated_at)
+ai_employees(employee_id, user_id, username, role, is_active, joined_at)
 
 Rules:
 - Return exactly one SELECT query.
@@ -86,6 +88,7 @@ Rules:
 - For live/today revenue or simulator-backed questions, prefer ai_queue_visits with completed_at/check-in time and service_cost; ai_daily_analytics may lag and can be empty for today.
 - For top services by revenue or customer count, prefer grouping ai_queue_visits by service_id/service_name instead of invoice line items unless the user specifically asks about invoices.
 - Queue visit status values are normalized to lowercase strings such as 'completed', 'waiting', and 'cancelled'.
+- For employee questions (who handled most visits, top performers, etc.), JOIN ai_queue_visits.assigned_employee_id = ai_employees.employee_id to get the employee username.
 - Add LIMIT when returning detail rows.
 """
 
@@ -272,7 +275,7 @@ def _generate_sql(shop_id: int, question: str, previous_error: Optional[str] = N
     try:
         from agents.tools import finance_tools
 
-        session = db_interface.get_session()
+        session = SessionLocal()
         try:
             shop_now = finance_tools._now_for_shop(shop_id, session)
             tz_name = finance_tools._resolve_shop_timezone_name(shop_id, session)
