@@ -89,8 +89,22 @@ Rules:
 - For top services by revenue or customer count, prefer grouping ai_queue_visits by service_id/service_name instead of invoice line items unless the user specifically asks about invoices.
 - Queue visit status values are normalized to lowercase strings such as 'completed', 'waiting', and 'cancelled'.
 - For employee questions (who handled most visits, top performers, etc.), JOIN ai_queue_visits.assigned_employee_id = ai_employees.employee_id to get the employee username.
+- ai_daily_analytics does NOT have a service_id column. Never JOIN ai_daily_analytics on service_id. For average wait time per service type, use ai_queue_visits and compute wait as EXTRACT(EPOCH FROM (service_started_at - checked_in_at)) / 60.
+- business_date only exists in ai_daily_analytics. For day-of-week analysis on queue visits, use EXTRACT(DOW FROM completed_at) from ai_queue_visits, not ai_daily_analytics.business_date.
+- For percentage or ratio calculations always wrap the denominator in NULLIF(expr, 0) to avoid division by zero.
 - Add LIMIT when returning detail rows.
 """
+
+
+_RAW_SQL_RE = re.compile(
+    r"^\s*(select|update|delete|insert|drop|alter|create|truncate|grant|revoke|with)\s",
+    re.IGNORECASE,
+)
+
+
+def _is_raw_sql_input(question: str) -> bool:
+    """Return True if the user input is itself a raw SQL statement, not a natural-language question."""
+    return bool(_RAW_SQL_RE.match(question.strip()))
 
 
 class SQLPlan(BaseModel):
@@ -105,7 +119,7 @@ class ValidationResult:
 
 
 _engine: Optional[Engine] = None
-_llm_executor = ThreadPoolExecutor(max_workers=int(os.getenv("FINANCE_QUERY_LLM_WORKERS", "4")))
+_llm_executor = ThreadPoolExecutor(max_workers=int(os.getenv("FINANCE_QUERY_LLM_WORKERS", "1")))
 
 
 def _get_engine() -> Engine:
@@ -346,6 +360,27 @@ def answer_question(shop_id: int, question: str, *, mode: str = "enabled") -> Di
     started_at = time.perf_counter()
     generated_sql: Optional[str] = None
     previous_error: Optional[str] = None
+
+    if _is_raw_sql_input(question):
+        latency_ms = int((time.perf_counter() - started_at) * 1000)
+        _log_query(
+            shop_id=shop_id,
+            question=question,
+            generated_sql=None,
+            validation_status="rejected",
+            execution_status="not_run",
+            error_class="RawSQLInput",
+            error_message="Direct SQL commands are not accepted",
+            latency_ms=latency_ms,
+            mode=mode,
+            fallback_used=True,
+        )
+        return {
+            "error": "Direct SQL commands are not accepted. Ask a natural language question.",
+            "error_class": "RawSQLInput",
+            "fallback_used": True,
+            "shop_id": shop_id,
+        }
 
     for attempt in range(MAX_RETRIES + 1):
         try:
