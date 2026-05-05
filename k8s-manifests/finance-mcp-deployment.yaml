@@ -32,7 +32,7 @@ spec:
                     values: ["core-cpu"]
       containers:
         - name: finance-mcp
-          image: ghcr.io/nfornj/finance-mcp:latest
+          image: localhost:5000/prod/finance-mcp:v20260503113937-b770dc7
           ports:
             - containerPort: 8891
               protocol: TCP
@@ -46,13 +46,15 @@ spec:
               value: "0.0.0.0"
             - name: PORT
               value: "8891"
+            - name: FINANCE_QUERY_LLM_TIMEOUT_SECONDS
+              value: "600"
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
               memory: "512Mi"
-              cpu: "500m"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
           readinessProbe:
             httpGet:
               path: /health
