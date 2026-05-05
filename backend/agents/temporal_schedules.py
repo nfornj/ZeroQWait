@@ -9,6 +9,7 @@ from temporalio.client import (
     Client,
     Schedule,
     ScheduleActionStartWorkflow,
+    ScheduleAlreadyRunningError,
     ScheduleOverlapPolicy,
     SchedulePolicy,
     ScheduleSpec,
@@ -47,6 +48,8 @@ async def _create_or_skip(client: Client, schedule_id: str, schedule: Schedule, 
     try:
         await client.create_schedule(schedule_id, schedule, static_summary=note)
         logger.info("Created Temporal schedule %s", schedule_id)
+    except ScheduleAlreadyRunningError:
+        logger.info("Temporal schedule %s already exists; leaving it unchanged", schedule_id)
     except RPCError as exc:
         if exc.status == RPCStatusCode.ALREADY_EXISTS:
             logger.info("Temporal schedule %s already exists; leaving it unchanged", schedule_id)
