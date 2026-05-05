@@ -633,6 +633,13 @@ _FOLLOWUP_POOLS: Dict[Optional[str], list] = {
         "How many hours did the team work this week?",
         "Are there any open shifts?",
     ],
+    "crm": [
+        "Show my open leads",
+        "How many new contacts this week?",
+        "Show the sales pipeline summary",
+        "Which deals are in the negotiation stage?",
+        "Create a new lead",
+    ],
     None: [
         "Give me today's queue summary",
         "Show this week's revenue trend",
@@ -1565,7 +1572,11 @@ async def chat_stream(
                     assistant_response=response_text,
                     route="/api/v2/agent/chat/stream",
                 )
-                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False})}\n\n"
+                _fast_dur_ms = int((time.monotonic() - _stream_t0) * 1000)
+                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False, 'duration_ms': _fast_dur_ms})}\n\n"
+                _fast_sugg = _generate_followup_suggestions('finance', message)
+                if _fast_sugg:
+                    yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': _fast_sugg})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
@@ -1587,7 +1598,11 @@ async def chat_stream(
                     assistant_response=response_text,
                     route="/api/v2/agent/chat/stream",
                 )
-                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False})}\n\n"
+                _fast_dur_ms = int((time.monotonic() - _stream_t0) * 1000)
+                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False, 'duration_ms': _fast_dur_ms})}\n\n"
+                _fast_sugg = _generate_followup_suggestions('finance', message)
+                if _fast_sugg:
+                    yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': _fast_sugg})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
@@ -1609,7 +1624,11 @@ async def chat_stream(
                     assistant_response=response_text,
                     route="/api/v2/agent/chat/stream",
                 )
-                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False})}\n\n"
+                _fast_dur_ms = int((time.monotonic() - _stream_t0) * 1000)
+                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False, 'duration_ms': _fast_dur_ms})}\n\n"
+                _fast_sugg = _generate_followup_suggestions('finance', message)
+                if _fast_sugg:
+                    yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': _fast_sugg})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
