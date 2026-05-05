@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
+import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import MicNoneRoundedIcon from "@mui/icons-material/MicNoneRounded";
@@ -1332,6 +1333,45 @@ const AssistantThreadMessage = React.memo<{
                 enableChainOfThought={showChainOfThought}
                 externalMessage={externalMessage}
               />
+            </Box>
+          )}
+
+          {/* Inline error banner — always visible when the stream failed */}
+          {externalMessage?.status === "error" && (
+            <Box
+              sx={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 0.75,
+                px: 1.1,
+                py: 0.55,
+                borderRadius: 2,
+                bgcolor: alpha(muiTheme.palette.error.main, muiTheme.palette.mode === "dark" ? 0.12 : 0.07),
+                border: "1px solid",
+                borderColor: alpha(muiTheme.palette.error.main, 0.2),
+              }}
+            >
+              <ErrorOutlineRoundedIcon sx={{ fontSize: 14, color: muiTheme.palette.error.main, flexShrink: 0 }} />
+              <Typography variant="caption" sx={{ color: muiTheme.palette.error.main, fontWeight: 500 }}>
+                Response failed
+              </Typography>
+              <ActionBarPrimitive.Reload asChild>
+                <Button
+                  size="small"
+                  variant="text"
+                  sx={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    py: 0,
+                    px: 0.75,
+                    minWidth: 0,
+                    color: muiTheme.palette.error.main,
+                    "&:hover": { bgcolor: alpha(muiTheme.palette.error.main, 0.1) },
+                  }}
+                >
+                  Try again
+                </Button>
+              </ActionBarPrimitive.Reload>
             </Box>
           )}
 
