@@ -6,7 +6,8 @@ import {
 } from "../approvalOutcome";
 import { nowIso, normalizePendingApproval, toId } from "../agentInboxShared";
 import type { AgentChatSendPayload } from "../AgentChat";
-import type { AgentFeedEvent, ChatMessage, InsightItem, PendingApproval, ThinkingStep } from "../types";
+import { createAgentChartFromPayload } from "../types";
+import type { AgentFeedEvent, AgentFile, AgentTable, ChatMessage, InsightItem, PendingApproval, ThinkingStep } from "../types";
 
 const apiBaseUrl = process.env.REACT_APP_API_URL || "/api";
 
@@ -342,18 +343,76 @@ export const useAgentStream = ({
         return;
       }
 
-      if (eventType === "chart" && event._parsed_chart) {
-        const chart = event._parsed_chart;
-        prependInsightItem({ id: chart.id, type: "chart", chart, timestamp: chart.timestamp });
+      if (eventType === "chart") {
+        const ts = nowIso();
+        const chart = createAgentChartFromPayload(event as Record<string, unknown>, ts);
+        if (chart) {
+          prependInsightItem({ id: chart.id, type: "chart", chart, timestamp: ts });
+          if (assistantMessageId) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId
+                  ? { ...message, charts: [...(message.charts || []), chart] }
+                  : message,
+              ),
+            );
+          }
+        }
         return;
       }
 
-      if (eventType === "file" && event._parsed_file) {
-        const file = event._parsed_file;
-        prependInsightItem({ id: file.id, type: "file", file, timestamp: file.timestamp });
+      if (eventType === "table") {
+        const ts = nowIso();
+        const tableId = `table_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const table: AgentTable = {
+          id: tableId,
+          title: typeof event.title === "string" ? event.title : "Table",
+          columns: Array.isArray(event.columns) ? (event.columns as AgentTable["columns"]) : [],
+          data: Array.isArray(event.data) ? (event.data as Record<string, unknown>[]) : [],
+          rowIdKey: typeof event.rowIdKey === "string" ? event.rowIdKey : "id",
+          timestamp: ts,
+        };
+        if (table.data.length > 0) {
+          prependInsightItem({ id: tableId, type: "table", table, timestamp: ts });
+          if (assistantMessageId) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId
+                  ? { ...message, tables: [...(message.tables || []), table] }
+                  : message,
+              ),
+            );
+          }
+        }
+        return;
+      }
+
+      if (eventType === "file") {
+        const ts = nowIso();
+        const fileId = `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const file: AgentFile = {
+          id: fileId,
+          filename: typeof event.filename === "string" ? event.filename : "export",
+          content: typeof event.content === "string" ? event.content : "",
+          mimeType: typeof event.mimeType === "string" ? event.mimeType : "application/octet-stream",
+          timestamp: ts,
+        };
+        if (file.content) {
+          prependInsightItem({ id: fileId, type: "file", file, timestamp: ts });
+          if (assistantMessageId) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId
+                  ? { ...message, files: [...(message.files || []), file] }
+                  : message,
+              ),
+            );
+          }
+        }
+        return;
       }
     },
-    [addFeedEvent, addPendingApproval, prependInsightItem, shopId],
+    [addFeedEvent, addPendingApproval, prependInsightItem, shopId, setMessages],
   );
 
   const handleSend = useCallback(
@@ -536,7 +595,7 @@ export const useAgentStream = ({
                 }
               }
 
-              if (eventType === "chart" || eventType === "file") {
+              if (eventType === "chart" || eventType === "file" || eventType === "table") {
                 sawRenderableAssistantContent = true;
               }
 
