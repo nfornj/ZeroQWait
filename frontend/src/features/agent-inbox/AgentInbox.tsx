@@ -67,6 +67,7 @@ const AgentInbox: React.FC = () => {
   const [actingDocumentId, setActingDocumentId] = useState<number | null>(null);
   const [actingDocumentType, setActingDocumentType] = useState<"reindex" | "delete" | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
   const previousShopIdRef = useRef<number | null>(null);
   const pendingApprovalsPanelRef = useRef<HTMLDivElement>(null);
 
@@ -236,6 +237,42 @@ const AgentInbox: React.FC = () => {
       }
     },
     [actingDocumentId, addFeedEvent, queryClient, setError, shop?.id],
+  );
+
+  const handleDocumentUpload = useCallback(
+    async (files: File[]) => {
+      if (!shop?.id || !files.length || isUploadingDocuments) return;
+      setIsUploadingDocuments(true);
+      setError(null);
+      try {
+        const token = localStorage.getItem("token");
+        const formData = new FormData();
+        formData.append("shop_id", String(shop.id));
+        files.forEach((file) => formData.append("files", file));
+        const response = await fetch(`/api/v2/agent/documents/upload`, {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: formData,
+        });
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}));
+          throw new Error(errBody?.detail || `Upload failed (${response.status})`);
+        }
+        const result = await response.json();
+        const uploaded: number = result?.uploaded ?? files.length;
+        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
+        addFeedEvent({
+          type: "system",
+          title: "Documents uploaded",
+          description: `${uploaded} file${uploaded === 1 ? "" : "s"} added to the knowledge base.`,
+        });
+      } catch (err: any) {
+        setError(err?.message || "Failed to upload documents");
+      } finally {
+        setIsUploadingDocuments(false);
+      }
+    },
+    [addFeedEvent, isUploadingDocuments, queryClient, setError, shop?.id],
   );
 
   const handlePolicyModeChange = useCallback(
@@ -457,6 +494,7 @@ const AgentInbox: React.FC = () => {
                 onToggleVoice={toggleVoice}
                 onApprovalDecision={handleApprovalDecision}
                 isApproving={isApproving}
+                isUploading={isUploadingDocuments}
                 header={
                   <Stack direction="row" justifyContent="flex-end">
                     <Tooltip title="Start a new conversation (clears this thread)">
@@ -571,8 +609,10 @@ const AgentInbox: React.FC = () => {
                     isLoading={documentsQuery.isLoading}
                     actingDocumentId={actingDocumentId}
                     actingType={actingDocumentType}
+                    isUploading={isUploadingDocuments}
                     onReindex={handleDocumentReindex}
                     onDelete={handleDocumentDelete}
+                    onUpload={handleDocumentUpload}
                   />
                 )}
               </Box>
