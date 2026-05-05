@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from database import SessionLocal
-from redis_client import check_rate_limit
+from redis_client import redis_client as _redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ _RATE_WINDOW = 60  # seconds
 
 def _rate_limit(request: Request) -> None:
     ip = request.client.host if request.client else "unknown"
-    if not check_rate_limit(ip, limit=_RATE_LIMIT, window=_RATE_WINDOW):
+    if not _redis_client.check_rate_limit(ip, limit=_RATE_LIMIT, window=_RATE_WINDOW):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait before trying again.")
 
 
