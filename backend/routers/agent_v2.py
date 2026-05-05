@@ -1287,6 +1287,8 @@ async def chat_sync(
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
 
+    logger.info("chat/sync start shop_id=%s user_id=%s msg_len=%d", shop_id, user_id, len(message))
+
     _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
 
     existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
@@ -1417,7 +1419,12 @@ async def chat_sync(
             assistant_response=response_text,
             route="/api/v2/agent/chat",
         )
-        
+
+        logger.info(
+            "chat/sync done shop_id=%s user_id=%s agent=%s text_len=%d approval=%s",
+            shop_id, user_id, result.get("current_agent", "supervisor"),
+            len(response_text), approval_required,
+        )
         return {
             "response": response_text,
             "agent": result.get("current_agent", "supervisor"),
@@ -1990,7 +1997,9 @@ async def chat_stream(
             logger.info("Stream cancelled: client disconnected for shop_id=%s", shop_id)
             return
         except Exception as e:
-            logger.error(f"Stream error: {str(e)}", exc_info=True)
+            logger.error(
+                "Stream error shop_id=%s user_id=%s: %s", shop_id, user_id, e, exc_info=True
+            )
             error_message = str(e) or "Unexpected stream error"
             status_event = {"type": "stream_status", "status": "error", "message": error_message}
             error_event = {"type": "error", "message": error_message}

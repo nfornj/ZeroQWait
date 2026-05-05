@@ -523,6 +523,7 @@ def execute_plan(state: AgentState) -> dict:
 
     metadata = state.get("metadata") or {}
     target = metadata.get("execution_target", "general")
+    logger.info("execute_plan shop_id=%s target=%s", state.get("tenant_id", 0), target)
 
     if target == "receptionist":
         result = placeholder_receptionist(state)
