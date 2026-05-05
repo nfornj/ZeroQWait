@@ -301,3 +301,43 @@ async def ensure_payroll_schedules(client: Client) -> None:
         remittance_schedule,
         "Daily remittance due-soon reminder for all active shops.",
     )
+
+
+DEFAULT_LOW_STOCK_CRON = "0 8 * * *"  # Daily 08:00
+
+
+async def ensure_inventory_schedules(client: Client) -> None:
+    """Register the daily low-stock check Temporal schedule (idempotent)."""
+    from agents.appointment_workflows import LowStockAlertWorkflow
+
+    timezone = os.getenv("TEMPORAL_BRIEFING_TIMEZONE", DEFAULT_TIMEZONE)
+    cron = os.getenv("TEMPORAL_LOW_STOCK_CRON", DEFAULT_LOW_STOCK_CRON)
+
+    schedule = Schedule(
+        action=ScheduleActionStartWorkflow(
+            LowStockAlertWorkflow.run,
+            {"trigger": "scheduled"},
+            id="zeroqwait-low-stock-daily-check-${SCHEDULED_TIME}",
+            task_queue=TEMPORAL_TASK_QUEUE,
+            execution_timeout=timedelta(minutes=15),
+        ),
+        spec=ScheduleSpec(
+            cron_expressions=[cron],
+            time_zone_name=timezone,
+        ),
+        policy=SchedulePolicy(
+            overlap=ScheduleOverlapPolicy.SKIP,
+            catchup_window=timedelta(hours=2),
+            pause_on_failure=False,
+        ),
+        state=ScheduleState(
+            note="Daily 08:00: check low-stock items across all active shops.",
+            paused=False,
+        ),
+    )
+    await _create_or_skip(
+        client,
+        "zeroqwait-low-stock-daily-check",
+        schedule,
+        "Daily low-stock check for all active shops.",
+    )

@@ -20,15 +20,8 @@ _RETRY = RetryPolicy(maximum_attempts=3)
 # Activities
 # ─────────────────────────────────────────────────────────────────────────────
 
-@activity.defn
-async def check_low_stock_activity(shop_id: int) -> List[dict]:
-    """Return low-stock items for a shop."""
-    from agents.tools.inventory_tools import get_low_stock_alerts
-    try:
-        return get_low_stock_alerts(shop_id)
-    except Exception as exc:
-        logger.warning("check_low_stock_activity shop=%d error=%s", shop_id, exc)
-        return []
+# Re-export from the dedicated module so existing imports keep working.
+from .temporal_inventory_activities import check_low_stock_activity  # noqa: F401
 
 
 @activity.defn

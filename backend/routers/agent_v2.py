@@ -2181,6 +2181,187 @@ async def approve_action(
 
 
 # ============================================================================
+# Approval Streaming - SSE
+# ============================================================================
+
+@router.post("/approve/stream")
+async def approve_action_stream(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Streaming SSE version of /approve.
+
+    Emits thinking-step, tool-result, and text events while the graph
+    resumes from the HITL breakpoint so the owner sees live progress.
+
+    Same request body as /approve:
+      { "shop_id": 123, "action_id": "...", "approved": true, "reason": "..." }
+
+    Events emitted:
+      {type: "thinking_step", step, label, status, agent}
+      {type: "reasoning", step, id, text, agent, tool}
+      {type: "tool_result", tool, result, agent}
+      {type: "text", content}          — streamed response chunks
+      {type: "stream_status", status, agent, tool_results}
+      [DONE]
+    """
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+
+    shop_id = body.get("shop_id")
+    action_id = body.get("action_id")
+    approved = body.get("approved", False)
+    reason = body.get("reason")
+
+    user_id, shop_id = _require_owner_shop_access(shop_id, current_user)
+
+    checkpoint_config = build_checkpoint_config(shop_id, user_id)
+    runnable = _SUPERVISOR_RUNNABLE
+
+    # Snapshot retrieval is sync — wrap in thread to avoid blocking the event loop.
+    snapshot = await asyncio.to_thread(runnable.get_state, checkpoint_config)
+    interrupts = list(snapshot.interrupts or ())
+
+    # ── No live interrupt: fall back to persisted-approval path ──────────────
+    if not interrupts:
+        async def _no_interrupt_stream():
+            resumed = await asyncio.to_thread(
+                _resume_persisted_approval,
+                shop_id=shop_id,
+                action_id=str(action_id or "").strip() or None,
+                approved=bool(approved),
+                reason=reason,
+                user_id=user_id,
+            )
+            if resumed is None:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'No pending approval found for this thread'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            _record_approval_decision(
+                shop_id=shop_id,
+                action_id=str(action_id or "").strip() or None,
+                pending_action=None,
+                approved=bool(approved),
+                reason=reason,
+                user_id=user_id,
+                resumed=resumed,
+            )
+            msg = _state_last_text(resumed)
+            for _sse in _iter_text_sse(msg):
+                yield _sse
+            yield f"data: {json.dumps({'type': 'stream_status', 'status': 'approved' if approved else 'rejected', 'agent': resumed.get('current_agent', 'supervisor'), 'tool_results': resumed.get('tool_results')})}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(_no_interrupt_stream(), media_type="text/event-stream")
+
+    # ── Live interrupt: stream graph resume ───────────────────────────────────
+    current_interrupt_id = getattr(interrupts[0], "id", None)
+    snapshot_values = cast(Dict[str, Any], snapshot.values or {}) if snapshot else {}
+    current_pending_action = cast(Optional[Dict[str, Any]], snapshot_values.get("pending_approval"))
+
+    if action_id and current_interrupt_id and action_id != current_interrupt_id:
+        raise HTTPException(status_code=409, detail="action_id does not match the current pending approval")
+
+    async def _approval_stream():
+        final_response_text = ""
+        final_tool_results: Dict[str, Any] = {}
+        routed_agent = "supervisor"
+        _STEP_TIMEOUT = 150  # seconds per graph step
+
+        try:
+            _action_label = "approved" if approved else "rejected"
+            yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'approve', 'label': f'Executing {_action_label} action\u2026', 'status': 'active', 'agent': routed_agent})}\n\n"
+
+            update_iter = runnable.stream(
+                Command(resume={"approved": bool(approved), "reason": reason}),
+                checkpoint_config,
+                stream_mode="updates",
+            )
+
+            while True:
+                update = await asyncio.wait_for(
+                    asyncio.to_thread(next, update_iter, None),
+                    timeout=_STEP_TIMEOUT,
+                )
+                if update is None:
+                    break
+                if not isinstance(update, dict):
+                    continue
+
+                for raw_node_name, out in update.items():
+                    lg_node = _resolve_thinking_node({"name": raw_node_name})
+                    if not lg_node:
+                        continue
+
+                    metadata_out = _extract_metadata_from_output(out)
+                    ca = _extract_current_agent_from_output(out)
+                    if ca and ca not in ("supervisor", "general", "", None):
+                        if ca != routed_agent:
+                            yield f"data: {json.dumps({'type': 'agent_switch', 'agent': ca})}\n\n"
+                        routed_agent = ca
+
+                    start_label = _thinking_label_active(lg_node, routed_agent)
+                    yield f"data: {json.dumps({'type': 'thinking_step', 'step': lg_node, 'label': start_label, 'status': 'active', 'agent': routed_agent})}\n\n"
+
+                    for reasoning_event in _normalize_reasoning_events(metadata_out.get("reasoning_events")):
+                        yield f"data: {json.dumps({'type': 'reasoning', 'step': lg_node, 'id': reasoning_event.get('id') or f'{lg_node}_reasoning', 'text': str(reasoning_event.get('text')).strip(), 'agent': routed_agent, 'tool': reasoning_event.get('tool')})}\n\n"
+
+                    if isinstance(out, dict) and isinstance(out.get("tool_results"), dict):
+                        final_tool_results = out["tool_results"]
+                        yield f"data: {json.dumps({'type': 'tool_result', 'tool': lg_node, 'result': final_tool_results, 'agent': routed_agent})}\n\n"
+
+                    if lg_node == "synthesize_response" and isinstance(out, dict):
+                        msgs = out.get("messages") or []
+                        if msgs:
+                            final_response_text = getattr(msgs[-1], "content", "") or ""
+
+                    done_label = _thinking_label_done(lg_node, routed_agent)
+                    yield f"data: {json.dumps({'type': 'thinking_step', 'step': lg_node, 'label': done_label, 'status': 'done', 'agent': routed_agent})}\n\n"
+
+        except Exception as stream_exc:
+            exc_name = type(stream_exc).__name__
+            if "interrupt" not in exc_name.lower():
+                logger.error("Approval stream error: %s", stream_exc, exc_info=True)
+                yield f"data: {json.dumps({'type': 'error', 'message': str(stream_exc)[:200]})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+        # Retrieve final text from checkpoint if synthesize_response didn't emit it.
+        if not final_response_text:
+            try:
+                snap = await asyncio.to_thread(runnable.get_state, checkpoint_config)
+                if snap and snap.values:
+                    final_response_text = _state_last_text(dict(snap.values))
+                    if not final_tool_results and isinstance(snap.values.get("tool_results"), dict):
+                        final_tool_results = snap.values["tool_results"]
+            except Exception as snap_exc:
+                logger.warning("Could not retrieve post-approval checkpoint: %s", snap_exc)
+
+        _record_approval_decision(
+            shop_id=shop_id,
+            action_id=current_interrupt_id,
+            pending_action=current_pending_action,
+            approved=bool(approved),
+            reason=reason,
+            user_id=user_id,
+            resumed={"current_agent": routed_agent, "tool_results": final_tool_results},
+        )
+
+        if final_response_text:
+            for _sse in _iter_text_sse(final_response_text):
+                yield _sse
+
+        yield f"data: {json.dumps({'type': 'stream_status', 'status': 'approved' if approved else 'rejected', 'agent': routed_agent, 'tool_results': final_tool_results})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_approval_stream(), media_type="text/event-stream")
+
+
+# ============================================================================
 # Conversation History & State
 # ============================================================================
 

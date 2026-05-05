@@ -57,7 +57,6 @@ from agents.appointment_workflows import (
     NoShowCheckWorkflow,
     LowStockAlertWorkflow,
     WeeklyInventoryReportWorkflow,
-    check_low_stock_activity,
     send_inventory_alert_activity,
     send_reminder_activity,
     mark_no_show_activity,
@@ -65,10 +64,12 @@ from agents.appointment_workflows import (
     get_overdue_appointments_activity,
     list_shop_ids_with_inventory_activity,
 )
+from agents.temporal_inventory_activities import check_low_stock_activity
 from agents.temporal_config import TEMPORAL_ADDRESS, TEMPORAL_NAMESPACE, TEMPORAL_TASK_QUEUE
 from agents.temporal_schedules import (
     ensure_brain_schedules,
     ensure_briefing_schedules,
+    ensure_inventory_schedules,
     ensure_payroll_schedules,
     ensure_shop_ops_schedules,
 )
@@ -87,6 +88,7 @@ async def main() -> None:
         await ensure_shop_ops_schedules(client)
         await ensure_brain_schedules(client)
         await ensure_payroll_schedules(client)
+        await ensure_inventory_schedules(client)
     worker = Worker(
         client,
         task_queue=TEMPORAL_TASK_QUEUE,

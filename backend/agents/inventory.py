@@ -10,8 +10,10 @@ from typing import Any, Dict, Optional, Sequence
 
 from langchain_core.messages import BaseMessage
 
+from integrations.odoo_client import odoo_client
 from .specialist_graph import build_specialist_runnable
 from .tools import inventory_tools
+from .tools.odoo_tools import _get_odoo_company_id
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,13 @@ OPERATION_ALIASES = {
     "alerts": "get_low_stock_alerts",
     "cogs": "get_cogs_report",
     "cost of goods": "get_cogs_report",
+    # Odoo-backed operations
+    "check stock": "check_stock",
+    "stock check": "check_stock",
+    "barcode": "check_stock",
+    "receive": "receive_stock",
+    "adjust_stock": "adjust_stock",
+    "low_stock_alert": "low_stock_alert",
 }
 
 SUPPORTED_OPERATIONS = [
@@ -42,6 +51,11 @@ SUPPORTED_OPERATIONS = [
     "record_adjustment",
     "get_low_stock_alerts",
     "get_cogs_report",
+    # Odoo-backed operations (fall back to local DB when Odoo is not configured)
+    "check_stock",
+    "receive_stock",
+    "adjust_stock",
+    "low_stock_alert",
 ]
 
 PLANNER_INSTRUCTIONS = """\
@@ -52,6 +66,10 @@ PLANNER_INSTRUCTIONS = """\
 - record_adjustment: manually adjust the stock level up or down; requires item_name_or_id and quantity (positive = add, negative = remove); requires approval.
 - get_low_stock_alerts: list items at or below reorder threshold; no required arguments.
 - get_cogs_report: summarize cost of goods sold (supply deductions + sales); optional: since_date (YYYY-MM-DD).
+- check_stock: look up a product by barcode or product_id in Odoo ERP; requires barcode OR product_id.
+- receive_stock: add received stock quantity for an Odoo product; requires product_id and quantity; optional: notes.
+- adjust_stock: apply a signed quantity adjustment to an Odoo product; requires product_id and qty_delta (positive=add, negative=remove) and reason. Requires approval.
+- low_stock_alert: fetch low-stock items from Odoo ERP; optional: threshold (default 5).
 """
 
 
@@ -159,6 +177,14 @@ def _normalize_operation(operation: str, plan: Dict[str, Any], messages: Sequenc
         return "get_low_stock_alerts"
     if any(k in combined for k in ("cogs", "cost of goods", "supply cost", "expense report")):
         return "get_cogs_report"
+    if any(k in combined for k in ("barcode", "scan", "check stock", "stock check", "product lookup")):
+        return "check_stock"
+    if any(k in combined for k in ("receive stock", "receive_stock", "stock received", "goods in")):
+        return "receive_stock"
+    if "adjust_stock" in combined or "stock adjustment" in combined:
+        return "adjust_stock"
+    if "low_stock_alert" in combined:
+        return "low_stock_alert"
     return "list_inventory"
 
 
@@ -235,6 +261,79 @@ def _build_inventory_executor(shop_id: int):
         if op == "get_cogs_report":
             return inventory_tools.get_cogs_report(shop_id, _optional_str(arguments.get("since_date")))
 
+        # ── Odoo-backed operations ────────────────────────────────
+
+        if op == "check_stock":
+            company_id = _get_odoo_company_id(shop_id)
+            barcode = _optional_str(arguments.get("barcode"))
+            product_id = _to_int(arguments.get("product_id"))
+            if company_id and odoo_client.enabled:
+                if barcode:
+                    return odoo_client.get_product_by_barcode(barcode, company_id=company_id)
+                if product_id:
+                    # Reuse low-stock listing filtered by id as a product detail lookup
+                    result = odoo_client.get_low_stock_items(company_id=company_id, threshold=999999)
+                    items = [i for i in result.get("items", []) if i.get("id") == product_id]
+                    return {"product": items[0]} if items else {"error": "not_found", "product_id": product_id}
+            # Local fallback: list inventory and filter by name/id
+            return {"items": inventory_tools.list_inventory(shop_id, include_inactive=False)}
+
+        if op == "receive_stock":
+            company_id = _get_odoo_company_id(shop_id)
+            product_id = _to_int(arguments.get("product_id"))
+            qty = _to_float(arguments.get("quantity"))
+            if qty is None or qty <= 0:
+                return {"error": "receive_stock requires a positive quantity"}
+            if company_id and odoo_client.enabled and product_id:
+                return odoo_client.receive_stock(
+                    product_id, qty,
+                    company_id=company_id,
+                    notes=_optional_str(arguments.get("notes")) or "",
+                )
+            # Local fallback: record_restock
+            item_id = product_id or _to_int(arguments.get("item_id"))
+            if not item_id:
+                item_id = _resolve_item_id(shop_id, arguments.get("item_name_or_id") or arguments.get("item"))
+            if not item_id:
+                return {"error": "receive_stock requires product_id (Odoo) or item_name_or_id (local)"}
+            return inventory_tools.record_restock(shop_id, item_id, qty, notes=_optional_str(arguments.get("notes")))
+
+        if op == "adjust_stock":
+            company_id = _get_odoo_company_id(shop_id)
+            product_id = _to_int(arguments.get("product_id"))
+            qty_delta = _to_float(arguments.get("qty_delta") or arguments.get("quantity"))
+            reason = _optional_str(arguments.get("reason")) or ""
+            if qty_delta is None:
+                return {"error": "adjust_stock requires qty_delta"}
+            if company_id and odoo_client.enabled and product_id:
+                return {
+                    "requires_approval": True,
+                    "action": "adjust_stock",
+                    "details": {"product_id": product_id, "qty_delta": qty_delta, "reason": reason, "company_id": company_id},
+                    "message": f"Stock adjustment of {qty_delta:+.2f} for product #{product_id} submitted for approval.",
+                }
+            # Local fallback: record_adjustment
+            item_id = product_id or _resolve_item_id(shop_id, arguments.get("item_name_or_id") or arguments.get("item"))
+            if not item_id:
+                return {"error": "adjust_stock requires product_id (Odoo) or item_name_or_id (local)"}
+            return {
+                "requires_approval": True,
+                "action": "record_adjustment",
+                "details": {"item_id": item_id, "quantity": qty_delta, "notes": reason},
+                "message": f"Stock adjustment of {qty_delta:+.2f} units submitted for approval.",
+            }
+
+        if op == "low_stock_alert":
+            company_id = _get_odoo_company_id(shop_id)
+            threshold = _to_float(arguments.get("threshold")) or 5.0
+            if company_id and odoo_client.enabled:
+                result = odoo_client.get_low_stock_items(company_id=company_id, threshold=threshold)
+                if "error" not in result:
+                    return {"alerts": result.get("items", []), "count": result.get("count", 0), "source": "odoo"}
+            # Local fallback
+            alerts = inventory_tools.get_low_stock_alerts(shop_id)
+            return {"alerts": alerts, "count": len(alerts), "source": "local"}
+
         return {"error": f"Unknown operation: {op}"}
 
     return executor
@@ -291,6 +390,46 @@ def _build_inventory_formatter(shop_id: int):
                 f"across {result.get('total_movements', 0)} movement(s)"
                 + (f" since {result['since']}" if result.get("since") else "")
             )
+
+        if op == "check_stock":
+            product = result.get("product")
+            if product:
+                return (
+                    f"**{product.get('name')}** — "
+                    f"on hand: {product.get('qty_on_hand', 'N/A')}, "
+                    f"price: ${product.get('list_price', 0):.2f}"
+                )
+            items = result.get("items", [])
+            if items:
+                lines = [f"• **{i['name']}**: {i.get('qty_on_hand', '?')} {i.get('uom_id', '')}" for i in items[:10]]
+                return "**Inventory items:**\n" + "\n".join(lines)
+            return result.get("error") or "Product not found."
+
+        if op == "receive_stock":
+            if result.get("quant_id"):
+                return f"Received **{result.get('qty_added')}** units — stock updated (quant #{result.get('quant_id')})."
+            if result.get("new_stock") is not None:
+                return f"Restocked item #{result.get('item_id')}. New stock: **{result.get('new_stock')}** units."
+            return str(result)
+
+        if op in ("adjust_stock",):
+            if result.get("requires_approval"):
+                return result.get("message", "Stock adjustment submitted for approval.")
+            if result.get("quant_id") is not None:
+                return f"Stock adjusted by {result.get('qty_delta'):+.2f} units (quant #{result.get('quant_id')})."
+            return str(result)
+
+        if op == "low_stock_alert":
+            alerts = result.get("alerts", [])
+            source = result.get("source", "")
+            source_note = " (via Odoo)" if source == "odoo" else ""
+            if not alerts:
+                return f"All items are above their stock thresholds{source_note}. ✅"
+            lines = [
+                f"• **{a.get('name')}**: {a.get('qty_on_hand', a.get('current_stock', '?'))} remaining"
+                for a in alerts
+            ]
+            return f"⚠️ **{len(alerts)} low-stock item(s){source_note}:**\n" + "\n".join(lines)
 
         return str(result)
 
