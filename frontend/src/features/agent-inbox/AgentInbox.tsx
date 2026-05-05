@@ -15,6 +15,7 @@ import api from "../../services/api";
 import AgentChat from "./AgentChat";
 import AgentFeed from "./AgentFeed";
 import AgentInsights from "./AgentInsights";
+import AgentTaskBoard, { type AgentTaskBoardExternalTask } from "./AgentTaskBoard";
 import InsightsPanel from "./InsightsPanel";
 import OwnerBriefing from "./OwnerBriefing";
 import PendingApprovalsPanel from "./PendingApprovalsPanel";
@@ -58,6 +59,7 @@ const AgentInbox: React.FC = () => {
   const [markingNotificationId, setMarkingNotificationId] = useState<number | null>(null);
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const previousShopIdRef = useRef<number | null>(null);
+  const pendingApprovalsPanelRef = useRef<HTMLDivElement>(null);
 
   const pendingApprovalsQuery = usePendingApprovalsQuery(shop?.id);
   const briefingQuery = useOwnerBriefingQuery(shop?.id);
@@ -256,6 +258,32 @@ const AgentInbox: React.FC = () => {
   }, [setError, shop?.id]);
 
   const latestPending = useMemo(() => pendingApprovals.slice(0, 3), [pendingApprovals]);
+
+  const taskBoardApprovals = useMemo<AgentTaskBoardExternalTask[]>(
+    () =>
+      pendingApprovals.map((approval) => {
+        const detailLines: string[] = [];
+        if (approval.risk_level) detailLines.push(`Risk: ${approval.risk_level}`);
+        if (approval.urgency) detailLines.push(`Urgency: ${approval.urgency}`);
+        return {
+          id: approval.action_id ?? approval.action,
+          title: approval.title ?? approval.action,
+          description: approval.summary ?? approval.reason ?? "",
+          source: "approval" as const,
+          createdAt: approval.created_at ?? new Date().toISOString(),
+          actionId: approval.action_id,
+          detailLines: detailLines.length > 0 ? detailLines : undefined,
+        };
+      }),
+    [pendingApprovals],
+  );
+
+  const handleTaskBoardApprovalClick = useCallback(
+    (_actionId: string) => {
+      pendingApprovalsPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    },
+    [],
+  );
   const seededFeedEvents = useMemo(
     () => createWorkspaceFeedSeed(briefing, pendingApprovals),
     [briefing, pendingApprovals],
@@ -418,12 +446,22 @@ const AgentInbox: React.FC = () => {
                   gap: 1.25,
                 }}
               >
-                {latestPending.length > 0 && (
-                  <PendingApprovalsPanel
-                    approvals={pendingApprovals}
-                    isApproving={isApproving}
-                    onDecision={handleApprovalDecision}
+                <Box sx={{ height: 220, flexShrink: 0 }}>
+                  <AgentTaskBoard
+                    interactableId={shop?.id ? `owner-task-board-${shop.id}` : "owner-task-board"}
+                    externalTasks={taskBoardApprovals}
+                    onApprovalTaskClick={handleTaskBoardApprovalClick}
                   />
+                </Box>
+
+                {latestPending.length > 0 && (
+                  <Box ref={pendingApprovalsPanelRef}>
+                    <PendingApprovalsPanel
+                      approvals={pendingApprovals}
+                      isApproving={isApproving}
+                      onDecision={handleApprovalDecision}
+                    />
+                  </Box>
                 )}
 
                 <AgentFeed
