@@ -2,11 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Alert,
   Box,
+  Button,
   Collapse,
   Grid,
   IconButton,
   Stack,
+  Tooltip,
 } from "@mui/material";
+import AddCommentOutlinedIcon from "@mui/icons-material/AddCommentOutlined";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -18,6 +21,7 @@ import AgentInsights from "./AgentInsights";
 import AgentTaskBoard, { type AgentTaskBoardExternalTask } from "./AgentTaskBoard";
 import InsightsPanel from "./InsightsPanel";
 import OwnerBriefing from "./OwnerBriefing";
+import OwnerDocumentsPanel from "./OwnerDocumentsPanel";
 import PendingApprovalsPanel from "./PendingApprovalsPanel";
 import PoliciesPanel from "./PoliciesPanel";
 import { buildIntroMessage } from "./agentInboxShared";
@@ -27,6 +31,7 @@ import { useAgentWebSocket } from "./hooks/useAgentWebSocket";
 import {
   ownerDashboardKeys,
   useOwnerBriefingQuery,
+  useOwnerDocumentsQuery,
   useOwnerFeedQuery,
   useOwnerPoliciesQuery,
   usePendingApprovalsQuery,
@@ -36,6 +41,7 @@ import type {
   BriefingAction,
   InsightItem,
   OwnerBriefing as OwnerBriefingData,
+  OwnerDocumentRecord,
   PendingApproval,
   ShopPolicy,
 } from "./types";
@@ -58,6 +64,9 @@ const AgentInbox: React.FC = () => {
   const [savingPolicyKey, setSavingPolicyKey] = useState<string | null>(null);
   const [markingNotificationId, setMarkingNotificationId] = useState<number | null>(null);
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
+  const [actingDocumentId, setActingDocumentId] = useState<number | null>(null);
+  const [actingDocumentType, setActingDocumentType] = useState<"reindex" | "delete" | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
   const previousShopIdRef = useRef<number | null>(null);
   const pendingApprovalsPanelRef = useRef<HTMLDivElement>(null);
 
@@ -65,6 +74,7 @@ const AgentInbox: React.FC = () => {
   const briefingQuery = useOwnerBriefingQuery(shop?.id);
   const feedQuery = useOwnerFeedQuery(shop?.id);
   const policiesQuery = useOwnerPoliciesQuery(shop?.id);
+  const documentsQuery = useOwnerDocumentsQuery(shop?.id);
 
   const addPendingApproval = useCallback((approval: PendingApproval) => {
     setPendingApprovals((prev) => {
@@ -108,6 +118,7 @@ const AgentInbox: React.FC = () => {
     setError,
     appendSystemMessage,
     handleSend,
+    resetConversation,
     isVoiceEnabled,
     isSpeaking,
     toggleVoice,
@@ -177,6 +188,55 @@ const AgentInbox: React.FC = () => {
 
     setMessages((prev) => (prev.length > 0 ? prev : [buildIntroMessage()]));
   }, [setError, setMessages, shop?.id]);
+
+  const handleResetConversation = useCallback(async () => {
+    if (isResetting || isStreaming) return;
+    setIsResetting(true);
+    try {
+      await resetConversation();
+      addFeedEvent({ type: "system", title: "Conversation reset", description: "Started a new conversation thread." });
+    } finally {
+      setIsResetting(false);
+    }
+  }, [addFeedEvent, isResetting, isStreaming, resetConversation]);
+
+  const handleDocumentReindex = useCallback(
+    async (document: OwnerDocumentRecord) => {
+      if (!shop?.id || actingDocumentId !== null) return;
+      setActingDocumentId(document.id);
+      setActingDocumentType("reindex");
+      try {
+        await api.post(`/v2/agent/documents/${document.id}/reindex`, { shop_id: shop.id });
+        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
+        addFeedEvent({ type: "system", title: "Document re-indexed", description: `${document.filename} was re-indexed into the knowledge base.` });
+      } catch (err: any) {
+        setError(err?.response?.data?.detail || "Failed to re-index document");
+      } finally {
+        setActingDocumentId(null);
+        setActingDocumentType(null);
+      }
+    },
+    [actingDocumentId, addFeedEvent, queryClient, setError, shop?.id],
+  );
+
+  const handleDocumentDelete = useCallback(
+    async (document: OwnerDocumentRecord) => {
+      if (!shop?.id || actingDocumentId !== null) return;
+      setActingDocumentId(document.id);
+      setActingDocumentType("delete");
+      try {
+        await api.delete(`/v2/agent/documents/${document.id}`, { params: { shop_id: shop.id } });
+        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
+        addFeedEvent({ type: "system", title: "Document removed", description: `${document.filename} was deleted from the knowledge base.` });
+      } catch (err: any) {
+        setError(err?.response?.data?.detail || "Failed to delete document");
+      } finally {
+        setActingDocumentId(null);
+        setActingDocumentType(null);
+      }
+    },
+    [actingDocumentId, addFeedEvent, queryClient, setError, shop?.id],
+  );
 
   const handlePolicyModeChange = useCallback(
     async (policy: ShopPolicy, nextMode: string) => {
@@ -397,6 +457,24 @@ const AgentInbox: React.FC = () => {
                 onToggleVoice={toggleVoice}
                 onApprovalDecision={handleApprovalDecision}
                 isApproving={isApproving}
+                header={
+                  <Stack direction="row" justifyContent="flex-end">
+                    <Tooltip title="Start a new conversation (clears this thread)">
+                      <span>
+                        <Button
+                          size="small"
+                          variant="text"
+                          startIcon={<AddCommentOutlinedIcon fontSize="small" />}
+                          disabled={isResetting || isStreaming}
+                          onClick={() => void handleResetConversation()}
+                          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 999 }}
+                        >
+                          {isResetting ? "Resetting…" : "New conversation"}
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  </Stack>
+                }
               />
             )}
             <Box sx={{ flexShrink: 0 }}>
@@ -484,6 +562,17 @@ const AgentInbox: React.FC = () => {
                     savingPolicyKey={savingPolicyKey}
                     onModeChange={handlePolicyModeChange}
                     onRetry={() => void refreshPolicies()}
+                  />
+                )}
+
+                {shop?.id && (
+                  <OwnerDocumentsPanel
+                    documents={documentsQuery.data || []}
+                    isLoading={documentsQuery.isLoading}
+                    actingDocumentId={actingDocumentId}
+                    actingType={actingDocumentType}
+                    onReindex={handleDocumentReindex}
+                    onDelete={handleDocumentDelete}
                   />
                 )}
               </Box>

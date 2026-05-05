@@ -4,7 +4,7 @@ import {
   buildStreamToolResultFeedEvent,
   buildStreamToolResultInsight,
 } from "../approvalOutcome";
-import { nowIso, normalizePendingApproval, toId } from "../agentInboxShared";
+import { buildIntroMessage, nowIso, normalizePendingApproval, toId } from "../agentInboxShared";
 import type { AgentChatSendPayload } from "../AgentChat";
 import { createAgentChartFromPayload } from "../types";
 import type { AgentFeedEvent, AgentFile, AgentTable, ChatMessage, InsightItem, PendingApproval, ThinkingStep } from "../types";
@@ -766,6 +766,25 @@ export const useAgentStream = ({
     setMessages,
     isStreaming,
     handleSend,
+    resetConversation: useCallback(async () => {
+      if (!shopId) return;
+      const token = localStorage.getItem("token");
+      try {
+        await fetch(`${apiBaseUrl}/v2/agent/reset-conversation`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ shop_id: shopId }),
+        });
+      } catch {
+        // Non-fatal — we still clear the local messages
+      }
+      setMessages([buildIntroMessage()]);
+      setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [shopId]),
     error,
     setError,
     appendSystemMessage,
