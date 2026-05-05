@@ -93,6 +93,7 @@ Rules:
 - business_date only exists in ai_daily_analytics. For day-of-week analysis on queue visits, use EXTRACT(DOW FROM completed_at) from ai_queue_visits, not ai_daily_analytics.business_date.
 - For percentage or ratio calculations always wrap the denominator in NULLIF(expr, 0) to avoid division by zero.
 - Add LIMIT when returning detail rows.
+- ai_queue_visits has NO customer_id column. Never reference customer_id on ai_queue_visits. To count customers who visited in a period, use: SELECT COUNT(*) FROM ai_customers WHERE last_visit >= <date>. Do not JOIN ai_queue_visits to ai_customers.
 """
 
 
@@ -321,7 +322,7 @@ def _generate_sql(shop_id: int, question: str, previous_error: Optional[str] = N
         "Finance SQL generation",
         lambda: llm.with_structured_output(SQLPlan).invoke(
             [
-                SystemMessage(content="Generate safe read-only SQL for ZeroQwait finance analytics."),
+                SystemMessage(content="/no_think Generate safe read-only SQL for ZeroQwait finance analytics."),
                 HumanMessage(content=prompt),
             ]
         ),
