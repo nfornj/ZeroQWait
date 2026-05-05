@@ -490,6 +490,13 @@ def _record_approval_decision(
                 },
                 current_agent=resumed.get("current_agent", "supervisor"),
             )
+        logger.info(
+            "approval_decision shop_id=%s user_id=%s action_id=%s approved=%s",
+            shop_id,
+            user_id,
+            action_id or getattr(approval, "external_action_id", None),
+            approved,
+        )
     finally:
         db.close()
 

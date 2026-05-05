@@ -641,6 +641,23 @@ _FOLLOWUP_POOLS: Dict[Optional[str], list] = {
 }
 
 
+def _iter_text_sse(text: str):
+    """Yield SSE ``data:`` lines for *text* split word-by-word.
+
+    Sends one event per word rather than one per character, reducing SSE
+    event count ~10x while preserving the frontend typewriter effect
+    (each chunk is appended to the in-progress message content).
+    """
+    if not text:
+        return
+    words = text.split(" ")
+    last = len(words) - 1
+    for i, word in enumerate(words):
+        chunk = word + (" " if i < last else "")
+        if chunk:
+            yield f"data: {json.dumps({'type': 'text', 'content': chunk})}\n\n"
+
+
 def _generate_followup_suggestions(
     routed_agent: Optional[str],
     user_message: str,
@@ -1509,6 +1526,13 @@ async def chat_stream(
     # Create streaming generator
     async def event_generator():
         try:
+            logger.info(
+                "chat/stream start shop_id=%s user_id=%s msg_len=%d fast_path=%s",
+                shop_id,
+                user_id,
+                len(message),
+                followup_operation or ("direct" if existing_pending is None else "pending"),
+            )
             if followup_operation == "service_customer_counts" or (existing_pending is None and _is_service_customer_count_question(message)):
                 yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Reading completed visits by service…', 'status': 'active', 'agent': 'finance'})}\n\n"
                 yield f"data: {json.dumps({'type': 'agent_switch', 'agent': 'finance'})}\n\n"
@@ -1522,8 +1546,8 @@ async def chat_stream(
                 response_text = _format_service_customer_counts(result)
                 yield f"data: {json.dumps({'type': 'tool_result', 'tool': 'service_customer_counts', 'result': result, 'agent': 'finance'})}\n\n"
                 yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Service customer counts ready', 'status': 'done', 'agent': 'finance'})}\n\n"
-                for char in response_text:
-                    yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+                for _sse in _iter_text_sse(response_text):
+                    yield _sse
                 _remember_direct_finance_context(shop_id, int(user_id), "service_customer_counts", message)
                 _persist_chat_turn_memory(
                     shop_id=shop_id,
@@ -1544,8 +1568,8 @@ async def chat_stream(
                 response_text = _format_daily_revenue(result)
                 yield f"data: {json.dumps({'type': 'tool_result', 'tool': 'daily_revenue', 'result': result, 'agent': 'finance'})}\n\n"
                 yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Revenue ready', 'status': 'done', 'agent': 'finance'})}\n\n"
-                for char in response_text:
-                    yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+                for _sse in _iter_text_sse(response_text):
+                    yield _sse
                 _remember_direct_finance_context(shop_id, int(user_id), "daily_revenue", message)
                 _persist_chat_turn_memory(
                     shop_id=shop_id,
@@ -1566,8 +1590,8 @@ async def chat_stream(
                 response_text = _format_top_services(result)
                 yield f"data: {json.dumps({'type': 'tool_result', 'tool': 'top_services', 'result': result, 'agent': 'finance'})}\n\n"
                 yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Top services ready', 'status': 'done', 'agent': 'finance'})}\n\n"
-                for char in response_text:
-                    yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+                for _sse in _iter_text_sse(response_text):
+                    yield _sse
                 _remember_direct_finance_context(shop_id, int(user_id), "top_services", message)
                 _persist_chat_turn_memory(
                     shop_id=shop_id,
@@ -1780,9 +1804,9 @@ async def chat_stream(
             if isinstance(final_tool_results, dict) and final_tool_results:
                 yield f"data: {json.dumps({'type': 'tool_result', 'tool': final_metadata.get('specialist_operation') or final_tool_results.get('tool') or routed_agent or 'operation', 'result': final_tool_results, 'agent': routed_agent})}\n\n"
 
-            # Stream response text character-by-character.
-            for char in (final_response_text or ""):
-                yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+            # Stream response text word-by-word for efficient SSE delivery.
+            for _sse in _iter_text_sse(final_response_text or ""):
+                yield _sse
 
             # Emit structured chart/file payloads for frontend insights panel and inline attachments.
             if routed_agent == "finance" and isinstance(final_tool_results, dict):
@@ -1951,6 +1975,14 @@ async def chat_stream(
                 "approval_required": approval_required,
             }
             yield f"data: {json.dumps(completion_event)}\n\n"
+            logger.info(
+                "chat/stream done shop_id=%s user_id=%s agent=%s text_len=%d approval=%s",
+                shop_id,
+                user_id,
+                routed_agent or "supervisor",
+                len(final_response_text),
+                approval_required,
+            )
             yield "data: [DONE]\n\n"
 
         except asyncio.CancelledError:
