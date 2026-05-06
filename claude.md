@@ -939,39 +939,42 @@ curl -sk -X POST https://zeroqwait.com/api/agent/master/chat \
 
 ---
 
-## 16. DevOps Pipeline (Local-Only Registry + Argo CD)
+## 16. DevOps Pipeline (GHCR + Argo CD)
 
 ### Goal
 
-Use a **local Docker registry only** (no cloud image registry), persist image blobs on SSD, and keep a complete, visual GitOps deployment history.
+Use **GitHub Container Registry (GHCR) exclusively** (`ghcr.io/nfornj`) for all versioned images. The local Docker registry (`localhost:5000`) is **deprecated and must not be used** for K8s images. All K8s manifests must reference `ghcr.io/nfornj/<service>:<tag>` — never `localhost:5000`.
+
+### MANDATORY Registry Rule
+
+> **`localhost:5000` is FORBIDDEN in K8s manifests and CI builds.**
+>
+> - **All `image:` fields in every file under `k8s-manifests/`** must use `ghcr.io/nfornj/<service>:<tag>`.
+> - **Never run `docker build -t localhost:5000/...`** for images destined for K8s.
+> - **Never update a K8s manifest** to reference `localhost:5000/...`.
+> - The only authorised path to push K8s images is `deployment/scripts/run-local-pipeline.sh` (uses `REGISTRY=ghcr.io/nfornj` by default) or the GitHub Actions deploy workflows which push with `GITHUB_TOKEN`.
+> - If you need `write:packages` scope to push manually, authenticate with: `gh auth token | sudo docker login ghcr.io -u nfornj --password-stdin` — but verify the `gh` token has `write:packages` scope first.
 
 ### Standard Stack
 
-- **Registry**: local Docker Registry v2 on `localhost:5000`
-- **Registry storage path**: `/media/neekrishrichu/One Touch/projects/zeroqwait` (SSD)
-- **Registry UI**: `http://localhost:5080` (joxit/docker-registry-ui, visual tag browser + delete)
+- **Registry**: GitHub Container Registry — `ghcr.io/nfornj`
+- **Image naming**: `ghcr.io/nfornj/<service>:vYYYYMMDDHHMMSS-<sha>` (semver via `run-local-pipeline.sh`)
 - **GitOps**: Argo CD v3.3.6 in `argocd` namespace
 - **Argo CD UI**: `https://localhost:8443` (port-forward: `sudo kubectl port-forward svc/argocd-server -n argocd 8443:443`)
 - **Argo CD login**: user `admin`, initial password in `argocd-initial-admin-secret` K8s secret
 - **Manifest source**: `k8s-manifests` (Kustomize root)
-- **Version policy**: keep only **last 10 tags** per service in registry
+- **Version policy**: keep only **last 10 tags** per service (pruned via `deployment/scripts/prune-ghcr-tags.sh`)
 
 ### Pipeline Scripts (authoritative)
 
-- `deployment/scripts/setup-local-registry.sh`
-  - Starts/recreates registry container with delete API enabled
-  - Uses `deployment/registry/config.yml`
-  - Mounts SSD path for image storage
+- `deployment/scripts/run-local-pipeline.sh`
+  - **Primary build + push path** — always defaults to `REGISTRY=ghcr.io/nfornj`
+  - Builds versioned images (`vYYYYMMDDHHMMSS-<sha>`), pushes to GHCR, updates `k8s-manifests/` image tags, optionally commits and triggers Argo CD sync
+  - Requires docker login to GHCR (handled automatically in CI via `GITHUB_TOKEN`)
 - `deployment/scripts/setup-argocd-gitops.sh`
   - Installs Argo CD and creates `zeroqwait` Application
-- `deployment/scripts/run-local-pipeline.sh`
-  - Runs backend + frontend tests for each run
-  - Builds/pushes versioned images (`vYYYYMMDDHHMMSS-<sha>`)
-  - Updates image tags in K8s deployment manifests
-  - Optionally commits manifest updates
-  - Optionally triggers Argo sync
-- `deployment/scripts/prune-registry-tags.sh`
-  - Enforces retention: keeps only latest 10 tags per repo
+- `deployment/scripts/prune-ghcr-tags.sh`
+  - Enforces retention: keeps only latest 10 tags per repo on GHCR
 
 ### Services under versioned image pipeline
 
@@ -980,6 +983,9 @@ Use a **local Docker registry only** (no cloud image registry), persist image bl
 - `asr-service`
 - `tts-service`
 - `voice-mcp`
+- `finance-mcp`
+- `booking-mcp`
+- `hr-mcp`
 
 ### Visual operations
 
@@ -991,7 +997,7 @@ Use a **local Docker registry only** (no cloud image registry), persist image bl
 
 - Do not replace protected AI/TTS models while introducing pipeline changes.
 - Keep TTS voice `Vivian`, service port `8880`, and Qwen3-TTS engine unchanged.
-- Do not switch registry to cloud unless explicitly approved.
+- **Do not use `localhost:5000` for any K8s image** — this rule supersedes any previous guidance about a local-only registry.
 
 ### Branch-Based Deployment Policy
 

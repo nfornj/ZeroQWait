@@ -32,7 +32,7 @@ spec:
                     values: ["core-cpu"]
       containers:
         - name: finance-mcp
-          image: localhost:5000/prod/finance-mcp:v20260503113937-b770dc7
+          image: ghcr.io/nfornj/finance-mcp:v20260505231038-fd470b1
           ports:
             - containerPort: 8891
               protocol: TCP
