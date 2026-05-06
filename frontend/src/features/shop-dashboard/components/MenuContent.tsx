@@ -14,6 +14,7 @@ import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded';
 import InboxRoundedIcon from '@mui/icons-material/InboxRounded';
+import InventoryRoundedIcon from '@mui/icons-material/InventoryRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 
@@ -27,6 +28,7 @@ const primaryListItems = [
 const managementListItems = [
   { text: 'Appointments', icon: <EventNoteRoundedIcon />, path: '/appointments' },
   { text: 'Queues', icon: <QueueRoundedIcon />, path: '/queues' },
+  { text: 'Inventory', icon: <InventoryRoundedIcon />, path: '/inventory' },
   { text: 'Shop Setup', icon: <SettingsRoundedIcon />, path: '/settings' },
   { text: 'Team', icon: <PeopleRoundedIcon />, path: '/employees' },
 ];
