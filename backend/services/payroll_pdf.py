@@ -445,3 +445,232 @@ def payslip_filename(shop_name: str, employee_name: str, period_start: Any) -> s
         except ValueError:
             pass
     return f"{_slug(shop_name)}_{_slug(employee_name)}_payslip_{ps}.pdf"
+
+
+def generate_payroll_history_pdf(
+    shop_name: str,
+    period_label: str,
+    employee_summaries: list,
+    all_payslips: list,
+    generated_on: Optional[str] = None,
+) -> bytes:
+    """
+    Build a Payroll History Report PDF and return raw bytes.
+
+    Args:
+        shop_name:          Name of the shop.
+        period_label:       Human-readable period label, e.g. "May 2025 – May 2026".
+        employee_summaries: List of dicts: {name, province, periods, total_gross, total_deductions, total_net}.
+        all_payslips:       List of dicts: {employee_name, period_start, period_end, gross_pay,
+                            cpp_deduction, ei_deduction, fed_tax, prov_tax, net_pay, status}.
+        generated_on:       Optional ISO date string for "Generated on" footer.
+    """
+    import re
+
+    def _slug(text: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9]+", "_", str(text or "")).strip("_")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=LETTER,
+        rightMargin=0.65 * inch,
+        leftMargin=0.65 * inch,
+        topMargin=0.6 * inch,
+        bottomMargin=0.6 * inch,
+        title=f"Payroll History – {shop_name}",
+        author=shop_name,
+    )
+
+    styles = getSampleStyleSheet()
+    page_width = LETTER[0] - 1.30 * inch
+
+    title_style = ParagraphStyle(
+        "Title",
+        parent=styles["Normal"],
+        fontSize=20,
+        leading=24,
+        fontName="Helvetica-Bold",
+        textColor=_BRAND_DARK,
+    )
+    subtitle_style = ParagraphStyle(
+        "Subtitle",
+        parent=styles["Normal"],
+        fontSize=11,
+        leading=14,
+        fontName="Helvetica",
+        textColor=_BRAND_MED,
+    )
+    section_style = ParagraphStyle(
+        "Section",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=13,
+        fontName="Helvetica-Bold",
+        textColor=_BRAND_MED,
+        spaceBefore=12,
+        spaceAfter=4,
+    )
+    body_style = ParagraphStyle(
+        "Body",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=12,
+        fontName="Helvetica",
+        textColor=_TEXT_BODY,
+    )
+    small_style = ParagraphStyle(
+        "Small",
+        parent=styles["Normal"],
+        fontSize=8,
+        leading=10,
+        fontName="Helvetica",
+        textColor=colors.grey,
+    )
+    emp_name_style = ParagraphStyle(
+        "EmpName",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=11,
+        fontName="Helvetica-Bold",
+        textColor=_BRAND_DARK,
+        spaceBefore=10,
+        spaceAfter=2,
+    )
+
+    story = []
+
+    # ── Cover / Header ─────────────────────────────────────────────────────────
+    story.append(Paragraph(shop_name, title_style))
+    story.append(Paragraph(f"Payroll History Report — {period_label}", subtitle_style))
+    gen_date = generated_on or date.today().strftime("%B %-d, %Y")
+    story.append(Paragraph(f"Generated: {gen_date}", small_style))
+    story.append(HRFlowable(width=page_width, thickness=2, color=_BRAND_DARK, spaceAfter=10))
+
+    # ── Employee Summary Table ─────────────────────────────────────────────────
+    story.append(Paragraph("ANNUAL PAYROLL SUMMARY BY EMPLOYEE", section_style))
+
+    sum_rows = [["Employee", "Province", "Pay Periods", "Total Gross", "Total Deductions", "Total Net"]]
+    grand_gross = grand_ded = grand_net = 0.0
+    for emp in employee_summaries:
+        gross = float(emp.get("total_gross") or 0)
+        ded   = float(emp.get("total_deductions") or 0)
+        net   = float(emp.get("total_net") or 0)
+        grand_gross += gross
+        grand_ded   += ded
+        grand_net   += net
+        sum_rows.append([
+            emp.get("name", "—"),
+            emp.get("province", "ON"),
+            str(emp.get("periods", 0)),
+            _currency(gross),
+            _currency(ded),
+            _currency(net),
+        ])
+    # Totals row
+    sum_rows.append(["TOTAL", "", "", _currency(grand_gross), _currency(grand_ded), _currency(grand_net)])
+
+    col_w = [page_width * w for w in [0.24, 0.09, 0.10, 0.17, 0.20, 0.20]]
+    sum_table = Table(sum_rows, colWidths=col_w)
+    sum_style_list = [
+        ("BACKGROUND", (0, 0), (-1, 0), _BRAND_DARK),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("LEADING", (0, 0), (-1, -1), 11),
+        ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.lightgrey),
+        # Totals row bold + highlighted
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, -1), (-1, -1), _ROW_DARK),
+    ]
+    for i in range(1, len(sum_rows) - 1):
+        if i % 2 == 0:
+            sum_style_list.append(("BACKGROUND", (0, i), (-1, i), _ROW_LIGHT))
+    sum_table.setStyle(TableStyle(sum_style_list))
+    story.append(sum_table)
+    story.append(Spacer(1, 16))
+
+    # ── Per-Employee Pay Period Detail ─────────────────────────────────────────
+    # Group payslips by employee name
+    emp_slips: Dict[str, list] = {}
+    for slip in all_payslips:
+        ename = slip.get("employee_name", "Unknown")
+        emp_slips.setdefault(ename, []).append(slip)
+
+    story.append(Paragraph("PAY PERIOD DETAIL BY EMPLOYEE", section_style))
+    story.append(HRFlowable(width=page_width, thickness=0.5, color=_BRAND_MED, spaceAfter=6))
+
+    for ename, slips in emp_slips.items():
+        story.append(Paragraph(ename, emp_name_style))
+        detail_rows = [["Pay Period", "Gross Pay", "CPP", "EI", "Fed Tax", "Prov Tax", "Net Pay", "Status"]]
+        for slip in sorted(slips, key=lambda s: str(s.get("period_start", ""))):
+            ps = str(slip.get("period_start", ""))[:10]
+            pe = str(slip.get("period_end", ""))[:10]
+            period_str = f"{ps} – {pe}"
+            status = str(slip.get("status", "draft")).capitalize()
+            detail_rows.append([
+                period_str,
+                _currency(slip.get("gross_pay")),
+                _currency(slip.get("cpp_deduction")),
+                _currency(slip.get("ei_deduction")),
+                _currency(slip.get("fed_tax")),
+                _currency(slip.get("prov_tax")),
+                _currency(slip.get("net_pay")),
+                status,
+            ])
+        # Employee subtotal
+        emp_gross = sum(float(s.get("gross_pay") or 0) for s in slips)
+        emp_net   = sum(float(s.get("net_pay") or 0) for s in slips)
+        emp_cpp   = sum(float(s.get("cpp_deduction") or 0) for s in slips)
+        emp_ei    = sum(float(s.get("ei_deduction") or 0) for s in slips)
+        emp_fed   = sum(float(s.get("fed_tax") or 0) for s in slips)
+        emp_prov  = sum(float(s.get("prov_tax") or 0) for s in slips)
+        detail_rows.append([
+            "SUBTOTAL",
+            _currency(emp_gross),
+            _currency(emp_cpp),
+            _currency(emp_ei),
+            _currency(emp_fed),
+            _currency(emp_prov),
+            _currency(emp_net),
+            "",
+        ])
+
+        det_col_w = [page_width * w for w in [0.25, 0.12, 0.08, 0.08, 0.11, 0.11, 0.13, 0.12]]
+        det_table = Table(detail_rows, colWidths=det_col_w)
+        det_style_list = [
+            ("BACKGROUND", (0, 0), (-1, 0), _BRAND_MED),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+            ("LEADING", (0, 0), (-1, -1), 10),
+            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.lightgrey),
+            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+            ("BACKGROUND", (0, -1), (-1, -1), _ROW_DARK),
+        ]
+        for i in range(1, len(detail_rows) - 1):
+            if i % 2 == 0:
+                det_style_list.append(("BACKGROUND", (0, i), (-1, i), _ROW_LIGHT))
+        det_table.setStyle(TableStyle(det_style_list))
+        story.append(det_table)
+        story.append(Spacer(1, 8))
+
+    # ── Footer ─────────────────────────────────────────────────────────────────
+    story.append(Spacer(1, 12))
+    story.append(HRFlowable(width=page_width, thickness=0.5, color=colors.lightgrey, spaceAfter=4))
+    story.append(
+        Paragraph(
+            f"Computer-generated Payroll History Report — {shop_name} — Confidential. "
+            "All figures in CAD. Source deductions remitted to CRA.",
+            small_style,
+        )
+    )
+
+    doc.build(story)
+    return buffer.getvalue()

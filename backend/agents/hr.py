@@ -1,6 +1,8 @@
 """HR specialist graph with explicit planner and executor nodes."""
 
 import logging
+import re as _re
+from datetime import datetime as _datetime, timedelta as _timedelta
 from typing import Any, Dict, Optional, Sequence
 
 from langchain_core.messages import BaseMessage
@@ -21,6 +23,9 @@ OPERATION_ALIASES = {
     "payroll": "run_payroll",
     "t4": "generate_t4",
     "remittance": "get_remittance_summary",
+    "dummy_payroll": "seed_dummy_payroll_history",
+    "payroll_history": "seed_dummy_payroll_history",
+    "generate_payroll_history": "seed_dummy_payroll_history",
 }
 
 SUPPORTED_OPERATIONS = [
@@ -41,6 +46,7 @@ SUPPORTED_OPERATIONS = [
     "split_tips",
     "generate_t4",
     "get_remittance_summary",
+    "seed_dummy_payroll_history",
 ]
 
 PLANNER_INSTRUCTIONS = """\
@@ -60,6 +66,7 @@ PLANNER_INSTRUCTIONS = """\
 - split_tips: create and split a tip pool among staff. Requires approval. Arguments: total_amount, pool_date (optional), employee_splits: list of {employee_name, hours_worked}.
 - generate_t4: generate year-end T4 slips for all employees. Requires approval. Arguments: tax_year.
 - get_remittance_summary: show pending CRA remittances. No required arguments.
+- seed_dummy_payroll_history: generate 24 semi-monthly dummy payroll records for all active employees covering the past 12 months. Creates payroll profiles if missing. Returns a downloadable PDF payroll history report. No required arguments. Use when the owner asks to create dummy payroll, generate payroll history, create payroll records for the past year, or wants a payroll PDF.
 """
 
 
@@ -151,6 +158,12 @@ def _normalize_hr_operation(operation: str, plan: Dict[str, Any], messages: Sequ
         return "generate_t4"
     if any(keyword in combined_text for keyword in ("remittance", "cra payment", "source deduction")):
         return "get_remittance_summary"
+    if any(keyword in combined_text for keyword in (
+        "dummy payroll", "payroll history", "past year payroll", "create payroll",
+        "generate payroll", "payroll for all employees", "payroll records",
+        "payroll pdf", "annual payroll",
+    )):
+        return "seed_dummy_payroll_history"
     return "list_employees"
 
 
@@ -177,16 +190,80 @@ def _looks_like_current_staffing_request(text: str) -> bool:
 
 
 def _build_hr_fast_plan(messages: Sequence[BaseMessage]) -> Optional[Dict[str, Any]]:
-    conversation_text = _recent_conversation_text(messages)
-    if _looks_like_current_staffing_request(conversation_text):
+    # Get just the latest user message to check intent
+    latest_user_text = ""
+    for msg in reversed(list(messages)):
+        if hasattr(msg, "type") and msg.type == "human" and hasattr(msg, "content"):
+            latest_user_text = str(msg.content or "").strip()
+            break
+
+    latest_lower = latest_user_text.lower()
+
+    # If the current message is explicitly about adding/hiring employees, skip staffing fast-path.
+    _skip_staffing_fastpath = any(phrase in latest_lower for phrase in (
+        "add a new employee", "add new employee", "hire a new", "hire new",
+        "create a new employee", "onboard a new",
+    ))
+
+    # If the current message explicitly asks for shift schedule for a time period, route to get_shifts directly.
+    if any(phrase in latest_lower for phrase in (
+        "shift schedule for", "schedule for this week", "schedule for next week",
+        "shift schedule this week", "shift schedule next week",
+        "show.*shift.*schedule", "view.*shift.*schedule",
+    )):
+        # Extract date from the question
+        date_arg = None
+        if "this week" in latest_lower:
+            date_arg = _resolve_relative_date("this week")
+        elif "next week" in latest_lower:
+            date_arg = _resolve_relative_date("next week")
+        elif "last week" in latest_lower:
+            date_arg = _resolve_relative_date("last week")
         return {
             "operation": "get_shifts",
-            "arguments": {},
+            "arguments": {"date": date_arg} if date_arg else {},
             "requires_clarification": False,
             "clarification_question": "",
-            "rationale": "Selected get shifts for this HR request because the owner is asking who is on shift now and where staffing coverage is missing.",
+            "rationale": "Fast-path: explicit shift schedule request for a time period.",
         }
+
+    if not _skip_staffing_fastpath:
+        conversation_text = _recent_conversation_text(messages)
+        if _looks_like_current_staffing_request(conversation_text):
+            return {
+                "operation": "get_shifts",
+                "arguments": {},
+                "requires_clarification": False,
+                "clarification_question": "",
+                "rationale": "Selected get shifts for this HR request because the owner is asking who is on shift now and where staffing coverage is missing.",
+            }
     return None
+
+
+def _resolve_relative_date(date_str: Optional[str]) -> Optional[str]:
+    """Convert natural-language date expressions to ISO YYYY-MM-DD strings."""
+    if not date_str:
+        return None
+    lower = date_str.lower().strip()
+    today = _datetime.now().date()
+    if lower in ("today",):
+        return today.isoformat()
+    if lower in ("tomorrow",):
+        return (today + _timedelta(days=1)).isoformat()
+    if lower in ("yesterday",):
+        return (today - _timedelta(days=1)).isoformat()
+    if "this week" in lower or "current week" in lower:
+        # Return Monday of the current week
+        monday = today - _timedelta(days=today.weekday())
+        return monday.isoformat()
+    if "next week" in lower:
+        monday = today - _timedelta(days=today.weekday()) + _timedelta(weeks=1)
+        return monday.isoformat()
+    if "last week" in lower:
+        monday = today - _timedelta(days=today.weekday()) - _timedelta(weeks=1)
+        return monday.isoformat()
+    # Already looks like an ISO date — return as-is
+    return date_str
 
 
 def _build_hr_executor(shop_id: int):
@@ -195,6 +272,21 @@ def _build_hr_executor(shop_id: int):
             return hr_tools.list_employees(shop_id, bool(arguments.get("include_inactive", False)))
         if operation == "add_employee":
             name = _optional_str(arguments.get("name"))
+            if not name:
+                # Fallback: extract name from message text
+                conv_text = _recent_conversation_text(messages)
+                m = _re.search(
+                    r"\bnamed?\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)",
+                    conv_text,
+                )
+                if not m:
+                    m = _re.search(
+                        r"\badd(?:\s+a)?\s+new\s+employee\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)",
+                        conv_text,
+                        _re.IGNORECASE,
+                    )
+                if m:
+                    name = m.group(1).strip()
             if not name:
                 return {"error": "add_employee requires name"}
             return {
@@ -224,7 +316,9 @@ def _build_hr_executor(shop_id: int):
         if operation == "get_shifts":
             if _looks_like_current_staffing_request(_recent_conversation_text(messages)):
                 return hr_tools._local_current_staffing_status(shop_id)
-            return hr_tools.get_shifts(shop_id, _optional_str(arguments.get("date")), _to_int(arguments.get("user_id")))
+            raw_date = _optional_str(arguments.get("date"))
+            resolved_date = _resolve_relative_date(raw_date)
+            return hr_tools.get_shifts(shop_id, resolved_date, _to_int(arguments.get("user_id")))
         if operation == "assign_shift":
             user_id = _to_int(arguments.get("user_id"))
             start_time = _optional_str(arguments.get("start_time"))
@@ -438,6 +532,19 @@ def _build_hr_executor(shop_id: int):
             from agents.tools.payroll_tools import get_pending_remittances
             return get_pending_remittances(shop_id)
 
+        if operation == "seed_dummy_payroll_history":
+            from agents.tools.payroll_tools import seed_dummy_payroll_year
+            result = seed_dummy_payroll_year(shop_id, months_back=12)
+            # Return pdf_bytes as base64 so it survives JSON serialization
+            import base64
+            pdf_bytes = result.pop("pdf_bytes", b"")
+            if pdf_bytes:
+                result["pdf_content"] = base64.b64encode(pdf_bytes).decode("ascii")
+                result["pdf_filename"] = f"payroll_history_{result.get('period_label', 'report').replace(' ', '_').replace('–', '-')}.pdf"
+            else:
+                result["pdf_content"] = None
+            return result
+
         return {"error": f"Unsupported HR operation: {operation}"}
 
     return executor
@@ -531,6 +638,33 @@ def _format_hr_response(operation: str, result: Dict[str, Any]) -> str:
         if result.get("error"):
             return f"Could not log tip: {result['error']}"
         return f"Tip of ${float(result.get('amount') or 0):.2f} logged for {result.get('employee_name', 'the employee')}."
+    if operation == "seed_dummy_payroll_history":
+        if result.get("error"):
+            return f"Could not generate payroll history: {result['error']}"
+        created = int(result.get("created") or 0)
+        skipped = int(result.get("skipped") or 0)
+        emp_count = len(result.get("employees") or [])
+        period_label = result.get("period_label", "the past year")
+        errors = result.get("errors") or []
+        lines = [
+            f"I've generated dummy payroll history for **{emp_count} employee(s)** covering **{period_label}**.",
+            f"- **{created} new payslips** created and approved",
+        ]
+        if skipped:
+            lines.append(f"- {skipped} periods already had payslips (skipped)")
+        if errors:
+            lines.append(f"- {len(errors)} period(s) had errors: " + ", ".join(e.get("employee", "?") for e in errors[:3]))
+        if result.get("pdf_content"):
+            lines.append("\nYour **Payroll History Report PDF** is ready to download below.")
+        emp_rows = result.get("employees") or []
+        if emp_rows:
+            lines.append("\n**Annual summary:**")
+            for e in emp_rows[:10]:
+                lines.append(
+                    f"- {e['name']}: {e['periods']} periods — "
+                    f"Gross ${e['total_gross']:,.2f} | Net ${e['total_net']:,.2f}"
+                )
+        return "\n".join(lines)
     return f"The HR specialist completed {operation.replace('_', ' ')}."
 
 def create_hr_runnable(shop_id: int | None = None):

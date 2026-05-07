@@ -1890,7 +1890,12 @@ async def chat_stream(
                 route="/api/v2/agent/chat/stream",
             )
 
+            # Sanitize datetime/non-serializable objects before any json.dumps downstream.
             if isinstance(final_tool_results, dict) and final_tool_results:
+                try:
+                    final_tool_results = json.loads(json.dumps(final_tool_results, default=str))
+                except Exception:
+                    pass
                 yield f"data: {json.dumps({'type': 'tool_result', 'tool': final_metadata.get('specialist_operation') or final_tool_results.get('tool') or routed_agent or 'operation', 'result': final_tool_results, 'agent': routed_agent})}\n\n"
 
             # Stream response text word-by-word for efficient SSE delivery.
@@ -2058,6 +2063,18 @@ async def chat_stream(
                         "filename": final_tool_results.get("filename") or "inventory_export.csv",
                         "mimeType": "text/csv",
                         "content": base64.b64encode(csv_content.encode("utf-8")).decode("ascii"),
+                    }
+                    yield f"data: {json.dumps(file_event)}\n\n"
+
+            if routed_agent == "hr" and isinstance(final_tool_results, dict):
+                pdf_content = final_tool_results.get("pdf_content")
+                if isinstance(pdf_content, str) and pdf_content:
+                    pdf_filename = final_tool_results.get("pdf_filename") or "payroll_history.pdf"
+                    file_event = {
+                        "type": "file",
+                        "filename": pdf_filename,
+                        "mimeType": "application/pdf",
+                        "content": pdf_content,
                     }
                     yield f"data: {json.dumps(file_event)}\n\n"
 

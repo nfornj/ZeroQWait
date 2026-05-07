@@ -813,3 +813,234 @@ def reset_ytd_for_shop(shop_id: int, new_year: int) -> int:
         )
         session.commit()
         return result.rowcount
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Dummy payroll history seed (agent-driven, 24 semi-monthly periods)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def seed_dummy_payroll_year(shop_id: int, months_back: int = 12) -> Dict[str, Any]:
+    """
+    Generate dummy payroll history for all active employees over the past
+    ``months_back`` months (24 semi-monthly pay periods).
+
+    For each employee:
+      - Creates a payroll profile if one doesn't exist (hourly $22/hr, ON, semi_monthly).
+      - Drafts + approves a payslip for each semi-monthly period.
+      - Skips periods where a payslip already exists.
+
+    Returns:
+        {
+            "shop_name": str,
+            "period_label": str,
+            "employees": [...],          # per-employee summary
+            "all_payslips": [...],       # all payslip rows (enriched with employee_name)
+            "created": int,
+            "skipped": int,
+            "errors": [...],
+            "pdf_bytes": bytes,          # raw PDF bytes of the history report
+        }
+    """
+    from calendar import monthrange
+    from services.payroll_pdf import generate_payroll_history_pdf
+
+    today = date.today()
+    # Build 24 semi-monthly periods ending today (or last completed)
+    # Semi-monthly: 1st-15th and 16th-end-of-month
+    periods: List[tuple] = []
+    # Start from 12 months ago (approximate month boundary)
+    start_month = today.month - months_back
+    start_year = today.year
+    while start_month <= 0:
+        start_month += 12
+        start_year -= 1
+
+    current_year = start_year
+    current_month = start_month
+    while (current_year, current_month) <= (today.year, today.month):
+        last_day = monthrange(current_year, current_month)[1]
+        # First half: 1-15
+        p1_start = date(current_year, current_month, 1)
+        p1_end   = date(current_year, current_month, 15)
+        p1_pay   = date(current_year, current_month, 18) if 18 <= last_day else date(current_year, current_month, last_day)
+        # Second half: 16-end
+        p2_start = date(current_year, current_month, 16)
+        p2_end   = date(current_year, current_month, last_day)
+        p2_pay   = date(current_year, current_month + 1, 3) if current_month < 12 else date(current_year + 1, 1, 3)
+
+        if p1_end <= today:
+            periods.append((p1_start, p1_end, p1_pay))
+        if p2_end <= today:
+            periods.append((p2_start, p2_end, p2_pay))
+
+        current_month += 1
+        if current_month > 12:
+            current_month = 1
+            current_year += 1
+
+    period_label = f"{periods[0][0].strftime('%B %Y')} – {periods[-1][1].strftime('%B %Y')}" if periods else "N/A"
+
+    with SessionLocal() as session:
+        # Get shop name + owner
+        shop_row = session.execute(
+            text("SELECT name, owner_id FROM shops WHERE id=:sid"), {"sid": shop_id}
+        ).fetchone()
+        if not shop_row:
+            return {"error": f"Shop {shop_id} not found"}
+        shop_name = shop_row.name
+        owner_id  = shop_row.owner_id
+
+        # Get active employees
+        employees = (
+            session.query(ShopEmployee)
+            .filter(ShopEmployee.shop_id == shop_id, ShopEmployee.is_active == True)
+            .all()
+        )
+        if not employees:
+            return {"error": "No active employees found in this shop"}
+
+    created = 0
+    skipped = 0
+    errors: List[Dict] = []
+    all_payslips: List[Dict] = []
+    emp_summaries: List[Dict] = []
+
+    # Assign varied dummy rates for realism
+    dummy_rates = [18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0]
+
+    for idx, emp in enumerate(employees):
+        with SessionLocal() as session:
+            # Resolve employee name
+            user_row = session.execute(
+                text("SELECT username, full_name FROM users WHERE id=:uid"), {"uid": emp.user_id}
+            ).fetchone()
+            full_name = ""
+            if user_row:
+                full_name = (user_row.full_name or "").strip() or user_row.username or f"Employee #{emp.id}"
+            emp_name = full_name or f"Employee #{emp.id}"
+
+            # Ensure payroll profile exists
+            profile = (
+                session.query(EmployeePayrollProfile)
+                .filter(EmployeePayrollProfile.shop_employee_id == emp.id)
+                .first()
+            )
+            if not profile:
+                rate = dummy_rates[idx % len(dummy_rates)]
+                new_profile = EmployeePayrollProfile(
+                    shop_employee_id=emp.id,
+                    shop_id=shop_id,
+                    pay_type="hourly",
+                    hourly_rate=rate,
+                    pay_frequency="semi_monthly",
+                    province="ON",
+                    hire_date=date(today.year - 1, today.month, 1),
+                    sin_last4="0000",
+                )
+                session.add(new_profile)
+                session.commit()
+                logger.info("Created payroll profile for %s (rate=$%.2f/hr)", emp_name, rate)
+
+        emp_total_gross = 0.0
+        emp_total_ded   = 0.0
+        emp_total_net   = 0.0
+        emp_periods     = 0
+
+        for p_start, p_end, p_pay in periods:
+            with SessionLocal() as session:
+                # Skip if payslip already exists for this period
+                existing = session.execute(
+                    text(
+                        "SELECT id FROM payslips "
+                        "WHERE shop_employee_id=:se AND period_start=:ps AND period_end=:pe"
+                    ),
+                    {"se": emp.id, "ps": p_start, "pe": p_end},
+                ).fetchone()
+                if existing:
+                    skipped += 1
+                    # Still load it for the PDF
+                    slip_row = session.execute(
+                        text("SELECT * FROM payslips WHERE id=:id"), {"id": existing.id}
+                    ).fetchone()
+                    if slip_row:
+                        slip_d = dict(slip_row)
+                        slip_d["employee_name"] = emp_name
+                        all_payslips.append(slip_d)
+                        emp_total_gross += float(slip_d.get("gross_pay") or 0)
+                        emp_total_ded   += float(slip_d.get("total_deductions") or 0)
+                        emp_total_net   += float(slip_d.get("net_pay") or 0)
+                        emp_periods     += 1
+                    continue
+
+            try:
+                slip = draft_payslip(
+                    shop_id=shop_id,
+                    shop_employee_id=emp.id,
+                    period_start=p_start,
+                    period_end=p_end,
+                    pay_date=p_pay,
+                    regular_hours=80.0,
+                )
+                approved = approve_payslip(slip["id"], approved_by_user_id=owner_id)
+                approved["employee_name"] = emp_name
+                all_payslips.append(approved)
+                emp_total_gross += float(approved.get("gross_pay") or 0)
+                emp_total_ded   += float(approved.get("total_deductions") or 0)
+                emp_total_net   += float(approved.get("net_pay") or 0)
+                emp_periods     += 1
+                created += 1
+            except Exception as exc:
+                logger.warning("Failed payslip for %s period %s: %s", emp_name, p_start, exc)
+                errors.append({"employee": emp_name, "period": str(p_start), "error": str(exc)})
+
+        with SessionLocal() as session:
+            profile = (
+                session.query(EmployeePayrollProfile)
+                .filter(EmployeePayrollProfile.shop_employee_id == emp.id)
+                .first()
+            )
+            province = profile.province if profile else "ON"
+
+        emp_summaries.append({
+            "name": emp_name,
+            "province": province,
+            "periods": emp_periods,
+            "total_gross": emp_total_gross,
+            "total_deductions": emp_total_ded,
+            "total_net": emp_total_net,
+        })
+
+    # Sanitize all_payslips for JSON (dates → strings)
+    sanitized_payslips = []
+    for slip in all_payslips:
+        s = {}
+        for k, v in slip.items():
+            if isinstance(v, (date, datetime)):
+                s[k] = v.isoformat()
+            else:
+                s[k] = v
+        sanitized_payslips.append(s)
+
+    # Generate combined PDF
+    try:
+        pdf_bytes = generate_payroll_history_pdf(
+            shop_name=shop_name,
+            period_label=period_label,
+            employee_summaries=emp_summaries,
+            all_payslips=sanitized_payslips,
+            generated_on=today.strftime("%B %-d, %Y"),
+        )
+    except Exception as exc:
+        logger.error("Failed to generate payroll history PDF: %s", exc)
+        pdf_bytes = b""
+
+    return {
+        "shop_name": shop_name,
+        "period_label": period_label,
+        "employees": emp_summaries,
+        "all_payslips": sanitized_payslips,
+        "created": created,
+        "skipped": skipped,
+        "errors": errors,
+        "pdf_bytes": pdf_bytes,
+    }
