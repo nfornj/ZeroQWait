@@ -1694,24 +1694,63 @@ async def chat_stream(
             pending_action: Optional[Dict[str, Any]] = None
 
             # ----------------------------------------------------------------
-            # Stream graph execution node-by-node via sync stream updates.
-            # This keeps compatibility with the sync Postgres checkpointer
-            # while still emitting real-time thinking-step events.
+            # Stream graph execution via producer thread + async consumer.
+            # A keepalive SSE comment is emitted every _KEEPALIVE_INTERVAL
+            # seconds so proxies/nginx don't close the connection during
+            # slow LLM steps (qwen3:14b can take 60-120s per step).
             # ----------------------------------------------------------------
-            _GRAPH_STEP_TIMEOUT = 150  # seconds per graph step; prevents indefinite blocking on slow LLMs
-            try:
-                update_iter = runnable.stream(
-                    initial_state,
-                    config=checkpoint_config,
-                    stream_mode="updates",
-                )
+            _GRAPH_STEP_TIMEOUT = 150  # total seconds before we give up
+            _KEEPALIVE_INTERVAL = 15   # SSE ": keepalive" cadence
 
+            _graph_queue: asyncio.Queue = asyncio.Queue(maxsize=512)
+            _GRAPH_DONE = object()
+            _evt_loop = asyncio.get_event_loop()
+
+            def _produce_graph_events() -> None:
+                """Run sync LangGraph stream in a thread; push events to queue."""
+                try:
+                    for _upd in runnable.stream(
+                        initial_state,
+                        config=checkpoint_config,
+                        stream_mode="updates",
+                    ):
+                        _evt_loop.call_soon_threadsafe(_graph_queue.put_nowait, _upd)
+                except Exception as _exc:
+                    _evt_loop.call_soon_threadsafe(_graph_queue.put_nowait, _exc)
+                finally:
+                    _evt_loop.call_soon_threadsafe(_graph_queue.put_nowait, _GRAPH_DONE)
+
+            asyncio.ensure_future(asyncio.to_thread(_produce_graph_events))
+
+            _graph_deadline = asyncio.get_event_loop().time() + _GRAPH_STEP_TIMEOUT
+
+            try:
                 while True:
-                    update = await asyncio.wait_for(
-                        asyncio.to_thread(next, update_iter, None),
-                        timeout=_GRAPH_STEP_TIMEOUT,
-                    )
-                    if update is None:
+                    _remaining = _graph_deadline - asyncio.get_event_loop().time()
+                    if _remaining <= 0:
+                        logger.warning(
+                            "Graph timed out after %ds for shop=%s", _GRAPH_STEP_TIMEOUT, shop_id
+                        )
+                        break
+
+                    try:
+                        update = await asyncio.wait_for(
+                            _graph_queue.get(),
+                            timeout=min(_KEEPALIVE_INTERVAL, _remaining),
+                        )
+                    except asyncio.TimeoutError:
+                        # No event yet — send a keepalive comment to prevent proxy timeout.
+                        yield ": keepalive\n\n"
+                        continue
+
+                    if update is _GRAPH_DONE:
+                        break
+                    if isinstance(update, Exception):
+                        _exc_name = type(update).__name__
+                        if "interrupt" in _exc_name.lower() or "Interrupt" in _exc_name:
+                            logger.info("Graph interrupted (approval gate): %s", _exc_name)
+                        else:
+                            raise update
                         break
                     if not isinstance(update, dict):
                         continue
