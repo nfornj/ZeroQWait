@@ -5,6 +5,8 @@ Follows the exact same planner/executor pattern as hr.py.
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 from typing import Any, Dict, Optional, Sequence
 
@@ -196,13 +198,50 @@ def _build_inventory_executor(shop_id: int):
     ) -> Dict[str, Any]:
         op = _normalize_operation(operation, arguments, messages)
 
+        def _wants_csv(msgs: Sequence[BaseMessage]) -> bool:
+            text = _recent_text(msgs).lower()
+            return any(kw in text for kw in ("csv", "export", "download", "spreadsheet", "file"))
+
+        def _items_to_csv(items: list, fieldnames: list) -> str:
+            buf = io.StringIO()
+            writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(items)
+            return buf.getvalue()
+
         if op == "list_inventory":
-            return {
-                "items": inventory_tools.list_inventory(
+            # Try local DB first; fall back to Odoo when local inventory table is missing
+            try:
+                items = inventory_tools.list_inventory(
                     shop_id,
                     include_inactive=bool(arguments.get("include_inactive", False)),
                 )
-            }
+                if items:
+                    result: Dict[str, Any] = {"items": items, "source": "local"}
+                    if _wants_csv(messages):
+                        result["csv_content"] = _items_to_csv(
+                            items,
+                            ["name", "current_stock", "unit", "reorder_threshold", "category", "sku", "supplier"],
+                        )
+                        result["filename"] = "inventory.csv"
+                    return result
+            except Exception:
+                pass
+            # Odoo fallback
+            company_id = _get_odoo_company_id(shop_id)
+            if company_id and odoo_client.enabled:
+                result2 = odoo_client.get_low_stock_items(company_id=company_id, threshold=999999)
+                if "error" not in result2:
+                    items = result2.get("items", [])
+                    out: Dict[str, Any] = {"items": items, "source": "odoo"}
+                    if _wants_csv(messages) and items:
+                        out["csv_content"] = _items_to_csv(
+                            items,
+                            ["name", "qty_on_hand", "uom_id", "reorder_threshold"],
+                        )
+                        out["filename"] = "inventory.csv"
+                    return out
+            return {"items": [], "source": "none"}
 
         if op == "add_item":
             name = _optional_str(arguments.get("name"))
@@ -255,8 +294,35 @@ def _build_inventory_executor(shop_id: int):
             }
 
         if op == "get_low_stock_alerts":
-            alerts = inventory_tools.get_low_stock_alerts(shop_id)
-            return {"alerts": alerts, "count": len(alerts)}
+            # Try local DB first; fall back to Odoo when local inventory table is missing
+            try:
+                alerts = inventory_tools.get_low_stock_alerts(shop_id)
+                if alerts:
+                    low_result: Dict[str, Any] = {"alerts": alerts, "count": len(alerts), "source": "local"}
+                    if _wants_csv(messages):
+                        low_result["csv_content"] = _items_to_csv(
+                            alerts,
+                            ["name", "current_stock", "unit", "reorder_threshold", "category", "supplier"],
+                        )
+                        low_result["filename"] = "low_stock_items.csv"
+                    return low_result
+            except Exception:
+                pass
+            # Odoo fallback
+            company_id = _get_odoo_company_id(shop_id)
+            if company_id and odoo_client.enabled:
+                result = odoo_client.get_low_stock_items(company_id=company_id, threshold=5.0)
+                if "error" not in result:
+                    alerts = result.get("items", [])
+                    low_out: Dict[str, Any] = {"alerts": alerts, "count": result.get("count", 0), "source": "odoo"}
+                    if _wants_csv(messages) and alerts:
+                        low_out["csv_content"] = _items_to_csv(
+                            alerts,
+                            ["name", "qty_on_hand", "uom_id", "reorder_threshold"],
+                        )
+                        low_out["filename"] = "low_stock_items.csv"
+                    return low_out
+            return {"alerts": [], "count": 0, "source": "none"}
 
         if op == "get_cogs_report":
             return inventory_tools.get_cogs_report(shop_id, _optional_str(arguments.get("since_date")))
@@ -275,8 +341,19 @@ def _build_inventory_executor(shop_id: int):
                     result = odoo_client.get_low_stock_items(company_id=company_id, threshold=999999)
                     items = [i for i in result.get("items", []) if i.get("id") == product_id]
                     return {"product": items[0]} if items else {"error": "not_found", "product_id": product_id}
+                # Name-based search: get all products and filter by name
+                query_name = _optional_str(arguments.get("name") or arguments.get("query") or arguments.get("product_name"))
+                result = odoo_client.get_low_stock_items(company_id=company_id, threshold=999999)
+                all_items = result.get("items", [])
+                if query_name:
+                    q = query_name.lower()
+                    all_items = [i for i in all_items if q in str(i.get("name", "")).lower()]
+                return {"items": all_items}
             # Local fallback: list inventory and filter by name/id
-            return {"items": inventory_tools.list_inventory(shop_id, include_inactive=False)}
+            try:
+                return {"items": inventory_tools.list_inventory(shop_id, include_inactive=False)}
+            except Exception:
+                return {"items": [], "error": "Inventory table not available"}
 
         if op == "receive_stock":
             company_id = _get_odoo_company_id(shop_id)
@@ -354,13 +431,22 @@ def _build_inventory_formatter(shop_id: int):
 
         if op == "list_inventory":
             items = result.get("items", [])
+            source = result.get("source", "")
             if not items:
-                return "No inventory items are being tracked yet. Say 'add item' to start."
-            low = [i for i in items if i.get("is_low_stock")]
-            lines = [f"**{i['name']}**: {i['current_stock']} {i['unit']} (threshold: {i['reorder_threshold']})" for i in items[:15]]
+                return "No inventory items are being tracked yet."
+            low = [i for i in items if i.get("is_low_stock") or (float(i.get("qty_on_hand", i.get("current_stock", 1)) or 1) <= float(i.get("reorder_threshold", 5) or 5))]
+            lines = []
+            for i in items[:20]:
+                name = i.get("name", "Unknown")
+                qty = i.get("qty_on_hand", i.get("current_stock", "?"))
+                unit = i.get("uom_id", i.get("unit", ""))
+                threshold = i.get("reorder_threshold", "")
+                threshold_note = f" (threshold: {threshold})" if threshold else ""
+                lines.append(f"- **{name}**: {qty} {unit}{threshold_note}")
             summary = "\n".join(lines)
+            source_note = " (from Odoo)" if source == "odoo" else ""
             low_note = f"\n\n⚠️ **{len(low)} item(s) below reorder threshold.**" if low else ""
-            return f"**Inventory ({len(items)} items):**\n{summary}{low_note}"
+            return f"**Products we carry{source_note} ({len(items)} items):**\n\n{summary}{low_note}"
 
         if op in ("record_restock",):
             return (
@@ -376,13 +462,20 @@ def _build_inventory_formatter(shop_id: int):
 
         if op == "get_low_stock_alerts":
             alerts = result.get("alerts", [])
+            source = result.get("source", "")
+            source_note = " (from Odoo)" if source == "odoo" else ""
             if not alerts:
-                return "All inventory items are above their reorder thresholds. ✅"
-            lines = [
-                f"• **{a['name']}**: {a['current_stock']} {a['unit']} remaining (need {a['reorder_threshold']})"
-                for a in alerts
-            ]
-            return f"⚠️ **{len(alerts)} low-stock alert(s):**\n" + "\n".join(lines)
+                return f"All inventory items are above their reorder thresholds{source_note}. ✅"
+            lines = []
+            for a in alerts:
+                name = a.get("name", "Unknown item")
+                qty = a.get("qty_on_hand", a.get("current_stock", "?"))
+                unit = a.get("uom_id", a.get("unit", ""))
+                threshold = a.get("reorder_threshold", "")
+                threshold_note = f" (threshold: {threshold})" if threshold else ""
+                lines.append(f"- **{name}**: {qty} {unit} remaining{threshold_note}")
+            csv_note = "\n\n_A CSV file has been attached below._" if result.get("csv_content") else ""
+            return f"⚠️ **{len(alerts)} low-stock item(s){source_note}:**\n\n" + "\n".join(lines) + csv_note
 
         if op == "get_cogs_report":
             return (
@@ -401,8 +494,8 @@ def _build_inventory_formatter(shop_id: int):
                 )
             items = result.get("items", [])
             if items:
-                lines = [f"• **{i['name']}**: {i.get('qty_on_hand', '?')} {i.get('uom_id', '')}" for i in items[:10]]
-                return "**Inventory items:**\n" + "\n".join(lines)
+                lines = [f"- **{i['name']}**: {i.get('qty_on_hand', '?')} {i.get('uom_id', '')}" for i in items[:10]]
+                return "**Inventory items:**\n\n" + "\n".join(lines)
             return result.get("error") or "Product not found."
 
         if op == "receive_stock":
@@ -426,10 +519,10 @@ def _build_inventory_formatter(shop_id: int):
             if not alerts:
                 return f"All items are above their stock thresholds{source_note}. ✅"
             lines = [
-                f"• **{a.get('name')}**: {a.get('qty_on_hand', a.get('current_stock', '?'))} remaining"
+                f"- **{a.get('name')}**: {a.get('qty_on_hand', a.get('current_stock', '?'))} remaining"
                 for a in alerts
             ]
-            return f"⚠️ **{len(alerts)} low-stock item(s){source_note}:**\n" + "\n".join(lines)
+            return f"⚠️ **{len(alerts)} low-stock item(s){source_note}:**\n\n" + "\n".join(lines)
 
         return str(result)
 
@@ -441,6 +534,7 @@ def create_inventory_runnable(shop_id: int):
     return build_specialist_runnable(
         agent_name="inventory",
         shop_id=shop_id,
+        temperature=0.2,
         supported_operations=SUPPORTED_OPERATIONS,
         planner_instructions=PLANNER_INSTRUCTIONS,
         executor=_build_inventory_executor(shop_id),

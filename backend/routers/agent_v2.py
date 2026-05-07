@@ -2050,6 +2050,17 @@ async def chat_stream(
                     }
                     yield f"data: {json.dumps(file_event)}\n\n"
 
+            if routed_agent == "inventory" and isinstance(final_tool_results, dict):
+                csv_content = final_tool_results.get("csv_content")
+                if isinstance(csv_content, str) and csv_content.strip():
+                    file_event = {
+                        "type": "file",
+                        "filename": final_tool_results.get("filename") or "inventory_export.csv",
+                        "mimeType": "text/csv",
+                        "content": base64.b64encode(csv_content.encode("utf-8")).decode("ascii"),
+                    }
+                    yield f"data: {json.dumps(file_event)}\n\n"
+
             # Emit contextual follow-up suggestions based on the routed agent.
             follow_ups = _generate_followup_suggestions(routed_agent, message)
             if follow_ups:
