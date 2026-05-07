@@ -64,7 +64,7 @@ def _load_constants(session: Session, tax_year: int, province: str) -> PayrollCo
     if result is None:
         raise ValueError(f"No payroll constants for year={tax_year} province={province}")
 
-    row = dict(result)
+    row = dict(result._mapping)
     fed_brackets  = row["fed_brackets"]  if isinstance(row["fed_brackets"],  list) else json.loads(row["fed_brackets"])
     prov_brackets = row["prov_brackets"] if isinstance(row["prov_brackets"], list) else json.loads(row["prov_brackets"])
     prov_surtax   = row["prov_surtax"]   if isinstance(row["prov_surtax"],   dict) else json.loads(row["prov_surtax"])
@@ -289,7 +289,7 @@ def draft_payslip(
             text("SELECT * FROM payslips WHERE shop_employee_id=:id ORDER BY id DESC LIMIT 1"),
             {"id": shop_employee_id},
         ).fetchone()
-        return dict(row)
+        return dict(row._mapping)
 
 
 def list_payslips(
@@ -362,7 +362,7 @@ def list_payslips(
         params["lim"] = limit
 
         rows = session.execute(text(q), params).fetchall()
-        return [dict(r) for r in rows]
+        return [dict(r._mapping) for r in rows]
 
 
 def approve_payslip(payslip_id: int, approved_by_user_id: int) -> Dict[str, Any]:
@@ -376,7 +376,7 @@ def approve_payslip(payslip_id: int, approved_by_user_id: int) -> Dict[str, Any]
         ).fetchone()
         if row is None:
             raise ValueError(f"Payslip id={payslip_id} not found.")
-        if dict(row)["status"] != "draft":
+        if dict(row._mapping)["status"] != "draft":
             raise ValueError(f"Payslip id={payslip_id} is not in 'draft' status.")
 
         session.execute(
@@ -386,7 +386,7 @@ def approve_payslip(payslip_id: int, approved_by_user_id: int) -> Dict[str, Any]
         )
 
         # Update YTD accumulators
-        d = dict(row)
+        d = dict(row._mapping)
         session.execute(
             text("""UPDATE employee_payroll_profiles SET
                 ytd_gross    = ytd_gross + :gross,
@@ -409,7 +409,7 @@ def approve_payslip(payslip_id: int, approved_by_user_id: int) -> Dict[str, Any]
         )
         session.commit()
         updated = session.execute(text("SELECT * FROM payslips WHERE id=:id"), {"id": payslip_id}).fetchone()
-        return dict(updated)
+        return dict(updated._mapping)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -467,7 +467,7 @@ def log_tip(
             text("SELECT * FROM tips_log WHERE shop_id=:s ORDER BY id DESC LIMIT 1"),
             {"s": shop_id},
         ).fetchone()
-        return dict(row)
+        return dict(row._mapping)
 
 
 def get_tips_summary(
@@ -531,7 +531,7 @@ def create_tip_pool(
             text("SELECT * FROM tip_pools WHERE shop_id=:s ORDER BY id DESC LIMIT 1"),
             {"s": shop_id},
         ).fetchone()
-        return dict(row)
+        return dict(row._mapping)
 
 
 def split_tip_pool(
@@ -549,7 +549,7 @@ def split_tip_pool(
         ).fetchone()
         if pool is None:
             raise ValueError(f"Tip pool id={tip_pool_id} not found.")
-        pool_dict = dict(pool)
+        pool_dict = dict(pool._mapping)
         if pool_dict["status"] not in ("open", "splitting"):
             raise ValueError(f"Tip pool {tip_pool_id} is already {pool_dict['status']}.")
 
@@ -579,7 +579,7 @@ def split_tip_pool(
         )
         session.commit()
         updated = session.execute(text("SELECT * FROM tip_pools WHERE id=:id"), {"id": tip_pool_id}).fetchone()
-        return dict(updated)
+        return dict(updated._mapping)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -642,7 +642,7 @@ def upsert_remittance(
             ).fetchone()[0]
         session.commit()
         row = session.execute(text("SELECT * FROM remittances WHERE id=:id"), {"id": rid}).fetchone()
-        return dict(row)
+        return dict(row._mapping)
 
 
 def get_pending_remittances(shop_id: int) -> List[Dict[str, Any]]:
@@ -653,7 +653,7 @@ def get_pending_remittances(shop_id: int) -> List[Dict[str, Any]]:
                ORDER BY due_date ASC"""),
             {"s": shop_id},
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [dict(r._mapping) for r in rows]
 
 
 def remittance_due_soon(shop_id: int, days_ahead: int = 3) -> List[Dict[str, Any]]:
@@ -666,7 +666,7 @@ def remittance_due_soon(shop_id: int, days_ahead: int = 3) -> List[Dict[str, Any
                ORDER BY due_date ASC"""),
             {"s": shop_id, "cutoff": cutoff},
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [dict(r._mapping) for r in rows]
 
 
 def mark_remittance_paid(remittance_id: int) -> Dict[str, Any]:
@@ -678,7 +678,7 @@ def mark_remittance_paid(remittance_id: int) -> Dict[str, Any]:
         )
         session.commit()
         row = session.execute(text("SELECT * FROM remittances WHERE id=:id"), {"id": remittance_id}).fetchone()
-        return dict(row)
+        return dict(row._mapping)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -777,7 +777,7 @@ def draft_t4(shop_id: int, shop_employee_id: int, tax_year: int) -> Dict[str, An
 
         session.commit()
         row = session.execute(text("SELECT * FROM t4_records WHERE id=:id"), {"id": rid}).fetchone()
-        return dict(row)
+        return dict(row._mapping)
 
 
 def list_t4_records(shop_id: int, tax_year: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -790,7 +790,7 @@ def list_t4_records(shop_id: int, tax_year: Optional[int] = None) -> List[Dict[s
             params["yr"] = tax_year
         q += " ORDER BY tax_year DESC, shop_employee_id ASC"
         rows = session.execute(text(q), params).fetchall()
-        return [dict(r) for r in rows]
+        return [dict(r._mapping) for r in rows]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -843,6 +843,7 @@ def seed_dummy_payroll_year(shop_id: int, months_back: int = 12) -> Dict[str, An
     """
     from calendar import monthrange
     from services.payroll_pdf import generate_payroll_history_pdf
+    import models as _all_models  # noqa: F401 — ensures full ORM registry is populated
 
     today = date.today()
     # Build 24 semi-monthly periods ending today (or last completed)
@@ -890,14 +891,14 @@ def seed_dummy_payroll_year(shop_id: int, months_back: int = 12) -> Dict[str, An
         shop_name = shop_row.name
         owner_id  = shop_row.owner_id
 
-        # Get active employees
-        employees = (
-            session.query(ShopEmployee)
-            .filter(ShopEmployee.shop_id == shop_id, ShopEmployee.is_active == True)
-            .all()
-        )
-        if not employees:
+        # Get active employees via raw SQL (avoids ORM relationship resolution)
+        emp_rows = session.execute(
+            text("SELECT id, user_id FROM shop_employees WHERE shop_id=:s AND is_active=TRUE ORDER BY id"),
+            {"s": shop_id},
+        ).fetchall()
+        if not emp_rows:
             return {"error": "No active employees found in this shop"}
+        employees = [{"id": r.id, "user_id": r.user_id} for r in emp_rows]
 
     created = 0
     skipped = 0
@@ -909,37 +910,41 @@ def seed_dummy_payroll_year(shop_id: int, months_back: int = 12) -> Dict[str, An
     dummy_rates = [18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0]
 
     for idx, emp in enumerate(employees):
+        emp_id   = emp["id"]
+        emp_uid  = emp["user_id"]
         with SessionLocal() as session:
             # Resolve employee name
             user_row = session.execute(
-                text("SELECT username, full_name FROM users WHERE id=:uid"), {"uid": emp.user_id}
+                text("SELECT username FROM users WHERE id=:uid"), {"uid": emp_uid}
             ).fetchone()
-            full_name = ""
-            if user_row:
-                full_name = (user_row.full_name or "").strip() or user_row.username or f"Employee #{emp.id}"
-            emp_name = full_name or f"Employee #{emp.id}"
+            emp_name = (user_row.username if user_row else None) or f"Employee #{emp_id}"
 
-            # Ensure payroll profile exists
-            profile = (
-                session.query(EmployeePayrollProfile)
-                .filter(EmployeePayrollProfile.shop_employee_id == emp.id)
-                .first()
-            )
-            if not profile:
+            # Ensure payroll profile exists (raw SQL)
+            profile_row = session.execute(
+                text("SELECT id, province FROM employee_payroll_profiles WHERE shop_employee_id=:se"),
+                {"se": emp_id},
+            ).fetchone()
+            if not profile_row:
                 rate = dummy_rates[idx % len(dummy_rates)]
-                new_profile = EmployeePayrollProfile(
-                    shop_employee_id=emp.id,
-                    shop_id=shop_id,
-                    pay_type="hourly",
-                    hourly_rate=rate,
-                    pay_frequency="semi_monthly",
-                    province="ON",
-                    hire_date=date(today.year - 1, today.month, 1),
-                    sin_last4="0000",
+                session.execute(
+                    text("""INSERT INTO employee_payroll_profiles
+                        (shop_employee_id, shop_id, pay_type, hourly_rate, pay_frequency,
+                         province, hire_date, sin_last4,
+                         td1_federal_claim, td1_prov_claim, additional_tax,
+                         ytd_gross, ytd_cpp, ytd_ei,
+                         ytd_fed_tax, ytd_prov_tax, ytd_tips, ytd_year, created_at, updated_at)
+                        VALUES (:se, :sid, 'hourly', :rate, 'biweekly',
+                                'ON', :hire, '0000',
+                                15705.00, 11865.00, 0.00,
+                                0, 0, 0, 0, 0, 0, :yr, NOW(), NOW())"""),
+                    {"se": emp_id, "sid": shop_id, "rate": rate,
+                     "hire": date(today.year - 1, today.month, 1), "yr": today.year},
                 )
-                session.add(new_profile)
                 session.commit()
                 logger.info("Created payroll profile for %s (rate=$%.2f/hr)", emp_name, rate)
+                province = "ON"
+            else:
+                province = profile_row.province or "ON"
 
         emp_total_gross = 0.0
         emp_total_ded   = 0.0
@@ -954,7 +959,7 @@ def seed_dummy_payroll_year(shop_id: int, months_back: int = 12) -> Dict[str, An
                         "SELECT id FROM payslips "
                         "WHERE shop_employee_id=:se AND period_start=:ps AND period_end=:pe"
                     ),
-                    {"se": emp.id, "ps": p_start, "pe": p_end},
+                    {"se": emp_id, "ps": p_start, "pe": p_end},
                 ).fetchone()
                 if existing:
                     skipped += 1
@@ -963,7 +968,7 @@ def seed_dummy_payroll_year(shop_id: int, months_back: int = 12) -> Dict[str, An
                         text("SELECT * FROM payslips WHERE id=:id"), {"id": existing.id}
                     ).fetchone()
                     if slip_row:
-                        slip_d = dict(slip_row)
+                        slip_d = dict(slip_row._mapping)
                         slip_d["employee_name"] = emp_name
                         all_payslips.append(slip_d)
                         emp_total_gross += float(slip_d.get("gross_pay") or 0)
@@ -975,7 +980,7 @@ def seed_dummy_payroll_year(shop_id: int, months_back: int = 12) -> Dict[str, An
             try:
                 slip = draft_payslip(
                     shop_id=shop_id,
-                    shop_employee_id=emp.id,
+                    shop_employee_id=emp_id,
                     period_start=p_start,
                     period_end=p_end,
                     pay_date=p_pay,
@@ -992,14 +997,6 @@ def seed_dummy_payroll_year(shop_id: int, months_back: int = 12) -> Dict[str, An
             except Exception as exc:
                 logger.warning("Failed payslip for %s period %s: %s", emp_name, p_start, exc)
                 errors.append({"employee": emp_name, "period": str(p_start), "error": str(exc)})
-
-        with SessionLocal() as session:
-            profile = (
-                session.query(EmployeePayrollProfile)
-                .filter(EmployeePayrollProfile.shop_employee_id == emp.id)
-                .first()
-            )
-            province = profile.province if profile else "ON"
 
         emp_summaries.append({
             "name": emp_name,
