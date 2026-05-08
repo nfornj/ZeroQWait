@@ -72,7 +72,7 @@ def _require_employee_of_shop(
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Payslip not found")
-    row_dict = dict(row)
+    row_dict = dict(row._mapping)
     if row_dict["user_id"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Not authorized to access this payslip")
     return row_dict
@@ -172,7 +172,7 @@ def download_payslip_pdf_owner(
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Payslip not found")
-        payslip = dict(row)
+        payslip = dict(row._mapping)
 
         se_id = payslip.get("shop_employee_id")
         emp_name = "Employee"
@@ -411,7 +411,7 @@ def get_my_payslips(
             {"uid": user_id, "lim": limit},
         ).fetchall()
 
-    return [dict(r) for r in rows]
+    return [dict(r._mapping) for r in rows]
 
 
 @router.get("/me/payslips/{payslip_id}/pdf")
