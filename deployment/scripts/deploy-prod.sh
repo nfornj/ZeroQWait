@@ -170,9 +170,9 @@ kctl apply -f "${K8S_MANIFESTS}/temporal-configmap.yaml"
 kctl apply -f "${K8S_MANIFESTS}/temporal-deployment.yaml"
 
 echo "==> Waiting for core data workloads"
-kctl rollout status statefulset/postgres -n zeroqwait --timeout=300s
-kctl rollout status statefulset/redis -n zeroqwait --timeout=300s
-kctl rollout status deployment/temporal -n zeroqwait --timeout=300s
+kctl rollout status statefulset/postgres -n zeroqwait --timeout=600s
+kctl rollout status statefulset/redis -n zeroqwait --timeout=600s
+kctl rollout status deployment/temporal -n zeroqwait --timeout=600s
 
 echo "==> Applying app manifests"
 kctl apply -f "${K8S_MANIFESTS}/backend-configmap.yaml"
@@ -200,10 +200,10 @@ kctl rollout restart deployment/temporal-worker -n zeroqwait
 # Run deployment/scripts/prune-ghcr-tags.sh manually if needed.
 
 echo "==> Waiting for frontend and backend rollouts"
-kctl rollout status deployment/frontend -n zeroqwait --timeout=300s
-# Pre-built image startup: ~2 min (model warm-up). 5 min ceiling is sufficient.
-kctl rollout status deployment/backend -n zeroqwait --timeout=300s
-kctl rollout status deployment/temporal-worker -n zeroqwait --timeout=300s
+kctl rollout status deployment/frontend -n zeroqwait --timeout=900s
+# Image pull from GHCR + startup can take 10-15 min for large images.
+kctl rollout status deployment/backend -n zeroqwait --timeout=900s
+kctl rollout status deployment/temporal-worker -n zeroqwait --timeout=900s
 
 echo "==> Production deployment successful"
 echo "    Site: https://zeroqwait.com"
