@@ -5,6 +5,7 @@ metadata:
   namespace: zeroqwait
 spec:
   replicas: 1
+  progressDeadlineSeconds: 1200
   selector:
     matchLabels:
       app: backend
