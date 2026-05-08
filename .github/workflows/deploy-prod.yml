@@ -39,9 +39,17 @@ jobs:
           sudo sh -c 'command -v kubectl || command -v k3s'
 
       - name: Log in to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          echo "Logged in to ghcr.io as ${{ github.actor }}"
+          # Prefer GHCR_TOKEN (PAT with write:packages) over GITHUB_TOKEN for private package push
+          if [[ -n "${GHCR_TOKEN:-}" ]]; then
+            echo "${GHCR_TOKEN}" | sudo docker login ghcr.io -u "nfornj" --password-stdin
+            echo "Logged in to ghcr.io using GHCR_TOKEN"
+          else
+            echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            echo "Logged in to ghcr.io as ${{ github.actor }} (GITHUB_TOKEN)"
+          fi
 
       - name: Configure K3s to pull from ghcr.io
         env:
