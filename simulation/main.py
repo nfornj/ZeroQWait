@@ -4,8 +4,10 @@ ZeroQwait Live Shop Simulation
 ================================
 
 Simulates a real barber shop with:
-  👷 2 barber employees — serve customers in queue
-  👤 Continuous customer arrivals — join queue with random services
+  👷 2 barber employees — clock in, serve customers, clock out after shift; random sick days
+  👤 Continuous customer arrivals — join queue with random services; paused on holidays
+  💳 Checkout + payment — cash / card / contactless logged after every service
+  📅 Holidays — upcoming close days registered; customer arrivals paused on those days
   🏪 1 shop owner — asks the AI agent operational questions every minute
 
 Output: Rich terminal dashboard  (docker compose logs -f simulation)
@@ -19,6 +21,8 @@ Environment variables:
   OWNER_QUERY_MIN/MAX      Seconds between owner AI queries (default: 60/120)
   TIME_COMPRESSION         Seconds per simulated service-minute (default: 2)
   MAX_QUEUE_SIZE           Max simultaneous waiting customers (default: 10)
+  SHIFT_DURATION_MINUTES   Simulated shift length in minutes before clock-out (default: 480 = 8h)
+  SICK_DAY_CHANCE          0.0–1.0 probability each employee calls in sick (default: 0.15)
 """
 
 import asyncio
@@ -27,7 +31,7 @@ import os
 import random
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
@@ -52,6 +56,25 @@ OWNER_QUERY_MIN = float(os.getenv("OWNER_QUERY_MIN", "60"))
 OWNER_QUERY_MAX = float(os.getenv("OWNER_QUERY_MAX", "120"))
 TIME_COMPRESSION = float(os.getenv("TIME_COMPRESSION", "2"))
 MAX_QUEUE_SIZE = int(os.getenv("MAX_QUEUE_SIZE", "10"))
+# A full 8-hour shift takes SHIFT_DURATION_MINUTES * TIME_COMPRESSION seconds real-time.
+# At TIME_COMPRESSION=2, 480 min * 2s = 960s (~16 min) before employee clocks out.
+SHIFT_DURATION_MINUTES = float(os.getenv("SHIFT_DURATION_MINUTES", "480"))
+SICK_DAY_CHANCE = float(os.getenv("SICK_DAY_CHANCE", "0.15"))
+
+# Shop operating hours (real wall clock — all actor loops obey these)
+SHOP_OPEN_HOUR  = int(os.getenv("SHOP_OPEN_HOUR",  "9"))   # 09:00
+SHOP_CLOSE_HOUR = int(os.getenv("SHOP_CLOSE_HOUR", "0"))   # 0 = midnight
+
+# Surge management — queue depth thresholds for auto walk-in control
+SURGE_THRESHOLD = int(os.getenv("SURGE_THRESHOLD", "7"))   # waiting → block walk-ins
+SURGE_RESUME    = int(os.getenv("SURGE_RESUME",    "4"))   # waiting → re-open walk-ins
+
+# Walk-in vs pre-booked appointment split (0.0 = all appointments, 1.0 = all walk-ins)
+WALKIN_RATIO    = float(os.getenv("WALKIN_RATIO", "0.6"))
+
+# Customer cancellations — impatient customers abandon the queue
+CANCEL_CHECK_INTERVAL = float(os.getenv("CANCEL_CHECK_INTERVAL", "45"))  # seconds between scans
+CANCEL_CHANCE         = float(os.getenv("CANCEL_CHANCE",         "0.12")) # per waiting customer
 
 # ─── Customer names ───────────────────────────────────────────────────────────
 
@@ -81,7 +104,76 @@ OWNER_QUERIES = [
     "What's the busiest hour we've had so far today?",
     "Any issues I should know about?",
     "How are we doing compared to yesterday?",
+    "We're getting a surge in walk-ins — should I call in a third barber?",
+    "A few customers just cancelled. What's our cancellation trend today?",
+    "What's the current wait time for a new walk-in customer right now?",
+    "Are walk-ins suspended due to surge? What's the queue depth?",
 ]
+
+PAYMENT_METHODS = ["cash", "card", "contactless", "cash", "card"]  # weighted toward card/cash
+
+# ─── Approval scenarios ────────────────────────────────────────────────────────
+# Scenarios that ask the AI agent to perform actions requiring owner approval.
+# Each entry is (message, force_reject).
+#   force_reject=True  → simulation will always deny (used for destructive ops like closing the queue)
+#   force_reject=False → left for the real human owner to decide in the Agent Inbox
+#
+# These are grouped into categories:
+#   STAFFING  — add/remove employee, leave requests, shift changes
+#   FINANCE   — invoices, payments, refunds, discounts
+#   OPERATIONS — queue management, pricing
+#
+_APPROVAL_SCENARIOS: list[tuple[str, bool]] = [
+    # ── Staffing: employee leave requests (most common real-world approval) ─────
+    ("Marcus has asked for a day off this Friday — can you submit his leave request?", False),
+    ("Elena texted me — she needs next Monday off for a medical appointment. Please log her leave request.", False),
+    ("Marcus wants to take the whole weekend off this week. Please put in his leave request for Saturday and Sunday.", False),
+    ("One of our barbers called in sick today — please log Elena's sick day leave for today.", False),
+    ("Elena wants to take annual leave on the 15th and 16th. Can you submit that for approval?", False),
+    ("Marcus asked for a personal day next Wednesday — please register his leave request.", False),
+
+    # ── Staffing: adding / removing team members ───────────────────────────────
+    ("Add a new part-time barber named Sam Rivera to the team. Email: sam.rivera@zeroqwait.demo", False),
+    ("We want to hire Jordan Lee for weekend shifts. Email: jordan.lee@zeroqwait.demo", False),
+    ("Add a new junior barber, Alex Chen, to the roster. He'll start next week.", False),
+
+    # ── Staffing: shift assignments ────────────────────────────────────────────
+    ("Assign Elena to the morning shift this Saturday, 9am to 2pm", False),
+    ("Schedule Marcus for a double shift this Sunday — 8am to 8pm", False),
+    ("Put Elena on the late shift next Friday, 2pm to 8pm", False),
+    ("Can you assign Marcus a shift next Monday morning from 9am to 1pm?", False),
+
+    # ── Finance: refunds ───────────────────────────────────────────────────────
+    ("A customer says they were overcharged $10 on their last visit — please process a partial refund", False),
+    ("Process a $35 refund for a Fade & Style — the customer was unhappy with the result", False),
+    ("Customer Jake Williams wants a refund for a Kids Cut they paid for but didn't get. Can you refund them?", False),
+
+    # ── Finance: invoices ──────────────────────────────────────────────────────
+    ("Create an invoice for a Fade & Style service — the customer wants a receipt for expense tracking", False),
+    ("Generate an invoice for a Full Service package just completed at chair 1", False),
+    ("Customer is asking for a receipt. Please create an invoice for a Classic Haircut and Beard Trim combo.", False),
+
+    # ── Finance: payments ──────────────────────────────────────────────────────
+    ("Record a cash payment of $35 for a Classic Haircut just done at the front desk", False),
+    ("A customer paid $45 in cash for the Full Service — please record that payment", False),
+    ("Log a contactless payment of $18 for a Kids Cut", False),
+
+    # ── Operations: queue management ──────────────────────────────────────────
+    ("Close the queue for the next 2 hours — the team needs a lunch break", True),
+    ("We're getting overwhelmed — please close the queue to new walk-ins for now", True),
+    ("End of day is coming — please close the queue so we can wind down", True),
+]
+
+# Timing for approval scenario loop
+# Default is 45–90 seconds so the owner sees frequent approvals during testing.
+# Override with APPROVAL_SCENARIO_MIN / APPROVAL_SCENARIO_MAX env vars.
+# In production you might use 300–600 (5–10 minutes).
+_APPROVAL_SCENARIO_INTERVAL_MIN = float(os.getenv("APPROVAL_SCENARIO_MIN", "45"))   # 45 s
+_APPROVAL_SCENARIO_INTERVAL_MAX = float(os.getenv("APPROVAL_SCENARIO_MAX", "90"))   # 90 s
+
+# Auto-approve timeout: if the real owner has not responded within this many seconds,
+# the simulation steps in as a safety net. Default = 2 hours.
+_APPROVAL_TIMEOUT_SECS = float(os.getenv("APPROVAL_TIMEOUT_SECS", "7200"))  # 2 h
 
 # ─── State ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +186,10 @@ class Actor:
     role: str
     token: Optional[str] = None
     user_id: Optional[int] = None
+    on_sick_day: bool = False
+    clocked_in: bool = False
+    svc_time_min: float = 20.0  # simulated minutes per service (lower bound)
+    svc_time_max: float = 30.0  # simulated minutes per service (upper bound)
 
 
 @dataclass
@@ -103,12 +199,19 @@ class SimState:
     services: list = field(default_factory=list)
     queue_items: list = field(default_factory=list)
     events: list = field(default_factory=list)
+    shop_closed_today: bool = False  # True if today is a registered close day
+    walkins_open: bool = True        # False during a queue surge
+    in_surge: bool = False           # True when waiting >= SURGE_THRESHOLD
     stats: dict = field(default_factory=lambda: {
         "customers_served": 0,
         "customers_waiting": 0,
         "customers_today": 0,
+        "cancellations_today": 0,
         "revenue_today": 0.0,
+        "payments_processed": 0,
         "owner_queries": 0,
+        "approvals_pending": 0,
+        "approvals_resolved": 0,
         "start": datetime.now(),
     })
     running: bool = True
@@ -118,6 +221,9 @@ class SimState:
         self.events.append((ts, msg, style))
         if len(self.events) > 60:
             self.events.pop(0)
+        # Strip Rich markup tags and print to stdout so docker compose logs captures every event
+        plain = re.sub(r"\[/?[^\]]+\]", "", msg)
+        print(f"[{ts}] {plain}", flush=True)
 
 
 STATE = SimState()
@@ -272,7 +378,7 @@ async def setup(
         STATE.log(f"❌ Queue fetch failed: {exc}", "bold red")
         return False
 
-    # Setup employees
+    # Setup employees — sick-day roll + clock-in
     for emp in employees:
         # Try to add via shop employee endpoint (creates + links in one call)
         try:
@@ -289,10 +395,9 @@ async def setup(
         except APIError:
             pass  # already exists is fine
         # Login the employee regardless
-        if await login(client, emp):
-            STATE.log(f"👷 Barber '{emp.display_name}' ready (id={emp.user_id})", "green")
-        else:
+        if not await login(client, emp):
             STATE.log(f"⚠️  Barber '{emp.display_name}' login failed", "yellow")
+            continue
 
         # If a previous test run deactivated the shop-employee link, restore it
         # so the simulator roster and active shifts stay in sync.
@@ -346,6 +451,100 @@ async def setup(
     return True
 
 
+# ─── Holiday helpers ──────────────────────────────────────────────────────────
+
+# Well-known Canadian public holidays (month-day). Adjust for your locale.
+_CANADIAN_HOLIDAYS: list[tuple[int, int, str]] = [
+    (1,  1,  "New Year's Day"),
+    (2,  17, "Family Day"),
+    (4,  18, "Good Friday"),
+    (5,  19, "Victoria Day"),
+    (7,  1,  "Canada Day"),
+    (8,  4,  "Civic Holiday"),
+    (9,  1,  "Labour Day"),
+    (10, 13, "Thanksgiving"),
+    (11, 11, "Remembrance Day"),
+    (12, 25, "Christmas Day"),
+    (12, 26, "Boxing Day"),
+]
+
+
+async def _register_upcoming_holidays(client: httpx.AsyncClient, owner: Actor) -> None:
+    """Register the next 3 upcoming public holidays as shop close days."""
+    today = datetime.now().date()
+    import datetime as dt_mod
+    year = today.year
+    registered = 0
+    for month, day, reason in _CANADIAN_HOLIDAYS:
+        try:
+            holiday = dt_mod.date(year, month, day)
+        except ValueError:
+            continue
+        if holiday < today:
+            # Try next year
+            try:
+                holiday = dt_mod.date(year + 1, month, day)
+            except ValueError:
+                continue
+        if (holiday - today).days > 180:
+            continue  # too far out
+        try:
+            await _request(
+                client, "POST", f"/api/shops/{STATE.shop_id}/close-days",
+                token=owner.token,
+                params={"date_str": str(holiday), "reason": reason},
+            )
+            STATE.log(f"📅 Registered close day: {holiday} — {reason}", "yellow")
+            registered += 1
+            if registered >= 3:
+                break
+        except Exception:
+            pass  # already registered or error — non-fatal
+
+
+async def _check_today_closed(client: httpx.AsyncClient) -> None:
+    """Check if today is listed as a shop close day."""
+    try:
+        close_days: list = await _request(
+            client, "GET", f"/api/shops/{STATE.shop_id}/close-days",
+        )
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        for cd in close_days:
+            if str(cd.get("date", "")).startswith(today_str):
+                STATE.shop_closed_today = True
+                STATE.log(
+                    f"🏖️  Shop is closed today ({cd.get('reason', 'holiday')}) — queue paused",
+                    "bold red",
+                )
+                return
+    except Exception:
+        pass
+
+
+# ─── Shop-hours helpers ───────────────────────────────────────────────────────
+
+def _shop_is_open() -> bool:
+    """Return True if the shop is within operating hours (real wall clock)."""
+    h = datetime.now().hour
+    if SHOP_CLOSE_HOUR == 0:  # 0 = midnight — open until end of day
+        return SHOP_OPEN_HOUR <= h
+    return SHOP_OPEN_HOUR <= h < SHOP_CLOSE_HOUR
+
+
+def _seconds_until_open() -> float:
+    """Seconds from now until the shop next opens. Returns 0.0 if already open."""
+    import datetime as dt_mod
+    if _shop_is_open():
+        return 0.0
+    now = datetime.now()
+    if now.hour < SHOP_OPEN_HOUR:
+        next_open = now.replace(hour=SHOP_OPEN_HOUR, minute=0, second=0, microsecond=0)
+    else:
+        tomorrow = now.date() + dt_mod.timedelta(days=1)
+        next_open = dt_mod.datetime(tomorrow.year, tomorrow.month, tomorrow.day, SHOP_OPEN_HOUR)
+    return max((next_open - now).total_seconds(), 0.0)
+
+
 # ─── Actor: Customer ──────────────────────────────────────────────────────────
 
 
@@ -353,6 +552,11 @@ async def customer_loop(client: httpx.AsyncClient) -> None:
     """Continuously spawn new customers joining the queue."""
     await asyncio.sleep(3)
     while STATE.running:
+        # Shop closed today (holiday / close day) — no customers arrive
+        if STATE.shop_closed_today:
+            await asyncio.sleep(30)
+            continue
+
         active = [i for i in STATE.queue_items if i["status"] in ("waiting", "being_served")]
         if len(active) >= MAX_QUEUE_SIZE:
             await asyncio.sleep(8)
@@ -385,6 +589,9 @@ async def customer_loop(client: httpx.AsyncClient) -> None:
                 await asyncio.sleep(30)
             else:
                 STATE.log(f"⚠️  Join failed ({e.status}): {str(e)[:60]}", "dim yellow")
+        except Exception as e:
+            STATE.log(f"⚠️  Customer loop error: {type(e).__name__}: {str(e)[:80]}", "dim yellow")
+            await asyncio.sleep(10)
 
         delay = random.uniform(CUSTOMER_ARRIVAL_MIN, CUSTOMER_ARRIVAL_MAX)
         await asyncio.sleep(delay)
@@ -394,10 +601,49 @@ async def customer_loop(client: httpx.AsyncClient) -> None:
 
 
 async def employee_loop(client: httpx.AsyncClient, emp: Actor) -> None:
-    """Employee calls next customer, serves them, marks complete."""
+    """Employee shift: clock in → serve customers → checkout+pay → clock out."""
     await asyncio.sleep(6 + random.uniform(0, 5))
+
+    if emp.on_sick_day:
+        # Nothing to do today — the sick-day log was already written in setup
+        return
+
+    shift_seconds = SHIFT_DURATION_MINUTES * TIME_COMPRESSION
+    shift_end = asyncio.get_event_loop().time() + shift_seconds
+
     while STATE.running:
-        if not emp.token:
+        # Clock-out time reached
+        if asyncio.get_event_loop().time() >= shift_end:
+            if emp.clocked_in:
+                try:
+                    await _request(client, "POST", "/api/clock-out", token=emp.token)
+                    emp.clocked_in = False
+                    STATE.log(
+                        f"🏁 Barber '{emp.display_name}' clocked out — shift complete",
+                        "yellow",
+                    )
+                except Exception:
+                    pass
+            # Restart shift cycle (next simulated day)
+            shift_end = asyncio.get_event_loop().time() + shift_seconds
+            STATE.log(
+                f"🌅 Barber '{emp.display_name}' starting next shift",
+                "dim cyan",
+            )
+            try:
+                await _request(
+                    client, "POST", f"/api/clock-in/{STATE.shop_id}",
+                    token=emp.token,
+                )
+                emp.clocked_in = True
+            except APIError as e:
+                if e.status == 400:
+                    emp.clocked_in = True  # already clocked in
+                else:
+                    await asyncio.sleep(15)
+                    continue
+
+        if not emp.token or not emp.clocked_in:
             await asyncio.sleep(5)
             continue
 
@@ -432,12 +678,33 @@ async def employee_loop(client: httpx.AsyncClient, emp: Actor) -> None:
                 token=emp.token,
                 params={"new_status": "completed"},
             )
+
+            # Checkout + payment
+            payment_method = random.choice(PAYMENT_METHODS)
+            tip = round(random.uniform(0, svc_cost * 0.25), 2) if svc_cost > 0 else 0.0
+            total = svc_cost + tip
+            try:
+                await _request(
+                    client, "POST", f"/api/queues/items/{item_id}/checkout",
+                )
+                STATE.log(
+                    f"💳 {cust_name} paid ${total:.2f} ({payment_method})"
+                    + (f" + ${tip:.2f} tip" if tip > 0.5 else ""),
+                    "bright_white",
+                )
+                STATE.stats["payments_processed"] += 1
+            except APIError:
+                STATE.log(
+                    f"💵 {cust_name} paid ${svc_cost:.2f} ({payment_method}) [no checkout endpoint]",
+                    "white",
+                )
+
             STATE.log(
-                f"✅ {emp.display_name} ✓ {cust_name} — {svc_name} (${svc_cost:.0f})",
+                f"✅ {emp.display_name} ✓ {cust_name} — {svc_name} (${total:.2f})",
                 "bright_green",
             )
             STATE.stats["customers_served"] += 1
-            STATE.stats["revenue_today"] += svc_cost
+            STATE.stats["revenue_today"] += total
 
         except APIError as e:
             if e.status in (400, 404):
@@ -447,6 +714,149 @@ async def employee_loop(client: httpx.AsyncClient, emp: Actor) -> None:
                 await login(client, emp)
             else:
                 STATE.log(f"⚠️  {emp.display_name}: {str(e)[:80]}", "dim yellow")
+
+        await asyncio.sleep(delay)
+
+
+# ─── Actor: Surge Monitor ─────────────────────────────────────────────────────
+
+
+async def surge_monitor_loop(client: httpx.AsyncClient, owner: Actor) -> None:
+    """Watch queue depth; block walk-ins + notify owner via AI on surge."""
+    await asyncio.sleep(30)
+    while STATE.running:
+        if not _shop_is_open() or STATE.shop_closed_today:
+            await asyncio.sleep(30)
+            continue
+
+        waiting = len([i for i in STATE.queue_items if i["status"] == "waiting"])
+
+        if waiting >= SURGE_THRESHOLD and not STATE.in_surge:
+            STATE.in_surge = True
+            STATE.walkins_open = False
+            STATE.log(
+                f"⚡ SURGE — {waiting} waiting! Walk-ins suspended automatically.",
+                "bold red",
+            )
+            try:
+                await _request(
+                    client, "POST", "/api/v2/agent/chat",
+                    token=owner.token,
+                    json={
+                        "message": (
+                            f"ALERT: Queue surge — {waiting} customers waiting right now. "
+                            "Walk-ins have been automatically suspended. "
+                            "Should I call in a third barber?"
+                        ),
+                        "shop_id": STATE.shop_id,
+                    },
+                )
+                STATE.log("📲 AI agent notified owner of surge", "bold yellow")
+                STATE.stats["owner_queries"] += 1
+            except Exception:
+                pass
+
+        elif waiting <= SURGE_RESUME and STATE.in_surge:
+            STATE.in_surge = False
+            STATE.walkins_open = True
+            STATE.log(
+                f"✅ Surge cleared — {waiting} waiting. Walk-ins re-opened.",
+                "bold green",
+            )
+            try:
+                await _request(
+                    client, "POST", "/api/v2/agent/chat",
+                    token=owner.token,
+                    json={
+                        "message": (
+                            f"Surge resolved — only {waiting} customers waiting now. "
+                            "Walk-ins have been re-opened automatically."
+                        ),
+                        "shop_id": STATE.shop_id,
+                    },
+                )
+                STATE.stats["owner_queries"] += 1
+            except Exception:
+                pass
+
+        await asyncio.sleep(10)
+
+
+# ─── Actor: Cancellations ─────────────────────────────────────────────────────
+
+
+async def cancellation_loop(client: httpx.AsyncClient, owner: Actor) -> None:
+    """Impatient customers abandon the queue; rate doubles during a surge."""
+    await asyncio.sleep(60)
+    while STATE.running:
+        if _shop_is_open() and not STATE.shop_closed_today:
+            waiting = [i for i in STATE.queue_items if i["status"] == "waiting"]
+            # Higher abandonment during surge (longer waits)
+            effective_chance = CANCEL_CHANCE * (2.0 if STATE.in_surge else 1.0)
+            for item in waiting:
+                if random.random() < effective_chance:
+                    item_id = item.get("id")
+                    name = item.get("customer_name", "Customer")
+                    try:
+                        await _request(
+                            client, "PATCH", f"/api/queues/items/{item_id}/status",
+                            params={"new_status": "cancelled"},
+                        )
+                        STATE.log(
+                            f"❌ {name} left the queue — wait too long"
+                            + (" (surge)" if STATE.in_surge else ""),
+                            "dim red",
+                        )
+                        STATE.stats["cancellations_today"] += 1
+                    except APIError:
+                        pass
+        await asyncio.sleep(random.uniform(CANCEL_CHECK_INTERVAL * 0.5, CANCEL_CHECK_INTERVAL * 1.5))
+
+
+# ─── Midnight reset ───────────────────────────────────────────────────────────
+
+
+async def midnight_reset_loop(
+    client: httpx.AsyncClient, owner: Actor, employees: list,
+) -> None:
+    """At midnight: reset daily stats, re-check close days, re-roll sick days."""
+    while STATE.running:
+        import datetime as dt_mod
+        now = datetime.now()
+        tomorrow = (now + dt_mod.timedelta(days=1)).replace(
+            hour=0, minute=0, second=5, microsecond=0
+        )
+        await asyncio.sleep((tomorrow - now).total_seconds())
+        if not STATE.running:
+            return
+
+        STATE.log("🌙 Midnight — resetting daily stats for the new day", "bold blue")
+        STATE.stats["customers_served"] = 0
+        STATE.stats["customers_today"] = 0
+        STATE.stats["cancellations_today"] = 0
+        STATE.stats["revenue_today"] = 0.0
+        STATE.stats["payments_processed"] = 0
+        STATE.stats["owner_queries"] = 0
+        STATE.stats["approvals_pending"] = 0
+        STATE.stats["approvals_resolved"] = 0
+        STATE.stats["start"] = datetime.now()
+        STATE.shop_closed_today = False
+        STATE.in_surge = False
+        STATE.walkins_open = True
+
+        await _check_today_closed(client)
+        await _register_upcoming_holidays(client, owner)
+
+        for emp in employees:
+            was_sick = emp.on_sick_day
+            emp.on_sick_day = random.random() < SICK_DAY_CHANCE
+            if emp.on_sick_day:
+                STATE.log(f"🤒 {emp.display_name} called in sick today!", "bold red")
+            elif was_sick:
+                STATE.log(f"👷 {emp.display_name} is back from sick day", "green")
+
+
+# ─── Actor: Owner ─────────────────────────────────────────────────────────────
 
 
 async def owner_loop(client: httpx.AsyncClient, owner: Actor) -> None:
@@ -487,6 +897,325 @@ async def owner_loop(client: httpx.AsyncClient, owner: Actor) -> None:
             STATE.log(f"⚠️  Owner loop error: {str(exc)[:60]}", "dim yellow")
 
         await asyncio.sleep(random.uniform(OWNER_QUERY_MIN, OWNER_QUERY_MAX))
+
+
+# ─── Actor: Owner Approval ────────────────────────────────────────────────────
+
+
+async def _resolve_orphaned_approvals(client: httpx.AsyncClient, owner: Actor) -> None:
+    """
+    Poll /api/v2/agent/pending and log any waiting approvals.
+    Only auto-approve an item if the real owner has not responded within
+    _APPROVAL_TIMEOUT_SECS (default 2 hours) — this is a safety-net fallback,
+    not the primary flow.  The human owner is expected to approve/reject via
+    the Agent Inbox UI before this timeout fires.
+    """
+    if not owner.token or not STATE.shop_id:
+        return
+    try:
+        data = await _request(
+            client, "GET", "/api/v2/agent/pending",
+            token=owner.token,
+            params={"shop_id": STATE.shop_id},
+        )
+        pending_list = data.get("pending", [])
+        now = datetime.now(timezone.utc)
+        for item in pending_list:
+            action_id = item.get("action_id")
+            action_type = item.get("action") or item.get("action_type", "unknown")
+            if not action_id:
+                continue
+
+            # Parse created_at to decide whether the timeout has elapsed.
+            created_at_raw = item.get("created_at")
+            age_secs: float = 0.0
+            if created_at_raw:
+                try:
+                    created_dt = datetime.fromisoformat(
+                        str(created_at_raw).replace("Z", "+00:00")
+                    )
+                    if created_dt.tzinfo is None:
+                        created_dt = created_dt.replace(tzinfo=timezone.utc)
+                    age_secs = (now - created_dt).total_seconds()
+                except (ValueError, TypeError):
+                    pass
+
+            if age_secs < _APPROVAL_TIMEOUT_SECS:
+                # Still within the human owner's decision window — just notify.
+                hours_left = (_APPROVAL_TIMEOUT_SECS - age_secs) / 3600
+                STATE.log(
+                    f"   🔔 Approval pending: [{action_type}] — "
+                    f"waiting for owner decision ({hours_left:.1f}h until auto-approve)",
+                    "bold yellow",
+                )
+                STATE.stats["approvals_pending"] = max(
+                    STATE.stats.get("approvals_pending", 0),
+                    len(pending_list),
+                )
+            else:
+                # Timeout elapsed — step in as a safety-net fallback.
+                # Never auto-approve queue closures (would break the simulation).
+                approved = action_type != "close_queue"
+                reason = (
+                    "Auto-approved: owner did not respond within 2 hours"
+                    if approved
+                    else "Auto-rejected: queue-close requests are never auto-approved"
+                )
+                try:
+                    await _request(
+                        client, "POST", "/api/v2/agent/approve",
+                        token=owner.token,
+                        json={
+                            "shop_id": STATE.shop_id,
+                            "action_id": action_id,
+                            "approved": approved,
+                            "reason": reason,
+                        },
+                    )
+                    verdict = "⏰ Auto-approved (2h timeout)" if approved else "⏰ Auto-rejected (queue-close, never auto)"
+                    STATE.log(
+                        f"   {verdict} [{action_type}]",
+                        "bright_green" if approved else "bright_red",
+                    )
+                    STATE.stats["approvals_resolved"] = STATE.stats.get("approvals_resolved", 0) + 1
+                    STATE.stats["approvals_pending"] = max(0, STATE.stats.get("approvals_pending", 0) - 1)
+                except APIError:
+                    pass
+    except Exception:
+        pass
+
+
+async def owner_approval_loop(client: httpx.AsyncClient, owner: Actor) -> None:
+    """
+    Owner periodically issues action-oriented commands designed to trigger HITL
+    approval gates (close_queue, add_employee, assign_shift, create_invoice,
+    record_payment, process_refund). After a short deliberation pause the
+    simulation owner approves or rejects and the LangGraph checkpoint resumes.
+    """
+    await asyncio.sleep(45)  # let setup + first customers settle
+    scenario_idx = 0
+
+    while STATE.running:
+        if not owner.token or not STATE.shop_id:
+            await asyncio.sleep(10)
+            continue
+        if not _shop_is_open() or STATE.shop_closed_today:
+            await asyncio.sleep(30)
+            continue
+
+        message, force_reject = _APPROVAL_SCENARIOS[scenario_idx % len(_APPROVAL_SCENARIOS)]
+        scenario_idx += 1
+
+        STATE.log(f'🏪 Owner → agent: "{message[:70]}"', "magenta")
+
+        try:
+            resp = await _request(
+                client, "POST", "/api/v2/agent/chat",
+                token=owner.token,
+                json={"message": message, "shop_id": STATE.shop_id},
+            )
+            STATE.stats["owner_queries"] += 1
+
+            approval_required = resp.get("approval_required", False)
+            pending = resp.get("pending_action") or {}
+            action_id = pending.get("action_id")
+            action_type = pending.get("action") or pending.get("action_type", "unknown")
+
+            if approval_required and action_id:
+                # The approval was created — leave it for the real human owner to
+                # decide via the Agent Inbox UI.  The _resolve_orphaned_approvals
+                # poller will auto-approve as a safety-net after 2 hours.
+                STATE.stats["approvals_pending"] = STATE.stats.get("approvals_pending", 0) + 1
+                STATE.log(
+                    f"   🔔 Approval created: [{action_type}] — check the Agent Inbox to approve/reject",
+                    "bold yellow",
+                )
+            else:
+                agent_reply: str = resp.get("response", "")
+                short = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", agent_reply[:120])
+                if len(agent_reply) > 120:
+                    short += "…"
+                STATE.log(f"   🤖 [no gate]: {short}", "dim magenta")
+
+        except APIError as e:
+            if e.status == 401:
+                STATE.log("🔄 Owner token expired — re-logging in", "yellow")
+                await login(client, owner)
+            else:
+                STATE.log(f"⚠️  Approval scenario failed ({e.status})", "dim yellow")
+        except Exception as exc:
+            STATE.log(f"⚠️  Approval loop error: {str(exc)[:60]}", "dim yellow")
+
+        # Clean up any orphaned approvals from the regular owner_loop queries
+        await _resolve_orphaned_approvals(client, owner)
+
+        await asyncio.sleep(
+            random.uniform(_APPROVAL_SCENARIO_INTERVAL_MIN, _APPROVAL_SCENARIO_INTERVAL_MAX)
+        )
+
+
+# ─── Actor: Employee leave request loop ───────────────────────────────────────
+
+# Employee-initiated leave requests. Each employee uses their own JWT token to
+# message the agent directly — just like a real employee would do on their phone.
+# The HR specialist receives the message, recognises it as a leave_request, and
+# creates a pending_action that lands in the OWNER's Agent Inbox.
+# This is the most realistic approval flow (employee → agent → owner approval gate).
+
+def _next_weekday_str(offset_days: int) -> str:
+    """Return a date string N working days from today, skipping weekends."""
+    from datetime import date, timedelta
+    target = date.today()
+    added = 0
+    while added < offset_days:
+        target += timedelta(days=1)
+        if target.weekday() < 5:   # Mon–Fri
+            added += 1
+    return target.strftime("%A, %B %-d")   # e.g. "Friday, May 9"
+
+# Leave request templates.
+# Each tuple: (message_template, leave_type, reason)
+# {date} is replaced at runtime with a realistic upcoming date.
+_EMPLOYEE_LEAVE_REQUESTS: list[dict] = [
+    # Sick day
+    {
+        "employee": "marcus",
+        "template": "Hi, I'm not feeling well today — I need to call in sick. Can you register my sick day for today?",
+        "leave_type": "sick",
+    },
+    {
+        "employee": "elena",
+        "template": "I've come down with a cold and won't be able to come in tomorrow. Please log my sick day.",
+        "leave_type": "sick",
+    },
+    # Annual leave
+    {
+        "employee": "marcus",
+        "template": "I'd like to request annual leave on {date} — I have a family event. Can you submit that for me?",
+        "leave_type": "annual",
+    },
+    {
+        "employee": "elena",
+        "template": "Can I take a day off on {date}? I've got some personal things to take care of. Please request leave for me.",
+        "leave_type": "annual",
+    },
+    {
+        "employee": "marcus",
+        "template": "Hey, I need to take {date} off — I have a doctor's appointment I can't reschedule. Please put in a leave request.",
+        "leave_type": "personal",
+    },
+    {
+        "employee": "elena",
+        "template": "I was hoping to take leave on {date} and {date2} for a short trip. Could you file that leave request for me?",
+        "leave_type": "annual",
+    },
+    # Shift swap / early finish
+    {
+        "employee": "marcus",
+        "template": "Is it possible to leave early on {date}? I need to finish by 3pm. Can you request a half-day for me?",
+        "leave_type": "personal",
+    },
+    {
+        "employee": "elena",
+        "template": "I need next {date} off — I have my kid's school event. Can you register a personal day for me?",
+        "leave_type": "personal",
+    },
+    # Longer leave
+    {
+        "employee": "marcus",
+        "template": "I'd like to take my remaining annual leave days starting {date}. I'm planning to take 3 days off. Please submit the leave request.",
+        "leave_type": "annual",
+    },
+    {
+        "employee": "elena",
+        "template": "I need to request a couple of days off — {date} and {date2}. It's for a family commitment. Please file the leave request.",
+        "leave_type": "personal",
+    },
+]
+
+# Interval for each employee submitting a leave request (real-time seconds)
+_EMPLOYEE_LEAVE_INTERVAL_MIN = float(os.getenv("EMPLOYEE_LEAVE_MIN", "90"))    # 1.5 min
+_EMPLOYEE_LEAVE_INTERVAL_MAX = float(os.getenv("EMPLOYEE_LEAVE_MAX", "180"))   # 3 min
+
+
+async def employee_leave_loop(
+    client: httpx.AsyncClient,
+    employees: list[Actor],
+) -> None:
+    """
+    Simulates employees submitting leave requests directly to the AI agent.
+    Each employee uses their own JWT token, so the agent knows who is asking.
+    The HR specialist creates a leave_request pending_action → appears in owner's Agent Inbox.
+    """
+    await asyncio.sleep(60)  # let the main loops settle first
+    request_idx = 0
+
+    # Build a name → actor lookup
+    emp_by_name: dict[str, Actor] = {e.display_name.lower(): e for e in employees}
+
+    while STATE.running:
+        if not STATE.shop_id:
+            await asyncio.sleep(10)
+            continue
+        if not _shop_is_open() or STATE.shop_closed_today:
+            await asyncio.sleep(30)
+            continue
+
+        req = _EMPLOYEE_LEAVE_REQUESTS[request_idx % len(_EMPLOYEE_LEAVE_REQUESTS)]
+        request_idx += 1
+
+        # Pick the right employee actor
+        actor = emp_by_name.get(req["employee"])
+        if actor is None or actor.on_sick_day or not actor.token:
+            await asyncio.sleep(random.uniform(_EMPLOYEE_LEAVE_INTERVAL_MIN, _EMPLOYEE_LEAVE_INTERVAL_MAX))
+            continue
+
+        # Build realistic dates
+        date1 = _next_weekday_str(random.randint(1, 5))
+        date2 = _next_weekday_str(random.randint(6, 8))
+        message = req["template"].replace("{date}", date1).replace("{date2}", date2)
+
+        STATE.log(
+            f"👷 {actor.display_name} → agent: \"{message[:70]}\"",
+            "cyan",
+        )
+
+        try:
+            resp = await _request(
+                client, "POST", "/api/v2/agent/chat",
+                token=actor.token,
+                json={"message": message, "shop_id": STATE.shop_id},
+            )
+
+            approval_required = resp.get("approval_required", False)
+            pending = resp.get("pending_action") or {}
+            action_id = pending.get("action_id")
+            action_type = pending.get("action") or pending.get("action_type", "unknown")
+
+            if approval_required and action_id:
+                STATE.stats["approvals_pending"] = STATE.stats.get("approvals_pending", 0) + 1
+                STATE.log(
+                    f"   🔔 Leave request created for {actor.display_name}: [{action_type}] — "
+                    f"check Agent Inbox to approve/reject",
+                    "bold yellow",
+                )
+            else:
+                agent_reply: str = resp.get("response", "")
+                short = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", agent_reply[:100])
+                STATE.log(f"   🤖 Agent replied (no gate): {short}", "dim cyan")
+
+        except APIError as e:
+            if e.status == 401:
+                STATE.log(f"🔄 {actor.display_name} token expired — re-logging in", "yellow")
+                await login(client, actor)
+            else:
+                STATE.log(f"⚠️  Employee leave request failed ({e.status})", "dim yellow")
+        except Exception as exc:
+            STATE.log(f"⚠️  Employee leave loop error: {str(exc)[:60]}", "dim yellow")
+
+        await asyncio.sleep(
+            random.uniform(_EMPLOYEE_LEAVE_INTERVAL_MIN, _EMPLOYEE_LEAVE_INTERVAL_MAX)
+        )
 
 
 # ─── Queue poller ─────────────────────────────────────────────────────────────
@@ -544,6 +1273,7 @@ def _build_dashboard() -> Layout:
 
     # ── Queue table ──
     q_table = Table(
+        box=box.SIMPLE_HEAVY,
         show_header=True,
         header_style="bold cyan",
         title="[bold]Live Queue[/bold]",
@@ -579,11 +1309,18 @@ def _build_dashboard() -> Layout:
     if not active_items:
         q_table.add_row("—", "[dim]Queue empty[/dim]", "—", "[dim]—[/dim]", "[dim]—[/dim]")
 
+    surge_badge = "  [bold red blink]⚡ SURGE — WALK-INS CLOSED[/bold red blink]" if STATE.in_surge else ""
     stats_line = (
         f"[cyan]Today[/cyan]: {STATE.stats['customers_today']} arrivals  "
         f"[green]{STATE.stats['customers_served']} served[/green]  "
-        f"[yellow]${STATE.stats['revenue_today']:.0f} revenue[/yellow]  "
-        f"[magenta]{STATE.stats['owner_queries']} AI queries[/magenta]"
+        f"[red]{STATE.stats['cancellations_today']} cancelled[/red]  "
+        f"[bright_white]{STATE.stats['payments_processed']} payments[/bright_white]  "
+        f"[yellow]${STATE.stats['revenue_today']:.2f} revenue[/yellow]  "
+        f"[magenta]{STATE.stats['owner_queries']} AI queries[/magenta]  "
+        f"[bold yellow]{STATE.stats['approvals_pending']} pending[/bold yellow]  "
+        f"[green]{STATE.stats['approvals_resolved']} resolved[/green]"
+        + ("  [bold red]CLOSED TODAY[/bold red]" if STATE.shop_closed_today else "")
+        + surge_badge
     )
     layout["queue"].update(Panel(
         q_table,
@@ -604,14 +1341,18 @@ def _build_dashboard() -> Layout:
     ))
 
     # ── Footer ──
+    shop_status   = "🟢 OPEN" if (_shop_is_open() and not STATE.shop_closed_today) else "🔴 CLOSED"
+    walkin_status = "🚶 Walk-ins: OPEN" if STATE.walkins_open else "🚫 Walk-ins: SUSPENDED"
     layout["footer"].update(Panel(
         Text(
-            f"Ctrl+C to stop  │  "
+            f"{shop_status}  │  {walkin_status}  │  "
             f"Waiting: {STATE.stats['customers_waiting']}  │  "
-            f"Served today: {STATE.stats['customers_served']}  │  "
+            f"Cancelled: {STATE.stats['cancellations_today']}  │  "
+            f"Served: {STATE.stats['customers_served']}  │  "
             f"Revenue: ${STATE.stats['revenue_today']:.2f}  │  "
-            f"TIME_COMPRESSION={TIME_COMPRESSION}x  │  "
-            f"Watch UI → http://localhost:3000",
+            f"Hours: {SHOP_OPEN_HOUR:02d}:00–00:00  │  "
+            f"Compression={TIME_COMPRESSION}x  │  "
+            f"http://localhost:3000",
             justify="center",
             style="dim",
         ),
@@ -664,8 +1405,10 @@ async def main() -> None:
         role="shop_owner",
     )
     employees = [
-        Actor("Marcus", "marcus.barber@zeroqwait.demo", "ZeroQDemo2025!", "employee"),
-        Actor("Elena",  "elena.barber@zeroqwait.demo",  "ZeroQDemo2025!", "employee"),
+        Actor("Marcus", "marcus.barber@zeroqwait.demo", "ZeroQDemo2025!", "employee",
+              svc_time_min=24.0, svc_time_max=26.0),   # methodical — 24–26 sim-min per cut
+        Actor("Elena",  "elena.barber@zeroqwait.demo",  "ZeroQDemo2025!", "employee",
+              svc_time_min=16.0, svc_time_max=18.0),   # quick hands — 16–18 sim-min per cut
     ]
 
     async with httpx.AsyncClient() as client:
@@ -682,7 +1425,12 @@ async def main() -> None:
             asyncio.create_task(employee_loop(client, employees[0])),
             asyncio.create_task(employee_loop(client, employees[1])),
             asyncio.create_task(owner_loop(client, owner)),
+            asyncio.create_task(owner_approval_loop(client, owner)),
+            asyncio.create_task(employee_leave_loop(client, employees)),
             asyncio.create_task(queue_poller(client)),
+            asyncio.create_task(surge_monitor_loop(client, owner)),
+            asyncio.create_task(cancellation_loop(client, owner)),
+            asyncio.create_task(midnight_reset_loop(client, owner, employees)),
         ]
 
         try:

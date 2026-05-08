@@ -133,6 +133,23 @@ class FinanceMCPClient:
     def get_pos_summary(self, shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
         return self._post("/pos/summary", {"shop_id": shop_id, "date": date})
 
+    def answer_finance_question(
+        self,
+        shop_id: int,
+        question: str,
+        operation: Optional[str] = None,
+        mode: str = "enabled",
+    ) -> Dict[str, Any]:
+        return self._post(
+            "/query/answer",
+            {
+                "shop_id": shop_id,
+                "question": question,
+                "operation": operation,
+                "mode": mode,
+            },
+        )
+
     def get_inactive_clients(self, shop_id: int, days_threshold: int = 45) -> Dict[str, Any]:
         return self._post("/clients/inactive", {"shop_id": shop_id, "days_threshold": days_threshold})
 

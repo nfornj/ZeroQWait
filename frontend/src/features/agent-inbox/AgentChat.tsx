@@ -4,6 +4,7 @@ import {
   Avatar,
   Box,
   Button,
+  Chip,
   IconButton,
   Stack,
   Typography,
@@ -11,6 +12,7 @@ import {
 } from "@mui/material";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
+import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import MicNoneRoundedIcon from "@mui/icons-material/MicNoneRounded";
@@ -62,8 +64,9 @@ import {
 } from "../../components/AssistantUIAttachment";
 import { Composer } from "../../components/assistant-ui/thread";
 import { resolveAgentChart } from "./types";
-import type { AgentChart, AgentFile, AgentTable, ChatMessage, ResolvedAgentChart } from "./types";
+import type { AgentChart, AgentFile, AgentTable, ChatMessage, PendingApproval, ResolvedAgentChart } from "./types";
 import { useShop } from "../../contexts/ShopContext";
+import ApprovalCard from "./ApprovalCard";
 
 export interface AgentChatPromptItem {
   id: string;
@@ -92,6 +95,8 @@ interface AgentChatProps {
   isStreaming: boolean;
   isUploading?: boolean;
   onSend: (payload: AgentChatSendPayload) => Promise<void>;
+  onApprovalDecision?: (approval: PendingApproval, approved: boolean) => void;
+  isApproving?: boolean;
   title?: string;
   subtitle?: string;
   summaryChips?: AgentChatSummaryChip[];
@@ -109,6 +114,7 @@ type AgentChatInnerProps = Omit<AgentChatProps, "messages" | "onSend"> & {
   brandSecondary: string;
   hasDictation: boolean;
   messageCount: number;
+  dynamicSuggestions: string[];
   sidebar?: React.ReactNode;
 };
 
@@ -681,6 +687,122 @@ const StatusIndicator: React.FC<{ label: string; brandPrimary: string }> = ({ la
   );
 };
 
+/** Live elapsed-time counter while a response is streaming. */
+const LiveTimer: React.FC<{ startedAt?: string; durationMs?: number; isDone: boolean }> = ({
+  startedAt,
+  durationMs,
+  isDone,
+}) => {
+  const [elapsed, setElapsed] = React.useState<number>(() =>
+    startedAt ? Math.max(0, Date.now() - Date.parse(startedAt)) : 0,
+  );
+
+  useEffect(() => {
+    if (isDone || !startedAt) return;
+    const id = setInterval(() => {
+      setElapsed(Math.max(0, Date.now() - Date.parse(startedAt)));
+    }, 100);
+    return () => clearInterval(id);
+  }, [isDone, startedAt]);
+
+  const ms = isDone ? (durationMs ?? elapsed) : elapsed;
+  const s = (ms / 1000).toFixed(1);
+  return <span>{isDone ? `Processed in ${s}s` : `${s}s`}</span>;
+};
+
+/**
+ * ProcessingBanner — shown ABOVE message content while streaming, and
+ * replaced by a "Processed in X.Xs" caption once done.
+ */
+const ProcessingBanner: React.FC<{
+  externalMessage?: ChatMessage;
+  brandPrimary: string;
+  isStreaming: boolean;
+}> = ({ externalMessage, brandPrimary, isStreaming }) => {
+  const muiTheme = useTheme();
+
+  // Active step label from thinking steps
+  const activeStep = externalMessage?.thinkingSteps?.length
+    ? [...externalMessage.thinkingSteps].reverse().find((s) => s.status === "active" || s.status === "pending")
+    : undefined;
+  const stepLabel = activeStep?.label?.trim() || (isStreaming ? "Thinking" : "");
+
+  if (!isStreaming && !externalMessage?.processingDuration && !externalMessage?.processingStartedAt) {
+    return null;
+  }
+
+  if (isStreaming) {
+    return (
+      <Box
+        sx={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 1.1,
+          px: 1.2,
+          py: 0.8,
+          borderRadius: 999,
+          bgcolor: alpha(brandPrimary, muiTheme.palette.mode === "dark" ? 0.13 : 0.07),
+          border: "1px solid",
+          borderColor: alpha(brandPrimary, 0.15),
+          mb: 0.5,
+        }}
+      >
+        {/* animated dots */}
+        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.45 }}>
+          {[0, 1, 2].map((i) => (
+            <Box
+              key={i}
+              component="span"
+              sx={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                bgcolor: alpha(brandPrimary, 0.85),
+                animation: `agent-status-pulse 1.1s ${i * 0.14}s ease-in-out infinite`,
+              }}
+            />
+          ))}
+        </Box>
+        {/* step label */}
+        <Typography variant="body2" sx={{ fontWeight: 600, color: "text.primary", letterSpacing: "0.01em" }}>
+          {stepLabel}
+        </Typography>
+        {/* live timer */}
+        <Typography
+          variant="caption"
+          sx={{
+            ml: 0.5,
+            fontVariantNumeric: "tabular-nums",
+            color: alpha(muiTheme.palette.text.secondary, 0.85),
+            minWidth: 36,
+            textAlign: "right",
+          }}
+        >
+          <LiveTimer
+            startedAt={externalMessage?.processingStartedAt}
+            durationMs={externalMessage?.processingDuration}
+            isDone={false}
+          />
+        </Typography>
+      </Box>
+    );
+  }
+
+  // Done — show "Processed in X.Xs"
+  return (
+    <Typography
+      variant="caption"
+      sx={{ color: alpha(muiTheme.palette.text.secondary, 0.75), fontVariantNumeric: "tabular-nums" }}
+    >
+      <LiveTimer
+        startedAt={externalMessage?.processingStartedAt}
+        durationMs={externalMessage?.processingDuration}
+        isDone
+      />
+    </Typography>
+  );
+};
+
 const MessageChainOfThought: React.FC<{ brandPrimary: string }> = ({ brandPrimary }) => {
   const muiTheme = useTheme();
   const [isExpanded, setIsExpanded] = useState(true);
@@ -1134,16 +1256,20 @@ const AssistantThreadMessage = React.memo<{
   externalMessage?: ChatMessage;
   threadMessage?: ThreadMessage;
   brandPrimary: string;
-}>(({ externalMessage, threadMessage, brandPrimary }) => {
+  onApprovalDecision?: (approval: PendingApproval, approved: boolean) => void;
+  isApproving?: boolean;
+}>(({ externalMessage, threadMessage, brandPrimary, onApprovalDecision, isApproving = false }) => {
   const muiTheme = useTheme();
   const isRunning = threadMessage?.status?.type === "running";
-  const statusLabel = getTransientStatusLabel(externalMessage, isRunning);
+  const isStreaming = externalMessage?.status === "streaming" || isRunning;
   const hasRenderablePayload = hasRenderableMessagePayload(externalMessage);
-  const showChainOfThought = !hasRenderablePayload && hasChainOfThoughtParts(threadMessage);
+  const showChainOfThought = hasChainOfThoughtParts(threadMessage);
+  const hasPendingAction = Boolean(externalMessage?.pendingAction);
   const label = formatAssistantLabel(externalMessage?.agent);
   const initials = getAgentInitials(label);
 
-  if (!hasRenderablePayload && !statusLabel && !showChainOfThought) {
+  // Only return null when there is genuinely nothing to show at all
+  if (!hasRenderablePayload && !isStreaming && !showChainOfThought && !hasPendingAction) {
     return null;
   }
 
@@ -1189,31 +1315,104 @@ const AssistantThreadMessage = React.memo<{
             {label}
           </Typography>
 
-          {statusLabel && !hasRenderablePayload && !showChainOfThought ? (
-            <StatusIndicator label={statusLabel} brandPrimary={brandPrimary} />
-          ) : (
-            <>
-              {hasRenderablePayload || showChainOfThought ? (
-                <Box sx={{ width: "100%", color: "text.primary", pr: { xs: 0.5, sm: 1.5 } }}>
-                  <MessageRichContent
-                    accent={brandPrimary}
-                    role="assistant"
-                    enableChainOfThought={showChainOfThought}
-                    externalMessage={externalMessage}
-                  />
-                </Box>
-              ) : null}
-              {externalMessage?.timestamp && (
-                <Typography variant="caption" sx={{ color: alpha(muiTheme.palette.text.secondary, 0.88) }}>
-                  {formatTimestamp(externalMessage.timestamp)}
-                </Typography>
-              )}
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <MessageBranchPicker />
-                <AssistantActionBar />
-              </Box>
-            </>
+          {/* Processing banner — always shown while streaming, above content */}
+          {isStreaming && (
+            <ProcessingBanner
+              externalMessage={externalMessage}
+              brandPrimary={brandPrimary}
+              isStreaming={isStreaming}
+            />
           )}
+
+          {/* Content area — shown whenever there is renderable payload or chain-of-thought */}
+          {(hasRenderablePayload || showChainOfThought) && (
+            <Box sx={{ width: "100%", color: "text.primary", pr: { xs: 0.5, sm: 1.5 } }}>
+              <MessageRichContent
+                accent={brandPrimary}
+                role="assistant"
+                enableChainOfThought={showChainOfThought}
+                externalMessage={externalMessage}
+              />
+            </Box>
+          )}
+
+          {/* Inline error banner — always visible when the stream failed */}
+          {externalMessage?.status === "error" && (
+            <Box
+              sx={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 0.75,
+                px: 1.1,
+                py: 0.55,
+                borderRadius: 2,
+                bgcolor: alpha(muiTheme.palette.error.main, muiTheme.palette.mode === "dark" ? 0.12 : 0.07),
+                border: "1px solid",
+                borderColor: alpha(muiTheme.palette.error.main, 0.2),
+              }}
+            >
+              <ErrorOutlineRoundedIcon sx={{ fontSize: 14, color: muiTheme.palette.error.main, flexShrink: 0 }} />
+              <Typography variant="caption" sx={{ color: muiTheme.palette.error.main, fontWeight: 500 }}>
+                Response failed
+              </Typography>
+              <ActionBarPrimitive.Reload asChild>
+                <Button
+                  size="small"
+                  variant="text"
+                  sx={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    py: 0,
+                    px: 0.75,
+                    minWidth: 0,
+                    color: muiTheme.palette.error.main,
+                    "&:hover": { bgcolor: alpha(muiTheme.palette.error.main, 0.1) },
+                  }}
+                >
+                  Try again
+                </Button>
+              </ActionBarPrimitive.Reload>
+            </Box>
+          )}
+
+          {/* Inline approval card — rendered when this message carries a pendingAction */}
+          {hasPendingAction && externalMessage?.pendingAction && (
+            <Box
+              data-approval-id={
+                externalMessage.pendingAction.action_id || externalMessage.pendingAction.action
+              }
+            >
+              {onApprovalDecision ? (
+                <ApprovalCard
+                  approval={externalMessage.pendingAction}
+                  isSubmitting={isApproving}
+                  onDecision={onApprovalDecision}
+                />
+              ) : (
+                /* Render resolved/read-only when no handler provided */
+                <ApprovalCard
+                  approval={externalMessage.pendingAction}
+                  isSubmitting={false}
+                  onDecision={() => {}}
+                  resolved
+                />
+              )}
+            </Box>
+          )}
+
+          {/* Processing time / timestamp — shown when not streaming */}
+          {!isStreaming && (
+            <ProcessingBanner
+              externalMessage={externalMessage}
+              brandPrimary={brandPrimary}
+              isStreaming={false}
+            />
+          )}
+
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <MessageBranchPicker />
+            <AssistantActionBar />
+          </Box>
         </Box>
       </Box>
     </MessagePrimitive.Root>
@@ -1277,9 +1476,12 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
   brandSecondary,
   hasDictation,
   messageCount,
+  dynamicSuggestions,
   isVoiceEnabled = false,
   isSpeaking = false,
   onToggleVoice,
+  onApprovalDecision,
+  isApproving = false,
 }) => {
   const muiTheme = useTheme();
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -1555,12 +1757,49 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                         externalMessage={externalMessage}
                         threadMessage={message}
                         brandPrimary={brandPrimary}
+                        onApprovalDecision={onApprovalDecision}
+                        isApproving={isApproving}
                       />
                     );
                   }}
                 </ThreadPrimitive.Messages>
               )}
             </ThreadPrimitive.Viewport>
+
+            {/* Dynamic follow-up suggestions from the last agent response */}
+            {dynamicSuggestions.length > 0 && !isStreaming && (
+              <Box
+                sx={{
+                  width: "100%",
+                  maxWidth: 760,
+                  mx: "auto",
+                  px: { xs: 1.5, md: 2 },
+                  py: 0.75,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 0.75,
+                }}
+              >
+                {dynamicSuggestions.map((s) => (
+                  <Chip
+                    key={s}
+                    label={s}
+                    size="small"
+                    variant="outlined"
+                    onClick={() => insertPrompt(s)}
+                    disabled={isStreaming || isUploading}
+                    sx={{
+                      borderRadius: 3,
+                      fontSize: "0.78rem",
+                      borderColor: alpha(brandPrimary, 0.35),
+                      color: "text.secondary",
+                      cursor: "pointer",
+                      "&:hover": { borderColor: brandPrimary, color: brandPrimary, bgcolor: alpha(brandPrimary, 0.06) },
+                    }}
+                  />
+                ))}
+              </Box>
+            )}
 
             <Box
               sx={{
@@ -1654,6 +1893,8 @@ const AgentChat: React.FC<AgentChatProps> = ({
   isStreaming,
   isUploading = false,
   onSend,
+  onApprovalDecision,
+  isApproving = false,
   title = "Hello there!",
   subtitle = "How can I help you today?",
   summaryChips = [],
@@ -1754,6 +1995,15 @@ const AgentChat: React.FC<AgentChatProps> = ({
     },
   });
 
+  // Derive context-aware follow-up suggestions from the last completed assistant message
+  const dynamicSuggestions = useMemo<string[]>(() => {
+    if (isStreaming) return [];
+    const lastDone = [...messages].reverse().find(
+      (m) => m.role === "assistant" && m.status === "done" && m.suggestions && m.suggestions.length > 0,
+    );
+    return lastDone?.suggestions ?? [];
+  }, [messages, isStreaming]);
+
   useEffect(() => {
     if (!interactablesStorageKey || typeof window === "undefined") {
       aui.interactables().setPersistenceAdapter(undefined);
@@ -1823,9 +2073,12 @@ const AgentChat: React.FC<AgentChatProps> = ({
               brandSecondary={brandSecondary}
               hasDictation={Boolean(dictationAdapter)}
               messageCount={messages.length}
+              dynamicSuggestions={dynamicSuggestions}
               isVoiceEnabled={isVoiceEnabled}
               isSpeaking={isSpeaking}
               onToggleVoice={onToggleVoice}
+              onApprovalDecision={onApprovalDecision}
+              isApproving={isApproving}
             />
           </Box>
         </Box>

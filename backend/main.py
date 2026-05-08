@@ -5,7 +5,13 @@ from starlette.requests import Request
 import re as _re
 import uvicorn
 from contextlib import asynccontextmanager
-from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments, llm_settings
+from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments, llm_settings, payroll
+from routers.telegram_router import router as telegram_router
+from routers.services_router import router as services_v1_router
+from routers.inventory_router import router as inventory_router
+from routers.public_booking_router import router as public_booking_router
+from routers.booking_page_router import router as booking_page_router
+from routers.pos_router import router as pos_router
 from modules.auth.router import router as auth_router
 from modules.users.router import router as users_router
 from modules.shops.router import router as shops_router
@@ -69,6 +75,58 @@ async def lifespan(app: FastAPI):
         logger.info("LangGraph checkpoint tables ready.")
     except Exception as e:
         logger.warning(f"LangGraph checkpoint setup warning: {e}")
+
+    # Add Telegram columns to shops table (idempotent — safe on every restart)
+    try:
+        from database import engine
+        from sqlalchemy import text as _sql_text
+        with engine.connect() as _conn:
+            _conn.execute(_sql_text(
+                "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_chat_id VARCHAR"
+            ))
+            _conn.execute(_sql_text(
+                "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_notifications_enabled BOOLEAN DEFAULT FALSE"
+            ))
+            _conn.execute(_sql_text(
+                "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_chat_id_hash VARCHAR"
+            ))
+            _conn.execute(_sql_text(
+                "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_connect_token VARCHAR"
+            ))
+            _conn.execute(_sql_text(
+                "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_connect_token_expires_at TIMESTAMPTZ"
+            ))
+            _conn.commit()
+        logger.info("Telegram columns ready on shops table.")
+    except Exception as _tg_err:
+        logger.warning(f"Telegram column migration warning: {_tg_err}")
+
+    # Create notification_log table (idempotent)
+    try:
+        from database import engine
+        from sqlalchemy import text as _sql_text
+        with engine.connect() as _conn:
+            _conn.execute(_sql_text("""
+                CREATE TABLE IF NOT EXISTS notification_log (
+                    id          BIGSERIAL PRIMARY KEY,
+                    shop_id     INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                    channel     VARCHAR(32) NOT NULL,
+                    event_type  VARCHAR(64) NOT NULL,
+                    message_text TEXT,
+                    status      VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    sent_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """))
+            _conn.execute(_sql_text(
+                "CREATE INDEX IF NOT EXISTS ix_notification_log_shop_id ON notification_log(shop_id)"
+            ))
+            _conn.execute(_sql_text(
+                "CREATE INDEX IF NOT EXISTS ix_notification_log_sent_at ON notification_log(sent_at)"
+            ))
+            _conn.commit()
+        logger.info("notification_log table ready.")
+    except Exception as _nl_err:
+        logger.warning(f"notification_log table migration warning: {_nl_err}")
     
     # Pre-warm the semantic cache (loads sentence-transformer model) before serving requests.
     # This avoids a 60-90s stall on the first chat request after a pod restart.
@@ -86,6 +144,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Semantic cache pre-warm failed (non-fatal): {e}")
     
+    # Validate NVIDIA API key at startup — loud failure beats a silent fallback
+    # to ollama which would cause the agent to slow down to 35+ seconds.
+    try:
+        import os as _os
+        _nvidia_key = _os.getenv("NVIDIA_API_KEY", "")
+        _llm_provider = _os.getenv("LLM_PROVIDER", "ollama")
+        if _llm_provider == "nvidia":
+            if not _nvidia_key or len(_nvidia_key) < 8:
+                logger.error(
+                    "❌ NVIDIA_API_KEY is missing or too short! "
+                    "The agent will fall back to ollama which may not be running. "
+                    "Set NVIDIA_API_KEY in GitHub Secrets and redeploy."
+                )
+            else:
+                masked = f"{_nvidia_key[:8]}****{_nvidia_key[-4:]}"
+                logger.info(f"✅ NVIDIA_API_KEY loaded (key: {masked}), model: {_os.getenv('NVIDIA_MODEL', 'not set')}")
+        else:
+            logger.info(f"LLM_PROVIDER={_llm_provider} (not nvidia — NVIDIA key not required)")
+    except Exception as _key_err:
+        logger.warning(f"NVIDIA key validation warning: {_key_err}")
+
     # Start async audit writer
     _audit_start()
     logger.info("Audit logger started")
@@ -238,13 +317,24 @@ app.include_router(registration.router, prefix="/api/agent/registration", tags=[
 app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
 app.include_router(tenants.router, prefix="/api", tags=["Tenants"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
+app.include_router(payroll.router, prefix="/api/payroll", tags=["Payroll"])
 app.include_router(testing_router, tags=["Testing Feedback"])
 app.include_router(feedback_router, prefix="/api", tags=["Chat Feedback"])
+app.include_router(telegram_router, prefix="/api", tags=["Telegram"])
+# Critical 5 routers
+app.include_router(services_v1_router, tags=["Service Catalogue"])
+app.include_router(inventory_router, tags=["Inventory"])
+app.include_router(public_booking_router, tags=["Public Booking"])
+app.include_router(booking_page_router, tags=["Booking Page"])
+app.include_router(pos_router, tags=["POS"])
 
 # Serve Docsify-based documentation site at /docs
 import os as _os
 _docs_site_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "docs_site")
 app.mount("/docs", StaticFiles(directory=_docs_site_dir, html=True), name="docs")
+
+# Serve public booking page at /book (no auth required)
+app.mount("/book", StaticFiles(directory="static/book", html=True), name="book")
 
 @app.websocket("/ws/{shop_id}")
 async def websocket_endpoint(websocket: WebSocket, shop_id: str):

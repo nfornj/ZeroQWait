@@ -8,6 +8,7 @@ import sys
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 
@@ -87,6 +88,12 @@ class ListInvoicesRequest(ShopRequest):
 
 class PosSummaryRequest(ShopRequest):
     date: Optional[str] = None
+
+
+class QueryAnswerRequest(ShopRequest):
+    question: str
+    operation: Optional[str] = None
+    mode: str = "enabled"
 
 
 class InactiveClientsRequest(ShopRequest):
@@ -182,6 +189,17 @@ async def rest_list_invoices(req: ListInvoicesRequest):
 @app.post("/pos/summary")
 async def rest_get_pos_summary(req: PosSummaryRequest):
     return finance_tools._local_get_pos_summary(req.shop_id, req.date)
+
+
+@app.post("/query/answer")
+async def rest_answer_finance_question(req: QueryAnswerRequest):
+    return await run_in_threadpool(
+        finance_tools._local_answer_finance_question,
+        req.shop_id,
+        req.question,
+        req.operation,
+        req.mode,
+    )
 
 
 @app.post("/clients/inactive")
@@ -315,6 +333,12 @@ try:
     @mcp.tool(description="Return POS summary for a shop and date.")
     async def get_pos_summary(shop_id: int, date: Optional[str] = None) -> dict:
         return await rest_get_pos_summary(PosSummaryRequest(shop_id=shop_id, date=date))
+
+    @mcp.tool(description="Answer a finance read question with the guarded dynamic SQL query engine.")
+    async def answer_finance_question(shop_id: int, question: str, operation: Optional[str] = None, mode: str = "enabled") -> dict:
+        return await rest_answer_finance_question(
+            QueryAnswerRequest(shop_id=shop_id, question=question, operation=operation, mode=mode)
+        )
 
     @mcp.tool(description="Return inactive clients for a shop.")
     async def get_inactive_clients(shop_id: int, days_threshold: int = 45) -> dict:

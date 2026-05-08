@@ -33,6 +33,13 @@ class Shop(Base):
     tenant_schema = Column(String, nullable=True, index=True)  # NULL = shared/free, 'tenant_<id>' = premium
     odoo_company_id = Column(Integer, nullable=True, index=True)  # Odoo res.company ID for multi-tenant ERP isolation
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Telegram integration
+    telegram_chat_id = Column(String, nullable=True)                        # Fernet-encrypted chat ID (set after /start handshake)
+    telegram_chat_id_hash = Column(String, nullable=True, index=True)       # HMAC-SHA256 of chat_id — used for fast reverse lookup
+    telegram_notifications_enabled = Column(Boolean, default=False)         # Whether notifications are active
+    telegram_connect_token = Column(String, nullable=True)                  # One-time onboarding token (cleared after handshake)
+    telegram_connect_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # Token expiry (10 min)
     
     # Relationships
     owner = relationship("User", back_populates="owned_shops", foreign_keys=[owner_id])

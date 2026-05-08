@@ -9,6 +9,7 @@ from temporalio.client import (
     Client,
     Schedule,
     ScheduleActionStartWorkflow,
+    ScheduleAlreadyRunningError,
     ScheduleOverlapPolicy,
     SchedulePolicy,
     ScheduleSpec,
@@ -47,6 +48,8 @@ async def _create_or_skip(client: Client, schedule_id: str, schedule: Schedule, 
     try:
         await client.create_schedule(schedule_id, schedule, static_summary=note)
         logger.info("Created Temporal schedule %s", schedule_id)
+    except ScheduleAlreadyRunningError:
+        logger.info("Temporal schedule %s already exists; leaving it unchanged", schedule_id)
     except RPCError as exc:
         if exc.status == RPCStatusCode.ALREADY_EXISTS:
             logger.info("Temporal schedule %s already exists; leaving it unchanged", schedule_id)
@@ -75,6 +78,7 @@ async def ensure_briefing_schedules(client: Client) -> None:
             action=ScheduleActionStartWorkflow(
                 AllShopBriefingsWorkflow.run,
                 _schedule_payload(workflow_type),
+                id=f"{schedule_id}-${{SCHEDULED_TIME}}",
                 task_queue=TEMPORAL_TASK_QUEUE,
                 execution_timeout=timedelta(minutes=30),
             ),
@@ -126,6 +130,7 @@ async def ensure_shop_ops_schedules(client: Client) -> None:
             action=ScheduleActionStartWorkflow(
                 workflow_fn,
                 {},
+                id=f"{schedule_id}-${{SCHEDULED_TIME}}",
                 task_queue=TEMPORAL_TASK_QUEUE,
                 execution_timeout=timedelta(minutes=15),
             ),
@@ -163,6 +168,7 @@ async def ensure_brain_schedules(client: Client) -> None:
         action=ScheduleActionStartWorkflow(
             AllShopsSoulEvolutionWorkflow.run,
             {"reason": "scheduled"},
+            id="zeroqwait-soul-evolution-${SCHEDULED_TIME}",
             task_queue=TEMPORAL_TASK_QUEUE,
             execution_timeout=timedelta(minutes=45),
         ),
@@ -192,6 +198,7 @@ async def ensure_brain_schedules(client: Client) -> None:
         action=ScheduleActionStartWorkflow(
             CommitmentResolverWorkflow.run,
             {"trigger": "periodic"},
+            id="zeroqwait-commitment-sweep-${SCHEDULED_TIME}",
             task_queue=TEMPORAL_TASK_QUEUE,
             execution_timeout=timedelta(minutes=5),
         ),
@@ -214,4 +221,123 @@ async def ensure_brain_schedules(client: Client) -> None:
         "zeroqwait-commitment-sweep",
         commitment_schedule,
         "Periodic commitment sweep.",
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Payroll schedules
+# ──────────────────────────────────────────────────────────────────────────────
+
+DEFAULT_PAYROLL_ANNUAL_RESET_CRON = "1 0 1 1 *"   # Jan 1 at 00:01
+DEFAULT_PAYROLL_REMITTANCE_CRON  = "0 9 * * *"    # Daily 09:00 — check remittances
+DEFAULT_PAYROLL_REMITTANCE_DAYS  = 3               # Warn when due within 3 days
+
+
+async def ensure_payroll_schedules(client: Client) -> None:
+    """Register recurring payroll-related Temporal schedules (idempotent)."""
+    from agents.payroll_workflows import AnnualPayrollResetWorkflow, RemittanceReminderWorkflow
+
+    timezone = os.getenv("TEMPORAL_BRIEFING_TIMEZONE", DEFAULT_TIMEZONE)
+
+    # 1 — Annual YTD reset (Jan 1)
+    annual_cron = os.getenv("TEMPORAL_PAYROLL_ANNUAL_RESET_CRON", DEFAULT_PAYROLL_ANNUAL_RESET_CRON)
+    annual_schedule = Schedule(
+        action=ScheduleActionStartWorkflow(
+            AnnualPayrollResetWorkflow.run,
+            {"new_year": 0},   # worker resolves year at runtime
+            id="zeroqwait-payroll-annual-reset-${SCHEDULED_TIME}",
+            task_queue=TEMPORAL_TASK_QUEUE,
+            execution_timeout=timedelta(minutes=30),
+        ),
+        spec=ScheduleSpec(
+            cron_expressions=[annual_cron],
+            time_zone_name=timezone,
+        ),
+        policy=SchedulePolicy(
+            overlap=ScheduleOverlapPolicy.SKIP,
+            catchup_window=timedelta(hours=2),
+            pause_on_failure=True,
+        ),
+        state=ScheduleState(
+            note="Jan 1: reset YTD accumulators for all active shops.",
+            paused=False,
+        ),
+    )
+    await _create_or_skip(
+        client,
+        "zeroqwait-payroll-annual-reset",
+        annual_schedule,
+        "Annual YTD reset for all active shops.",
+    )
+
+    # 2 — Daily remittance reminder
+    remittance_cron = os.getenv("TEMPORAL_PAYROLL_REMITTANCE_CRON", DEFAULT_PAYROLL_REMITTANCE_CRON)
+    days_ahead = int(os.getenv("TEMPORAL_PAYROLL_REMITTANCE_DAYS", str(DEFAULT_PAYROLL_REMITTANCE_DAYS)))
+    remittance_schedule = Schedule(
+        action=ScheduleActionStartWorkflow(
+            RemittanceReminderWorkflow.run,
+            {"days_ahead": days_ahead},
+            id="zeroqwait-payroll-remittance-${SCHEDULED_TIME}",
+            task_queue=TEMPORAL_TASK_QUEUE,
+            execution_timeout=timedelta(minutes=15),
+        ),
+        spec=ScheduleSpec(
+            cron_expressions=[remittance_cron],
+            time_zone_name=timezone,
+        ),
+        policy=SchedulePolicy(
+            overlap=ScheduleOverlapPolicy.SKIP,
+            catchup_window=timedelta(hours=4),
+            pause_on_failure=False,
+        ),
+        state=ScheduleState(
+            note="Daily 09:00: remind owners of remittances due within 3 days.",
+            paused=False,
+        ),
+    )
+    await _create_or_skip(
+        client,
+        "zeroqwait-payroll-remittance-reminder",
+        remittance_schedule,
+        "Daily remittance due-soon reminder for all active shops.",
+    )
+
+
+DEFAULT_LOW_STOCK_CRON = "0 8 * * *"  # Daily 08:00
+
+
+async def ensure_inventory_schedules(client: Client) -> None:
+    """Register the daily low-stock check Temporal schedule (idempotent)."""
+    from agents.appointment_workflows import LowStockAlertWorkflow
+
+    timezone = os.getenv("TEMPORAL_BRIEFING_TIMEZONE", DEFAULT_TIMEZONE)
+    cron = os.getenv("TEMPORAL_LOW_STOCK_CRON", DEFAULT_LOW_STOCK_CRON)
+
+    schedule = Schedule(
+        action=ScheduleActionStartWorkflow(
+            LowStockAlertWorkflow.run,
+            {"trigger": "scheduled"},
+            id="zeroqwait-low-stock-daily-check-${SCHEDULED_TIME}",
+            task_queue=TEMPORAL_TASK_QUEUE,
+            execution_timeout=timedelta(minutes=15),
+        ),
+        spec=ScheduleSpec(
+            cron_expressions=[cron],
+            time_zone_name=timezone,
+        ),
+        policy=SchedulePolicy(
+            overlap=ScheduleOverlapPolicy.SKIP,
+            catchup_window=timedelta(hours=2),
+            pause_on_failure=False,
+        ),
+        state=ScheduleState(
+            note="Daily 08:00: check low-stock items across all active shops.",
+            paused=False,
+        ),
+    )
+    await _create_or_skip(
+        client,
+        "zeroqwait-low-stock-daily-check",
+        schedule,
+        "Daily low-stock check for all active shops.",
     )

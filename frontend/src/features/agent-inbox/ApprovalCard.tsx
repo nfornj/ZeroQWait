@@ -1,15 +1,14 @@
-import React from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   alpha,
   Box,
-  Button,
-  Card,
-  Chip,
+  ButtonBase,
+  Collapse,
   Stack,
   Typography,
   useTheme,
 } from "@mui/material";
-import RocketLaunchRoundedIcon from "@mui/icons-material/RocketLaunchRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import type { PendingApproval } from "./types";
 import { useShop } from "../../contexts/ShopContext";
 
@@ -17,36 +16,10 @@ interface ApprovalCardProps {
   approval: PendingApproval;
   isSubmitting?: boolean;
   onDecision: (approval: PendingApproval, approved: boolean) => void;
+  /** If true the card is resolved (read-only, no buttons) */
+  resolved?: boolean;
+  resolvedOutcome?: "approved" | "denied";
 }
-
-const formatPolicyMode = (mode?: string): string => {
-  switch (mode) {
-    case "require_approval":
-      return "Require approval";
-    case "allow":
-      return "Allow automatically";
-    case "notify_only":
-      return "Notify after auto-run";
-    case "silent":
-      return "Silent auto-run";
-    case "forbid":
-      return "Blocked by policy";
-    default:
-      return mode ? mode.replace(/_/g, " ") : "Policy controlled";
-  }
-};
-
-const formatActionLabel = (action?: string): string => {
-  if (!action) return "Approve";
-
-  const primaryWord = action
-    .replace(/[_-]+/g, " ")
-    .trim()
-    .split(/\s+/)[0];
-
-  if (!primaryWord) return "Approve";
-  return primaryWord.charAt(0).toUpperCase() + primaryWord.slice(1);
-};
 
 const getApprovalDescription = (approval: PendingApproval): string => {
   if (approval.summary?.trim()) return approval.summary.trim();
@@ -55,149 +28,286 @@ const getApprovalDescription = (approval: PendingApproval): string => {
   return "This action is paused until you approve or deny it.";
 };
 
-const ApprovalCard: React.FC<ApprovalCardProps> = ({ approval, isSubmitting, onDecision }) => {
+const ApprovalCard: React.FC<ApprovalCardProps> = ({
+  approval,
+  isSubmitting,
+  onDecision,
+  resolved,
+  resolvedOutcome,
+}) => {
   const muiTheme = useTheme();
   const { shop } = useShop();
   const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
-  const brandSecondary = shop?.secondary_color || brandPrimary;
-  const cardBg =
-    muiTheme.palette.mode === "dark"
-      ? alpha(muiTheme.palette.background.paper, 0.88)
-      : alpha("#ffffff", 0.9);
-  const cardBorder =
-    muiTheme.palette.mode === "dark"
-      ? alpha(brandPrimary, 0.24)
-      : alpha(brandPrimary, 0.16);
-  const riskTone = approval.risk_level === "high"
-    ? muiTheme.palette.error.main
-    : approval.risk_level === "medium"
-      ? muiTheme.palette.warning.main
-      : muiTheme.palette.success.main;
-  const title = approval.title || approval.action.replace(/_/g, " ");
+  const [expanded, setExpanded] = useState(true);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const title = (approval.title || approval.action.replace(/[_-]+/g, " ")).trim();
   const description = getApprovalDescription(approval);
-  const actionLabel = formatActionLabel(approval.action);
+
+  const handleDeny = useCallback(() => {
+    if (!isSubmitting && !resolved) {
+      onDecision(approval, false);
+    }
+  }, [approval, isSubmitting, onDecision, resolved]);
+
+  const handleApprove = useCallback(() => {
+    if (!isSubmitting && !resolved) {
+      onDecision(approval, true);
+    }
+  }, [approval, isSubmitting, onDecision, resolved]);
+
+  // Keyboard shortcuts: Enter = approve, Esc = deny
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || resolved) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleApprove();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        handleDeny();
+      }
+    };
+
+    el.addEventListener("keydown", onKey);
+    return () => el.removeEventListener("keydown", onKey);
+  }, [handleApprove, handleDeny, resolved]);
+
+  const isDark = muiTheme.palette.mode === "dark";
+  const borderColor = resolved
+    ? alpha(muiTheme.palette.divider, 0.8)
+    : alpha(brandPrimary, isDark ? 0.22 : 0.16);
 
   return (
-    <Card
-      variant="outlined"
+    <Box
+      ref={cardRef}
+      tabIndex={resolved ? -1 : 0}
+      aria-label={`Approval request: ${title}`}
+      data-approval-id={approval.action_id || approval.action}
       sx={{
-        borderRadius: 3.5,
-        borderColor: cardBorder,
-        bgcolor: cardBg,
-        backdropFilter: "blur(20px)",
-        boxShadow: "none",
+        borderRadius: 2,
+        border: "1px solid",
+        borderColor,
+        bgcolor: isDark
+          ? alpha(muiTheme.palette.background.paper, 0.9)
+          : muiTheme.palette.background.paper,
+        overflow: "hidden",
+        outline: "none",
+        maxWidth: 520,
+        "&:focus-visible": {
+          boxShadow: `0 0 0 2px ${alpha(brandPrimary, 0.5)}`,
+        },
       }}
     >
-      <Box
+      {/* Title row */}
+      <ButtonBase
+        component="div"
+        onClick={() => setExpanded((v) => !v)}
         sx={{
-          px: 2,
-          py: 1.75,
           display: "flex",
-          flexDirection: { xs: "column", sm: "row" },
-          alignItems: { xs: "stretch", sm: "center" },
-          gap: 1.5,
+          width: "100%",
+          alignItems: "center",
+          gap: 0.75,
+          px: 1.75,
+          py: 1.1,
+          textAlign: "left",
+          cursor: "pointer",
+          "&:hover": {
+            bgcolor: alpha(brandPrimary, 0.04),
+          },
         }}
       >
-        <Stack direction="row" spacing={1.5} sx={{ flex: 1, minWidth: 0 }}>
-          <Box
-            sx={{
-              width: 52,
-              height: 52,
-              borderRadius: 2.5,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              bgcolor: alpha(brandSecondary, 0.12),
-              color: brandSecondary,
-              border: `1px solid ${alpha(brandSecondary, 0.18)}`,
-              flexShrink: 0,
-            }}
-          >
-            <RocketLaunchRoundedIcon sx={{ fontSize: 24 }} />
-          </Box>
+        {/* Bullet */}
+        <Box
+          sx={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            flexShrink: 0,
+            bgcolor: resolved
+              ? resolvedOutcome === "approved"
+                ? muiTheme.palette.success.main
+                : muiTheme.palette.text.disabled
+              : brandPrimary,
+          }}
+        />
 
-          <Stack spacing={0.65} sx={{ minWidth: 0, flex: 1 }}>
-            <Typography variant="h6" sx={{ fontSize: "1.05rem", fontWeight: 700, color: "text.primary" }}>
-              {title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
-              {description}
-            </Typography>
-            <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-              {approval.risk_level && (
-                <Chip
-                  size="small"
-                  label={`Risk: ${String(approval.risk_level)}`}
-                  sx={{
-                    bgcolor: alpha(riskTone, 0.12),
-                    color: riskTone,
-                    border: `1px solid ${alpha(riskTone, 0.18)}`,
-                    fontWeight: 600,
-                  }}
-                />
-              )}
-              {approval.policy_mode && (
-                <Chip
-                  size="small"
-                  label={formatPolicyMode(approval.policy_mode)}
-                  sx={{
-                    bgcolor: alpha(brandPrimary, 0.08),
-                    color: brandPrimary,
-                    border: `1px solid ${alpha(brandPrimary, 0.16)}`,
-                  }}
-                />
-              )}
-            </Stack>
-          </Stack>
-        </Stack>
-
-        <Stack
-          direction="row"
-          spacing={1}
-          justifyContent={{ xs: "flex-end", sm: "flex-start" }}
-          sx={{ ml: { sm: "auto" }, flexShrink: 0 }}
+        <Typography
+          variant="body2"
+          sx={{
+            flex: 1,
+            fontWeight: 600,
+            color: resolved ? "text.secondary" : brandPrimary,
+            lineHeight: 1.4,
+          }}
         >
-          <Button
-            variant="text"
-            color="inherit"
-            disabled={isSubmitting}
-            onClick={() => onDecision(approval, false)}
+          {title}
+          {resolved && resolvedOutcome && (
+            <Typography
+              component="span"
+              variant="caption"
+              sx={{
+                ml: 1,
+                px: 0.75,
+                py: 0.2,
+                borderRadius: 999,
+                bgcolor: alpha(
+                  resolvedOutcome === "approved"
+                    ? muiTheme.palette.success.main
+                    : muiTheme.palette.text.disabled,
+                  0.12,
+                ),
+                color:
+                  resolvedOutcome === "approved"
+                    ? muiTheme.palette.success.main
+                    : "text.secondary",
+                fontWeight: 600,
+              }}
+            >
+              {resolvedOutcome === "approved" ? "Approved" : "Denied"}
+            </Typography>
+          )}
+        </Typography>
+
+        <ExpandMoreRoundedIcon
+          sx={{
+            fontSize: 18,
+            color: "text.secondary",
+            flexShrink: 0,
+            transition: muiTheme.transitions.create("transform", { duration: 180 }),
+            transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+          }}
+        />
+      </ButtonBase>
+
+      {/* Expandable body */}
+      <Collapse in={expanded} unmountOnExit>
+        <Box
+          sx={{
+            px: 1.75,
+            pt: 0.25,
+            pb: resolved ? 1.5 : 1,
+            borderTop: "1px solid",
+            borderColor: alpha(muiTheme.palette.divider, 0.6),
+          }}
+        >
+          <Typography
+            variant="body2"
             sx={{
-              minWidth: 72,
-              borderRadius: 999,
-              px: 1.5,
-              color: muiTheme.palette.text.primary,
-              textTransform: "none",
-              fontWeight: 600,
+              color: "text.secondary",
+              lineHeight: 1.6,
+              py: 0.75,
             }}
           >
-            Deny
-          </Button>
-          <Button
-            variant="contained"
-            disabled={isSubmitting}
-            onClick={() => onDecision(approval, true)}
-            sx={{
-              minWidth: 96,
-              borderRadius: 999,
-              px: 2,
-              bgcolor: brandPrimary,
-              boxShadow: "none",
-              color: muiTheme.palette.getContrastText(brandPrimary),
-              textTransform: "none",
-              fontWeight: 700,
-              "&:hover": {
-                bgcolor: brandPrimary,
-                filter: "brightness(0.95)",
-                boxShadow: "none",
-              },
-            }}
-          >
-            {actionLabel}
-          </Button>
-        </Stack>
-      </Box>
-    </Card>
+            {description}
+          </Typography>
+
+          {/* Action buttons — only when not resolved */}
+          {!resolved && (
+            <Stack
+              direction="row"
+              spacing={0.75}
+              justifyContent="flex-end"
+              sx={{
+                pt: 0.75,
+                borderTop: "1px solid",
+                borderColor: alpha(muiTheme.palette.divider, 0.5),
+              }}
+            >
+              <ButtonBase
+                disabled={isSubmitting}
+                onClick={handleDeny}
+                sx={{
+                  px: 1.5,
+                  py: 0.6,
+                  borderRadius: 999,
+                  fontFamily: "inherit",
+                  fontSize: "0.8125rem",
+                  fontWeight: 600,
+                  color: "text.primary",
+                  opacity: isSubmitting ? 0.5 : 1,
+                  cursor: isSubmitting ? "not-allowed" : "pointer",
+                  "&:hover:not(:disabled)": {
+                    bgcolor: alpha(muiTheme.palette.text.primary, 0.06),
+                  },
+                }}
+              >
+                Deny
+                <Typography
+                  component="span"
+                  variant="caption"
+                  sx={{
+                    ml: 0.6,
+                    px: 0.55,
+                    py: 0.1,
+                    borderRadius: 0.75,
+                    bgcolor: alpha(muiTheme.palette.text.primary, 0.08),
+                    color: "text.secondary",
+                    fontFamily: "monospace",
+                    fontSize: "0.7rem",
+                  }}
+                >
+                  ^ Esc
+                </Typography>
+              </ButtonBase>
+
+              <ButtonBase
+                disabled={isSubmitting}
+                onClick={handleApprove}
+                sx={{
+                  px: 1.75,
+                  py: 0.6,
+                  borderRadius: 999,
+                  fontFamily: "inherit",
+                  fontSize: "0.8125rem",
+                  fontWeight: 700,
+                  bgcolor: isDark
+                    ? muiTheme.palette.common.white
+                    : muiTheme.palette.grey[900],
+                  color: isDark
+                    ? muiTheme.palette.grey[900]
+                    : muiTheme.palette.common.white,
+                  opacity: isSubmitting ? 0.5 : 1,
+                  cursor: isSubmitting ? "not-allowed" : "pointer",
+                  transition: muiTheme.transitions.create(["opacity", "filter"], {
+                    duration: 150,
+                  }),
+                  "&:hover:not(:disabled)": {
+                    filter: "brightness(0.88)",
+                  },
+                }}
+              >
+                Approve
+                <Typography
+                  component="span"
+                  variant="caption"
+                  sx={{
+                    ml: 0.6,
+                    px: 0.55,
+                    py: 0.1,
+                    borderRadius: 0.75,
+                    bgcolor: alpha(
+                      isDark
+                        ? muiTheme.palette.grey[800]
+                        : muiTheme.palette.common.white,
+                      0.18,
+                    ),
+                    color: "inherit",
+                    fontFamily: "monospace",
+                    fontSize: "0.7rem",
+                    opacity: 0.75,
+                  }}
+                >
+                  ^ Enter
+                </Typography>
+              </ButtonBase>
+            </Stack>
+          )}
+        </Box>
+      </Collapse>
+    </Box>
   );
 };
 

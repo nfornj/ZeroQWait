@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Book an Appointment</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --primary:#1a73e8;--primary-dark:#1558b0;
+    --surface:#fff;--bg:#f0f4f9;
+    --text:#1a1a2e;--muted:#6b7280;--border:#d1d5db;
+    --radius:14px;--shadow:0 2px 12px rgba(0,0,0,.08);
+  }
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:16px}
+  .wrap{max-width:440px;margin:0 auto}
+  .card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px;margin-bottom:16px}
+  h1{font-size:1.4rem;font-weight:700;margin-bottom:4px}
+  .subtitle{color:var(--muted);font-size:.9rem;margin-bottom:0}
+  h2{font-size:1rem;font-weight:600;margin-bottom:16px;color:var(--text)}
+  .steps{display:flex;gap:6px;margin-bottom:24px}
+  .step{flex:1;height:4px;background:var(--border);border-radius:4px;transition:background .3s}
+  .step.done{background:var(--primary)}
+  .service-list{display:flex;flex-direction:column;gap:10px}
+  .service-btn{border:2px solid var(--border);border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left;background:var(--surface);transition:border-color .2s,background .2s;width:100%}
+  .service-btn:hover{border-color:var(--primary);background:#f0f7ff}
+  .service-btn.selected{border-color:var(--primary);background:#e8f0fe}
+  .service-btn .name{font-weight:600;font-size:.95rem}
+  .service-btn .meta{color:var(--muted);font-size:.82rem;margin-top:2px}
+  .category-label{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:12px 0 6px}
+  .slot-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .slot-btn{border:2px solid var(--border);border-radius:8px;padding:10px 4px;cursor:pointer;background:var(--surface);font-size:.85rem;transition:border-color .2s,background .2s;text-align:center}
+  .slot-btn:hover{border-color:var(--primary);background:#f0f7ff}
+  .slot-btn.selected{border-color:var(--primary);background:#e8f0fe}
+  .input-group{margin-bottom:14px}
+  label{font-size:.85rem;font-weight:500;display:block;margin-bottom:4px}
+  input{width:100%;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:.95rem;outline:none;transition:border-color .2s}
+  input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(26,115,232,.15)}
+  .date-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px}
+  .date-pill{border:2px solid var(--border);border-radius:20px;padding:6px 14px;cursor:pointer;white-space:nowrap;background:var(--surface);font-size:.85rem;transition:border-color .2s,background .2s;flex-shrink:0}
+  .date-pill:hover{border-color:var(--primary);background:#f0f7ff}
+  .date-pill.selected{border-color:var(--primary);background:#e8f0fe;font-weight:600}
+  .btn{display:block;width:100%;padding:14px;background:var(--primary);color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:600;cursor:pointer;transition:background .2s;margin-top:8px}
+  .btn:hover{background:var(--primary-dark)}
+  .btn:disabled{background:#9ca3af;cursor:not-allowed}
+  .btn-ghost{background:transparent;color:var(--muted);border:none;font-size:.9rem;cursor:pointer;padding:6px 0;margin-top:6px;display:block;width:100%;text-align:center}
+  .btn-ghost:hover{color:var(--text)}
+  .summary-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:.9rem}
+  .summary-row:last-child{border-bottom:none}
+  .summary-row .label{color:var(--muted)}
+  .confirm-box{text-align:center;padding:12px 0}
+  .confirm-box .icon{font-size:3rem;margin-bottom:12px}
+  .confirm-box h2{font-size:1.2rem;margin-bottom:8px}
+  .confirm-box p{color:var(--muted);font-size:.9rem;line-height:1.5}
+  .error-msg{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:.88rem;margin-bottom:14px}
+  .loading{text-align:center;padding:20px;color:var(--muted)}
+  .no-slots{text-align:center;padding:20px;color:var(--muted);font-size:.9rem}
+  @media(max-width:360px){.slot-grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="shop-header" class="card">
+    <h1 id="shop-title">Loading…</h1>
+    <p class="subtitle" id="shop-welcome"></p>
+  </div>
+
+  <div class="card">
+    <div class="steps" id="steps">
+      <div class="step done" id="s1"></div>
+      <div class="step" id="s2"></div>
+      <div class="step" id="s3"></div>
+      <div class="step" id="s4"></div>
+    </div>
+
+    <!-- Step 1: Pick service -->
+    <div id="step-service">
+      <h2>Select a service</h2>
+      <div id="service-list" class="service-list"><div class="loading">Loading services…</div></div>
+    </div>
+
+    <!-- Step 2: Pick date + time -->
+    <div id="step-datetime" style="display:none">
+      <h2>Choose a date &amp; time</h2>
+      <div class="date-row" id="date-row"></div>
+      <div id="slot-container"><div class="loading">Checking availability…</div></div>
+      <button class="btn-ghost" onclick="goStep(1)">← Back</button>
+    </div>
+
+    <!-- Step 3: Contact info -->
+    <div id="step-contact" style="display:none">
+      <h2>Your details</h2>
+      <div id="contact-error" class="error-msg" style="display:none"></div>
+      <div class="input-group">
+        <label for="inp-name">Name *</label>
+        <input id="inp-name" type="text" placeholder="Your full name" autocomplete="name" />
+      </div>
+      <div class="input-group" id="phone-group">
+        <label for="inp-phone">Phone *</label>
+        <input id="inp-phone" type="tel" placeholder="+1 (555) 123-4567" autocomplete="tel" />
+      </div>
+      <div class="input-group" id="email-group" style="display:none">
+        <label for="inp-email">Email *</label>
+        <input id="inp-email" type="email" placeholder="you@example.com" autocomplete="email" />
+      </div>
+      <div class="input-group">
+        <label for="inp-notes">Notes (optional)</label>
+        <input id="inp-notes" type="text" placeholder="Any special requests?" />
+      </div>
+      <button class="btn" id="btn-confirm" onclick="confirmBooking()">Confirm Booking</button>
+      <button class="btn-ghost" onclick="goStep(2)">← Back</button>
+    </div>
+
+    <!-- Step 4: Confirm screen -->
+    <div id="step-confirm" style="display:none">
+      <div class="confirm-box">
+        <div class="icon">🎉</div>
+        <h2>You're booked!</h2>
+        <p id="confirm-text"></p>
+      </div>
+      <div id="booking-summary" style="margin-top:20px"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var slug = location.pathname.replace('/book/','').replace(/\//g,'');
+  var api = '/api/v1/book';
+  var state = {page:null, service:null, date:null, slot:null, step:1};
+
+  function qs(id){return document.getElementById(id)}
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  fetch(api+'/'+slug)
+    .then(function(r){if(!r.ok)throw r;return r.json()})
+    .then(function(data){
+      state.page = data;
+      qs('shop-title').textContent = data.title || data.shop_name;
+      qs('shop-welcome').textContent = data.welcome_message || '';
+      renderServices(data.services || []);
+    })
+    .catch(function(){
+      qs('shop-title').textContent = 'Booking unavailable';
+      qs('shop-welcome').textContent = 'This booking page could not be loaded.';
+    });
+
+  // ── Step rendering ────────────────────────────────────────────────────────
+  function goStep(n){
+    state.step = n;
+    ['service','datetime','contact','confirm'].forEach(function(s,i){
+      qs('step-'+s).style.display = (i+1===n)?'':'none';
+    });
+    for(var i=1;i<=4;i++) qs('s'+i).classList.toggle('done', i<=n);
+  }
+
+  // ── Step 1: Services ─────────────────────────────────────────────────────
+  function renderServices(services){
+    var el = qs('service-list');
+    if(!services.length){el.innerHTML='<div class="no-slots">No services available.</div>';return;}
+    var byCat = {};
+    services.forEach(function(s){
+      var c = s.category || 'Other';
+      (byCat[c] = byCat[c]||[]).push(s);
+    });
+    var html = '';
+    Object.keys(byCat).forEach(function(cat){
+      html += '<div class="category-label">'+escHtml(cat)+'</div>';
+      byCat[cat].forEach(function(s){
+        html += '<button class="service-btn" data-id="'+s.id+'" onclick="selectService('+s.id+')">'
+              + '<div class="name">'+escHtml(s.name)+'</div>'
+              + '<div class="meta">'+escHtml(s.price_display || '')+(s.duration_minutes?' &bull; '+s.duration_minutes+' min':'')+'</div>'
+              + '</button>';
+      });
+    });
+    el.innerHTML = html;
+  }
+
+  window.selectService = function(id){
+    state.service = (state.page.services||[]).find(function(s){return s.id===id});
+    document.querySelectorAll('.service-btn').forEach(function(b){
+      b.classList.toggle('selected', +b.dataset.id===id);
+    });
+    setTimeout(function(){renderDatePicker();goStep(2);}, 150);
+  };
+
+  // ── Step 2: Date + Time ───────────────────────────────────────────────────
+  function renderDatePicker(){
+    var row = qs('date-row');
+    row.innerHTML = '';
+    var today = new Date();
+    for(var i=0;i<14;i++){
+      var d = new Date(today);
+      d.setDate(today.getDate()+i);
+      var iso = d.toISOString().split('T')[0];
+      var label = i===0?'Today':i===1?'Tomorrow':d.toLocaleDateString('en-CA',{weekday:'short',month:'short',day:'numeric'});
+      var pill = document.createElement('button');
+      pill.className = 'date-pill';
+      pill.dataset.date = iso;
+      pill.textContent = label;
+      pill.onclick = function(){selectDate(this.dataset.date);};
+      row.appendChild(pill);
+    }
+    if(!state.date) selectDate(today.toISOString().split('T')[0]);
+  }
+
+  function selectDate(iso){
+    state.date = iso;
+    state.slot = null;
+    document.querySelectorAll('.date-pill').forEach(function(p){
+      p.classList.toggle('selected', p.dataset.date===iso);
+    });
+    loadSlots();
+  }
+
+  function loadSlots(){
+    var sc = qs('slot-container');
+    sc.innerHTML = '<div class="loading">Checking availability…</div>';
+    fetch(api+'/'+slug+'/availability?service_id='+state.service.id+'&date='+state.date)
+      .then(function(r){return r.json();})
+      .then(function(data){
+        var slots = data.available_slots||[];
+        if(!slots.length){sc.innerHTML='<div class="no-slots">No slots available on this date. Try another day.</div>';return;}
+        var html='<div class="slot-grid">';
+        slots.forEach(function(s){
+          html+='<button class="slot-btn" data-start="'+s.start+'" data-end="'+s.end+'" onclick="selectSlot(this)">'+escHtml(s.label)+'</button>';
+        });
+        html+='</div><button class="btn" onclick="goStep(3)" id="btn-next-slot" disabled style="margin-top:14px">Next →</button>';
+        sc.innerHTML=html;
+      })
+      .catch(function(){sc.innerHTML='<div class="no-slots">Could not load availability. Please refresh.</div>';});
+  }
+
+  window.selectSlot = function(el){
+    state.slot = {start:el.dataset.start, end:el.dataset.end, label:el.textContent};
+    document.querySelectorAll('.slot-btn').forEach(function(b){b.classList.remove('selected');});
+    el.classList.add('selected');
+    var btn = qs('btn-next-slot');
+    if(btn){btn.disabled=false;}
+  };
+
+  // ── Step 3: Contact ───────────────────────────────────────────────────────
+  window.confirmBooking = function(){
+    var name = qs('inp-name').value.trim();
+    var phone = qs('inp-phone').value.trim();
+    var email = qs('inp-email').value.trim();
+    var notes = qs('inp-notes').value.trim();
+    var err = qs('contact-error');
+    err.style.display='none';
+
+    if(!name){showErr(err,'Please enter your name.');return;}
+    if(state.page.require_phone && !phone){showErr(err,'Phone number is required.');return;}
+    if(state.page.require_email && !email){showErr(err,'Email address is required.');return;}
+
+    var btn = qs('btn-confirm');
+    btn.disabled=true;
+    btn.textContent='Booking…';
+
+    var body = {
+      service_id: state.service.id,
+      customer_name: name,
+      scheduled_start: state.slot.start,
+    };
+    if(phone) body.customer_phone = phone;
+    if(email) body.customer_email = email;
+    if(notes) body.notes = notes;
+
+    fetch(api+'/'+slug+'/book',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body),
+    })
+    .then(function(r){if(!r.ok)return r.json().then(function(e){throw new Error(e.detail||'Booking failed');});return r.json();})
+    .then(function(data){
+      var d = new Date(data.scheduled_start);
+      qs('confirm-text').textContent = 'Your appointment has been confirmed. See you on '+d.toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric'})+' at '+d.toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit'})+'.';
+      qs('booking-summary').innerHTML =
+        summary('Service', data.service_name)
+        + summary('Where', data.shop_name)
+        + summary('When', d.toLocaleString('en-CA',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}))
+        + summary('Name', name);
+      goStep(4);
+    })
+    .catch(function(e){
+      showErr(err, e.message||'Something went wrong. Please try again.');
+      btn.disabled=false;
+      btn.textContent='Confirm Booking';
+    });
+  };
+
+  function summary(k,v){
+    return '<div class="summary-row"><span class="label">'+escHtml(k)+'</span><span>'+escHtml(v||'')+'</span></div>';
+  }
+  function showErr(el, msg){el.textContent=msg;el.style.display='block';}
+  function escHtml(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]||c;});}
+})();
+</script>
+</body>
+</html>

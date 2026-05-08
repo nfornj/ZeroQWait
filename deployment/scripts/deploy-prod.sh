@@ -123,8 +123,8 @@ sudo git config --global --add safe.directory "${PROJECT_ROOT}" 2>/dev/null || t
 
 sudo env \
   SKIP_TESTS="${SKIP_TESTS:-true}" \
-  REGISTRY="localhost:5000" \
-  IMAGE_NAMESPACE="prod" \
+  REGISTRY="ghcr.io/nfornj" \
+  IMAGE_NAMESPACE="" \
   RETAIN_VERSIONS="10" \
   SKIP_REGISTRY_PRUNE="true" \
   SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp,booking-mcp,finance-mcp,hr-mcp}" \
@@ -196,12 +196,8 @@ kctl apply -f "${K8S_MANIFESTS}/backend-pdb.yaml"
 kctl rollout restart deployment/backend -n zeroqwait
 kctl rollout restart deployment/temporal-worker -n zeroqwait
 
-echo "==> Pruning production image tags (retain last 10 per service)"
-sudo env \
-  KEEP_VERSIONS="10" \
-  REGISTRY_URL="http://localhost:5000" \
-  REPOSITORIES="prod/backend prod/frontend prod/asr-service prod/tts-service prod/voice-mcp prod/booking-mcp prod/finance-mcp prod/hr-mcp" \
-  bash "${PROJECT_ROOT}/deployment/scripts/prune-registry-tags.sh"
+# Image pruning on ghcr.io is managed via GitHub UI or a scheduled workflow.
+# Run deployment/scripts/prune-ghcr-tags.sh manually if needed.
 
 echo "==> Waiting for frontend and backend rollouts"
 kctl rollout status deployment/frontend -n zeroqwait --timeout=300s

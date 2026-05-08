@@ -3,8 +3,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Alert,
   Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  IconButton,
   Stack,
+  Tooltip,
 } from "@mui/material";
+import AddCommentOutlinedIcon from "@mui/icons-material/AddCommentOutlined";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "../../../contexts/AuthContext";
@@ -17,7 +26,6 @@ import AgentChat, {
 import AgentTaskBoard, {
   AgentTaskBoardExternalTask,
 } from "../../agent-inbox/AgentTaskBoard";
-import { useApprovalDecisions } from "../../agent-inbox/hooks/useApprovalDecisions";
 import {
   ownerDashboardKeys,
   useOwnerBriefingQuery,
@@ -26,6 +34,7 @@ import {
   useOwnerPoliciesQuery,
   usePendingApprovalsQuery,
 } from "../../agent-inbox/ownerDashboardQueries";
+import { useApprovalDecisions } from "../../agent-inbox/hooks/useApprovalDecisions";
 import { createAgentChartFromPayload } from "../../agent-inbox/types";
 import type {
   AgentChart,
@@ -410,6 +419,8 @@ const OwnerDashboardPage: React.FC = () => {
     setMessages([]);
     setShowNewChatDialog(false);
   }, [shop?.id, token]);
+
+
   const briefingQuery = useOwnerBriefingQuery(shop?.id);
   const pendingQuery = usePendingApprovalsQuery(shop?.id);
   const feedQuery = useOwnerFeedQuery(shop?.id);
@@ -718,6 +729,14 @@ const OwnerDashboardPage: React.FC = () => {
 
       setIsStreaming(true);
 
+      // Create a fresh AbortController for this stream.  Any previous stream
+      // (e.g. rapid send) is cancelled first.
+      if (activeStreamAbortRef.current) {
+        activeStreamAbortRef.current.abort();
+      }
+      const abortController = new AbortController();
+      activeStreamAbortRef.current = abortController;
+
       let streamEndedWithDone = false;
       let streamTerminalStatus: "completed" | "error" | null = null;
       let streamErrorDetail: string | null = null;
@@ -726,6 +745,7 @@ const OwnerDashboardPage: React.FC = () => {
         try {
         const response = await fetch(`${apiBaseUrl}/v2/agent/chat/stream`, {
           method: "POST",
+          signal: abortController.signal,
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -1141,6 +1161,9 @@ const OwnerDashboardPage: React.FC = () => {
                     ...msg,
                     status: streamEndedWithDone || streamTerminalStatus === "completed" ? "done" : msg.status,
                     thinkingComplete: true,
+                    processingDuration: msg.processingStartedAt
+                      ? Date.now() - Date.parse(msg.processingStartedAt)
+                      : undefined,
                   }
                 : msg
             );
@@ -1425,20 +1448,71 @@ const OwnerDashboardPage: React.FC = () => {
             isStreaming={isStreaming}
             isUploading={isUploadingDocuments}
             onSend={handleSend}
+            onApprovalDecision={handleApprovalDecision}
+            isApproving={isApproving}
             title="Hello there!"
             subtitle="How can I help you today?"
             promptSections={contextPromptSections}
-            header={<Header />}
+            header={
+              <Box sx={{ display: "flex", alignItems: "center", width: "100%" }}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Header />
+                </Box>
+                <Tooltip title="New chat">
+                  <IconButton
+                    size="small"
+                    onClick={() => setShowNewChatDialog(true)}
+                    disabled={isStreaming || messages.length === 0}
+                    sx={{ flexShrink: 0, ml: 1 }}
+                    aria-label="Start new chat"
+                  >
+                    <AddCommentOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            }
             interactablesStorageKey={shop?.id ? `owner-dashboard-task-board:${shop.id}` : undefined}
             sidebar={
               <AgentTaskBoard
                 interactableId={`owner-task-board-${shop?.id || "default"}`}
                 externalTasks={taskBoardTasks}
+                onApprovalTaskClick={handleApprovalTaskClick}
               />
             }
           />
         </Box>
       </Stack>
+
+      {/* New chat confirmation dialog */}
+      <Dialog
+        open={showNewChatDialog}
+        onClose={() => !isResettingChat && setShowNewChatDialog(false)}
+        aria-labelledby="new-chat-dialog-title"
+      >
+        <DialogTitle id="new-chat-dialog-title">Start a new conversation?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will permanently delete your current conversation history. The AI will start
+            fresh with no memory of previous messages.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setShowNewChatDialog(false)}
+            disabled={isResettingChat}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleNewChatConfirm}
+            color="error"
+            variant="contained"
+            disabled={isResettingChat}
+          >
+            {isResettingChat ? "Clearing…" : "Clear and start fresh"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

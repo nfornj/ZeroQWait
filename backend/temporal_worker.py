@@ -39,10 +39,38 @@ from agents.custom_schedule_workflow import (
     CustomShopScheduleWorkflow,
     execute_custom_schedule_activity,
 )
+from agents.payroll_workflows import (
+    AnnualPayrollResetWorkflow,
+    HiringWorkflow,
+    PayrollRunWorkflow,
+    RemittanceReminderWorkflow,
+    TipPoolWorkflow,
+    annual_ytd_reset_activity,
+    approve_payroll_batch_activity,
+    draft_payroll_activity,
+    hiring_activity,
+    remittance_reminder_activity,
+    split_tip_pool_activity,
+)
+from agents.appointment_workflows import (
+    AppointmentReminderWorkflow,
+    NoShowCheckWorkflow,
+    LowStockAlertWorkflow,
+    WeeklyInventoryReportWorkflow,
+    send_inventory_alert_activity,
+    send_reminder_activity,
+    mark_no_show_activity,
+    get_unsent_reminders_activity,
+    get_overdue_appointments_activity,
+    list_shop_ids_with_inventory_activity,
+)
+from agents.temporal_inventory_activities import check_low_stock_activity
 from agents.temporal_config import TEMPORAL_ADDRESS, TEMPORAL_NAMESPACE, TEMPORAL_TASK_QUEUE
 from agents.temporal_schedules import (
     ensure_brain_schedules,
     ensure_briefing_schedules,
+    ensure_inventory_schedules,
+    ensure_payroll_schedules,
     ensure_shop_ops_schedules,
 )
 
@@ -59,6 +87,8 @@ async def main() -> None:
         await ensure_briefing_schedules(client)
         await ensure_shop_ops_schedules(client)
         await ensure_brain_schedules(client)
+        await ensure_payroll_schedules(client)
+        await ensure_inventory_schedules(client)
     worker = Worker(
         client,
         task_queue=TEMPORAL_TASK_QUEUE,
@@ -77,6 +107,17 @@ async def main() -> None:
             AllShopsSoulEvolutionWorkflow,
             CommitmentResolverWorkflow,
             CustomShopScheduleWorkflow,
+            # Payroll workflows
+            HiringWorkflow,
+            PayrollRunWorkflow,
+            RemittanceReminderWorkflow,
+            TipPoolWorkflow,
+            AnnualPayrollResetWorkflow,
+            # Appointment reminders + inventory alerts (Critical 5)
+            AppointmentReminderWorkflow,
+            NoShowCheckWorkflow,
+            LowStockAlertWorkflow,
+            WeeklyInventoryReportWorkflow,
         ],
         activities=[
             list_active_shop_ids_activity,
@@ -93,6 +134,21 @@ async def main() -> None:
             list_due_commitments_activity,
             resolve_commitment_activity,
             execute_custom_schedule_activity,
+            # Payroll activities
+            hiring_activity,
+            draft_payroll_activity,
+            approve_payroll_batch_activity,
+            remittance_reminder_activity,
+            split_tip_pool_activity,
+            annual_ytd_reset_activity,
+            # Appointment reminder + inventory alert activities (Critical 5)
+            check_low_stock_activity,
+            send_inventory_alert_activity,
+            send_reminder_activity,
+            mark_no_show_activity,
+            get_unsent_reminders_activity,
+            get_overdue_appointments_activity,
+            list_shop_ids_with_inventory_activity,
         ],
     )
     logger.info("Temporal worker started on %s/%s queue=%s", TEMPORAL_ADDRESS, TEMPORAL_NAMESPACE, TEMPORAL_TASK_QUEUE)

@@ -106,6 +106,10 @@ export interface ChatMessage {
   content: string;
   status: "sending" | "streaming" | "done" | "error";
   timestamp: string;
+  /** ISO timestamp when the assistant response stream started (set on assistant messages) */
+  processingStartedAt?: string;
+  /** How long the full response took in milliseconds (set when status → done/error) */
+  processingDuration?: number;
   agent?: string;
   processingStartedAt?: string;
   retryMessage?: string;
@@ -116,6 +120,8 @@ export interface ChatMessage {
   charts?: AgentChart[];
   tables?: AgentTable[];
   files?: AgentFile[];
+  /** Context-aware follow-up suggestions emitted by the backend after a completed response */
+  suggestions?: string[];
 }
 
 export interface AgentFeedEvent {

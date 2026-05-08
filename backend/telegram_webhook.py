@@ -35,7 +35,7 @@ from modules.shops.models import Shop
 logger = logging.getLogger(__name__)
 
 _REDIS_PREFIX: str = "zq:tg_connect:"
-_OWNER_REPLY_TIMEOUT_SECONDS: float = float(os.getenv("TELEGRAM_OWNER_REPLY_TIMEOUT_SECONDS", "45"))
+_OWNER_REPLY_TIMEOUT_SECONDS: float = float(os.getenv("TELEGRAM_OWNER_REPLY_TIMEOUT_SECONDS", "120"))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -272,23 +272,86 @@ async def _handle_free_text(
         return
 
     # Unknown user — new customer or misdirected message
-    await _prompt_new_customer(chat_id, message)
+    await _handle_unknown_user(chat_id, message, db)
 
 
-async def _prompt_new_customer(chat_id: str, message: dict[str, Any]) -> None:
-    """Greet an unknown Telegram user and ask which shop they want to contact.
+_TELEGRAM_DEV_SHOP_ID: Optional[int] = (
+    int(os.getenv("TELEGRAM_DEV_SHOP_ID"))
+    if os.getenv("TELEGRAM_DEV_SHOP_ID", "").strip().isdigit()
+    else None
+)
 
-    Step 7 of the spec: when a customer (not an owner) messages the bot, ask
-    which shop they are reaching out to. The full customer routing system
-    (linking Telegram customer IDs to shop_customers rows) will be implemented
-    when the customer-facing booking flow is built out.
+
+async def _handle_unknown_user(
+    chat_id: str,
+    message: dict[str, Any],
+    db: Session,
+) -> None:
+    """Handle a message from a Telegram user whose chat_id is not linked to any shop.
+
+    In development/test environments a single `TELEGRAM_DEV_SHOP_ID` env var can be
+    set to auto-link unknown users to a specific shop, removing the need for the
+    /start {token} handshake during local testing.
+
+    In production this env var must NOT be set — all owners must go through the
+    proper /start {token} handshake from the dashboard.
     """
     first_name: str = message.get("from", {}).get("first_name", "there")
 
+    # ── Dev/test shortcut: auto-link to the configured test shop ──────────────
+    if _TELEGRAM_DEV_SHOP_ID is not None:
+        shop = db.query(Shop).filter(Shop.id == _TELEGRAM_DEV_SHOP_ID).first()
+        if shop:
+            # Persist the link so subsequent messages skip this path
+            save_chat_id(shop.id, chat_id, db)
+            await tgc.send_text(
+                chat_id,
+                f"🔧 *Dev mode* — auto-linked to *{shop.name}*.\n\n"
+                "Your messages will now route to this shop's AI agent.\n"
+                "_To disable this, remove `TELEGRAM_DEV_SHOP_ID` from your environment._",
+            )
+            # Now route the original message immediately
+            await tgc.send_text(chat_id, "⏳ _Thinking…_")
+            try:
+                from agents.telegram_agent_bridge import handle_telegram_message
+                text: str = (message.get("text") or "").strip()
+                response = await asyncio.wait_for(
+                    handle_telegram_message(
+                        shop_id=shop.id,
+                        owner_user_id=shop.owner_id,
+                        message=text,
+                    ),
+                    timeout=_OWNER_REPLY_TIMEOUT_SECONDS,
+                )
+                await tgc.send_text(chat_id, response or "_No response generated._")
+            except Exception as exc:
+                logger.error("Telegram dev-mode auto-link message error: %s", exc)
+                await tgc.send_text(chat_id, "⚠️ Something went wrong. Please try again.")
+            return
+
+    # ── Production: guide the user to link or find a shop ────────────────────
     await tgc.send_text(
         chat_id,
         f"Hi {first_name}! 👋\n\n"
         "I'm the ZeroQwait assistant bot.\n\n"
-        "Which shop are you reaching out to? Reply with the shop name and "
-        "I'll connect you with their team.",
+        "*Are you a shop owner?*\n"
+        "Open your ZeroQwait dashboard → Settings → *Connect Telegram*, then tap the link to link your account.\n\n"
+        "*Looking for a specific shop?*\n"
+        "Reply with the shop name and I'll help you find them.",
+    )
+
+
+async def _prompt_new_customer(chat_id: str, message: dict[str, Any]) -> None:
+    """Kept for backwards compatibility — delegates to _handle_unknown_user."""
+    # This function is no longer called directly; _handle_unknown_user replaced it.
+    # Retained so any external callers don't break.
+    first_name: str = message.get("from", {}).get("first_name", "there")
+    await tgc.send_text(
+        chat_id,
+        f"Hi {first_name}! 👋\n\n"
+        "I'm the ZeroQwait assistant bot.\n\n"
+        "*Are you a shop owner?*\n"
+        "Open your ZeroQwait dashboard → Settings → *Connect Telegram*, then tap the link.\n\n"
+        "*Looking for a specific shop?*\n"
+        "Reply with the shop name and I'll help you find them.",
     )

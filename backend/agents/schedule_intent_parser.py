@@ -151,6 +151,7 @@ def _build_schedule(
         action=ScheduleActionStartWorkflow(
             CustomShopScheduleWorkflow.run,
             payload,
+            id=f"custom-shop-{shop_schedule_db_id}-${{SCHEDULED_TIME}}",
             task_queue=TEMPORAL_TASK_QUEUE,
             execution_timeout=timedelta(minutes=15),
         ),

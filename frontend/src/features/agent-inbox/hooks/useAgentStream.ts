@@ -4,9 +4,10 @@ import {
   buildStreamToolResultFeedEvent,
   buildStreamToolResultInsight,
 } from "../approvalOutcome";
-import { nowIso, normalizePendingApproval, toId } from "../agentInboxShared";
+import { buildIntroMessage, nowIso, normalizePendingApproval, toId } from "../agentInboxShared";
 import type { AgentChatSendPayload } from "../AgentChat";
-import type { AgentFeedEvent, ChatMessage, InsightItem, PendingApproval, ThinkingStep } from "../types";
+import { createAgentChartFromPayload } from "../types";
+import type { AgentFeedEvent, AgentFile, AgentTable, ChatMessage, InsightItem, PendingApproval, ThinkingStep } from "../types";
 
 const apiBaseUrl = process.env.REACT_APP_API_URL || "/api";
 
@@ -51,6 +52,37 @@ export const useAgentStream = ({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
+
+  // Restore conversation history from the checkpoint when shopId is available
+  // (handles tab switches and page refreshes)
+  const loadedShopIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!shopId || loadedShopIdRef.current === shopId) return;
+    loadedShopIdRef.current = shopId;
+
+    const token = localStorage.getItem("token");
+    fetch(`${apiBaseUrl}/v2/agent/history?shop_id=${shopId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const raw: { role: string; content: string; timestamp?: string | null }[] = data?.messages ?? [];
+        if (raw.length === 0) return;
+        const restored: ChatMessage[] = raw
+          .filter((m) => m.content && m.content.trim())
+          .map((m, i) => ({
+            id: toId(`msg_history_${i}`),
+            role: m.role === "user" ? "user" : ("assistant" as const),
+            content: m.content,
+            status: "done" as const,
+            timestamp: m.timestamp ?? nowIso(),
+          }));
+        setMessages(restored);
+      })
+      .catch(() => {
+        // Non-fatal — messages will just start empty
+      });
+  }, [shopId]);
 
   // ─── Voice / TTS state ────────────────────────────────────────────────────
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
@@ -311,18 +343,160 @@ export const useAgentStream = ({
         return;
       }
 
-      if (eventType === "chart" && event._parsed_chart) {
-        const chart = event._parsed_chart;
-        prependInsightItem({ id: chart.id, type: "chart", chart, timestamp: chart.timestamp });
+      if (eventType === "chart") {
+        const ts = nowIso();
+        const chart = createAgentChartFromPayload(event as Record<string, unknown>, ts);
+        if (chart) {
+          prependInsightItem({ id: chart.id, type: "chart", chart, timestamp: ts });
+          if (assistantMessageId) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId
+                  ? { ...message, charts: [...(message.charts || []), chart] }
+                  : message,
+              ),
+            );
+          }
+        }
         return;
       }
 
-      if (eventType === "file" && event._parsed_file) {
-        const file = event._parsed_file;
-        prependInsightItem({ id: file.id, type: "file", file, timestamp: file.timestamp });
+      if (eventType === "table") {
+        const ts = nowIso();
+        const tableId = `table_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const table: AgentTable = {
+          id: tableId,
+          title: typeof event.title === "string" ? event.title : "Table",
+          columns: Array.isArray(event.columns) ? (event.columns as AgentTable["columns"]) : [],
+          data: Array.isArray(event.data) ? (event.data as Record<string, unknown>[]) : [],
+          rowIdKey: typeof event.rowIdKey === "string" ? event.rowIdKey : "id",
+          timestamp: ts,
+        };
+        if (table.data.length > 0) {
+          prependInsightItem({ id: tableId, type: "table", table, timestamp: ts });
+          if (assistantMessageId) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId
+                  ? { ...message, tables: [...(message.tables || []), table] }
+                  : message,
+              ),
+            );
+          }
+        }
+        return;
+      }
+
+      if (eventType === "file") {
+        const ts = nowIso();
+        const fileId = `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const file: AgentFile = {
+          id: fileId,
+          filename: typeof event.filename === "string" ? event.filename : "export",
+          content: typeof event.content === "string" ? event.content : "",
+          mimeType: typeof event.mimeType === "string" ? event.mimeType : "application/octet-stream",
+          timestamp: ts,
+        };
+        if (file.content) {
+          prependInsightItem({ id: fileId, type: "file", file, timestamp: ts });
+          if (assistantMessageId) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId
+                  ? { ...message, files: [...(message.files || []), file] }
+                  : message,
+              ),
+            );
+          }
+        }
+        return;
+      }
+
+      if (eventType === "thinking_step") {
+        if (assistantMessageId) {
+          const stepId = typeof event.step === "string" ? event.step : `step_${Date.now()}`;
+          const stepLabel = typeof event.label === "string" ? event.label : stepId;
+          const stepStatus = event.status === "done" ? "completed" : "active";
+          const stepAgent = typeof event.agent === "string" ? event.agent : null;
+          setMessages((prev) =>
+            prev.map((message) => {
+              if (message.id !== assistantMessageId) return message;
+              const existing = message.thinkingSteps || [];
+              if (stepStatus === "active") {
+                const newStep: ThinkingStep = {
+                  id: stepId,
+                  label: stepLabel,
+                  status: "active",
+                  agent: stepAgent,
+                };
+                return {
+                  ...message,
+                  thinkingSteps: [
+                    ...existing.map((s) => (s.status === "active" ? { ...s, status: "completed" as const } : s)),
+                    newStep,
+                  ],
+                  thinkingComplete: false,
+                };
+              } else {
+                // Mark the matching step (or last active) as completed
+                const updated = existing.map((s) =>
+                  s.id === stepId || (s.label === stepLabel && s.status === "active")
+                    ? { ...s, status: "completed" as const }
+                    : s,
+                );
+                return { ...message, thinkingSteps: updated };
+              }
+            }),
+          );
+        }
+        return;
+      }
+
+      if (eventType === "reasoning") {
+        // Surface the supervisor's routing/classification reasoning as a
+        // completed thinking step so the owner can see why the agent routed.
+        if (assistantMessageId) {
+          const rawText = typeof event.text === "string" ? event.text.trim() : "";
+          if (rawText) {
+            const label = rawText.length > 90 ? `${rawText.slice(0, 87)}…` : rawText;
+            const stepId = `reasoning-${typeof event.id === "string" ? event.id : Date.now()}`;
+            const stepAgent = typeof event.agent === "string" ? event.agent : null;
+            setMessages((prev) =>
+              prev.map((message) => {
+                if (message.id !== assistantMessageId) return message;
+                const existing = message.thinkingSteps || [];
+                // Avoid duplicate reasoning steps with the same id
+                if (existing.some((s) => s.id === stepId)) return message;
+                return {
+                  ...message,
+                  thinkingSteps: [
+                    ...existing,
+                    { id: stepId, label, status: "completed" as const, agent: stepAgent },
+                  ],
+                };
+              }),
+            );
+          }
+        }
+        return;
+      }
+
+      if (eventType === "suggestions") {
+        const raw = event.suggestions;
+        if (assistantMessageId && Array.isArray(raw) && raw.length > 0) {
+          const suggestions = raw.filter((s): s is string => typeof s === "string").slice(0, 4);
+          if (suggestions.length > 0) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId ? { ...message, suggestions } : message,
+              ),
+            );
+          }
+        }
+        return;
       }
     },
-    [addFeedEvent, addPendingApproval, prependInsightItem, shopId],
+    [addFeedEvent, addPendingApproval, prependInsightItem, shopId, setMessages],
   );
 
   const handleSend = useCallback(
@@ -359,6 +533,7 @@ export const useAgentStream = ({
         status: "streaming",
         retryMessage: messageText,
         timestamp: nowIso(),
+        processingStartedAt: nowIso(),
         thinkingSteps: [],
         thinkingComplete: false,
       };
@@ -457,6 +632,16 @@ export const useAgentStream = ({
                 const status = String(event.status || "");
                 if (status === "completed") {
                   streamTerminalStatus = "completed";
+                  const durationMs = typeof event.duration_ms === "number" ? event.duration_ms : undefined;
+                  if (assistantMessageId && durationMs !== undefined) {
+                    setMessages((prev) =>
+                      prev.map((message) =>
+                        message.id === assistantMessageId
+                          ? { ...message, processingDuration: durationMs }
+                          : message,
+                      ),
+                    );
+                  }
                   addFeedEvent({
                     type: "system",
                     title: "Stream completed",
@@ -505,7 +690,7 @@ export const useAgentStream = ({
                 }
               }
 
-              if (eventType === "chart" || eventType === "file") {
+              if (eventType === "chart" || eventType === "file" || eventType === "table") {
                 sawRenderableAssistantContent = true;
               }
 
@@ -581,6 +766,25 @@ export const useAgentStream = ({
     setMessages,
     isStreaming,
     handleSend,
+    resetConversation: useCallback(async () => {
+      if (!shopId) return;
+      const token = localStorage.getItem("token");
+      try {
+        await fetch(`${apiBaseUrl}/v2/agent/reset-conversation`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ shop_id: shopId }),
+        });
+      } catch {
+        // Non-fatal — we still clear the local messages
+      }
+      setMessages([buildIntroMessage()]);
+      setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [shopId]),
     error,
     setError,
     appendSystemMessage,

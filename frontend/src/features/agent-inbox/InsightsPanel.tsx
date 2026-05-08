@@ -18,8 +18,9 @@ import { BarChart } from "@mui/x-charts/BarChart";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { PieChart } from "@mui/x-charts/PieChart";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
+import DataTable from "../../components/DataTable";
 import { resolveAgentChart } from "./types";
-import type { InsightItem, AgentChart, AgentFile, ResolvedAgentChart } from "./types";
+import type { InsightItem, AgentChart, AgentFile, AgentTable, ResolvedAgentChart } from "./types";
 import { useShop } from "../../contexts/ShopContext";
 
 interface InsightsPanelProps {
@@ -240,6 +241,19 @@ const InsightsPanel: React.FC<InsightsPanelProps> = ({ items }) => {
                       </Stack>
                     )}
                   </Stack>
+                )}
+
+                {item.type === "table" && item.table && (
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                      {item.table.title}
+                    </Typography>
+                    <DataTable
+                      columns={item.table.columns}
+                      data={item.table.data}
+                      rowIdKey={item.table.rowIdKey}
+                    />
+                  </Box>
                 )}
 
                 {item.type === "file" && item.file && (

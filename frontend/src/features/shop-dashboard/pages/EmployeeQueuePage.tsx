@@ -22,6 +22,9 @@ import {
     Paper,
     Tooltip,
     Skeleton,
+    Tabs,
+    Tab,
+    Divider,
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -40,6 +43,9 @@ import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import DownloadIcon from '@mui/icons-material/Download';
+import QueueIcon from '@mui/icons-material/Queue';
 import api from '../../../services/api';
 import { useAuth } from '../../../contexts/AuthContext';
 import ProfilePhotoUploader from '../../../components/ProfilePhotoUploader';
@@ -88,6 +94,9 @@ const EmployeeQueuePage: React.FC = () => {
     const [connectionLost, setConnectionLost] = useState(false);
     const [serveConfirmCustomer, setServeConfirmCustomer] = useState<QueueItem | null>(null);
     const [queueLoading, setQueueLoading] = useState(false);
+    const [currentTab, setCurrentTab] = useState(0);
+    const [payslips, setPayslips] = useState<any[]>([]);
+    const [payslipsLoading, setPayslipsLoading] = useState(false);
 
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -288,6 +297,42 @@ const EmployeeQueuePage: React.FC = () => {
     const waitingCustomers = queue.filter(item => item.status === 'waiting');
     const servingCustomer = queue.find(item => item.status === 'being_served');
 
+    const fetchMyPayslips = React.useCallback(async () => {
+        setPayslipsLoading(true);
+        try {
+            const res = await api.get('/payroll/me/payslips?limit=30');
+            setPayslips(res.data);
+        } catch (err: any) {
+            // silently ignore — employee may not have payslips yet
+        } finally {
+            setPayslipsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (currentTab === 1) {
+            fetchMyPayslips();
+        }
+    }, [currentTab, fetchMyPayslips]);
+
+    const handleDownloadMyPayslipPdf = async (payslipId: number, period: string) => {
+        try {
+            const res = await api.get(`/payroll/me/payslips/${payslipId}/pdf`, {
+                responseType: 'blob'
+            });
+            const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `my_payslip_${period}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch {
+            setError('Failed to download payslip PDF');
+        }
+    };
+
     if (loading) {
         return (
             <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
@@ -321,8 +366,17 @@ const EmployeeQueuePage: React.FC = () => {
             {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 3 }} onClose={() => setError(null)}>{error}</Alert>}
             {success && <Alert severity="success" sx={{ mb: 2, borderRadius: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
 
+            {/* Page-level tabs */}
+            <Paper variant="outlined" sx={{ mb: 3, borderRadius: 3, overflow: 'hidden' }}>
+                <Tabs value={currentTab} onChange={(_, v) => setCurrentTab(v)} aria-label="employee tabs">
+                    <Tab label="Queue" icon={<QueueIcon />} iconPosition="start" />
+                    <Tab label="My Pay" icon={<PaymentsIcon />} iconPosition="start" />
+                </Tabs>
+            </Paper>
+
             {!currentShift ? (
                 /* ─── Not clocked in: show shop selection cards ─── */
+                currentTab === 0 ? (
                 <Grid container spacing={2}>
                     {shops.map((shop) => (
                         <Grid size={{ xs: 12, sm: 6, md: 4 }} key={shop.id}>
@@ -345,8 +399,10 @@ const EmployeeQueuePage: React.FC = () => {
                         </Grid>
                     ))}
                 </Grid>
+                ) : null
             ) : (
-                /* ─── Clocked in: show shift info + queue ─── */
+                /* ─── Clocked in ─── */
+                currentTab === 0 ? (
                 <Stack spacing={2.5}>
                     {/* Shift banner */}
                     <Card variant="outlined" sx={{ borderRadius: 3 }}>
@@ -573,6 +629,86 @@ const EmployeeQueuePage: React.FC = () => {
                         </Grid>
                     </Grid>
                 </Stack>
+                ) : null
+            )}
+
+            {/* ─── My Pay tab ─── */}
+            {currentTab === 1 && (
+                <Box>
+                    {payslipsLoading ? (
+                        <Box display="flex" justifyContent="center" py={6}><CircularProgress /></Box>
+                    ) : payslips.length === 0 ? (
+                        <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: 'center' }}>
+                            <PaymentsIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+                            <Typography color="text.secondary">No payslips available yet. Your employer will generate them after each pay period.</Typography>
+                        </Paper>
+                    ) : (
+                        <Grid container spacing={2}>
+                            {payslips.map((slip: any) => (
+                                <Grid size={{ xs: 12, md: 6 }} key={slip.id}>
+                                    <Card variant="outlined" sx={{ borderRadius: 3 }}>
+                                        <CardContent>
+                                            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={1}>
+                                                <Box>
+                                                    <Typography variant="subtitle1" fontWeight={700}>{slip.shop_name || 'Your Shop'}</Typography>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        {slip.period_start} – {slip.period_end}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        Pay date: {slip.pay_date || '—'}
+                                                    </Typography>
+                                                </Box>
+                                                <Chip
+                                                    label={slip.status || 'draft'}
+                                                    size="small"
+                                                    color={slip.status === 'approved' ? 'success' : slip.status === 'paid' ? 'primary' : 'default'}
+                                                />
+                                            </Stack>
+                                            <Divider sx={{ my: 1.5 }} />
+                                            <Grid container spacing={1}>
+                                                <Grid size={6}>
+                                                    <Typography variant="caption" color="text.secondary">Gross Pay</Typography>
+                                                    <Typography fontWeight={600}>${parseFloat(slip.gross_pay || 0).toFixed(2)}</Typography>
+                                                </Grid>
+                                                <Grid size={6}>
+                                                    <Typography variant="caption" color="text.secondary">Net Pay</Typography>
+                                                    <Typography fontWeight={700} color="success.main">${parseFloat(slip.net_pay || 0).toFixed(2)}</Typography>
+                                                </Grid>
+                                                <Grid size={6}>
+                                                    <Typography variant="caption" color="text.secondary">CPP</Typography>
+                                                    <Typography variant="body2">${parseFloat(slip.cpp_deduction || 0).toFixed(2)}</Typography>
+                                                </Grid>
+                                                <Grid size={6}>
+                                                    <Typography variant="caption" color="text.secondary">EI</Typography>
+                                                    <Typography variant="body2">${parseFloat(slip.ei_deduction || 0).toFixed(2)}</Typography>
+                                                </Grid>
+                                                <Grid size={6}>
+                                                    <Typography variant="caption" color="text.secondary">Federal Tax</Typography>
+                                                    <Typography variant="body2">${parseFloat(slip.fed_tax || 0).toFixed(2)}</Typography>
+                                                </Grid>
+                                                <Grid size={6}>
+                                                    <Typography variant="caption" color="text.secondary">Provincial Tax</Typography>
+                                                    <Typography variant="body2">${parseFloat(slip.prov_tax || 0).toFixed(2)}</Typography>
+                                                </Grid>
+                                            </Grid>
+                                            <Divider sx={{ my: 1.5 }} />
+                                            <Button
+                                                fullWidth
+                                                variant="outlined"
+                                                size="small"
+                                                startIcon={<DownloadIcon />}
+                                                onClick={() => handleDownloadMyPayslipPdf(slip.id, slip.period_start)}
+                                                sx={{ borderRadius: 2 }}
+                                            >
+                                                Download PDF
+                                            </Button>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                            ))}
+                        </Grid>
+                    )}
+                </Box>
             )}
 
             {/* Photo Upload Dialog */}

@@ -18,7 +18,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-from database import DATABASE_URL
+from database import DATABASE_URL, SessionLocal
 from agents.llm_factory import create_formatter_model, create_planner_model
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 MAX_ROWS = int(os.getenv("FINANCE_QUERY_MAX_ROWS", "100"))
 STATEMENT_TIMEOUT_MS = int(os.getenv("FINANCE_QUERY_STATEMENT_TIMEOUT_MS", "5000"))
 MAX_RETRIES = int(os.getenv("FINANCE_QUERY_MAX_RETRIES", "2"))
-LLM_TIMEOUT_SECONDS = float(os.getenv("FINANCE_QUERY_LLM_TIMEOUT_SECONDS", "20"))
+LLM_TIMEOUT_SECONDS = float(os.getenv("FINANCE_QUERY_LLM_TIMEOUT_SECONDS", "300"))
 
 AI_DATABASE_URL = os.getenv("AI_DATABASE_URL") or os.getenv("FINANCE_AI_DATABASE_URL")
 
@@ -40,6 +40,7 @@ ALLOWED_VIEWS: frozenset[str] = frozenset(
         "ai_invoices",
         "ai_invoice_line_items",
         "ai_payments",
+        "ai_employees",
     }
 )
 
@@ -77,6 +78,7 @@ ai_appointments(appointment_id, customer_id, service_id, service_name, employee_
 ai_invoices(invoice_id, customer_id, invoice_number, status, subtotal, tax_amount, discount_amount, tip_amount, total, currency, due_date, paid_at, created_at, updated_at)
 ai_invoice_line_items(line_item_id, invoice_id, service_id, queue_item_id, appointment_id, description, quantity, unit_price, total, created_at)
 ai_payments(payment_id, invoice_id, customer_id, amount, tip_amount, currency, method, status, processed_by, processed_at, refunded_at, refund_amount, created_at, updated_at)
+ai_employees(employee_id, user_id, username, role, is_active, joined_at)
 
 Rules:
 - Return exactly one SELECT query.
@@ -86,8 +88,30 @@ Rules:
 - For live/today revenue or simulator-backed questions, prefer ai_queue_visits with completed_at/check-in time and service_cost; ai_daily_analytics may lag and can be empty for today.
 - For top services by revenue or customer count, prefer grouping ai_queue_visits by service_id/service_name instead of invoice line items unless the user specifically asks about invoices.
 - Queue visit status values are normalized to lowercase strings such as 'completed', 'waiting', and 'cancelled'.
+- For cancelled vs completed counts in ai_appointments, use: SELECT status, COUNT(*) AS count FROM ai_appointments WHERE scheduled_start >= <date> GROUP BY status. Never use 'completed' or 'cancelled' as column names — they are VALUES of the 'status' column.
+- For employee questions (who handled most visits, top performers, etc.), JOIN ai_queue_visits.assigned_employee_id = ai_employees.employee_id to get the employee username.
+- ai_daily_analytics does NOT have a service_id column. Never JOIN ai_daily_analytics on service_id. For average wait time per service type, query ai_queue_visits DIRECTLY without a subquery: SELECT service_name, AVG(EXTRACT(EPOCH FROM (service_started_at - checked_in_at)) / 60) AS avg_wait_time_minutes FROM ai_queue_visits WHERE service_started_at IS NOT NULL AND checked_in_at IS NOT NULL GROUP BY service_name ORDER BY avg_wait_time_minutes DESC. Do NOT wrap this in a subquery.
+- business_date only exists in ai_daily_analytics. For day-of-week analysis on queue visits, use EXTRACT(DOW FROM completed_at) from ai_queue_visits, not ai_daily_analytics.business_date.
+- For percentage or ratio calculations always wrap the denominator in NULLIF(expr, 0) to avoid division by zero.
 - Add LIMIT when returning detail rows.
+- ai_queue_visits has NO customer_id column. Never reference customer_id on ai_queue_visits. To count customers who visited in a period, use: SELECT COUNT(*) FROM ai_customers WHERE last_visit >= <date>. Do not JOIN ai_queue_visits to ai_customers.
+- For the highest-spending customer or top customers by invoice total: SELECT customer_id, SUM(total) AS invoice_total FROM ai_invoices GROUP BY customer_id ORDER BY invoice_total DESC LIMIT 1.
+- When using a subquery alias, only reference column names that are explicitly listed in the subquery SELECT clause. Never reference outer-table aliases inside an aggregate that lives outside the subquery.
+- To link ai_payments to ai_queue_visits, join through ai_invoice_line_items: ai_payments.invoice_id = ai_invoice_line_items.invoice_id AND ai_invoice_line_items.queue_item_id = ai_queue_visits.visit_id. ai_payments has NO line_item_id column and ai_queue_visits has NO line_item_id column — never join them directly on line_item_id.
+- For payment conversion rate (queue visits that became paid), use: SELECT COUNT(DISTINCT ili.queue_item_id) * 100.0 / NULLIF(COUNT(DISTINCT v.visit_id), 0) AS pct FROM ai_queue_visits v LEFT JOIN ai_invoice_line_items ili ON ili.queue_item_id = v.visit_id LEFT JOIN ai_payments p ON p.invoice_id = ili.invoice_id AND p.status = 'completed' WHERE v.checked_in_at >= <date>.
+- For average revenue per visit broken down by service, use service_cost from ai_queue_visits directly without nesting aggregates: SELECT service_name, AVG(service_cost) AS avg_revenue_per_visit, COUNT(*) AS visit_count FROM ai_queue_visits WHERE service_cost IS NOT NULL GROUP BY service_name ORDER BY avg_revenue_per_visit DESC. Never nest aggregate functions like AVG(SUM(...)) — PostgreSQL does not allow nested aggregates.
 """
+
+
+_RAW_SQL_RE = re.compile(
+    r"^\s*(select|update|delete|insert|drop|alter|create|truncate|grant|revoke|with)\s",
+    re.IGNORECASE,
+)
+
+
+def _is_raw_sql_input(question: str) -> bool:
+    """Return True if the user input is itself a raw SQL statement, not a natural-language question."""
+    return bool(_RAW_SQL_RE.match(question.strip()))
 
 
 class SQLPlan(BaseModel):
@@ -138,10 +162,12 @@ def _normalized_table_name(raw: str) -> str:
 
 
 def _referenced_tables(sql: str) -> set[str]:
+    # Mask EXTRACT(... FROM ...) so the FROM inside EXTRACT is not treated as a table reference.
+    masked = re.sub(r"\bEXTRACT\s*\([^)]+\)", "__EXTRACT__", sql, flags=re.IGNORECASE)
     refs: set[str] = set()
     for match in re.finditer(
         r"\b(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)",
-        sql,
+        masked,
         flags=re.IGNORECASE,
     ):
         refs.add(_normalized_table_name(match.group(1)))
@@ -272,7 +298,7 @@ def _generate_sql(shop_id: int, question: str, previous_error: Optional[str] = N
     try:
         from agents.tools import finance_tools
 
-        session = db_interface.get_session()
+        session = SessionLocal()
         try:
             shop_now = finance_tools._now_for_shop(shop_id, session)
             tz_name = finance_tools._resolve_shop_timezone_name(shop_id, session)
@@ -302,7 +328,7 @@ def _generate_sql(shop_id: int, question: str, previous_error: Optional[str] = N
         "Finance SQL generation",
         lambda: llm.with_structured_output(SQLPlan).invoke(
             [
-                SystemMessage(content="Generate safe read-only SQL for ZeroQwait finance analytics."),
+                SystemMessage(content="/no_think Generate safe read-only SQL for ZeroQwait finance analytics."),
                 HumanMessage(content=prompt),
             ]
         ),
@@ -320,6 +346,33 @@ def _execute_sql(shop_id: int, sql: str) -> list[dict[str, Any]]:
     return _rows_to_dicts(rows)
 
 
+def _format_rows_as_answer(question: str, rows: list[dict[str, Any]]) -> str:
+    """Template-based fallback when LLM answer synthesis is unavailable."""
+    if not rows:
+        return "I could not find matching finance data for that question."
+    row = rows[0]
+    keys = list(row.keys())
+    # Single-column single-row result (COUNT, SUM, etc.)
+    if len(rows) == 1 and len(keys) == 1:
+        val = row[keys[0]]
+        col = keys[0].lower()
+        if col in ("count", "count(*)") or col.startswith("count"):
+            return f"The count for your query was {val}."
+        if col in ("sum", "total", "revenue", "total_revenue") or col.startswith("sum"):
+            try:
+                return f"The total was ${float(val):,.2f}."
+            except (TypeError, ValueError):
+                pass
+        return f"The result was: {val}."
+    # Multi-row or multi-column: list up to 5 rows
+    lines = [f"Here are the results for your query:"]
+    for r in rows[:5]:
+        lines.append("  " + ", ".join(f"{k}: {v}" for k, v in r.items()))
+    if len(rows) > 5:
+        lines.append(f"  ... and {len(rows) - 5} more rows.")
+    return "\n".join(lines)
+
+
 def _synthesize_answer(shop_id: int, question: str, sql: str, rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "I could not find matching finance data for that question."
@@ -332,17 +385,41 @@ def _synthesize_answer(shop_id: int, question: str, sql: str, rows: list[dict[st
         f"SQL: {sql}\n"
         f"Rows JSON: {json.dumps(rows[:MAX_ROWS], default=str)}"
     )
-    response = _with_timeout(
-        "Finance SQL answer synthesis",
-        lambda: llm.invoke([HumanMessage(content=prompt)]),
-    )
-    return str(getattr(response, "content", response)).strip() or "I found data, but could not summarize it cleanly."
+    try:
+        response = _with_timeout(
+            "Finance SQL answer synthesis",
+            lambda: llm.invoke([HumanMessage(content=prompt)]),
+        )
+        return str(getattr(response, "content", response)).strip() or "I found data, but could not summarize it cleanly."
+    except TimeoutError:
+        return _format_rows_as_answer(question, rows)
 
 
 def answer_question(shop_id: int, question: str, *, mode: str = "enabled") -> Dict[str, Any]:
     started_at = time.perf_counter()
     generated_sql: Optional[str] = None
     previous_error: Optional[str] = None
+
+    if _is_raw_sql_input(question):
+        latency_ms = int((time.perf_counter() - started_at) * 1000)
+        _log_query(
+            shop_id=shop_id,
+            question=question,
+            generated_sql=None,
+            validation_status="rejected",
+            execution_status="not_run",
+            error_class="RawSQLInput",
+            error_message="Direct SQL commands are not accepted",
+            latency_ms=latency_ms,
+            mode=mode,
+            fallback_used=True,
+        )
+        return {
+            "error": "Direct SQL commands are not accepted. Ask a natural language question.",
+            "error_class": "RawSQLInput",
+            "fallback_used": True,
+            "shop_id": shop_id,
+        }
 
     for attempt in range(MAX_RETRIES + 1):
         try:

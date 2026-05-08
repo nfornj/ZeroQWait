@@ -36,7 +36,7 @@ spec:
                     values: ["core-cpu"]
       containers:
         - name: voice-mcp
-          image: localhost:5000/prod/voice-mcp:v20260429092027-30a8ac4
+          image: ghcr.io/nfornj/voice-mcp:v20260429092027-30a8ac4
           imagePullPolicy: Always
           ports:
             - containerPort: 8881

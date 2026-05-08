@@ -376,3 +376,135 @@ def assign_shift(shop_id: int, user_id: int, start_time: str, end_time: str, dat
 
 def clock_in_out(shop_id: int, user_id: int, action: str) -> Dict[str, Any]:
     return _get_hr_client().clock_in_out(shop_id, user_id, action)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Payroll-linked hiring helpers (_local_* pattern, no MCP)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _local_add_employee_full(
+    shop_id: int,
+    name: str,
+    pay_type: str = "hourly",
+    hourly_rate: Optional[float] = None,
+    annual_salary: Optional[float] = None,
+    pay_frequency: str = "biweekly",
+    province: str = "ON",
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    role: str = "employee",
+    employee_code: Optional[str] = None,
+    created_by: Optional[int] = None,
+    sin: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Create a User + ShopEmployee record (via the existing _local_add_employee
+    function) then immediately create an EmployeePayrollProfile.
+
+    If `sin` is provided, it is encrypted and stored alongside the last 4 digits.
+    Returns the combined result dict with keys 'employee' and 'payroll_profile'.
+    """
+    from modules.employees.models import EmployeePayrollProfile
+
+    # Step 1 — base employee
+    employee_result = _local_add_employee(
+        shop_id=shop_id,
+        name=name,
+        email=email,
+        phone=phone,
+        role=role,
+        employee_code=employee_code,
+        created_by=created_by,
+    )
+    if "error" in employee_result:
+        return employee_result
+
+    shop_employee_id = employee_result.get("id")
+    if not shop_employee_id:
+        return {"error": "Employee created but shop_employee_id not returned."}
+
+    # Step 2 — SIN encryption
+    sin_encrypted = None
+    sin_last4_val = None
+    if sin:
+        try:
+            from shared.encryption import encrypt_sin, sin_last4
+            sin_encrypted = encrypt_sin(sin)
+            sin_last4_val = sin_last4(sin)
+        except ValueError as exc:
+            return {"error": f"SIN encryption failed: {exc}"}
+
+    # Step 3 — payroll profile
+    from agents.tools.payroll_tools import create_payroll_profile
+    profile = create_payroll_profile(
+        shop_employee_id=shop_employee_id,
+        shop_id=shop_id,
+        pay_type=pay_type,
+        hourly_rate=hourly_rate,
+        annual_salary=annual_salary,
+        pay_frequency=pay_frequency,
+        province=province,
+        sin_encrypted=sin_encrypted,
+        sin_last4=sin_last4_val,
+    )
+
+    return {"employee": employee_result, "payroll_profile": profile}
+
+
+def _local_get_employee_payroll_profile(
+    shop_id: int, employee_name: str
+) -> Dict[str, Any]:
+    """Return a payroll profile dict for a named employee in the shop."""
+    from agents.tools.payroll_tools import get_payroll_profile_by_name
+    profile = get_payroll_profile_by_name(shop_id, employee_name)
+    if profile is None:
+        return {"error": f"No payroll profile found for '{employee_name}' in shop {shop_id}."}
+    # Never expose the encrypted SIN in agent responses
+    profile.pop("sin_encrypted", None)
+    return profile
+
+
+def _local_update_employee_payroll_field(
+    shop_id: int, employee_name: str, field: str, value: Any
+) -> Dict[str, Any]:
+    """Update a single payroll profile field for a named employee."""
+    from agents.tools.payroll_tools import get_payroll_profile_by_name, update_payroll_profile_field
+    profile = get_payroll_profile_by_name(shop_id, employee_name)
+    if profile is None:
+        return {"error": f"No payroll profile found for '{employee_name}' in shop {shop_id}."}
+    updated = update_payroll_profile_field(profile["shop_employee_id"], field, value)
+    updated.pop("sin_encrypted", None)
+    return updated
+
+
+def _local_set_termination_date(
+    shop_id: int, employee_name: str, termination_date
+) -> Dict[str, Any]:
+    """Record a termination date for a named employee."""
+    from datetime import date as date_type
+    from agents.tools.payroll_tools import get_payroll_profile_by_name, set_termination_date
+    profile = get_payroll_profile_by_name(shop_id, employee_name)
+    if profile is None:
+        return {"error": f"No payroll profile found for '{employee_name}' in shop {shop_id}."}
+    if isinstance(termination_date, str):
+        termination_date = date_type.fromisoformat(termination_date)
+    updated = set_termination_date(profile["shop_employee_id"], termination_date)
+    updated.pop("sin_encrypted", None)
+    return updated
+
+
+# Public wrappers
+def add_employee_full(shop_id: int, name: str, **kwargs) -> Dict[str, Any]:
+    return _local_add_employee_full(shop_id, name, **kwargs)
+
+
+def get_employee_payroll_profile(shop_id: int, employee_name: str) -> Dict[str, Any]:
+    return _local_get_employee_payroll_profile(shop_id, employee_name)
+
+
+def update_employee_payroll_field(shop_id: int, employee_name: str, field: str, value: Any) -> Dict[str, Any]:
+    return _local_update_employee_payroll_field(shop_id, employee_name, field, value)
+
+
+def set_termination_date_for_employee(shop_id: int, employee_name: str, termination_date) -> Dict[str, Any]:
+    return _local_set_termination_date(shop_id, employee_name, termination_date)

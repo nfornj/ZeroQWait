@@ -14,6 +14,7 @@ import PageViewsBarChart from './PageViewsBarChart';
 import StatCard, { StatCardProps } from './StatCard';
 import RecentVisitsDataGrid from './RecentVisitsDataGrid';
 import TeamHierarchy from './TeamHierarchy';
+import InventorySummaryWidget from './InventorySummaryWidget';
 
 const defaultStats: StatCardProps[] = [
   { title: 'Total Visits', value: '-', interval: 'Last 30 days', trend: 'neutral', data: [] },
@@ -183,6 +184,7 @@ export default function MainGrid() {
         </Grid>
         <Grid size={{ xs: 12, lg: 3 }}>
           <Stack gap={2} direction={{ xs: 'column', sm: 'row', lg: 'column' }}>
+            <InventorySummaryWidget />
             <TeamHierarchy />
             <ChartUserByCountry />
           </Stack>

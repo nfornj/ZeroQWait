@@ -59,6 +59,8 @@ class Shop(ShopBase):
     is_active: bool
     created_at: datetime
     odoo_company_id: Optional[int] = None
+    telegram_chat_id: Optional[str] = None
+    telegram_notifications_enabled: bool = False
 
 # Service schemas
 class ShopServiceBase(DictModel):

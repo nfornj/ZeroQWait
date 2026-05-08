@@ -25,6 +25,9 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import RestoreIcon from '@mui/icons-material/Restore';
 import PeopleIcon from '@mui/icons-material/People';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import DownloadIcon from '@mui/icons-material/Download';
+import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
 import AttendanceCalendar from '../components/AttendanceCalendar';
 import TeamDataGrid from '../components/TeamDataGrid';
 import Header from '../components/Header';
@@ -67,6 +70,9 @@ const EmployeeManagementPage: React.FC = () => {
     const [shiftsLoading, setShiftsLoading] = useState(false);
     const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState<number | null>(null);
     const [removeConfirmId, setRemoveConfirmId] = useState<number | null>(null);
+    const [payslips, setPayslips] = useState<any[]>([]);
+    const [payrollLoading, setPayrollLoading] = useState(false);
+    const [draftingPayroll, setDraftingPayroll] = useState(false);
 
     const fetchEmployees = React.useCallback(async (id: number) => {
         try {
@@ -126,6 +132,73 @@ const EmployeeManagementPage: React.FC = () => {
             fetchShifts(shopId, selectedEmployeeFilter);
         }
     }, [currentTab, shopId, selectedEmployeeFilter, fetchShifts]);
+
+    const fetchPayslips = React.useCallback(async (id: number) => {
+        setPayrollLoading(true);
+        try {
+            const res = await api.get(`/payroll/shop/${id}/payslips?limit=100`);
+            setPayslips(res.data);
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to load payslips');
+        } finally {
+            setPayrollLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (currentTab === 2 && shopId) {
+            fetchPayslips(shopId);
+        }
+    }, [currentTab, shopId, fetchPayslips]);
+
+    const handleDraftPeriod = async () => {
+        if (!shopId) return;
+        setDraftingPayroll(true);
+        setError(null);
+        try {
+            const today = new Date();
+            const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            const period_start = firstOfMonth.toISOString().split('T')[0];
+            const res = await api.post(`/payroll/shop/${shopId}/draft-period`, {
+                period_start,
+                regular_hours_per_employee: 80
+            });
+            const data = res.data;
+            if (data.created?.length > 0) {
+                setSuccess(`Drafted ${data.created.length} payslip(s) for the period ${data.period_start} – ${data.period_end}.`);
+            } else if (data.skipped?.length > 0) {
+                setSuccess(`All employees already have payslips for this period (${data.skipped.length} skipped).`);
+            } else if (data.errors?.length > 0) {
+                setError('Some payslips could not be drafted: ' + data.errors.map((e: any) => e.employee).join(', '));
+            } else {
+                setError('No payroll profiles found. Please set up profiles for employees first.');
+            }
+            await fetchPayslips(shopId);
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to draft payroll');
+        } finally {
+            setDraftingPayroll(false);
+        }
+    };
+
+    const handleDownloadPayslipPdf = async (payslipId: number, employeeName: string, period: string) => {
+        if (!shopId) return;
+        try {
+            const res = await api.get(`/payroll/shop/${shopId}/payslips/${payslipId}/pdf`, {
+                responseType: 'blob'
+            });
+            const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `payslip_${employeeName.replace(/\s+/g, '_')}_${period}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err: any) {
+            setError('Failed to download PDF');
+        }
+    };
 
     useEffect(() => {
         const checkUsername = async () => {
@@ -294,6 +367,7 @@ const EmployeeManagementPage: React.FC = () => {
                 <Tabs value={currentTab} onChange={handleTabChange} aria-label="team management tabs">
                     <Tab label="Employee List" icon={<PeopleIcon />} iconPosition="start" />
                     <Tab label="Attendance Calendar" icon={<CalendarMonthIcon />} iconPosition="start" />
+                    <Tab label="Payroll" icon={<PaymentsIcon />} iconPosition="start" />
                 </Tabs>
             </Paper>
 
@@ -322,6 +396,82 @@ const EmployeeManagementPage: React.FC = () => {
                             }))}
                             onEmployeeChange={handleEmployeeFilterChange}
                         />
+                    )}
+                </Box>
+            )}
+
+            {currentTab === 2 && (
+                <Box>
+                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                        <Typography variant="h6" fontWeight={700}>Payroll — 15-Day Periods</Typography>
+                        <Button
+                            variant="contained"
+                            startIcon={<PaymentsIcon />}
+                            onClick={handleDraftPeriod}
+                            disabled={draftingPayroll}
+                        >
+                            {draftingPayroll ? <CircularProgress size={20} /> : 'Draft 15-Day Payroll'}
+                        </Button>
+                    </Box>
+                    {payrollLoading ? (
+                        <Box display="flex" justifyContent="center" py={6}><CircularProgress /></Box>
+                    ) : payslips.length === 0 ? (
+                        <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: 'center' }}>
+                            <Typography color="text.secondary">No payslips yet. Click "Draft 15-Day Payroll" to generate payslips for all active employees.</Typography>
+                        </Paper>
+                    ) : (
+                        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3 }}>
+                            <Table size="small">
+                                <TableHead>
+                                    <TableRow sx={{ bgcolor: 'action.hover' }}>
+                                        <TableCell><strong>Employee</strong></TableCell>
+                                        <TableCell><strong>Period</strong></TableCell>
+                                        <TableCell align="right"><strong>Gross Pay</strong></TableCell>
+                                        <TableCell align="right"><strong>CPP</strong></TableCell>
+                                        <TableCell align="right"><strong>EI</strong></TableCell>
+                                        <TableCell align="right"><strong>Fed Tax</strong></TableCell>
+                                        <TableCell align="right"><strong>Prov Tax</strong></TableCell>
+                                        <TableCell align="right"><strong>Net Pay</strong></TableCell>
+                                        <TableCell align="center"><strong>Status</strong></TableCell>
+                                        <TableCell align="center"><strong>PDF</strong></TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {payslips.map((slip) => (
+                                        <TableRow key={slip.id} hover>
+                                            <TableCell>{slip.employee_name || '—'}</TableCell>
+                                            <TableCell sx={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
+                                                {slip.period_start} – {slip.period_end}
+                                            </TableCell>
+                                            <TableCell align="right">${parseFloat(slip.gross_pay || 0).toFixed(2)}</TableCell>
+                                            <TableCell align="right">${parseFloat(slip.cpp_deduction || 0).toFixed(2)}</TableCell>
+                                            <TableCell align="right">${parseFloat(slip.ei_deduction || 0).toFixed(2)}</TableCell>
+                                            <TableCell align="right">${parseFloat(slip.fed_tax || 0).toFixed(2)}</TableCell>
+                                            <TableCell align="right">${parseFloat(slip.prov_tax || 0).toFixed(2)}</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>
+                                                ${parseFloat(slip.net_pay || 0).toFixed(2)}
+                                            </TableCell>
+                                            <TableCell align="center">
+                                                <Chip
+                                                    label={slip.status || 'draft'}
+                                                    size="small"
+                                                    color={slip.status === 'approved' ? 'success' : slip.status === 'paid' ? 'primary' : 'default'}
+                                                />
+                                            </TableCell>
+                                            <TableCell align="center">
+                                                <IconButton
+                                                    size="small"
+                                                    title="Download PDF"
+                                                    onClick={() => handleDownloadPayslipPdf(slip.id, slip.employee_name || 'employee', slip.period_start)}
+                                                >
+                                                    <DownloadIcon fontSize="small" />
+                                                </IconButton>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
                     )}
                 </Box>
             )}

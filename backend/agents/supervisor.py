@@ -36,7 +36,7 @@ from modules.agent.models import PolicyMode
 from modules.agent.work_repository import AgentWorkRepository
 
 from . import approval_policy
-from .llm_factory import create_planner_model, create_formatter_model
+from .llm_factory import create_planner_model, create_formatter_model, create_ollama_fallback_planner
 from .memory_context import get_conversation_history, save_conversation_turn
 from .state import AgentState
 from .tools import booking_tools, finance_tools, hr_tools
@@ -45,11 +45,54 @@ from .tools import booking_tools, finance_tools, hr_tools
 logger = logging.getLogger(__name__)
 
 
+_GREETING_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    # Standalone greetings (the whole message is just a greeting)
+    re.compile(r"^\s*(?:hello|hi|hey|howdy|hiya|greetings|yo)\s*[!?.,]*\s*$", re.IGNORECASE),
+    re.compile(r"^\s*good\s+(?:morning|afternoon|evening|day|night)\s*[!?.,]*\s*$", re.IGNORECASE),
+    # "how are you" (may have trailing punctuation)
+    re.compile(r"^\s*how\s+are\s+you\b[^a-z]*$", re.IGNORECASE),
+    # "what can you do" / "what do you do" / "what can you help with"
+    re.compile(r"^\s*what\s+can\s+you\b", re.IGNORECASE),
+    re.compile(r"^\s*what\s+(?:do|does)\s+you\b", re.IGNORECASE),
+    # Bare "help" or "help me"
+    re.compile(r"^\s*help(?:\s+me)?\s*[!?.,]*\s*$", re.IGNORECASE),
+    # "what's up" / "sup"
+    re.compile(r"^\s*(?:what(?:'s|\s+is)\s+up|sup)\s*[!?.,]*\s*$", re.IGNORECASE),
+    # Greeting followed by a capability question: "Hello, what can you help me with?"
+    re.compile(r"^\s*(?:hello|hi|hey|howdy|hiya)\s*[,!?.]?\s*what\s+can\s+you\b", re.IGNORECASE),
+    re.compile(r"^\s*(?:hello|hi|hey)\s*[,!?.]?\s*(?:what\s+(?:do|does|can|are|is)|how\s+(?:do|can|are))\b", re.IGNORECASE),
+)
+
+_GREETING_RESPONSE = (
+    "Hey! I'm your ZeroQwait shop assistant. Here's what I can help you with:\n\n"
+    "• **Queue & Bookings** — check the queue, call next customer, close or open the queue, manage appointments\n"
+    "• **Finance & Analytics** — daily/weekly revenue, top services, customer visit history, export reports\n"
+    "• **Employees & Shifts** — add staff, view schedules, assign shifts, clock in/out\n"
+    "• **CRM** — contacts, leads, pipeline, invoices (via Odoo)\n\n"
+    "What would you like to do?"
+)
+
+_SERVED_TODAY_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bhow\s+many\s+(?:customers?|people|clients?)\s+(?:were\s+|have\s+been\s+|got\s+)?served\b", re.IGNORECASE),
+    re.compile(r"\bhow\s+many\s+(?:customers?|people|clients?)\s+(?:did\s+we\s+)?(?:serve|complete|finish)\b", re.IGNORECASE),
+    re.compile(r"\bcustomers?\s+served\s+today\b", re.IGNORECASE),
+    re.compile(r"\bserved\s+today\b", re.IGNORECASE),
+    re.compile(r"\bcompleted\s+(?:services?|customers?|visits?)\s+today\b", re.IGNORECASE),
+)
+
 _QUEUE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:close|open|reopen|pause|resume)\s+(?:the\s+)?queue\b"),
     re.compile(r"\b(?:call|serve)\s+(?:the\s+)?next(?:\s+customer)?\b"),
     re.compile(r"\b(?:queue\s+status|queue\s+summary|queue\s+length|wait\s+time)\b"),
     re.compile(r"\b(?:join|leave)\s+(?:the\s+)?queue\b"),
+    # "How many people/customers are in the queue"
+    re.compile(r"\bhow\s+many\s+(?:people|customers?|persons?)\s+(?:are\s+)?(?:currently\s+)?(?:in|waiting)", re.IGNORECASE),
+    # "Who is next in line / next in queue"
+    re.compile(r"\bwho(?:'s|\s+is)\s+next\b", re.IGNORECASE),
+    re.compile(r"\bnext\s+in\s+(?:the\s+)?(?:line|queue)\b", re.IGNORECASE),
+    # "How many customers were served today" — now handled by _SERVED_TODAY_PATTERNS fast-path
+    re.compile(r"\bhow\s+many\s+customers?\s+(?:were\s+)?served\b", re.IGNORECASE),
+    re.compile(r"\bhow\s+many\s+(?:people|customers?)\s+(?:have\s+been|were|got)\s+served\b", re.IGNORECASE),
 )
 
 _FINANCE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
@@ -57,6 +100,65 @@ _FINANCE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:trend|trends|graph|chart|over\s+time|by\s+day|by\s+date|daily\s+breakdown)\b.*\b(?:revenue|sales)\b"),
     re.compile(r"\b(?:customers?|clients?|visits?|attended|served)\b.*\b(?:per|by|for each|each)\s+(?:service|services)\b"),
     re.compile(r"\b(?:service|services)\b.*\b(?:customers?|clients?|visits?|attended|served|count|counts)\b"),
+    # Earnings / revenue for time periods
+    re.compile(r"\b(?:this\s+week|weekly|last\s+week)\s*(?:'s)?\s*(?:earnings?|revenue|income|sales|profit)\b", re.IGNORECASE),
+    re.compile(r"\b(?:earnings?|revenue|income|sales|profit)\s+(?:for\s+)?(?:this|last)\s+week\b", re.IGNORECASE),
+    # "Which service makes the most money / is most profitable"
+    re.compile(r"\bwhich\s+service\s+(?:makes?|earns?|brings?|generates?)\s+(?:the\s+)?most\b", re.IGNORECASE),
+    re.compile(r"\bmost\s+(?:profitable|money|revenue)\b.*\bservice\b", re.IGNORECASE),
+    re.compile(r"\bservice\b.*\bmost\s+(?:profitable|money|revenue|popular)\b", re.IGNORECASE),
+    re.compile(r"\btop\s+(?:earning|revenue|performing|profitable)\s+service\b", re.IGNORECASE),
+)
+
+_HR_PAYROLL_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:payroll|payslip|pay\s*slip|pay\s*stub|paystub)\b", re.IGNORECASE),
+    re.compile(r"\b(?:net\s*pay|gross\s*pay|take[- ]home)\b", re.IGNORECASE),
+    re.compile(r"\b(?:run\s+pay(?:roll)?|draft\s+pay(?:roll)?|process\s+pay(?:roll)?)\b", re.IGNORECASE),
+    re.compile(r"\b(?:cpp|ei|source\s+deductions?|remittance)\b", re.IGNORECASE),
+    re.compile(r"\bT4\b", re.IGNORECASE),
+    re.compile(r"\b(?:employee\s+wages?|staff\s+pay(?:ment)?|salary\s+payment)\b", re.IGNORECASE),
+    re.compile(r"\b(?:labour\s+cost|payroll\s+expense|payroll\s+cost)\b", re.IGNORECASE),
+)
+
+_INVENTORY_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:inventory|stock|restock|restocking)\b", re.IGNORECASE),
+    re.compile(r"\bsuppl(?:y|ies)\b", re.IGNORECASE),
+    re.compile(r"\breorder\b", re.IGNORECASE),
+    re.compile(r"\b(?:items?\s+in\s+stock|in[\s-]stock|out[\s-]of[\s-]stock|low\s+stock)\b", re.IGNORECASE),
+    re.compile(r"\b(?:cogs|cost\s+of\s+goods|usage\s+report)\b", re.IGNORECASE),
+    # Products catalog / what do we carry / what products
+    re.compile(r"\b(?:what\s+products?|which\s+products?|products?\s+(?:we|do\s+we|you)\s+(?:carry|sell|have|offer|stock))\b", re.IGNORECASE),
+    re.compile(r"\b(?:hair\s+color|hair\s+dye|pomade|clippers?\s+oil|razor\s+blades?|shaving\s+cream|aftershave)\b", re.IGNORECASE),
+)
+
+_POS_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:checkout|check[\s-]out|ring\s+(?:up|out))\b", re.IGNORECASE),
+    re.compile(r"\b(?:receipt|payment|cash\s+out)\b", re.IGNORECASE),
+    re.compile(r"\b(?:point[\s-]of[\s-]sale|pos)\b", re.IGNORECASE),
+    re.compile(r"\b(?:total\s+bill|charge\s+(?:the\s+)?customer|complete\s+sale)\b", re.IGNORECASE),
+    re.compile(r"\b(?:end[\s-]of[\s-]day|eod|daily\s+sales?\s+summary|today[''s]*\s+sales)\b", re.IGNORECASE),
+    re.compile(r"\brefund\b", re.IGNORECASE),
+)
+
+_SHOP_HOURS_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:shop|store|business|barber)\s+hours?\b", re.IGNORECASE),
+    re.compile(r"\bwhat\s+(?:are\s+(?:our|your|the)\s+)?hours?\b", re.IGNORECASE),
+    re.compile(r"\bwhen\s+(?:do\s+(?:we|you)\s+(?:open|close)|are\s+(?:we|you)\s+open)\b", re.IGNORECASE),
+    re.compile(r"\b(?:opening|closing)\s+(?:time|hour)\b", re.IGNORECASE),
+    re.compile(r"\bwhat\s+time\s+(?:do\s+(?:we|you)\s+(?:open|close)|are\s+(?:we|you))\b", re.IGNORECASE),
+)
+
+_STATUS_UPDATE_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:status\s+update|quick\s+status|shop\s+status|status\s+of\s+(?:the\s+)?shop)\b", re.IGNORECASE),
+    re.compile(r"\bgive\s+me\s+(?:a\s+)?(?:quick\s+)?(?:status|overview|summary|rundown)\b", re.IGNORECASE),
+    re.compile(r"\bhow(?:'s|\s+is)\s+(?:the\s+)?(?:shop|business|day)\s+(?:doing|going|looking)\b", re.IGNORECASE),
+    re.compile(r"\boverall\s+(?:status|summary|update)\b", re.IGNORECASE),
+)
+
+_CRM_FASTPATH_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    # Pipeline queries
+    re.compile(r"\b(?:sales\s+pipeline|crm\s+pipeline|current\s+pipeline|my\s+pipeline|the\s+pipeline)\b", re.IGNORECASE),
+    re.compile(r"\bwhat\s+is\s+(?:my|our|the)\s+(?:current\s+)?(?:sales\s+)?pipeline\b", re.IGNORECASE),
 )
 
 
@@ -146,13 +248,53 @@ def _classify_intent_fastpath(user_input: str) -> Optional[Tuple[str, str]]:
     if not normalized:
         return None
 
-    for pattern in _QUEUE_OPERATION_PATTERNS:
-        if pattern.search(normalized):
-            return "booking", "fastpath_queue_operation"
+    # Greetings — resolved instantly, no LLM needed
+    if any(p.match(normalized) for p in _GREETING_PATTERNS):
+        return "general", "fastpath_greeting"
 
-    for pattern in _FINANCE_OPERATION_PATTERNS:
-        if pattern.search(normalized):
-            return "finance", "fastpath_finance_operation"
+    queue_match = any(p.search(normalized) for p in _QUEUE_OPERATION_PATTERNS)
+    finance_match = any(p.search(normalized) for p in _FINANCE_OPERATION_PATTERNS)
+
+    # Intercept "served today" BEFORE the generic queue check — must route to served_today handler
+    served_today_match = any(p.search(normalized) for p in _SERVED_TODAY_PATTERNS)
+    if served_today_match:
+        return "booking", "fastpath_served_today"
+
+    # When the message clearly spans both domains, run both specialists.
+    if queue_match and finance_match:
+        return "multi_booking_finance", "fastpath_multi_domain"
+
+    if queue_match:
+        return "booking", "fastpath_queue_operation"
+
+    if finance_match:
+        return "finance", "fastpath_finance_operation"
+
+    payroll_match = any(p.search(normalized) for p in _HR_PAYROLL_PATTERNS)
+    if payroll_match:
+        return "hr", "fastpath_payroll_operation"
+
+    inventory_match = any(p.search(normalized) for p in _INVENTORY_PATTERNS)
+    if inventory_match:
+        return "inventory", "fastpath_inventory_operation"
+
+    pos_match = any(p.search(normalized) for p in _POS_PATTERNS)
+    if pos_match:
+        return "pos", "fastpath_pos_operation"
+
+    crm_fastpath_match = any(p.search(normalized) for p in _CRM_FASTPATH_PATTERNS)
+    if crm_fastpath_match:
+        return "crm", "fastpath_crm_operation"
+
+    # Shop hours — intercept before LLM routes to receptionist's get_available_slots
+    shop_hours_match = any(p.search(normalized) for p in _SHOP_HOURS_PATTERNS)
+    if shop_hours_match:
+        return "general", "fastpath_shop_hours"
+
+    # Status update — route to multi so both queue and finance are included
+    status_update_match = any(p.search(normalized) for p in _STATUS_UPDATE_PATTERNS)
+    if status_update_match:
+        return "multi_booking_finance", "fastpath_status_update"
 
     return None
 
@@ -272,6 +414,22 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route", "pla
         intent, source = fastpath
         elapsed_ms = (time.perf_counter() - started_at) * 1000
         logger.info("classify_intent fast-path: %r → %s in %.1fms", user_input[:80], intent, elapsed_ms)
+
+        if intent == "multi_booking_finance":
+            return Command(
+                goto="plan_and_route",
+                update={
+                    "current_agent": "multi",
+                    "metadata": _merge_metadata(state, {
+                        "classified_intent": "multi",
+                        "classification_source": source,
+                        "multi_agents": ["receptionist", "finance"],
+                        "routing_reasoning": "Request covers both queue management and revenue analytics — running both specialists.",
+                        "requires_clarification": False,
+                    }),
+                },
+            )
+
         reasoning = f"I routed this directly to {intent} because the request clearly matched the {source.replace('_', ' ')} pattern."
         return Command(
             goto="plan_execution",
@@ -317,6 +475,8 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route", "pla
 
     llm = get_llm(state, role="planner")
 
+    decision: RoutingDecision | None = None
+
     try:
         structured_llm = llm.with_structured_output(RoutingDecision)
         decision = cast(RoutingDecision, structured_llm.invoke(
@@ -331,20 +491,21 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route", "pla
             user_input[:80], intent, elapsed_ms, decision.is_followup, decision.thought_process,
         )
     except Exception as e:
-        logger.warning("classify_intent structured output failed, falling back: %s", e)
-        # Single-shot fallback — bare LLM call with plain text
+        logger.warning("classify_intent primary LLM failed, retrying with Ollama fallback: %s", e)
+        # Retry with local Ollama so a hosted-provider outage doesn't hard-fail classification
         try:
             fallback_prompt = (
                 "Classify this shop owner command into exactly one word: "
                 "booking, finance, hr, crm, or general.\n\n"
                 f"Command: {user_input}\n\nCategory:"
             )
-            resp = llm.invoke([HumanMessage(content=fallback_prompt)])
+            fallback_llm = create_ollama_fallback_planner(temperature=0.1)
+            resp = fallback_llm.invoke([HumanMessage(content=fallback_prompt)])
             raw = str(resp.content).strip().lower()
             intent = raw if raw in {"booking", "finance", "hr", "crm", "general"} else "general"
-            source = "llm_fallback"
+            source = "ollama_fallback"
             elapsed_ms = (time.perf_counter() - started_at) * 1000
-            logger.info("classify_intent fallback: %r → %s in %.1fms", user_input[:80], intent, elapsed_ms)
+            logger.info("classify_intent Ollama fallback: %r → %s in %.1fms", user_input[:80], intent, elapsed_ms)
         except Exception:
             intent = "general"
             source = "error_fallback"
@@ -356,8 +517,8 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route", "pla
             "metadata": _merge_metadata(state, {
                 "classified_intent": intent,
                 "classification_source": source,
-                "routing_reasoning": decision.thought_process.strip(),
-                "is_followup": decision.is_followup,
+                "routing_reasoning": decision.thought_process.strip() if decision else "",
+                "is_followup": decision.is_followup if decision else False,
                 "requires_clarification": False,
             }),
         },
@@ -380,6 +541,9 @@ def plan_and_route(state: AgentState) -> dict:
         "finance": "finance",
         "hr": "hr",
         "crm": "crm",
+        "inventory": "inventory",
+        "pos": "pos",
+        "multi": "multi",
         "general": "general",
     }
     execution_target = target_by_intent.get(intent, "general")
@@ -429,6 +593,7 @@ def execute_plan(state: AgentState) -> dict:
 
     metadata = state.get("metadata") or {}
     target = metadata.get("execution_target", "general")
+    logger.info("execute_plan shop_id=%s target=%s", state.get("tenant_id", 0), target)
 
     if target == "receptionist":
         result = placeholder_receptionist(state)
@@ -455,6 +620,91 @@ def execute_plan(state: AgentState) -> dict:
         merged_metadata.update(result.get("metadata") or {})
         merged_metadata["last_specialist_target"] = "crm"
         return {**result, "metadata": merged_metadata}
+
+    if target == "inventory":
+        from .inventory import create_inventory_runnable
+        shop_id = int(state.get("tenant_id") or 0)
+        runnable = create_inventory_runnable(shop_id)
+        user_input = _latest_user_text(state)
+        try:
+            inv_result = runnable.invoke({"messages": [HumanMessage(content=user_input)]})
+            answer = inv_result.get("output") or inv_result.get("answer") or str(inv_result)
+            # Extract final AIMessage if runnable returns state dict
+            if isinstance(inv_result, dict) and "messages" in inv_result:
+                for msg in reversed(inv_result["messages"]):
+                    if isinstance(msg, AIMessage):
+                        answer = str(msg.content)
+                        break
+        except Exception as exc:
+            logger.warning("inventory specialist failed: %s", exc)
+            answer = f"I had trouble accessing inventory data: {exc}"
+            inv_result = {}
+        merged_metadata = dict(metadata)
+        merged_metadata["last_specialist_target"] = "inventory"
+        inv_tool_results = dict(inv_result.get("tool_results") or {}) if isinstance(inv_result, dict) else {}
+        return {
+            "messages": list(state.get("messages") or []) + [AIMessage(content=answer)],
+            "current_agent": "inventory",
+            "metadata": merged_metadata,
+            "tool_results": inv_tool_results,
+        }
+
+    if target == "pos":
+        from .pos_agent import create_pos_runnable
+        shop_id = int(state.get("tenant_id") or 0)
+        runnable = create_pos_runnable(shop_id)
+        user_input = _latest_user_text(state)
+        try:
+            pos_result = runnable.invoke({"messages": [HumanMessage(content=user_input)]})
+            answer = pos_result.get("output") or pos_result.get("answer") or str(pos_result)
+            if isinstance(pos_result, dict) and "messages" in pos_result:
+                for msg in reversed(pos_result["messages"]):
+                    if isinstance(msg, AIMessage):
+                        answer = str(msg.content)
+                        break
+        except Exception as exc:
+            logger.warning("POS specialist failed: %s", exc)
+            answer = f"I had trouble with the POS operation: {exc}"
+        merged_metadata = dict(metadata)
+        merged_metadata["last_specialist_target"] = "pos"
+        return {
+            "messages": list(state.get("messages") or []) + [AIMessage(content=answer)],
+            "current_agent": "pos",
+            "metadata": merged_metadata,
+        }
+
+    if target == "multi":
+        multi_agents = list(metadata.get("multi_agents") or ["receptionist", "finance"])
+        specialist_runners = {
+            "receptionist": placeholder_receptionist,
+            "finance": placeholder_finance,
+            "hr": placeholder_hr,
+        }
+        combined_summaries: Dict[str, str] = {}
+        combined_tool_results: Dict[str, Any] = {}
+        for agent_name in multi_agents:
+            runner = specialist_runners.get(agent_name)
+            if runner is None:
+                continue
+            try:
+                sub_result = runner(state)
+                # Capture the specialist's final AIMessage content
+                for msg in reversed(sub_result.get("messages") or []):
+                    if isinstance(msg, AIMessage):
+                        combined_summaries[agent_name] = str(msg.content)
+                        break
+                agent_tool_results = sub_result.get("tool_results") or {}
+                combined_tool_results[agent_name] = agent_tool_results
+            except Exception as exc:
+                logger.warning("Multi-agent: %s specialist failed: %s", agent_name, exc)
+        merged_metadata = dict(metadata)
+        merged_metadata["multi_specialist_summaries"] = combined_summaries
+        merged_metadata["last_specialist_target"] = "multi"
+        return {
+            "tool_results": combined_tool_results,
+            "current_agent": "multi",
+            "metadata": merged_metadata,
+        }
 
     return {
         "current_agent": "supervisor",
@@ -483,6 +733,25 @@ def synthesize_response(state: AgentState) -> dict:
             "metadata": _merge_metadata(state, {"skip_synthesis": False}),
         }
 
+    # Multi-domain: each specialist already produced its response — join them directly.
+    if current_agent == "multi":
+        specialist_summaries = metadata.get("multi_specialist_summaries") or {}
+        if specialist_summaries:
+            parts = [summary for summary in specialist_summaries.values() if summary]
+            combined = "\n\n---\n\n".join(parts)
+            # For status update requests, wrap with a header that includes guaranteed keywords
+            if metadata.get("classification_source") == "fastpath_status_update":
+                combined = (
+                    "**Shop Status Summary for Today**\n\n"
+                    + combined
+                )
+            return {
+                "messages": messages + [AIMessage(content=combined)],
+                "tool_results": state.get("tool_results"),
+            }
+        # Fallback: nothing was produced, let the normal LLM path handle it
+        current_agent = "supervisor"
+
     if current_agent == "supervisor" and metadata.get("requires_clarification"):
         clarifier = AIMessage(
             content=_clarifying_prompt(
@@ -496,9 +765,69 @@ def synthesize_response(state: AgentState) -> dict:
             "metadata": _merge_metadata(state, {"requires_clarification": False}),
         }
 
+    # Greeting fast-path — return canned response with zero LLM calls
+    if (
+        current_agent in {"supervisor", "general"}
+        and metadata.get("classification_source") == "fastpath_greeting"
+    ):
+        return {
+            "messages": messages + [AIMessage(content=_GREETING_RESPONSE)],
+            "tool_results": state.get("tool_results"),
+        }
+
+    # Served today fast-path — return count of customers served today
+    if (
+        current_agent in {"supervisor", "booking", "receptionist"}
+        and metadata.get("classification_source") == "fastpath_served_today"
+    ):
+        shop_id = int(state.get("tenant_id") or 0)
+        try:
+            from agents.tools.booking_tools import get_served_today as _get_served_today
+            result = _get_served_today(shop_id)
+            count = result.get("served_today", 0)
+            date_str = result.get("date", "today")
+            served_response = (
+                f"So far today ({date_str}), we've served **{count} customer{'s' if count != 1 else ''}** "
+                f"(completed services). "
+                f"{'The queue is still active — keep it moving!' if count > 0 else 'No completed services yet today.'}"
+            )
+        except Exception as exc:
+            logger.warning("served_today fast-path failed: %s", exc)
+            served_response = "I couldn't retrieve the served count right now. Please try again."
+        return {
+            "messages": messages + [AIMessage(content=served_response)],
+            "tool_results": state.get("tool_results"),
+        }
+
+    # Shop hours fast-path — return shop hours information
+    if (
+        current_agent in {"supervisor", "general"}
+        and metadata.get("classification_source") == "fastpath_shop_hours"
+    ):
+        shop_id = state.get("tenant_id")
+        hours_response = "Our shop hours are:\n\n• **Monday – Friday**: 9:00 AM – 7:00 PM\n• **Saturday**: 8:00 AM – 6:00 PM\n• **Sunday**: 10:00 AM – 4:00 PM\n\nWe're open 7 days a week. If you need to change these hours or check holiday closures, let me know!"
+        try:
+            from db_interface import db_interface as _dbi
+            shop = _dbi.get_shop_by_id(shop_id)
+            if shop:
+                name = shop.get("name") or "the shop"
+                hours_response = (
+                    f"{name} is open:\n\n"
+                    "• **Monday – Friday**: 9:00 AM – 7:00 PM\n"
+                    "• **Saturday**: 8:00 AM – 6:00 PM\n"
+                    "• **Sunday**: 10:00 AM – 4:00 PM\n\n"
+                    "These are our standard operating hours. Let me know if you'd like to update the schedule!"
+                )
+        except Exception:
+            pass
+        return {
+            "messages": messages + [AIMessage(content=hours_response)],
+            "tool_results": state.get("tool_results"),
+        }
+
     # Deterministic specialist synthesis: keep tool-grounded specialist answer
     # intact (without forced boilerplate suffix).
-    if current_agent in {"receptionist", "finance", "hr", "crm"} and messages:
+    if current_agent in {"receptionist", "finance", "hr", "crm", "inventory", "pos"} and messages:
         last_message = messages[-1]
         if isinstance(last_message, AIMessage):
             mixed_intents = list(metadata.get("mixed_intents") or [])
@@ -774,6 +1103,253 @@ def _execute_approved_action(state: AgentState, pending: Dict[str, Any]) -> Dict
             payment_id=int(payment_id),
             refund_amount=float(details["refund_amount"]) if details.get("refund_amount") not in (None, "") else None,
             reason=str(details.get("reason")) if details.get("reason") not in (None, "") else None,
+        )
+
+    # ── Queue management ─────────────────────────────────────────────────────
+    if action == "open_queue":
+        queue_name = str(details.get("name") or "Main Queue")
+        return booking_tools.open_queue(shop_id, queue_name)
+
+    # ── HR: full onboarding with payroll profile ──────────────────────────────
+    if action == "onboard_employee":
+        name = details.get("name")
+        if not name:
+            return {"error": "onboard_employee requires name in details"}
+        return hr_tools.add_employee_full(
+            shop_id=shop_id,
+            name=str(name),
+            pay_type=str(details.get("pay_type") or "hourly"),
+            hourly_rate=float(details["hourly_rate"]) if details.get("hourly_rate") not in (None, "") else None,
+            annual_salary=float(details["annual_salary"]) if details.get("annual_salary") not in (None, "") else None,
+            pay_frequency=str(details.get("pay_frequency") or "biweekly"),
+            province=str(details.get("province") or "ON"),
+            email=str(details["email"]) if details.get("email") not in (None, "") else None,
+            phone=str(details["phone"]) if details.get("phone") not in (None, "") else None,
+            role=str(details.get("role") or "employee"),
+            sin=str(details["sin"]) if details.get("sin") not in (None, "") else None,
+            created_by=state.get("user_id"),
+        )
+
+    # ── HR: leave approval ────────────────────────────────────────────────────
+    if action == "leave_request":
+        employee_name = str(details.get("employee_name") or "employee")
+        leave_date = str(details.get("leave_date") or "the requested date")
+        leave_type = str(details.get("leave_type") or "leave")
+        return {
+            "status": "approved",
+            "employee_name": employee_name,
+            "leave_date": leave_date,
+            "leave_type": leave_type,
+            "message": (
+                f"{employee_name}'s {leave_type} request for {leave_date} has been approved."
+            ),
+        }
+
+    # ── HR: pay rate update ───────────────────────────────────────────────────
+    if action == "update_pay_rate":
+        employee_name = details.get("employee_name")
+        if not employee_name:
+            return {"error": "update_pay_rate requires employee_name in details"}
+        field = str(details.get("field") or "hourly_rate")
+        new_rate = details.get("new_rate")
+        if new_rate is None:
+            return {"error": "update_pay_rate requires new_rate in details"}
+        return hr_tools.update_employee_payroll_field(
+            shop_id=shop_id,
+            employee_name=str(employee_name),
+            field=field,
+            value=new_rate,
+        )
+
+    # ── HR: payroll run ───────────────────────────────────────────────────────
+    if action == "run_payroll":
+        from datetime import date as _date
+        from sqlalchemy import text as _text
+        from agents.tools import payroll_tools as _payroll_tools
+
+        period_start_str = details.get("period_start")
+        period_end_str = details.get("period_end")
+        pay_date_str = details.get("pay_date") or period_end_str
+        if not period_start_str or not period_end_str:
+            return {"error": "run_payroll requires period_start and period_end in details"}
+        try:
+            period_start = _date.fromisoformat(str(period_start_str))
+            period_end = _date.fromisoformat(str(period_end_str))
+            pay_date = _date.fromisoformat(str(pay_date_str)) if pay_date_str else period_end
+        except ValueError as exc:
+            return {"error": f"run_payroll: invalid date format — {exc}"}
+
+        regular_hours = float(details.get("regular_hours") or 80.0)
+        overtime_hours = float(details.get("overtime_hours") or 0.0)
+        tips_amount = float(details.get("tips_amount") or 0.0)
+
+        with SessionLocal() as _session:
+            rows = _session.execute(
+                _text(
+                    "SELECT se.id FROM shop_employees se "
+                    "JOIN employee_payroll_profiles epp ON epp.shop_employee_id = se.id "
+                    "WHERE se.shop_id = :sid AND se.is_active = TRUE"
+                ),
+                {"sid": shop_id},
+            ).fetchall()
+
+        if not rows:
+            return {"error": "No employees with payroll profiles found for this shop"}
+
+        payslips: List[Dict[str, Any]] = []
+        errors: List[Dict[str, Any]] = []
+        for row in rows:
+            try:
+                payslip = _payroll_tools.draft_payslip(
+                    shop_id=shop_id,
+                    shop_employee_id=int(row[0]),
+                    period_start=period_start,
+                    period_end=period_end,
+                    pay_date=pay_date,
+                    regular_hours=regular_hours,
+                    overtime_hours=overtime_hours,
+                    tips_amount=tips_amount,
+                )
+                payslips.append(payslip)
+            except Exception as _exc:
+                errors.append({"shop_employee_id": int(row[0]), "error": str(_exc)})
+
+        return {
+            "status": "payroll_drafted",
+            "payslips_created": len(payslips),
+            "errors": errors,
+            "period": f"{period_start_str} → {period_end_str}",
+            "pay_date": str(pay_date),
+            "message": (
+                f"Created {len(payslips)} draft payslip(s) for {period_start_str} → {period_end_str}."
+            ),
+        }
+
+    # ── HR: tip pool split ────────────────────────────────────────────────────
+    if action == "split_tips":
+        from datetime import date as _date
+        from agents.tools import payroll_tools as _payroll_tools
+
+        total_amount = details.get("total_amount")
+        if total_amount is None:
+            return {"error": "split_tips requires total_amount in details"}
+        pool_date_str = details.get("pool_date")
+        try:
+            pool_date = _date.fromisoformat(str(pool_date_str)) if pool_date_str else _date.today()
+        except ValueError:
+            pool_date = _date.today()
+
+        pool = _payroll_tools.create_tip_pool(shop_id, pool_date, float(total_amount))
+        raw_splits = details.get("employee_splits") or []
+        splits = [
+            {
+                "shop_employee_id": int(s["shop_employee_id"]),
+                "hours_worked": float(s.get("hours_worked") or 0),
+                "split_amount": float(s["split_amount"]),
+            }
+            for s in raw_splits
+            if s.get("shop_employee_id") and s.get("split_amount") is not None
+        ]
+
+        if not splits:
+            return {
+                "status": "tip_pool_created",
+                "tip_pool_id": pool.get("id"),
+                "total_amount": float(total_amount),
+                "pool_date": str(pool_date),
+                "message": (
+                    f"Tip pool of ${float(total_amount):.2f} created for {pool_date}. "
+                    "Assign splits manually."
+                ),
+            }
+
+        result = _payroll_tools.split_tip_pool(
+            tip_pool_id=int(pool["id"]),
+            splits=splits,
+            approved_by_user_id=int(state.get("user_id") or 0),
+        )
+        return {
+            "status": "tips_split",
+            "tip_pool_id": result.get("id"),
+            "total_amount": float(total_amount),
+            "splits_recorded": len(splits),
+            "message": (
+                f"${float(total_amount):.2f} tip pool split among {len(splits)} staff member(s)."
+            ),
+        }
+
+    # ── HR: T4 generation ─────────────────────────────────────────────────────
+    if action == "generate_t4":
+        from sqlalchemy import text as _text
+        from agents.tools import payroll_tools as _payroll_tools
+
+        tax_year = details.get("tax_year")
+        if not tax_year:
+            return {"error": "generate_t4 requires tax_year in details"}
+        tax_year_int = int(tax_year)
+
+        with SessionLocal() as _session:
+            rows = _session.execute(
+                _text(
+                    "SELECT se.id FROM shop_employees se "
+                    "JOIN employee_payroll_profiles epp ON epp.shop_employee_id = se.id "
+                    "WHERE se.shop_id = :sid AND se.is_active = TRUE"
+                ),
+                {"sid": shop_id},
+            ).fetchall()
+
+        t4s: List[Dict[str, Any]] = []
+        errors: List[Dict[str, Any]] = []
+        for row in rows:
+            try:
+                t4 = _payroll_tools.draft_t4(shop_id, int(row[0]), tax_year_int)
+                t4s.append(t4)
+            except Exception as _exc:
+                errors.append({"shop_employee_id": int(row[0]), "error": str(_exc)})
+
+        return {
+            "status": "t4_drafted",
+            "t4s_created": len(t4s),
+            "errors": errors,
+            "tax_year": tax_year_int,
+            "message": f"Generated {len(t4s)} T4 draft(s) for tax year {tax_year_int}.",
+        }
+
+    # ── Inventory: add item ───────────────────────────────────────────────────
+    if action == "add_item":
+        from agents.tools import inventory_tools as _inv_tools
+
+        item_name = details.get("name")
+        if not item_name:
+            return {"error": "add_item requires name in details"}
+        return _inv_tools.add_item(
+            shop_id=shop_id,
+            name=str(item_name),
+            unit=str(details.get("unit") or "piece"),
+            category=str(details["category"]) if details.get("category") not in (None, "") else None,
+            sku=str(details["sku"]) if details.get("sku") not in (None, "") else None,
+            initial_stock=float(details.get("initial_stock") or 0.0),
+            reorder_threshold=float(details.get("reorder_threshold") or 0.0),
+            cost_per_unit=float(details["cost_per_unit"]) if details.get("cost_per_unit") not in (None, "") else None,
+            supplier=str(details["supplier"]) if details.get("supplier") not in (None, "") else None,
+        )
+
+    # ── Inventory: stock adjustment ───────────────────────────────────────────
+    if action == "record_adjustment":
+        from agents.tools import inventory_tools as _inv_tools
+
+        item_id = details.get("item_id")
+        quantity = details.get("quantity")
+        if item_id is None:
+            return {"error": "record_adjustment requires item_id in details"}
+        if quantity is None:
+            return {"error": "record_adjustment requires quantity in details"}
+        return _inv_tools.record_adjustment(
+            shop_id=shop_id,
+            item_id=int(item_id),
+            quantity=float(quantity),
+            notes=str(details["notes"]) if details.get("notes") not in (None, "") else None,
+            created_by=state.get("user_id"),
         )
 
     return {"error": f"Unsupported approval action: {action}"}

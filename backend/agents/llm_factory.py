@@ -330,6 +330,8 @@ def _build_model_from_config(config: ResolvedLLMConfig, *, temperature: float):
             temperature=temperature,
             top_p=float(settings.get("top_p", 0.9)),
             num_gpu=int(settings.get("num_gpu", -1)),
+            timeout=180,
+            think=False,
         )
 
     if config.provider == "openai":
@@ -380,6 +382,27 @@ def _build_model_from_config(config: ResolvedLLMConfig, *, temperature: float):
 
 def create_chat_model(shop_id: Optional[int], *, temperature: float):
     return _build_model_from_config(load_shop_llm_config(shop_id), temperature=temperature)
+
+
+# Providers that call external APIs (subject to rate-limits / network failures)
+# Ollama is always local so it is NOT in this set.
+_HOSTED_PROVIDERS: frozenset[str] = frozenset({"nvidia", "openai", "anthropic", "groq", "google_genai"})
+
+
+def create_ollama_fallback_planner(*, temperature: float = 0.1):
+    """
+    Return a ChatOllama instance pointing at the platform-level local Ollama.
+    Used as a secondary LLM when a hosted provider (NVIDIA, OpenAI, etc.) fails
+    or times out.  Always ignores per-shop DB overrides — the fallback is always
+    the local instance.
+    """
+    ChatOllama = _import_attr("langchain_ollama", "ChatOllama")
+    return ChatOllama(
+        model=default_model_name_for_provider("ollama"),
+        base_url=_normalize_ollama_base_url(default_api_base_url_for_provider("ollama")),
+        temperature=temperature,
+        timeout=120,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +465,8 @@ def create_formatter_model(shop_id: Optional[int], *, temperature: float = 0.7):
     """
     For synthesize_response node only.
     No schema constraints — thinking models are fine and produce better prose.
+    If the primary model is a hosted provider, Ollama is registered as a fallback
+    so response synthesis never silently fails on API errors.
     """
     config = load_shop_llm_config(shop_id)
     formatter_settings = dict(config.settings or {})
