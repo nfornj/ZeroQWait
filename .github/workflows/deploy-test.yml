@@ -31,8 +31,10 @@ jobs:
         env:
           REGISTRY: ghcr.io/nfornj
           SECRET_KEY:                ${{ secrets.SECRET_KEY }}
-          DB_USER:                   ${{ secrets.DB_USER }}
-          DB_PASSWORD:               ${{ secrets.DB_PASSWORD }}
+          # Test env uses local postgres container with hardcoded credentials from docker-compose.yml
+          # (postgres:zeroqwait_dev) — do NOT use prod DB_USER/DB_PASSWORD secrets here
+          DB_USER:                   postgres
+          DB_PASSWORD:               zeroqwait_dev
           DB_NAME:                   ${{ secrets.DB_NAME }}
           NVIDIA_API_KEY:            ${{ secrets.NVIDIA_API_KEY }}
           LLM_CONFIG_ENCRYPTION_KEY: ${{ secrets.LLM_CONFIG_ENCRYPTION_KEY }}
