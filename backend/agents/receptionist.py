@@ -18,6 +18,7 @@ SUPPORTED_OPERATIONS = [
     "call_next",
     "get_wait_time",
     "close_queue",
+    "open_queue",
     "search_services",
     "create_service",
     "update_service",
@@ -26,6 +27,7 @@ SUPPORTED_OPERATIONS = [
     "list_appointments",
     "cancel_appointment",
     "get_available_slots",
+    "get_served_today",
 ]
 
 PLANNER_INSTRUCTIONS = """\
@@ -34,6 +36,7 @@ PLANNER_INSTRUCTIONS = """\
 - call_next: call the next customer; arguments: employee_id(optional).
 - get_wait_time: questions about wait time. For queue length or queue status, use list_queue instead.
 - close_queue: owner wants to close or stop the queue; arguments: reason(optional). This requires approval.
+- open_queue: owner wants to open, reopen, or start accepting customers; arguments: name(optional, queue name).
 - search_services: list services, search by service name, or look up a service before update/delete.
 - create_service: add a new service; arguments: name, cost, duration_minutes(optional).
 - update_service: only when service_id is known; otherwise choose search_services first.
@@ -48,6 +51,9 @@ PLANNER_INSTRUCTIONS = """\
 OPERATION_ALIASES = {
     "get_queue_length": "list_queue",
     "read": "list_queue",
+    "reopen_queue": "open_queue",
+    "start_queue": "open_queue",
+    "resume_queue": "open_queue",
 }
 
 
@@ -140,6 +146,8 @@ def _build_receptionist_executor(shop_id: int):
     def executor(operation: str, arguments: Dict[str, Any], messages: Sequence[BaseMessage]) -> Dict[str, Any]:
         if operation == "list_queue":
             return booking_tools.list_queue(shop_id)
+        if operation == "get_served_today":
+            return booking_tools.get_served_today(shop_id)
         if operation == "join_queue":
             customer_name = _optional_str(arguments.get("customer_name") or arguments.get("name"))
             if not customer_name:
@@ -157,6 +165,9 @@ def _build_receptionist_executor(shop_id: int):
                 "details": {"reason": reason},
                 "message": f"Queue closure has been submitted for owner approval. Reason: {reason}",
             }
+        if operation == "open_queue":
+            queue_name = _optional_str(arguments.get("name")) or "Main Queue"
+            return booking_tools.open_queue(shop_id, queue_name)
         if operation == "search_services":
             return booking_tools.search_services(shop_id, _optional_str(arguments.get("query")))
         if operation == "create_service":
@@ -300,6 +311,10 @@ def _format_receptionist_response(operation: str, result: Dict[str, Any]) -> str
                 f"- #{appointment.get('id')}: {appointment.get('customer_name', 'Customer')} at {appointment.get('scheduled_start', appointment.get('date', 'scheduled time unavailable'))}"
             )
         return f"I found {len(appointments)} appointment(s):\n" + "\n".join(lines)
+    if operation == "get_served_today":
+        count = result.get("served_today", 0)
+        date = result.get("date", "today")
+        return f"We have served {count} customer{'s' if count != 1 else ''} today ({date}). That's the total number of completed services so far."
     if operation == "get_available_slots":
         slots = list(result.get("available_slots") or [])
         if not slots:
@@ -320,7 +335,7 @@ _FAST_LIST_QUEUE_RE = re.compile(
     | \bqueue\s+summary\b
     | \blist\s+(?:the\s+)?queue\b
     | \bshow\s+(?:the\s+|me\s+)?(?:the\s+)?queue\b
-    | \bhow\s+many\s+(?:people|customers|are)\b
+    | \bhow\s+many\s+(?:people|customers?)\s+(?:are\s+)?(?:currently\s+)?(?:in|waiting|left|still)\b
     | \bwho(?:'?s|\s+is)\s+waiting\b
     | \bcurrent\s+queue\b
     | \bactive\s+queue\b
@@ -340,6 +355,17 @@ _FAST_WAIT_TIME_RE = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
+_FAST_SERVED_TODAY_RE = re.compile(
+    r"""
+    \bhow\s+many\s+(?:customers?|people|clients?)\s+(?:were\s+|have\s+been\s+|got\s+)?served\b
+    | \bhow\s+many\s+(?:customers?|people|clients?)\s+(?:did\s+we\s+)?(?:serve|complete|finish)\b
+    | \bcustomers?\s+served\s+today\b
+    | \bserved\s+today\b
+    | \bcompleted\s+(?:services?|customers?|visits?)\s+today\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
 
 def _build_receptionist_fast_planner() -> FastPlanBuilder:
     """Return a fast_plan_builder that bypasses the LLM for common queue/wait-time reads."""
@@ -355,6 +381,13 @@ def _build_receptionist_fast_planner() -> FastPlanBuilder:
         if not user_text:
             return None
 
+        if _FAST_SERVED_TODAY_RE.search(user_text):
+            return {
+                "operation": "get_served_today",
+                "arguments": {},
+                "requires_clarification": False,
+                "rationale": "Customers served today request (fast-path, no LLM needed).",
+            }
         if _FAST_LIST_QUEUE_RE.search(user_text):
             return {
                 "operation": "list_queue",

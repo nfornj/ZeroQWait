@@ -43,6 +43,7 @@ SUPPORTED_OPERATIONS = [
     "weekly_summary",
     "trend_summary",
     "top_services",
+    "avg_revenue_per_customer",
     "customer_metrics",
     "export_report",
     "create_invoice",
@@ -405,6 +406,16 @@ def _build_finance_fast_plan(messages: Sequence[BaseMessage]) -> Optional[Dict[s
             "rationale": "Finance fast-path matched an obvious service ranking request.",
         }
 
+    # Average revenue per customer fast-path
+    if any(phrase in prompt for phrase in ("average revenue per customer", "avg revenue per customer", "revenue per customer", "average ticket value", "average spend per customer", "average spend per visit")):
+        return {
+            "operation": "avg_revenue_per_customer",
+            "arguments": {},
+            "requires_clarification": False,
+            "clarification_question": "",
+            "rationale": "Finance fast-path matched average revenue per customer request.",
+        }
+
     revenue_subject_signals = any(
         keyword in prompt
         for keyword in ("revenue", "sales", "trend", "performance", "average ticket", "avg ticket")
@@ -594,6 +605,8 @@ def _build_finance_executor(shop_id: int):
                 result = dict(result)
                 result["preferred_presentation"] = "table"
             return result
+        if operation == "avg_revenue_per_customer":
+            return finance_tools._local_avg_revenue_per_customer(shop_id)
         if operation == "customer_metrics":
             query = _optional_str(arguments.get("query")) or user_text
             return _with_dynamic_read_fallback(
@@ -814,6 +827,17 @@ def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
                 lines.append(f"- {name} — ${float(service.get('cost', 0.0) or 0.0):.2f}")
         window_label = _humanize_window_label(result.get("window_display") or result.get("window"))
         return f"Top services for {window_label}:\n" + "\n".join(lines)
+    if operation == "avg_revenue_per_customer":
+        avg = float(result.get("avg_revenue_per_customer", 0.0) or 0.0)
+        total_revenue = float(result.get("total_revenue", 0.0) or 0.0)
+        total_visits = int(result.get("total_visits", 0) or 0)
+        window_label = _humanize_window_label(result.get("window"))
+        if total_visits == 0:
+            return f"No completed visits found for {window_label} to calculate average revenue per customer."
+        return (
+            f"Average revenue per customer for {window_label}: ${avg:.2f}. "
+            f"This is based on {total_visits} completed visits totaling ${total_revenue:.2f} in revenue."
+        )
     if operation == "customer_metrics":
         total_customers = int(result.get('total_customers', 0) or 0)
         new_customers = int(result.get('new_customers', 0) or 0)

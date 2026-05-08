@@ -365,13 +365,20 @@ def _finalize_chat_work_context(
     pending_action: Optional[Dict[str, Any]],
     conversation_messages: Optional[list] = None,
 ) -> Optional[Dict[str, Any]]:
+    def _json_safe(obj: Any) -> Any:
+        """Round-trip through JSON to strip datetime/enum/non-serializable values."""
+        try:
+            return json.loads(json.dumps(obj, default=str))
+        except Exception:
+            return {}
+
     db = SessionLocal()
     try:
         repo = AgentWorkRepository(db)
         output_payload = {
             "response": response_text,
             "agent": routed_agent,
-            "tool_results": tool_results or {},
+            "tool_results": _json_safe(tool_results or {}),
         }
         if approval_required:
             repo.update_goal_status(goal_id, GoalStatus.WAITING_APPROVAL, summary=response_text or "Waiting for owner approval")
@@ -486,7 +493,7 @@ def _record_approval_decision(
                 output_payload={
                     "message": _state_last_text(resumed),
                     "agent": resumed.get("current_agent", "supervisor"),
-                    "tool_results": resumed.get("tool_results"),
+                    "tool_results": json.loads(json.dumps(resumed.get("tool_results") or {}, default=str)),
                 },
                 current_agent=resumed.get("current_agent", "supervisor"),
             )

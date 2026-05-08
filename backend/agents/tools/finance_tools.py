@@ -879,6 +879,51 @@ def _local_top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
             session.close()
 
 
+def _local_avg_revenue_per_customer(shop_id: int) -> Dict[str, Any]:
+    """Compute average revenue per customer from completed queue items (last 30 days)."""
+    session = None
+    try:
+        session = db_interface.get_session()
+        from modules.queues.models import Queue, QueueItem, QueueStatus
+        from modules.shops.models import ShopCustomer
+        from sqlalchemy import func
+
+        shop_now = _now_for_shop(shop_id, session)
+        start_dt, end_dt, _granularity, window = _parse_time_window("last 30 days", now=shop_now)
+        start_utc = _to_utc_naive(start_dt)
+        end_utc = _to_utc_naive(end_dt)
+
+        total_revenue, total_visits = (
+            session.query(
+                func.coalesce(func.sum(QueueItem.service_cost), 0.0),
+                func.count(QueueItem.id),
+            )
+            .join(Queue, QueueItem.queue_id == Queue.id)
+            .filter(
+                Queue.shop_id == shop_id,
+                QueueItem.status == QueueStatus.COMPLETED,
+                func.coalesce(QueueItem.completed_at, QueueItem.checked_in_at) >= start_utc,
+                func.coalesce(QueueItem.completed_at, QueueItem.checked_in_at) <= end_utc,
+            )
+            .one()
+        )
+        total_revenue = round(float(total_revenue or 0.0), 2)
+        total_visits = int(total_visits or 0)
+        avg_revenue = round(total_revenue / total_visits, 2) if total_visits > 0 else 0.0
+        return {
+            "avg_revenue_per_customer": avg_revenue,
+            "total_revenue": total_revenue,
+            "total_visits": total_visits,
+            "window": window,
+            "shop_id": shop_id,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if session is not None:
+            session.close()
+
+
 def _local_customer_metrics(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
     """Get customer metrics for a parsed time window.
     
@@ -1277,6 +1322,10 @@ def trend_summary(shop_id: int, query: str) -> Dict[str, Any]:
 
 
 def top_services(shop_id: int, limit: int = 5) -> Dict[str, Any]:
+    # Use local DB path directly (avoids old MCP image compatibility issues)
+    result = _local_top_services(shop_id, limit)
+    if result and not result.get("error"):
+        return result
     return _get_finance_client().top_services(shop_id, limit)
 
 

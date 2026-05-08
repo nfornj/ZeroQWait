@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def list_inventory(shop_id: int, include_inactive: bool = False) -> List[Dict[str, Any]]:
     """Return all inventory items for a shop."""
-    where_active = "" if include_inactive else " AND i.is_active = TRUE"
+    where_active = "" if include_inactive else " AND is_active = TRUE"
     with SessionLocal() as session:
         rows = session.execute(
             text(f"""
