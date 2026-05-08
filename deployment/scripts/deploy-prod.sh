@@ -200,10 +200,10 @@ kctl rollout restart deployment/temporal-worker -n zeroqwait
 # Run deployment/scripts/prune-ghcr-tags.sh manually if needed.
 
 echo "==> Waiting for frontend and backend rollouts"
-kctl rollout status deployment/frontend -n zeroqwait --timeout=900s
-# Image pull from GHCR + startup can take 10-15 min for large images.
-kctl rollout status deployment/backend -n zeroqwait --timeout=900s
-kctl rollout status deployment/temporal-worker -n zeroqwait --timeout=900s
+kctl rollout status deployment/frontend -n zeroqwait --timeout=1800s
+# Image pull from GHCR + startup can take 20-30 min for large images (8.84GB).
+kctl rollout status deployment/backend -n zeroqwait --timeout=1800s
+kctl rollout status deployment/temporal-worker -n zeroqwait --timeout=1800s
 
 echo "==> Production deployment successful"
 echo "    Site: https://zeroqwait.com"

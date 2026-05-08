@@ -5,7 +5,7 @@ metadata:
   namespace: zeroqwait
 spec:
   replicas: 1
-  progressDeadlineSeconds: 1200
+  progressDeadlineSeconds: 1800
   selector:
     matchLabels:
       app: temporal-worker
