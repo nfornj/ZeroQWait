@@ -256,7 +256,7 @@ async def _handle_free_text(
                 ),
                 timeout=_OWNER_REPLY_TIMEOUT_SECONDS,
             )
-            await tgc.send_text(chat_id, response or "_No response generated._")
+            await tgc.send_text(chat_id, response or "No response generated.", parse_mode=None)
         except asyncio.TimeoutError:
             logger.warning("Telegram owner message timed out for shop %s", shop.id)
             await tgc.send_text(
@@ -323,7 +323,7 @@ async def _handle_unknown_user(
                     ),
                     timeout=_OWNER_REPLY_TIMEOUT_SECONDS,
                 )
-                await tgc.send_text(chat_id, response or "_No response generated._")
+                await tgc.send_text(chat_id, response or "No response generated.", parse_mode=None)
             except Exception as exc:
                 logger.error("Telegram dev-mode auto-link message error: %s", exc)
                 await tgc.send_text(chat_id, "⚠️ Something went wrong. Please try again.")

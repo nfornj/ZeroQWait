@@ -18,7 +18,7 @@ It is never logged, never returned in API responses, and never exposed to owners
 
 import logging
 import os
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -40,22 +40,28 @@ def _api(method: str) -> str:
 async def send_text(
     chat_id: str | int,
     text: str,
-    parse_mode: str = "Markdown",
+    parse_mode: Optional[str] = "Markdown",
 ) -> bool:
-    """Send a plain text message.  Returns True on success."""
+    """Send a plain text message.  Returns True on success.
+
+    Pass parse_mode=None to send as plain text (safe for LLM-generated content
+    that may contain unbalanced Markdown entities).
+    """
     if not _BOT_TOKEN:
         logger.debug("Telegram not configured — skipping send_text")
         return False
     try:
+        payload: dict = {
+            "chat_id": chat_id,
+            "text": text,
+            "disable_web_page_preview": True,
+        }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 _api("sendMessage"),
-                json={
-                    "chat_id": chat_id,
-                    "text": text,
-                    "parse_mode": parse_mode,
-                    "disable_web_page_preview": True,
-                },
+                json=payload,
             )
         data = resp.json()
         if resp.status_code == 200 and data.get("ok"):
