@@ -1,5 +1,4 @@
 import React, { useRef, useEffect } from 'react';
-import { Box } from '@mui/material';
 
 interface ParticleSphereProps {
     volume: number;
@@ -145,24 +144,14 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
     };
 
     return (
-        <Box
+        <div
             onMouseEnter={() => isHoveredRef.current = true}
             onMouseLeave={() => {
                 isHoveredRef.current = false;
                 mouseRef.current = { x: 0, y: 0 };
             }}
             onMouseMove={handleMouseMove}
-            sx={{
-                width: '100%',
-                maxWidth: { xs: 200, sm: 280, md: 400 },
-                aspectRatio: '1',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                mx: 'auto',
-                cursor: 'pointer', // Indicate interactivity
-                transition: 'transform 0.3s ease' // CSS transition for the container itself optionally
-            }}
+            className="mx-auto flex aspect-square w-full max-w-[200px] cursor-pointer items-center justify-center transition-transform sm:max-w-[280px] md:max-w-[400px]"
         >
             <canvas
                 ref={canvasRef}
@@ -175,7 +164,7 @@ const ParticleSphere: React.FC<ParticleSphereProps> = ({ volume, isListening, co
                     maxHeight: '100%'
                 }}
             />
-        </Box>
+        </div>
     );
 };
 

@@ -64,14 +64,3 @@ export const useOwnerBrand = (): OwnerBrandTokens => {
 };
 
 export default useOwnerBrand;
-
-// Keep MUI theme augmentation so ThemeContext can put ownerBrand on the theme
-// (ThemeContext is migrated in Phase 11 — remove this block then)
-declare module "@mui/material/styles" {
-  interface Theme {
-    ownerBrand: OwnerBrandTokens;
-  }
-  interface ThemeOptions {
-    ownerBrand?: OwnerBrandTokens;
-  }
-}

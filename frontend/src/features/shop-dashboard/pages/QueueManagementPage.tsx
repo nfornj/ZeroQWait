@@ -1,47 +1,34 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { CheckCircle, ListOrdered, Plus, Tv, Users } from "lucide-react";
+
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
   Dialog,
-  DialogActions,
   DialogContent,
+  DialogFooter,
+  DialogHeader,
   DialogTitle,
-  Divider,
-  Grid,
-  Paper,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
-import { alpha, useTheme } from '@mui/material/styles';
-import AddIcon from '@mui/icons-material/Add';
-import TvIcon from '@mui/icons-material/Tv';
-import QueueRoundedIcon from '@mui/icons-material/QueueRounded';
-import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
-import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
-import api from '../../../services/api';
-import { useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
-import QueueDataGrid from '../components/QueueDataGrid';
-import { useShop } from '../../../contexts/ShopContext';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import api from "../../../services/api";
+import Header from "../components/Header";
+import QueueDataGrid from "../components/QueueDataGrid";
+import { useShop } from "../../../contexts/ShopContext";
 
 const QueueManagementPage: React.FC = () => {
-  const theme = useTheme();
   const navigate = useNavigate();
   const { shop: contextShop } = useShop();
 
   const [queues, setQueues] = useState<any[]>([]);
   const [shop, setShop] = useState<any>(null);
   const [open, setOpen] = useState(false);
-  const [newQueueName, setNewQueueName] = useState('');
-  const [error, setError] = useState('');
-
-  // Delete confirmation state
+  const [newQueueName, setNewQueueName] = useState("");
+  const [error, setError] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
-  // Reset confirmation state
   const [resetConfirmId, setResetConfirmId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -66,13 +53,13 @@ const QueueManagementPage: React.FC = () => {
 
   const handleCreateQueue = async () => {
     try {
-      setError('');
+      setError("");
       await api.post(`/queues/shop/${shop.id}`, { name: newQueueName });
       setOpen(false);
-      setNewQueueName('');
+      setNewQueueName("");
       fetchShopAndQueues();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to create queue');
+      setError(err.response?.data?.detail || "Failed to create queue");
       setOpen(false);
     }
   };
@@ -83,7 +70,7 @@ const QueueManagementPage: React.FC = () => {
       setDeleteConfirmId(null);
       fetchShopAndQueues();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to delete queue');
+      setError(err.response?.data?.detail || "Failed to delete queue");
       setDeleteConfirmId(null);
     }
   };
@@ -94,215 +81,171 @@ const QueueManagementPage: React.FC = () => {
       setResetConfirmId(null);
       fetchShopAndQueues();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to reset queue');
+      setError(err.response?.data?.detail || "Failed to reset queue");
       setResetConfirmId(null);
     }
   };
 
   const activeQueues = queues.filter((q) => q.is_active).length;
-  const brandPrimary = contextShop?.primary_color || shop?.primary_color || theme.palette.primary.main;
+  const brandPrimary = contextShop?.primary_color || shop?.primary_color || "hsl(var(--primary))";
   const brandSecondary = contextShop?.secondary_color || shop?.secondary_color || brandPrimary;
+  const queueNameForId = (id: number | null) => queues.find((q) => q.id === id)?.name ?? "";
 
-  const queueNameForId = (id: number | null) => queues.find((q) => q.id === id)?.name ?? '';
+  const Stat = ({ icon: Icon, value, label }: { icon: React.ElementType; value: number; label: string }) => (
+    <Card className="h-full">
+      <CardContent className="flex flex-col gap-2 p-5">
+        <Icon className="size-5 text-primary" />
+        <p className="text-2xl font-semibold tracking-tight">{value}</p>
+        <p className="text-sm text-muted-foreground">{label}</p>
+      </CardContent>
+    </Card>
+  );
 
   return (
-    <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
+    <div className="w-full max-w-[1700px]">
       <Header />
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid size={{ xs: 12, lg: 8 }}>
-          <Card variant="outlined" sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between">
-                <Stack spacing={0.5}>
-                  <Typography variant="h5" fontWeight={700}>Queue Operations</Typography>
-                  <Typography color="text.secondary">
-                    Manage your queues, launch public display modes, and monitor queue status in real time.
-                  </Typography>
-                </Stack>
-                <Button
-                  variant="contained"
-                  startIcon={<AddIcon />}
-                  onClick={() => setOpen(true)}
-                  sx={{ alignSelf: { xs: 'flex-start', md: 'center' } }}
-                >
-                  Create Queue
-                </Button>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
+      <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <Card className="lg:col-span-8">
+          <CardContent className="p-6">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight">Queue Operations</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Manage your queues, launch public display modes, and monitor queue status in real time.
+                </p>
+              </div>
+              <Button onClick={() => setOpen(true)} className="self-start md:self-center">
+                <Plus data-icon="inline-start" />
+                Create Queue
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-        <Grid size={{ xs: 12, sm: 4, lg: 1.33 }}>
-          <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
-            <CardContent>
-              <Stack spacing={1}>
-                <QueueRoundedIcon color="primary" />
-                <Typography variant="h5" fontWeight={700}>{queues.length}</Typography>
-                <Typography variant="body2" color="text.secondary">Total Queues</Typography>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:col-span-4">
+          <Stat icon={ListOrdered} value={queues.length} label="Total Queues" />
+          <Stat icon={CheckCircle} value={activeQueues} label="Active Queues" />
+          <Stat icon={Users} value={shop ? 1 : 0} label="Connected Shops" />
+        </div>
+      </div>
 
-        <Grid size={{ xs: 12, sm: 4, lg: 1.33 }}>
-          <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
-            <CardContent>
-              <Stack spacing={1}>
-                <CheckCircleRoundedIcon color="success" />
-                <Typography variant="h5" fontWeight={700}>{activeQueues}</Typography>
-                <Typography variant="body2" color="text.secondary">Active Queues</Typography>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 4, lg: 1.33 }}>
-          <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
-            <CardContent>
-              <Stack spacing={1}>
-                <PeopleRoundedIcon color="secondary" />
-                <Typography variant="h5" fontWeight={700}>{shop ? 1 : 0}</Typography>
-                <Typography variant="body2" color="text.secondary">Connected Shops</Typography>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+      {error && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       {shop && (
         <Card
-          variant="outlined"
-          sx={{
-            mb: 2,
-            borderRadius: 3,
-            borderColor: alpha(brandPrimary, 0.3),
-            background: `linear-gradient(135deg, ${alpha(brandPrimary, 0.2)} 0%, ${alpha(brandSecondary, 0.15)} 100%)`,
-            backdropFilter: 'blur(18px)',
+          className="mb-4 overflow-hidden border"
+          style={{
+            borderColor: brandPrimary,
+            background: `linear-gradient(135deg, color-mix(in srgb, ${brandPrimary} 18%, transparent) 0%, color-mix(in srgb, ${brandSecondary} 12%, transparent) 100%)`,
           }}
         >
-          <CardContent>
-            <Stack spacing={1.5}>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <TvIcon sx={{ color: brandPrimary }} />
-                <Typography variant="subtitle1" fontWeight={700}>AI Public Shop Display</Typography>
-              </Stack>
-              <Typography variant="body2" sx={{ color: alpha(theme.palette.text.primary, 0.82) }}>
-                Launch your public queue display or open the AI-powered customer experience surface.
-              </Typography>
-              <Divider />
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<TvIcon />}
-                  onClick={() => window.open(`/display/${shop.id}`, '_blank')}
-                  sx={{
-                    color: brandPrimary,
-                    borderColor: alpha(brandPrimary, 0.5),
-                    bgcolor: alpha('#ffffff', theme.palette.mode === 'dark' ? 0.04 : 0.35),
-                  }}
-                >
-                  Standard Display
-                </Button>
-                <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={<TvIcon />}
-                  onClick={() => window.open(`/shop-ai/${shop.id}`, '_blank')}
-                  sx={{
-                    fontWeight: 700,
-                    background: `linear-gradient(135deg, ${brandPrimary}, ${brandSecondary})`,
-                    boxShadow: `0 10px 24px ${alpha(brandPrimary, 0.3)}`,
-                    '&:hover': {
-                      background: `linear-gradient(135deg, ${alpha(brandPrimary, 0.9)}, ${alpha(brandSecondary, 0.9)})`,
-                    },
-                  }}
-                >
-                  Launch AI Agent
-                </Button>
-              </Stack>
-            </Stack>
+          <CardContent className="flex flex-col gap-4 p-5">
+            <div className="flex items-center gap-2">
+              <Tv className="size-5" style={{ color: brandPrimary }} />
+              <h2 className="font-semibold">AI Public Shop Display</h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Launch your public queue display or open the AI-powered customer experience surface.
+            </p>
+            <Separator />
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button type="button" variant="outline" size="sm" onClick={() => window.open(`/display/${shop.id}`, "_blank")}>
+                <Tv data-icon="inline-start" />
+                Standard Display
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => window.open(`/shop-ai/${shop.id}`, "_blank")}
+                style={{ background: `linear-gradient(135deg, ${brandPrimary}, ${brandSecondary})` }}
+              >
+                <Tv data-icon="inline-start" />
+                Launch AI Agent
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
 
-      <Paper sx={{ width: '100%', overflow: 'hidden', borderRadius: 3 }} variant="outlined">
-        <QueueDataGrid
-          rows={queues}
-          onEdit={(queue) => {
-            console.log('Edit queue', queue);
-          }}
-          onDelete={(id) => setDeleteConfirmId(id)}
-          onReset={(id) => setResetConfirmId(id)}
-          onRowClick={(queue) => navigate(`/queues/${queue.id}`)}
-        />
-      </Paper>
+      <Card>
+        <CardContent className="p-0">
+          <QueueDataGrid
+            rows={queues}
+            onEdit={(queue) => {
+              console.log("Edit queue", queue);
+            }}
+            onDelete={(id) => setDeleteConfirmId(id)}
+            onReset={(id) => setResetConfirmId(id)}
+            onRowClick={(queue) => navigate(`/queues/${queue.id}`)}
+          />
+        </CardContent>
+      </Card>
 
-      {/* Create queue dialog */}
-      <Dialog open={open} onClose={() => setOpen(false)}>
-        <DialogTitle>Create New Queue</DialogTitle>
+      <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-          <TextField
+          <DialogHeader>
+            <DialogTitle>Create New Queue</DialogTitle>
+          </DialogHeader>
+          <Input
             autoFocus
-            margin="dense"
-            label="Queue Name"
-            fullWidth
             value={newQueueName}
-            onChange={(e) => setNewQueueName(e.target.value)}
+            onChange={(event) => setNewQueueName(event.target.value)}
             placeholder="e.g., Barber 2, Walk-ins"
           />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateQueue} disabled={!newQueueName.trim()}>
+              Create
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={handleCreateQueue} variant="contained">Create</Button>
-        </DialogActions>
       </Dialog>
 
-      {/* Delete confirmation dialog */}
-      <Dialog open={deleteConfirmId !== null} onClose={() => setDeleteConfirmId(null)}>
-        <DialogTitle>Delete Queue</DialogTitle>
+      <Dialog open={deleteConfirmId !== null} onOpenChange={(next) => !next && setDeleteConfirmId(null)}>
         <DialogContent>
-          <Typography>
-            Permanently delete <strong>{queueNameForId(deleteConfirmId)}</strong> and all its history? This cannot
-            be undone.
-          </Typography>
+          <DialogHeader>
+            <DialogTitle>Delete Queue</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Permanently delete <strong>{queueNameForId(deleteConfirmId)}</strong> and all its history? This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => deleteConfirmId !== null && handleDeleteQueue(deleteConfirmId)}>
+              Delete
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
-          <Button
-            variant="contained"
-            color="error"
-            onClick={() => deleteConfirmId !== null && handleDeleteQueue(deleteConfirmId)}
-          >
-            Delete
-          </Button>
-        </DialogActions>
       </Dialog>
 
-      {/* Reset confirmation dialog */}
-      <Dialog open={resetConfirmId !== null} onClose={() => setResetConfirmId(null)}>
-        <DialogTitle>Reset Queue Data</DialogTitle>
+      <Dialog open={resetConfirmId !== null} onOpenChange={(next) => !next && setResetConfirmId(null)}>
         <DialogContent>
-          <Typography>
-            Remove all customers from <strong>{queueNameForId(resetConfirmId)}</strong>? The queue itself will
-            remain, but all queue items (waiting, served, history) will be deleted.
-          </Typography>
+          <DialogHeader>
+            <DialogTitle>Reset Queue Data</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Remove all customers from <strong>{queueNameForId(resetConfirmId)}</strong>? The queue itself will remain, but all queue items will be deleted.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetConfirmId(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => resetConfirmId !== null && handleResetQueue(resetConfirmId)}>
+              Reset
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setResetConfirmId(null)}>Cancel</Button>
-          <Button
-            variant="contained"
-            color="warning"
-            onClick={() => resetConfirmId !== null && handleResetQueue(resetConfirmId)}
-          >
-            Reset
-          </Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+    </div>
   );
 };
 

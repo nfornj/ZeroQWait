@@ -1,274 +1,228 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
-    Box,
-    Paper,
-    Typography,
-    IconButton,
-    Chip,
-    Tooltip,
-    FormControl,
-    InputLabel,
-    Select,
-    MenuItem,
-    Card,
-    CardContent,
-} from '@mui/material';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+  addMonths,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isSameDay,
+  isToday,
+  parseISO,
+  startOfMonth,
+  startOfWeek,
+  subMonths,
+} from "date-fns";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-    startOfMonth,
-    endOfMonth,
-    eachDayOfInterval,
-    format,
-    isSameDay,
-    addMonths,
-    subMonths,
-    isToday,
-    startOfWeek,
-    endOfWeek,
-    parseISO
-} from 'date-fns';
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 interface Shift {
-    id: number;
-    user_id: number;
-    username: string;
-    email: string;
-    profile_photo_url?: string;
-    shop_id: number;
-    clock_in: string;
-    clock_out?: string;
+  id: number;
+  user_id: number;
+  username: string;
+  email: string;
+  profile_photo_url?: string;
+  shop_id: number;
+  clock_in: string;
+  clock_out?: string;
 }
 
 interface AttendanceCalendarProps {
-    shifts: Shift[];
-    employees: Array<{ id: number; username: string }>;
-    onEmployeeChange?: (employeeId: number | null) => void;
+  shifts: Shift[];
+  employees: Array<{ id: number; username: string }>;
+  onEmployeeChange?: (employeeId: number | null) => void;
 }
 
+const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
-    shifts,
-    employees,
-    onEmployeeChange
+  shifts,
+  employees,
+  onEmployeeChange,
 }) => {
-    const [currentMonth, setCurrentMonth] = useState(new Date());
-    const [selectedEmployee, setSelectedEmployee] = useState<number | null>(null);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedEmployee, setSelectedEmployee] = useState<number | null>(null);
 
-    const monthStart = startOfMonth(currentMonth);
-    const monthEnd = endOfMonth(currentMonth);
-    const calendarStart = startOfWeek(monthStart);
-    const calendarEnd = endOfWeek(monthEnd);
-    const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+  const monthStart = startOfMonth(currentMonth);
+  const monthEnd = endOfMonth(currentMonth);
+  const calendarStart = startOfWeek(monthStart);
+  const calendarEnd = endOfWeek(monthEnd);
+  const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
 
-    const handlePreviousMonth = () => {
-        const newMonth = subMonths(currentMonth, 1);
-        // Limit to 3 months back from today
-        const threeMonthsAgo = subMonths(new Date(), 3);
-        if (newMonth >= threeMonthsAgo) {
-            setCurrentMonth(newMonth);
-        }
-    };
+  const handlePreviousMonth = () => {
+    const newMonth = subMonths(currentMonth, 1);
+    const threeMonthsAgo = subMonths(new Date(), 3);
+    if (newMonth >= threeMonthsAgo) setCurrentMonth(newMonth);
+  };
 
-    const handleNextMonth = () => {
-        const newMonth = addMonths(currentMonth, 1);
-        // Can't go beyond current month
-        if (newMonth <= new Date()) {
-            setCurrentMonth(newMonth);
-        }
-    };
+  const handleNextMonth = () => {
+    const newMonth = addMonths(currentMonth, 1);
+    if (newMonth <= new Date()) setCurrentMonth(newMonth);
+  };
 
-    const handleEmployeeChange = (event: any) => {
-        const value = event.target.value;
-        const employeeId = value === 'all' ? null : parseInt(value);
-        setSelectedEmployee(employeeId);
-        if (onEmployeeChange) {
-            onEmployeeChange(employeeId);
-        }
-    };
+  const handleEmployeeChange = (value: string) => {
+    const employeeId = value === "all" ? null : Number(value);
+    setSelectedEmployee(employeeId);
+    onEmployeeChange?.(employeeId);
+  };
 
-    const getShiftsForDay = (date: Date): Shift[] => {
-        return shifts.filter(shift => {
-            const shiftDate = parseISO(shift.clock_in);
-            return isSameDay(shiftDate, date);
-        });
-    };
+  const getShiftsForDay = (date: Date): Shift[] => {
+    return shifts.filter((shift) => {
+      if (selectedEmployee !== null && shift.user_id !== selectedEmployee) return false;
+      const shiftDate = parseISO(shift.clock_in);
+      return isSameDay(shiftDate, date);
+    });
+  };
 
-    const calculateDuration = (clockIn: string, clockOut?: string): string => {
-        const start = parseISO(clockIn);
-        const end = clockOut ? parseISO(clockOut) : new Date();
-        const diffMs = end.getTime() - start.getTime();
-        const hours = Math.floor(diffMs / (1000 * 60 * 60));
-        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-        return `${hours}h ${minutes}m`;
-    };
+  const calculateDuration = (clockIn: string, clockOut?: string): string => {
+    const start = parseISO(clockIn);
+    const end = clockOut ? parseISO(clockOut) : new Date();
+    const diffMs = end.getTime() - start.getTime();
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+  };
 
-    const formatTime = (dateString: string): string => {
-        return format(parseISO(dateString), 'h:mm a');
-    };
+  const formatTime = (dateString: string): string => format(parseISO(dateString), "h:mm a");
 
-    const canGoBack = subMonths(currentMonth, 1) >= subMonths(new Date(), 3);
-    const canGoForward = addMonths(currentMonth, 1) <= new Date();
+  const canGoBack = subMonths(currentMonth, 1) >= subMonths(new Date(), 3);
+  const canGoForward = addMonths(currentMonth, 1) <= new Date();
 
-    return (
-        <Box>
-            {/* Header with month navigation and employee filter */}
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                <Box display="flex" alignItems="center" gap={1}>
-                    <IconButton
-                        onClick={handlePreviousMonth}
-                        disabled={!canGoBack}
-                        size="small"
-                    >
-                        <ChevronLeftIcon />
-                    </IconButton>
-                    <Typography variant="h6" sx={{ minWidth: '150px', textAlign: 'center' }}>
-                        {format(currentMonth, 'MMMM yyyy')}
-                    </Typography>
-                    <IconButton
-                        onClick={handleNextMonth}
-                        disabled={!canGoForward}
-                        size="small"
-                    >
-                        <ChevronRightIcon />
-                    </IconButton>
-                </Box>
+  return (
+    <TooltipProvider>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="icon" onClick={handlePreviousMonth} disabled={!canGoBack}>
+              <ChevronLeft />
+            </Button>
+            <p className="min-w-[150px] text-center text-lg font-semibold">
+              {format(currentMonth, "MMMM yyyy")}
+            </p>
+            <Button type="button" variant="outline" size="icon" onClick={handleNextMonth} disabled={!canGoForward}>
+              <ChevronRight />
+            </Button>
+          </div>
 
-                <FormControl size="small" sx={{ minWidth: 200 }}>
-                    <InputLabel>Filter by Employee</InputLabel>
-                    <Select
-                        value={selectedEmployee === null ? 'all' : selectedEmployee.toString()}
-                        onChange={handleEmployeeChange}
-                        label="Filter by Employee"
-                    >
-                        <MenuItem value="all">All Employees</MenuItem>
-                        {employees.map(emp => (
-                            <MenuItem key={emp.id} value={emp.id.toString()}>
-                                {emp.username}
-                            </MenuItem>
+          <Select value={selectedEmployee === null ? "all" : String(selectedEmployee)} onValueChange={handleEmployeeChange}>
+            <SelectTrigger className="w-full sm:w-[220px]">
+              <SelectValue placeholder="Filter by employee" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="all">All Employees</SelectItem>
+                {employees.map((employee) => (
+                  <SelectItem key={employee.id} value={String(employee.id)}>
+                    {employee.username}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="grid grid-cols-7 gap-2">
+              {weekDays.map((day) => (
+                <div key={day} className="text-center text-xs font-semibold text-muted-foreground">
+                  {day}
+                </div>
+              ))}
+
+              {calendarDays.map((day) => {
+                const dayShifts = getShiftsForDay(day);
+                const isCurrentMonth = day.getMonth() === currentMonth.getMonth();
+                const today = isToday(day);
+
+                return (
+                  <div
+                    key={day.toISOString()}
+                    className={cn(
+                      "min-h-[104px] rounded-lg border bg-card p-2",
+                      !isCurrentMonth && "bg-muted/40 text-muted-foreground",
+                      today && "border-primary ring-1 ring-primary",
+                    )}
+                  >
+                    <p className={cn("text-xs", today && "font-semibold text-primary")}>
+                      {format(day, "d")}
+                    </p>
+                    {dayShifts.length > 0 && (
+                      <div className="mt-2 flex flex-col gap-1">
+                        {dayShifts.slice(0, 3).map((shift) => (
+                          <Tooltip key={shift.id}>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant={shift.clock_out ? "default" : "secondary"}
+                                className="block w-full truncate text-center text-[0.65rem]"
+                              >
+                                {shift.username}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="flex flex-col gap-1 text-xs">
+                                <span className="font-semibold">{shift.username}</span>
+                                <span>In: {formatTime(shift.clock_in)}</span>
+                                <span>Out: {shift.clock_out ? formatTime(shift.clock_out) : "Still active"}</span>
+                                <span className="font-semibold">Duration: {calculateDuration(shift.clock_in, shift.clock_out)}</span>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
                         ))}
-                    </Select>
-                </FormControl>
-            </Box>
+                        {dayShifts.length > 3 && (
+                          <p className="text-center text-xs text-muted-foreground">
+                            +{dayShifts.length - 3} more
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
 
-            {/* Calendar Grid */}
-            <Paper sx={{ p: 2 }}>
-                {/* Day headers */}
-                <Box display="flex" gap={1} sx={{ mb: 1 }}>
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                        <Box key={day} flex="1">
-                            <Typography
-                                variant="caption"
-                                fontWeight="bold"
-                                display="block"
-                                textAlign="center"
-                                color="text.secondary"
-                            >
-                                {day}
-                            </Typography>
-                        </Box>
-                    ))}
-                </Box>
-
-                {/* Calendar days */}
-                <Box display="flex" flexWrap="wrap" gap={1}>
-                    {calendarDays.map((day, index) => {
-                        const dayShifts = getShiftsForDay(day);
-                        const isCurrentMonth = day.getMonth() === currentMonth.getMonth();
-                        const isTodayDate = isToday(day);
-
-                        return (
-                            <Box key={index} sx={{ width: 'calc((100% - 6 * 8px) / 7)' }}>
-                                <Paper
-                                    variant="outlined"
-                                    sx={{
-                                        minHeight: '100px',
-                                        p: 1,
-                                        backgroundColor: isTodayDate
-                                            ? 'action.selected'
-                                            : isCurrentMonth
-                                                ? 'background.paper'
-                                                : 'action.hover',
-                                        border: isTodayDate ? '2px solid' : '1px solid',
-                                        borderColor: isTodayDate ? 'primary.main' : 'divider',
-                                    }}
-                                >
-                                    <Typography
-                                        variant="caption"
-                                        fontWeight={isTodayDate ? 'bold' : 'normal'}
-                                        color={isCurrentMonth ? 'text.primary' : 'text.disabled'}
-                                    >
-                                        {format(day, 'd')}
-                                    </Typography>
-
-                                    {dayShifts.length > 0 && (
-                                        <Box mt={0.5} display="flex" flexDirection="column" gap={0.5}>
-                                            {dayShifts.slice(0, 3).map(shift => (
-                                                <Tooltip
-                                                    key={shift.id}
-                                                    title={
-                                                        <Box>
-                                                            <Typography variant="body2" fontWeight="bold">
-                                                                {shift.username}
-                                                            </Typography>
-                                                            <Typography variant="caption">
-                                                                In: {formatTime(shift.clock_in)}
-                                                            </Typography>
-                                                            <br />
-                                                            <Typography variant="caption">
-                                                                Out: {shift.clock_out ? formatTime(shift.clock_out) : 'Still active'}
-                                                            </Typography>
-                                                            <br />
-                                                            <Typography variant="caption" fontWeight="bold">
-                                                                Duration: {calculateDuration(shift.clock_in, shift.clock_out)}
-                                                            </Typography>
-                                                        </Box>
-                                                    }
-                                                    arrow
-                                                >
-                                                    <Chip
-                                                        label={shift.username}
-                                                        size="small"
-                                                        color={shift.clock_out ? 'success' : 'warning'}
-                                                        sx={{
-                                                            fontSize: '0.65rem',
-                                                            height: '20px',
-                                                            width: '100%',
-                                                            '& .MuiChip-label': {
-                                                                overflow: 'hidden',
-                                                                textOverflow: 'ellipsis',
-                                                                whiteSpace: 'nowrap',
-                                                            }
-                                                        }}
-                                                    />
-                                                </Tooltip>
-                                            ))}
-                                            {dayShifts.length > 3 && (
-                                                <Typography variant="caption" color="text.secondary" textAlign="center">
-                                                    +{dayShifts.length - 3} more
-                                                </Typography>
-                                            )}
-                                        </Box>
-                                    )}
-                                </Paper>
-                            </Box>
-                        );
-                    })}
-                </Box>
-            </Paper>
-
-            {/* Legend */}
-            <Box mt={2} display="flex" gap={2} justifyContent="center">
-                <Box display="flex" alignItems="center" gap={1}>
-                    <Chip label="Complete" size="small" color="success" />
-                    <Typography variant="caption">Shift completed</Typography>
-                </Box>
-                <Box display="flex" alignItems="center" gap={1}>
-                    <Chip label="Active" size="small" color="warning" />
-                    <Typography variant="caption">Still clocked in</Typography>
-                </Box>
-            </Box>
-        </Box>
-    );
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm font-medium">Legend</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap justify-center gap-4 pb-4 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <Badge>Complete</Badge>
+              <span>Shift completed</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">Active</Badge>
+              <span>Still clocked in</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </TooltipProvider>
+  );
 };
 
 export default AttendanceCalendar;

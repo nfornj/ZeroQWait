@@ -1,20 +1,14 @@
 import React, { useState } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
-import {
-  Container,
-  Typography,
-  Box,
-  TextField,
-  Button,
-  Link,
-  Paper,
-  Avatar,
-  Alert,
-  CircularProgress,
-  MenuItem,
-} from "@mui/material";
-import PersonAddIcon from "@mui/icons-material/PersonAdd";
+import { Loader2, UserPlus } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const RegisterPage: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -69,149 +63,125 @@ const RegisterPage: React.FC = () => {
       try {
         await register(formData.username, formData.email, formData.password, formData.role);
         navigate("/");
-      } catch (err) {
-        // Error is handled in the AuthContext
+      } catch {
+        // Error is handled in AuthContext.
       }
     }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   return (
-    <Container component="main" maxWidth="xs">
-      <Paper
-        elevation={3}
-        sx={{
-          mt: 8,
-          p: 4,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-        }}
-      >
-        <Avatar sx={{ m: 1, bgcolor: "secondary.main" }}>
-          <PersonAddIcon />
-        </Avatar>
-        <Typography component="h1" variant="h5">
-          Sign up
-        </Typography>
+    <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center px-4 py-12">
+      <Card>
+        <CardHeader className="items-center text-center">
+          <Avatar className="mb-2 bg-primary text-primary-foreground">
+            <AvatarFallback>
+              <UserPlus className="size-5" />
+            </AvatarFallback>
+          </Avatar>
+          <CardTitle>Sign up</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-        {error && (
-          <Alert severity="error" sx={{ width: "100%", mt: 2 }}>
-            {error}
-          </Alert>
-        )}
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  id="username"
+                  name="username"
+                  autoComplete="username"
+                  value={formData.username}
+                  onChange={handleChange}
+                  aria-invalid={!!formErrors.username}
+                  disabled={loading}
+                />
+                {formErrors.username && <p className="text-sm text-destructive">{formErrors.username}</p>}
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="email">Email Address</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  autoComplete="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  aria-invalid={!!formErrors.email}
+                  disabled={loading}
+                />
+                {formErrors.email && <p className="text-sm text-destructive">{formErrors.email}</p>}
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Account Type</Label>
+                <Select
+                  value={formData.role}
+                  onValueChange={(value: "customer" | "shop_owner") => setFormData((prev) => ({ ...prev, role: value }))}
+                  disabled={loading}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="customer">Customer</SelectItem>
+                      <SelectItem value="shop_owner">Shop Owner</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Choose customer for joining queues, or shop owner for creating and managing shops.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  aria-invalid={!!formErrors.password}
+                  disabled={loading}
+                />
+                {formErrors.password && <p className="text-sm text-destructive">{formErrors.password}</p>}
+              </div>
+              <div className="flex flex-col gap-2 sm:col-span-2">
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type="password"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  aria-invalid={!!formErrors.confirmPassword}
+                  disabled={loading}
+                />
+                {formErrors.confirmPassword && <p className="text-sm text-destructive">{formErrors.confirmPassword}</p>}
+              </div>
+            </div>
 
-        <Box
-          component="form"
-          onSubmit={handleSubmit}
-          sx={{ mt: 3, width: "100%" }}
-        >
-          <Box display="flex" flexWrap="wrap" gap={2}>
-            <Box sx={{ flex: 1, minWidth: '250px' }}>
-              <TextField
-                required
-                fullWidth
-                id="username"
-                label="Username"
-                name="username"
-                autoComplete="username"
-                value={formData.username}
-                onChange={handleChange}
-                error={!!formErrors.username}
-                helperText={formErrors.username}
-                disabled={loading}
-              />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: '250px' }}>
-              <TextField
-                required
-                fullWidth
-                id="email"
-                label="Email Address"
-                name="email"
-                autoComplete="email"
-                value={formData.email}
-                onChange={handleChange}
-                error={!!formErrors.email}
-                helperText={formErrors.email}
-                disabled={loading}
-              />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: '250px' }}>
-              <TextField
-                select
-                required
-                fullWidth
-                id="role"
-                label="Account Type"
-                name="role"
-                value={formData.role}
-                onChange={handleChange}
-                disabled={loading}
-                helperText="Choose customer for joining queues, or shop owner for creating and managing shops"
-              >
-                <MenuItem value="customer">Customer</MenuItem>
-                <MenuItem value="shop_owner">Shop Owner</MenuItem>
-              </TextField>
-            </Box>
-            <Box sx={{ flex: 1, minWidth: '250px' }}>
-              <TextField
-                required
-                fullWidth
-                name="password"
-                label="Password"
-                type="password"
-                id="password"
-                autoComplete="new-password"
-                value={formData.password}
-                onChange={handleChange}
-                error={!!formErrors.password}
-                helperText={formErrors.password}
-                disabled={loading}
-              />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: '250px' }}>
-              <TextField
-                required
-                fullWidth
-                name="confirmPassword"
-                label="Confirm Password"
-                type="password"
-                id="confirmPassword"
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                error={!!formErrors.confirmPassword}
-                helperText={formErrors.confirmPassword}
-                disabled={loading}
-              />
-            </Box>
-          </Box>
-          <Button
-            type="submit"
-            fullWidth
-            variant="contained"
-            sx={{ mt: 3, mb: 2 }}
-            disabled={loading}
-          >
-            {loading ? <CircularProgress size={24} /> : "Sign Up"}
-          </Button>
-          <Box justifyContent="flex-end">
-            <Box>
-              <Link component={RouterLink} to="/login" variant="body2">
-                Already have an account? Sign in
-              </Link>
-            </Box>
-          </Box>
-        </Box>
-      </Paper>
-    </Container>
+            <Button type="submit" disabled={loading}>
+              {loading && <Loader2 data-icon="inline-start" className="animate-spin" />}
+              Sign Up
+            </Button>
+
+            <RouterLink className="self-end text-sm text-primary hover:underline" to="/login">
+              Already have an account? Sign in
+            </RouterLink>
+          </form>
+        </CardContent>
+      </Card>
+    </main>
   );
 };
 

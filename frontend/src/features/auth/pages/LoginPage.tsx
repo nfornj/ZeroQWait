@@ -1,52 +1,35 @@
 import React, { useState } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import axios from "axios";
-import {
-  Container,
-  Typography,
-  Box,
-  TextField,
-  Button,
-  Link,
-  Paper,
-  Avatar,
-  Alert,
-  CircularProgress,
-} from "@mui/material";
-import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import { Loader2, LockKeyhole } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 const LoginPage: React.FC = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [formErrors, setFormErrors] = useState<{
-    username?: string;
-    password?: string;
-  }>({});
+  const [formErrors, setFormErrors] = useState<{ username?: string; password?: string }>({});
   const { login, loading, error, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
 
-  // Navigate based on user role after successful login
   React.useEffect(() => {
-    console.log("[LoginPage] useEffect triggered", {
-      isAuthenticated,
-      loading,
-      error,
-      user,
-    });
+    console.log("[LoginPage] useEffect triggered", { isAuthenticated, loading, error, user });
     if (isAuthenticated && !loading && !error && user) {
       const role = user.role?.toString().toUpperCase().trim() || "";
       console.log("[LoginPage] Normalized role check:", `"${role}"`);
 
       if (role === "SHOP_OWNER") {
-        // Try to redirect to shop subdomain, but fallback to regular dashboard
-        redirectToShopDashboard();
+        void redirectToShopDashboard();
       } else if (role === "EMPLOYEE") {
         console.log("[LoginPage] Redirecting to /employee-dashboard");
         navigate("/employee-dashboard");
       } else if (role === "SUPER_ADMIN") {
         console.log("[LoginPage] Redirecting to /admin (HARD NAV)");
-        // Force hard navigation to ensure fresh state and bypass router issues
         window.location.href = "/admin";
       } else {
         console.log("[LoginPage] Redirecting to home (Role mismatch)");
@@ -55,7 +38,6 @@ const LoginPage: React.FC = () => {
     }
   }, [isAuthenticated, loading, error, user, navigate]);
 
-  // Function to redirect to shop-specific subdomain
   const redirectToShopDashboard = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -64,11 +46,8 @@ const LoginPage: React.FC = () => {
         return;
       }
 
-      // Fetch user's shops using axios (uses configured baseURL)
       const response = await axios.get("/shops/my-shops", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       const shops = response.data;
@@ -76,38 +55,27 @@ const LoginPage: React.FC = () => {
 
       if (shops && shops.length > 0) {
         const shop = shops[0];
-        // The shop should have a slug - use it or generate from name
         const shopSlug = shop.slug || shop.name.toLowerCase().replace(/\s+/g, "-");
-
         console.log("[LoginPage] Shop slug:", shopSlug);
 
-        // Build the subdomain URL
         const currentHost = window.location.hostname;
         const protocol = window.location.protocol;
         let newUrl = "";
 
         if (currentHost.includes("nip.io") || currentHost.includes("np.io")) {
-          // nip.io / np.io URLs logic
-          // Check if we are already on a subdomain or the base IP
-          // Base IP format: 192.168.2.88.nip.io or 192.168.2.88.np.io
           const isBaseDomain = currentHost.match(/^\d+\.\d+\.\d+\.\d+\.(nip|np)\.io$/);
 
           if (isBaseDomain) {
-            // We are on the base, prepend slug
             newUrl = `${protocol}//${shopSlug}.${currentHost}`;
           } else {
-            // We might be on www.192... or another subdomain.
-            // We want to REPLACE the subdomain with the shop slug.
-            // Strategy: Find the part that looks like an IP + suffix
             const ipSuffixMatch = currentHost.match(/(\d+\.\d+\.\d+\.\d+\.(nip|np)\.io)$/);
             if (ipSuffixMatch) {
               const baseHost = ipSuffixMatch[1];
               newUrl = `${protocol}//${shopSlug}.${baseHost}`;
             } else {
-              // Fallback: just append if we can't parse it well, or replace first part
               const parts = currentHost.split(".");
               if (parts.length >= 6) {
-                const baseParts = parts.slice(-6); // loose heuristic
+                const baseParts = parts.slice(-6);
                 const baseHost = baseParts.join(".");
                 newUrl = `${protocol}//${shopSlug}.${baseHost}`;
               } else {
@@ -120,23 +88,12 @@ const LoginPage: React.FC = () => {
           navigate("/dashboard");
           return;
         } else {
-          // Regular domain logic
           const parts = currentHost.split(".");
-          // If 2 parts (example.com), prepend.
-          // If > 2 parts (www.example.com), replace first part? 
-          // Let's assume we always prepend to the "root" domain.
-          // Ideally we should know the root domain.
-          // For now, if it starts with www, replace it.
           if (parts[0] === "www") {
             newUrl = `${protocol}//${shopSlug}.${parts.slice(1).join(".")}`;
           } else if (parts.length === 2) {
             newUrl = `${protocol}//${shopSlug}.${currentHost}`;
           } else {
-            // Assume we are on a subdomain, replace it? Or prepend?
-            // Safest to assume we are replacing the current subdomain if it exists
-            // or prepending if we are at root.
-            // Let's just prepend to the *registrable* domain if possible.
-            // Simple heuristic: keep last 2 parts.
             const baseDomain = parts.slice(-2).join(".");
             newUrl = `${protocol}//${shopSlug}.${baseDomain}`;
           }
@@ -147,11 +104,10 @@ const LoginPage: React.FC = () => {
         window.location.href = newUrl;
         return;
       }
-    } catch (error) {
-      console.error("[LoginPage] Error redirecting:", error);
+    } catch (redirectError) {
+      console.error("[LoginPage] Error redirecting:", redirectError);
     }
 
-    // Fallback
     console.log("[LoginPage] Fallback: navigating to /dashboard");
     navigate("/dashboard");
   };
@@ -179,124 +135,74 @@ const LoginPage: React.FC = () => {
 
     if (validateForm()) {
       await login(username, password);
-      // Navigation will happen automatically via useEffect if login succeeds
     }
   };
 
   return (
-    <Container component="main" maxWidth="xs">
-      <Paper
-        elevation={3}
-        sx={{
-          mt: 8,
-          p: 4,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          position: "relative",
-        }}
-      >
-        {/* DEBUG OVERLAY */}
-        <Box
-          sx={{
-            position: "fixed",
-            top: 10,
-            left: 10,
-            bgcolor: "error.main",
-            color: "white",
-            p: 2,
-            borderRadius: 1,
-            zIndex: 9999,
-            fontSize: "14px",
-            fontFamily: "monospace",
-          }}
-        >
-          <Typography variant="subtitle2" sx={{ fontWeight: "bold" }}>
-            DEBUG INFO (Take Screenshot)
-          </Typography>
-          <div>User: {user?.username || "null"}</div>
-          <div>Role: '{user?.role}' (len: {user?.role?.length || 0})</div>
-          <div>Auth: {isAuthenticated ? "YES" : "NO"}</div>
-          <div>Loading: {loading ? "YES" : "NO"}</div>
-          <div>Error: {error || "none"}</div>
-        </Box>
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-12">
+      <Card>
+        <CardHeader className="items-center text-center">
+          <Avatar className="mb-2 bg-primary text-primary-foreground">
+            <AvatarFallback>
+              <LockKeyhole className="size-5" />
+            </AvatarFallback>
+          </Avatar>
+          <CardTitle>Sign in</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-        <Avatar sx={{ m: 1, bgcolor: "primary.main" }}>
-          <LockOutlinedIcon />
-        </Avatar>
-        <Typography component="h1" variant="h5">
-          Sign in
-        </Typography>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                name="username"
+                autoComplete="username"
+                autoFocus
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                aria-invalid={!!formErrors.username}
+                disabled={loading}
+              />
+              {formErrors.username && <p className="text-sm text-destructive">{formErrors.username}</p>}
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                aria-invalid={!!formErrors.password}
+                disabled={loading}
+              />
+              {formErrors.password && <p className="text-sm text-destructive">{formErrors.password}</p>}
+            </div>
 
-        {error && (
-          <Alert severity="error" sx={{ width: "100%", mt: 2 }}>
-            {error}
-          </Alert>
-        )}
+            <Button type="submit" disabled={loading}>
+              {loading && <Loader2 data-icon="inline-start" className="animate-spin" />}
+              Sign In
+            </Button>
 
-        <Box
-          component="form"
-          onSubmit={handleSubmit}
-          sx={{ mt: 1, width: "100%" }}
-        >
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            id="username"
-            label="Username"
-            name="username"
-            autoComplete="username"
-            autoFocus
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            error={!!formErrors.username}
-            helperText={formErrors.username}
-            disabled={loading}
-          />
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            name="password"
-            label="Password"
-            type="password"
-            id="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            error={!!formErrors.password}
-            helperText={formErrors.password}
-            disabled={loading}
-          />
-          <Button
-            type="submit"
-            fullWidth
-            variant="contained"
-            sx={{ mt: 3, mb: 2 }}
-            disabled={loading}
-          >
-            {loading ? <CircularProgress size={24} /> : "Sign In"}
-          </Button>
-          <Box justifyContent="space-between">
-            <Box>
-              <Link
-                component={RouterLink}
-                to="/forgot-password"
-                variant="body2"
-              >
+            <div className="flex flex-col gap-2 text-sm sm:flex-row sm:justify-between">
+              <RouterLink className="text-primary hover:underline" to="/forgot-password">
                 Forgot password?
-              </Link>
-            </Box>
-            <Box>
-              <Link component={RouterLink} to="/pricing" variant="body2">
-                {"Don't have an account? Sign Up"}
-              </Link>
-            </Box>
-          </Box>
-        </Box>
-      </Paper>
-    </Container>
+              </RouterLink>
+              <RouterLink className="text-primary hover:underline" to="/pricing">
+                Don't have an account? Sign Up
+              </RouterLink>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </main>
   );
 };
 

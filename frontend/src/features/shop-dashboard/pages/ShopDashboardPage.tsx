@@ -1,62 +1,56 @@
-import React from 'react';
-import Stack from '@mui/material/Stack';
-import Alert from '@mui/material/Alert';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Button from '@mui/material/Button';
-import Typography from '@mui/material/Typography';
-import Grid from '@mui/material/Grid';
-import Chip from '@mui/material/Chip';
-import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
-import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
-import { Link as RouterLink } from 'react-router-dom';
-import Header from '../components/Header';
-import MainGrid from '../components/MainGrid';
+import React from "react";
+import { Link as RouterLink } from "react-router-dom";
+import { ExternalLink, Sparkles } from "lucide-react";
+
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import Header from "../components/Header";
+import MainGrid from "../components/MainGrid";
 
 const ShopDashboardPage: React.FC = () => {
-    return (
-        <Stack spacing={2} sx={{ width: '100%', pb: 4, px: 3 }}>
-            <Header />
+  return (
+    <div className="flex w-full flex-col gap-4 px-3 pb-4">
+      <Header />
 
-            <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 8 }}>
-                    <Card variant="outlined" sx={{ borderRadius: 3 }}>
-                        <CardContent>
-                            <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1.5}>
-                                <Stack>
-                                    <Typography variant="h5" sx={{ mb: 0.5 }}>
-                                        Operations Dashboard
-                                    </Typography>
-                                    <Typography color="text.secondary">
-                                        Live business metrics, queue trends, and performance widgets are active.
-                                    </Typography>
-                                </Stack>
-                                <Stack direction="row" spacing={1} alignItems="center">
-                                    <Chip icon={<AutoAwesomeRoundedIcon />} label="MUI Widgets" color="primary" variant="outlined" />
-                                    <Button
-                                        component={RouterLink}
-                                        to="/dashboard"
-                                        variant="contained"
-                                        endIcon={<OpenInNewRoundedIcon />}
-                                    >
-                                        Open Live Dashboard
-                                    </Button>
-                                </Stack>
-                            </Stack>
-                        </CardContent>
-                    </Card>
-                </Grid>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <Card className="lg:col-span-8">
+          <CardContent className="p-6">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight">Operations Dashboard</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Live business metrics, queue trends, and performance widgets are active.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="gap-1.5">
+                  <Sparkles className="size-3.5" />
+                  Analytics workspace
+                </Badge>
+                <Button asChild>
+                  <RouterLink to="/dashboard">
+                    Open Live Dashboard
+                    <ExternalLink data-icon="inline-end" />
+                  </RouterLink>
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-                <Grid size={{ xs: 12, md: 4 }}>
-                    <Alert severity="info" sx={{ borderRadius: 3, height: '100%' }}>
-                        Tip: Use the live dashboard for today view, operations summaries, and agent orchestration. This page remains the historical analytics workspace.
-                    </Alert>
-                </Grid>
-            </Grid>
+        <Alert className="flex h-full items-center lg:col-span-4">
+          <AlertDescription>
+            Use the live dashboard for today view, operations summaries, and agent orchestration. This page remains
+            the historical analytics workspace.
+          </AlertDescription>
+        </Alert>
+      </div>
 
-            <MainGrid />
-        </Stack>
-    );
+      <MainGrid />
+    </div>
+  );
 };
 
 export default ShopDashboardPage;

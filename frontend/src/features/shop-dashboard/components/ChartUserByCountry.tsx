@@ -1,197 +1,115 @@
-import * as React from 'react';
-import { PieChart } from '@mui/x-charts/PieChart';
-import { useDrawingArea } from '@mui/x-charts/hooks';
-import { styled } from '@mui/material/styles';
-import Typography from '@mui/material/Typography';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Box from '@mui/material/Box';
-import Stack from '@mui/material/Stack';
-import LinearProgress, { linearProgressClasses } from '@mui/material/LinearProgress';
+import { Cell, Label, Pie, PieChart } from "recharts";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+import { Progress } from "@/components/ui/progress";
 
 import {
-  IndiaFlag,
-  UsaFlag,
   BrazilFlag,
   GlobeFlag,
-} from './CustomIcons';
-
-const data = [
-  { label: 'India', value: 50000 },
-  { label: 'USA', value: 35000 },
-  { label: 'Brazil', value: 10000 },
-  { label: 'Other', value: 5000 },
-];
+  IndiaFlag,
+  UsaFlag,
+} from "./CustomIcons";
 
 const countries = [
   {
-    name: 'India',
+    name: "India",
     value: 50,
+    metric: 50000,
     flag: <IndiaFlag />,
-    color: 'hsl(220, 25%, 65%)',
+    color: "var(--chart-1)",
   },
   {
-    name: 'USA',
+    name: "USA",
     value: 35,
+    metric: 35000,
     flag: <UsaFlag />,
-    color: 'hsl(220, 25%, 45%)',
+    color: "var(--chart-2)",
   },
   {
-    name: 'Brazil',
+    name: "Brazil",
     value: 10,
+    metric: 10000,
     flag: <BrazilFlag />,
-    color: 'hsl(220, 25%, 30%)',
+    color: "var(--chart-3)",
   },
   {
-    name: 'Other',
+    name: "Other",
     value: 5,
+    metric: 5000,
     flag: <GlobeFlag />,
-    color: 'hsl(220, 25%, 20%)',
+    color: "var(--chart-4)",
   },
 ];
 
-interface StyledTextProps {
-  variant: 'primary' | 'secondary';
-}
-
-const StyledText = styled('text', {
-  shouldForwardProp: (prop) => prop !== 'variant',
-})<StyledTextProps>(({ theme }) => ({
-  textAnchor: 'middle',
-  dominantBaseline: 'central',
-  fill: (theme.vars || theme).palette.text.secondary,
-  variants: [
-    {
-      props: {
-        variant: 'primary',
-      },
-      style: {
-        fontSize: theme.typography.h5.fontSize,
-      },
-    },
-    {
-      props: ({ variant }) => variant !== 'primary',
-      style: {
-        fontSize: theme.typography.body2.fontSize,
-      },
-    },
-    {
-      props: {
-        variant: 'primary',
-      },
-      style: {
-        fontWeight: theme.typography.h5.fontWeight,
-      },
-    },
-    {
-      props: ({ variant }) => variant !== 'primary',
-      style: {
-        fontWeight: theme.typography.body2.fontWeight,
-      },
-    },
-  ],
-}));
-
-interface PieCenterLabelProps {
-  primaryText: string;
-  secondaryText: string;
-}
-
-function PieCenterLabel({ primaryText, secondaryText }: PieCenterLabelProps) {
-  const { width, height, left, top } = useDrawingArea();
-  const primaryY = top + height / 2 - 10;
-  const secondaryY = primaryY + 24;
-
-  return (
-    <React.Fragment>
-      <StyledText variant="primary" x={left + width / 2} y={primaryY}>
-        {primaryText}
-      </StyledText>
-      <StyledText variant="secondary" x={left + width / 2} y={secondaryY}>
-        {secondaryText}
-      </StyledText>
-    </React.Fragment>
-  );
-}
-
-const colors = [
-  'hsl(220, 20%, 65%)',
-  'hsl(220, 20%, 42%)',
-  'hsl(220, 20%, 35%)',
-  'hsl(220, 20%, 25%)',
-];
+const chartConfig = countries.reduce<ChartConfig>((config, country) => {
+  config[country.name] = {
+    label: country.name,
+    color: country.color,
+  };
+  return config;
+}, {});
 
 export default function ChartUserByCountry() {
   return (
-    <Card
-      variant="outlined"
-      sx={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1, bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}
-    >
-      <CardContent>
-        <Typography component="h2" variant="subtitle2">
-          Users by country
-        </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <PieChart
-            colors={colors}
-            margin={{
-              left: 80,
-              right: 80,
-              top: 80,
-              bottom: 80,
-            }}
-            series={[
-              {
-                data,
-                innerRadius: 75,
-                outerRadius: 100,
-                paddingAngle: 0,
-                highlightScope: { fade: 'global', highlight: 'item' },
-              },
-            ]}
-            height={260}
-            width={260}
-            hideLegend
-          >
-            <PieCenterLabel primaryText="98.5K" secondaryText="Total" />
-          </PieChart>
-        </Box>
-        {countries.map((country, index) => (
-          <Stack
-            key={index}
-            direction="row"
-            sx={{ alignItems: 'center', gap: 2, pb: 2 }}
-          >
-            {country.flag}
-            <Stack sx={{ gap: 1, flexGrow: 1 }}>
-              <Stack
-                direction="row"
-                sx={{
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: 2,
-                }}
-              >
-                <Typography variant="body2" sx={{ fontWeight: '500' }}>
-                  {country.name}
-                </Typography>
-                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                  {country.value}%
-                </Typography>
-              </Stack>
-              <LinearProgress
-                variant="determinate"
-                aria-label="Number of users by country"
-                value={country.value}
-                sx={{
-                  [`& .${linearProgressClasses.bar}`]: {
-                    backgroundColor: country.color,
-                  },
+    <Card className="flex h-full flex-col gap-2 glass">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">Users by country</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <ChartContainer config={chartConfig} className="mx-auto aspect-square h-[260px]">
+          <PieChart accessibilityLayer>
+            <ChartTooltip content={<ChartTooltipContent nameKey="name" hideLabel />} />
+            <Pie
+              data={countries}
+              dataKey="metric"
+              nameKey="name"
+              innerRadius={72}
+              outerRadius={100}
+              paddingAngle={1}
+            >
+              {countries.map((country) => (
+                <Cell key={country.name} fill={country.color} />
+              ))}
+              <Label
+                content={({ viewBox }) => {
+                  if (!viewBox || !("cx" in viewBox) || !("cy" in viewBox)) return null;
+
+                  return (
+                    <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
+                      <tspan x={viewBox.cx} y={(viewBox.cy || 0) - 8} className="fill-foreground text-xl font-semibold">
+                        98.5K
+                      </tspan>
+                      <tspan x={viewBox.cx} y={(viewBox.cy || 0) + 16} className="fill-muted-foreground text-xs">
+                        Total
+                      </tspan>
+                    </text>
+                  );
                 }}
               />
-            </Stack>
-          </Stack>
-        ))}
+            </Pie>
+          </PieChart>
+        </ChartContainer>
+
+        <div className="flex flex-col gap-4">
+          {countries.map((country) => (
+            <div key={country.name} className="flex items-center gap-3">
+              {country.flag}
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <span className="font-medium">{country.name}</span>
+                  <span className="text-muted-foreground">{country.value}%</span>
+                </div>
+                <Progress value={country.value} className="h-2" />
+              </div>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );

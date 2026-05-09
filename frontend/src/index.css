@@ -30,6 +30,11 @@
     --success: 142 71% 45%;
     --warning: 38 92% 50%;
     --danger: 0 84% 60%;
+    --chart-1: hsl(262 83% 58%);
+    --chart-2: hsl(198 93% 60%);
+    --chart-3: hsl(142 71% 45%);
+    --chart-4: hsl(38 92% 50%);
+    --chart-5: hsl(0 84% 60%);
 
     /* Glass morphism */
     --glass-bg: rgba(255, 255, 255, 0.06);
@@ -63,6 +68,11 @@
     --success: 142 71% 45%;
     --warning: 38 92% 50%;
     --danger: 0 75% 55%;
+    --chart-1: hsl(262 83% 68%);
+    --chart-2: hsl(198 93% 64%);
+    --chart-3: hsl(142 71% 52%);
+    --chart-4: hsl(38 92% 56%);
+    --chart-5: hsl(0 75% 62%);
 
     /* Glass morphism */
     --glass-bg: rgba(255, 255, 255, 0.04);
@@ -97,5 +107,21 @@
     border: 1px solid var(--glass-border);
     backdrop-filter: blur(var(--glass-blur));
     -webkit-backdrop-filter: blur(var(--glass-blur));
+  }
+
+  @keyframes brain-node-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--brain-node-color) 45%, transparent);
+    }
+    70% {
+      box-shadow: 0 0 0 14px color-mix(in srgb, var(--brain-node-color) 0%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--brain-node-color) 0%, transparent);
+    }
+  }
+
+  .brain-node-pulse {
+    animation: brain-node-pulse 1.8s ease-out infinite;
   }
 }

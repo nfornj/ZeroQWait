@@ -1,46 +1,30 @@
-import { useTheme } from '@mui/material/styles';
-import Box from '@mui/material/Box';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Chip from '@mui/material/Chip';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
-import { SparkLineChart } from '@mui/x-charts/SparkLineChart';
-import { areaElementClasses } from '@mui/x-charts/LineChart';
+import { Area, AreaChart } from "recharts";
+
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
 
 export type StatCardProps = {
   title: string;
   value: string;
   interval: string;
-  trend: 'up' | 'down' | 'neutral';
+  trend: "up" | "down" | "neutral";
   data: number[];
 };
 
-function getDaysInMonth(month: number, year: number) {
-  const date = new Date(year, month, 0);
-  const monthName = date.toLocaleDateString('en-US', {
-    month: 'short',
-  });
-  const daysInMonth = date.getDate();
-  const days = [];
-  let i = 1;
-  while (days.length < daysInMonth) {
-    days.push(`${monthName} ${i}`);
-    i += 1;
-  }
-  return days;
-}
+const trendValues = { up: "+25%", down: "-25%", neutral: "+5%" };
 
-function AreaGradient({ color, id }: { color: string; id: string }) {
-  return (
-    <defs>
-      <linearGradient id={id} x1="50%" y1="0%" x2="50%" y2="100%">
-        <stop offset="0%" stopColor={color} stopOpacity={0.3} />
-        <stop offset="100%" stopColor={color} stopOpacity={0} />
-      </linearGradient>
-    </defs>
-  );
-}
+const chartConfig = {
+  value: {
+    label: "Value",
+    color: "var(--chart-1)",
+  },
+} satisfies ChartConfig;
 
 export default function StatCard({
   title,
@@ -49,83 +33,41 @@ export default function StatCard({
   trend,
   data,
 }: StatCardProps) {
-  const theme = useTheme();
-  const daysInWeek = getDaysInMonth(4, 2024);
-
-  const trendColors = {
-    up:
-      theme.palette.mode === 'light'
-        ? theme.palette.success.main
-        : theme.palette.success.dark,
-    down:
-      theme.palette.mode === 'light'
-        ? theme.palette.error.main
-        : theme.palette.error.dark,
-    neutral:
-      theme.palette.mode === 'light'
-        ? theme.palette.grey[400]
-        : theme.palette.grey[700],
-  };
-
-  const labelColors = {
-    up: 'success' as const,
-    down: 'error' as const,
-    neutral: 'default' as const,
-  };
-
-  const color = labelColors[trend];
-  // Force graph color to be theme primary color
-  const chartColor = theme.palette.primary.main;
-  const trendValues = { up: '+25%', down: '-25%', neutral: '+5%' };
-
-  // Generate x-axis data to match the data length to avoid MUI X Charts crash
-  const xAxisData = Array.from({ length: data.length }, (_, i) => i.toString());
+  const chartData = data.map((item, index) => ({ index: String(index + 1), value: item }));
 
   return (
-    <Card variant="outlined" sx={{ height: '100%', flexGrow: 1, bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}>
-      <CardContent>
-        <Typography component="h2" variant="subtitle2" gutterBottom>
-          {title}
-        </Typography>
-        <Stack
-          direction="column"
-          sx={{ justifyContent: 'space-between', flexGrow: '1', gap: 1 }}
-        >
-          <Stack sx={{ justifyContent: 'space-between' }}>
-            <Stack
-              direction="row"
-              sx={{ justifyContent: 'space-between', alignItems: 'center' }}
-            >
-              <Typography variant="h4" component="p">
-                {value}
-              </Typography>
-              <Chip size="small" color={color} label={trendValues[trend]} />
-            </Stack>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              {interval}
-            </Typography>
-          </Stack>
-          <Box sx={{ width: '100%', height: 50 }}>
-            <SparkLineChart
-              color={chartColor}
-              data={data}
-              area
-              showHighlight
-              showTooltip
-              xAxis={{
-                scaleType: 'band',
-                data: xAxisData,
-              }}
-              sx={{
-                [`& .${areaElementClasses.root}`]: {
-                  fill: `url(#area-gradient-${value})`,
-                },
-              }}
-            >
-              <AreaGradient color={chartColor} id={`area-gradient-${value}`} />
-            </SparkLineChart>
-          </Box>
-        </Stack>
+    <Card className="h-full flex-grow glass">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-2xl font-semibold tracking-tight">{value}</p>
+          <Badge
+            variant={trend === "down" ? "destructive" : trend === "neutral" ? "secondary" : "default"}
+          >
+            {trendValues[trend]}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">{interval}</p>
+        <ChartContainer config={chartConfig} className="h-[50px] w-full">
+          <AreaChart accessibilityLayer data={chartData} margin={{ left: 0, right: 0, top: 6, bottom: 0 }}>
+            <defs>
+              <linearGradient id={`area-gradient-${title.replace(/\W/g, "-")}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-value)" stopOpacity={0.35} />
+                <stop offset="95%" stopColor="var(--color-value)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+            <Area
+              dataKey="value"
+              type="monotone"
+              stroke="var(--color-value)"
+              fill={`url(#area-gradient-${title.replace(/\W/g, "-")})`}
+              strokeWidth={2}
+            />
+          </AreaChart>
+        </ChartContainer>
       </CardContent>
     </Card>
   );

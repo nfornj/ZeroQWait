@@ -1,12 +1,7 @@
-import React, { useState, useEffect } from "react";
-import {
-  Container,
-  Typography,
-  Box,
-  CircularProgress,
-  Alert,
-} from "@mui/material";
+import React, { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { HaircutService, getFavorites } from "../../../services/api";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import HaircutCard from "../components/HaircutCard";
 
 const FavoritesPage: React.FC = () => {
@@ -21,58 +16,48 @@ const FavoritesPage: React.FC = () => {
         setError(null);
         const data = await getFavorites();
         setFavorites(data);
-      } catch (err) {
+      } catch {
         setError("Failed to load favorites. Please try again.");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchFavorites();
+    void fetchFavorites();
   }, []);
 
   const handleFavoriteRemoved = (removedId: number) => {
-    setFavorites((prev) =>
-      prev.filter((favorite) => favorite.id !== removedId)
-    );
+    setFavorites((prev) => prev.filter((favorite) => favorite.id !== removedId));
   };
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        My Favorite Haircut Services
-      </Typography>
+    <main className="mx-auto max-w-6xl px-4 py-10 md:px-6">
+      <h1 className="text-3xl font-bold tracking-tight">My Favorite Haircut Services</h1>
 
       {error && (
-        <Alert severity="error" sx={{ mt: 2 }}>
-          {error}
+        <Alert variant="destructive" className="mt-5">
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      <Box sx={{ mt: 4 }}>
+      <div className="mt-8">
         {loading ? (
-          <Box display="flex" justifyContent="center">
-            <CircularProgress />
-          </Box>
+          <div className="flex justify-center py-16">
+            <Loader2 className="size-8 animate-spin text-primary" />
+          </div>
         ) : favorites.length > 0 ? (
-          <Box display="flex" flexWrap="wrap" gap={3}>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {favorites.map((haircut) => (
-              <Box sx={{ flex: 1, minWidth: '250px' }} key={haircut.id}>
-                <HaircutCard
-                  haircut={haircut}
-                  onFavoriteRemoved={handleFavoriteRemoved}
-                />
-              </Box>
+              <HaircutCard key={haircut.id} haircut={haircut} onFavoriteRemoved={handleFavoriteRemoved} />
             ))}
-          </Box>
+          </div>
         ) : (
-          <Typography variant="body1" color="text.secondary" align="center">
-            You haven't saved any favorites yet. Start by searching for haircut
-            services!
-          </Typography>
+          <p className="py-16 text-center text-muted-foreground">
+            You haven't saved any favorites yet. Start by searching for haircut services!
+          </p>
         )}
-      </Box>
-    </Container>
+      </div>
+    </main>
   );
 };
 

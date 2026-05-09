@@ -1,281 +1,207 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Container,
-  Box,
-  Typography,
-  TextField,
-  Button,
-  MenuItem,
-  Card,
-  CardContent,
-  Alert,
-} from '@mui/material';
-import axios from 'axios';
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import api from "../../../services/api";
+
+const shopTypes = [
+  { value: "barber", label: "Barber Shop" },
+  { value: "salon", label: "Hair Salon" },
+  { value: "doctor", label: "Doctor/Medical" },
+  { value: "restaurant", label: "Restaurant" },
+  { value: "spa", label: "Spa" },
+  { value: "other", label: "Other" },
+];
+
+const countries = [
+  "United States",
+  "Canada",
+  "United Kingdom",
+  "Australia",
+  "India",
+  "Germany",
+  "France",
+  "Spain",
+  "Italy",
+  "Mexico",
+  "Brazil",
+  "Japan",
+  "China",
+  "South Korea",
+  "Singapore",
+  "Other",
+];
 
 const ShopRegistrationPage: React.FC = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    shop_type: 'barber',
-    address: '',
-    city: '',
-    state: '',
-    zip_code: '',
-    country: 'United States',
-    phone: '',
-    email: '',
-    website: '',
+    name: "",
+    description: "",
+    shop_type: "barber",
+    address: "",
+    city: "",
+    state: "",
+    zip_code: "",
+    country: "United States",
+    phone: "",
+    email: "",
+    website: "",
     average_service_time: 30,
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  const shopTypes = [
-    { value: 'barber', label: 'Barber Shop' },
-    { value: 'salon', label: 'Hair Salon' },
-    { value: 'doctor', label: 'Doctor/Medical' },
-    { value: 'restaurant', label: 'Restaurant' },
-    { value: 'spa', label: 'Spa' },
-    { value: 'other', label: 'Other' },
-  ];
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+  const updateField = (name: string, value: string | number) => {
+    setFormData((current) => ({ ...current, [name]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       if (!token) {
-        navigate('/login');
+        navigate("/login");
         return;
       }
 
-      await axios.post(`/shops/`, formData, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
+      await api.post(`/shops/`, formData);
       setSuccess(true);
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 2000);
+      setTimeout(() => navigate("/dashboard"), 2000);
     } catch (err: any) {
-      setError(
-        err.response?.data?.detail || 'Failed to create shop. Please try again.'
-      );
+      setError(err.response?.data?.detail || "Failed to create shop. Please try again.");
     }
   };
 
   return (
-    <Container maxWidth="md" sx={{ mt: 8, mb: 4 }}>
-      <Card elevation={2}>
-        <CardContent sx={{ p: 4 }}>
-          <Typography variant="h3" component="h1" gutterBottom align="center">
-            Register Your Shop
-          </Typography>
-          <Typography variant="body1" color="textSecondary" align="center" sx={{ mb: 4 }}>
-            Create your shop profile and start managing your queue
-          </Typography>
-
+    <div className="mx-auto w-full max-w-4xl px-4 py-10">
+      <Card>
+        <CardHeader className="text-center">
+          <CardTitle className="text-3xl">Register Your Shop</CardTitle>
+          <CardDescription>Create your shop profile and start managing your queue</CardDescription>
+        </CardHeader>
+        <CardContent>
           {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>
-              {error}
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
           {success && (
-            <Alert severity="success" sx={{ mb: 3 }}>
-              Shop created successfully! Redirecting to dashboard...
+            <Alert className="mb-4">
+              <AlertDescription>Shop created successfully! Redirecting to dashboard...</AlertDescription>
             </Alert>
           )}
 
-          <Box component="form" onSubmit={handleSubmit}>
-            <Box display="flex" flexWrap="wrap" gap={3}>
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  required
-                  label="Shop Name"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                />
-              </Box>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="shop-name">Shop Name</Label>
+              <Input id="shop-name" required value={formData.name} onChange={(event) => updateField("name", event.target.value)} />
+            </div>
 
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  select
-                  required
-                  label="Shop Type"
-                  name="shop_type"
-                  value={formData.shop_type}
-                  onChange={handleChange}
-                >
-                  {shopTypes.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Box>
+            <div className="flex flex-col gap-2">
+              <Label>Shop Type</Label>
+              <Select value={formData.shop_type} onValueChange={(value) => updateField("shop_type", value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {shopTypes.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
 
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  multiline
-                  rows={3}
-                  label="Description"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                />
-              </Box>
+            <div className="flex flex-col gap-2 md:col-span-2">
+              <Label htmlFor="shop-description">Description</Label>
+              <Textarea id="shop-description" rows={3} value={formData.description} onChange={(event) => updateField("description", event.target.value)} />
+            </div>
 
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  required
-                  label="Address"
-                  name="address"
-                  value={formData.address}
-                  onChange={handleChange}
-                />
-              </Box>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="shop-address">Address</Label>
+              <Input id="shop-address" required value={formData.address} onChange={(event) => updateField("address", event.target.value)} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="shop-city">City</Label>
+              <Input id="shop-city" required value={formData.city} onChange={(event) => updateField("city", event.target.value)} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="shop-state">State/Province/Region</Label>
+              <Input id="shop-state" required value={formData.state} onChange={(event) => updateField("state", event.target.value)} />
+              <p className="text-xs text-muted-foreground">e.g., ON, CA, TX</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="shop-zip">ZIP/Postal Code</Label>
+              <Input id="shop-zip" required value={formData.zip_code} onChange={(event) => updateField("zip_code", event.target.value)} />
+            </div>
 
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  required
-                  label="City"
-                  name="city"
-                  value={formData.city}
-                  onChange={handleChange}
-                />
-              </Box>
+            <div className="flex flex-col gap-2">
+              <Label>Country</Label>
+              <Select value={formData.country} onValueChange={(value) => updateField("country", value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {countries.map((country) => (
+                      <SelectItem key={country} value={country}>
+                        {country}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="shop-phone">Phone</Label>
+              <Input id="shop-phone" required value={formData.phone} onChange={(event) => updateField("phone", event.target.value)} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="shop-email">Email</Label>
+              <Input id="shop-email" type="email" value={formData.email} onChange={(event) => updateField("email", event.target.value)} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="shop-website">Website</Label>
+              <Input id="shop-website" value={formData.website} onChange={(event) => updateField("website", event.target.value)} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="service-time">Average Service Time (minutes)</Label>
+              <Input
+                id="service-time"
+                required
+                type="number"
+                min={5}
+                max={180}
+                value={formData.average_service_time}
+                onChange={(event) => updateField("average_service_time", Number(event.target.value))}
+              />
+            </div>
 
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  required
-                  label="State/Province/Region"
-                  name="state"
-                  value={formData.state}
-                  onChange={handleChange}
-                  helperText="e.g., ON, CA, TX, etc."
-                />
-              </Box>
-
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  required
-                  label="ZIP/Postal Code"
-                  name="zip_code"
-                  value={formData.zip_code}
-                  onChange={handleChange}
-                />
-              </Box>
-
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  select
-                  required
-                  label="Country"
-                  name="country"
-                  value={formData.country}
-                  onChange={handleChange}
-                >
-                  <MenuItem value="United States">United States</MenuItem>
-                  <MenuItem value="Canada">Canada</MenuItem>
-                  <MenuItem value="United Kingdom">United Kingdom</MenuItem>
-                  <MenuItem value="Australia">Australia</MenuItem>
-                  <MenuItem value="India">India</MenuItem>
-                  <MenuItem value="Germany">Germany</MenuItem>
-                  <MenuItem value="France">France</MenuItem>
-                  <MenuItem value="Spain">Spain</MenuItem>
-                  <MenuItem value="Italy">Italy</MenuItem>
-                  <MenuItem value="Mexico">Mexico</MenuItem>
-                  <MenuItem value="Brazil">Brazil</MenuItem>
-                  <MenuItem value="Japan">Japan</MenuItem>
-                  <MenuItem value="China">China</MenuItem>
-                  <MenuItem value="South Korea">South Korea</MenuItem>
-                  <MenuItem value="Singapore">Singapore</MenuItem>
-                  <MenuItem value="Other">Other</MenuItem>
-                </TextField>
-              </Box>
-
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  required
-                  label="Phone"
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleChange}
-                />
-              </Box>
-
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  label="Email"
-                  name="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                />
-              </Box>
-
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  label="Website"
-                  name="website"
-                  value={formData.website}
-                  onChange={handleChange}
-                />
-              </Box>
-
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <TextField
-                  fullWidth
-                  required
-                  type="number"
-                  label="Average Service Time (minutes)"
-                  name="average_service_time"
-                  value={formData.average_service_time}
-                  onChange={handleChange}
-                  inputProps={{ min: 5, max: 180 }}
-                />
-              </Box>
-
-              <Box sx={{ flex: 1, minWidth: '250px' }}>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  color="primary"
-                  fullWidth
-                  size="large"
-                  sx={{ mt: 2 }}
-                >
-                  Create Shop
-                </Button>
-              </Box>
-            </Box>
-          </Box>
+            <Button type="submit" size="lg" className="md:col-span-2">
+              Create Shop
+            </Button>
+          </form>
         </CardContent>
       </Card>
-    </Container>
+    </div>
   );
 };
 

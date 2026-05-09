@@ -1,344 +1,229 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
-import {
-    Box,
-    Card,
-    CardContent,
-    Typography,
-    TextField,
-    Button,
-    Avatar,
-    CircularProgress,
-    Alert,
-    Chip,
-    Stack,
-    Divider
-} from '@mui/material';
-import {
-    People as PeopleIcon,
-    Schedule as ScheduleIcon,
-    CheckCircle as CheckCircleIcon
-} from '@mui/icons-material';
-import axios from 'axios';
+import React, { useEffect, useState } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
+import axios from "axios";
+import { CheckCircle2, Clock, Loader2, Users } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 
 interface Shop {
-    id: number;
-    name: string;
-    logo_url?: string;
-    average_service_time: number;
-    primary_color?: string;
-    queues?: Queue[];
+  id: number;
+  name: string;
+  logo_url?: string;
+  average_service_time: number;
+  primary_color?: string;
+  queues?: Queue[];
 }
 
 interface Queue {
-    id: number;
-    queue_items: QueueItem[];
+  id: number;
+  queue_items: QueueItem[];
 }
 
 interface QueueItem {
-    id: number;
-    status: string;
-    position: number;
+  id: number;
+  status: string;
+  position: number;
 }
 
 const WidgetPage: React.FC = () => {
-    const { shopId } = useParams<{ shopId: string }>();
-    const [searchParams] = useSearchParams();
-    
-    // State
-    const [shop, setShop] = useState<Shop | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState(false);
-    const [queuePosition, setQueuePosition] = useState<number | null>(null);
-    const [estimatedWait, setEstimatedWait] = useState<number | null>(null);
-    
-    // Form state
-    const [customerName, setCustomerName] = useState('');
-    const [customerPhone, setCustomerPhone] = useState('');
-    
-    // Get customization from URL params
-    const primaryColor = searchParams.get('primary') 
-        ? `#${searchParams.get('primary')}` 
-        : undefined;
-    const secondaryColor = searchParams.get('secondary')
-        ? `#${searchParams.get('secondary')}`
-        : '#ffffff';
+  const { shopId } = useParams<{ shopId: string }>();
+  const [searchParams] = useSearchParams();
+  const [shop, setShop] = useState<Shop | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [estimatedWait, setEstimatedWait] = useState<number | null>(null);
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
 
-    // Calculate queue statistics
-    const getQueueStats = () => {
-        if (!shop?.queues || shop.queues.length === 0) {
-            return { waiting: 0, serving: 0, totalWait: 0 };
-        }
+  const primaryColor = searchParams.get("primary") ? `#${searchParams.get("primary")}` : undefined;
+  const secondaryColor = searchParams.get("secondary") ? `#${searchParams.get("secondary")}` : "#ffffff";
 
-        const allItems = shop.queues.flatMap(q => q.queue_items);
-        const waiting = allItems.filter(item => item.status === 'waiting').length;
-        const serving = allItems.filter(item => item.status === 'being_served').length;
-        const totalWait = waiting * shop.average_service_time;
+  const getQueueStats = () => {
+    if (!shop?.queues || shop.queues.length === 0) {
+      return { waiting: 0, serving: 0, totalWait: 0 };
+    }
 
-        return { waiting, serving, totalWait };
+    const allItems = shop.queues.flatMap((q) => q.queue_items);
+    const waiting = allItems.filter((item) => item.status === "waiting").length;
+    const serving = allItems.filter((item) => item.status === "being_served").length;
+    const totalWait = waiting * shop.average_service_time;
+
+    return { waiting, serving, totalWait };
+  };
+
+  useEffect(() => {
+    const fetchShop = async () => {
+      try {
+        setLoading(true);
+        const response = await axios.get(`${API_BASE_URL}/api/shops/${shopId}`);
+        setShop(response.data);
+        setError(null);
+      } catch (err: any) {
+        setError(err.response?.data?.detail || "Failed to load shop information");
+      } finally {
+        setLoading(false);
+      }
     };
 
-    // Fetch shop data
-    useEffect(() => {
-        const fetchShop = async () => {
-            try {
-                setLoading(true);
-                const response = await axios.get(`${API_BASE_URL}/api/shops/${shopId}`);
-                setShop(response.data);
-                setError(null);
-            } catch (err: any) {
-                setError(err.response?.data?.detail || 'Failed to load shop information');
-            } finally {
-                setLoading(false);
-            }
-        };
+    if (shopId) {
+      void fetchShop();
+    }
+  }, [shopId]);
 
-        if (shopId) {
-            fetchShop();
-        }
-    }, [shopId]);
+  const handleJoinQueue = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-    // Handle form submission
-    const handleJoinQueue = async (e: React.FormEvent) => {
-        e.preventDefault();
-        
-        if (!customerName.trim() || !customerPhone.trim()) {
-            setError('Please enter your name and phone number');
-            return;
-        }
-
-        try {
-            setSubmitting(true);
-            setError(null);
-
-            const response = await axios.post(
-                `${API_BASE_URL}/api/queues/shop/${shopId}/join`,
-                {
-                    customer_name: customerName.trim(),
-                    customer_phone: customerPhone.trim()
-                }
-            );
-
-            const stats = getQueueStats();
-            setQueuePosition(stats.waiting + stats.serving + 1);
-            setEstimatedWait(stats.totalWait + shop!.average_service_time);
-            setSuccess(true);
-        } catch (err: any) {
-            if (err.response?.status === 429) {
-                setError('Queue is currently full. Please try again later.');
-            } else {
-                setError(err.response?.data?.detail || 'Failed to join queue. Please try again.');
-            }
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
-    // Determine the primary color to use
-    const brandColor = primaryColor || shop?.primary_color || '#1976d2';
-
-    // Loading state
-    if (loading) {
-        return (
-            <Box
-                sx={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    minHeight: '100vh',
-                    bgcolor: secondaryColor
-                }}
-            >
-                <CircularProgress sx={{ color: brandColor }} />
-            </Box>
-        );
+    if (!customerName.trim() || !customerPhone.trim()) {
+      setError("Please enter your name and phone number");
+      return;
     }
 
-    // Error state
-    if (error && !shop) {
-        return (
-            <Box
-                sx={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    minHeight: '100vh',
-                    bgcolor: secondaryColor,
-                    p: 2
-                }}
-            >
-                <Alert severity="error">{error}</Alert>
-            </Box>
-        );
+    try {
+      setSubmitting(true);
+      setError(null);
+
+      await axios.post(`${API_BASE_URL}/api/queues/shop/${shopId}/join`, {
+        customer_name: customerName.trim(),
+        customer_phone: customerPhone.trim(),
+      });
+
+      const stats = getQueueStats();
+      setQueuePosition(stats.waiting + stats.serving + 1);
+      setEstimatedWait(stats.totalWait + shop!.average_service_time);
+      setSuccess(true);
+    } catch (err: any) {
+      if (err.response?.status === 429) {
+        setError("Queue is currently full. Please try again later.");
+      } else {
+        setError(err.response?.data?.detail || "Failed to join queue. Please try again.");
+      }
+    } finally {
+      setSubmitting(false);
     }
+  };
 
-    if (!shop) return null;
+  const brandColor = primaryColor || shop?.primary_color || "#1976d2";
 
-    const stats = getQueueStats();
-
-    // Success state
-    if (success) {
-        return (
-            <Box
-                sx={{
-                    minHeight: '100vh',
-                    bgcolor: secondaryColor,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    p: 2
-                }}
-            >
-                <Card sx={{ maxWidth: 500, width: '100%', textAlign: 'center' }}>
-                    <CardContent sx={{ p: 4 }}>
-                        <CheckCircleIcon sx={{ fontSize: 80, color: brandColor, mb: 2 }} />
-                        <Typography variant="h4" gutterBottom fontWeight="bold">
-                            You're in Line!
-                        </Typography>
-                        <Typography variant="h5" color="text.secondary" gutterBottom>
-                            Position #{queuePosition}
-                        </Typography>
-                        <Divider sx={{ my: 3 }} />
-                        <Typography variant="h6" gutterBottom>
-                            Estimated Wait Time
-                        </Typography>
-                        <Typography variant="h3" sx={{ color: brandColor, fontWeight: 'bold' }}>
-                            ~{estimatedWait} min
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
-                            Please arrive at {shop.name} when your turn is near.
-                            We'll serve you as soon as possible!
-                        </Typography>
-                    </CardContent>
-                </Card>
-            </Box>
-        );
-    }
-
-    // Main widget view
+  if (loading) {
     return (
-        <Box
-            sx={{
-                minHeight: '100vh',
-                bgcolor: secondaryColor,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                p: 2
-            }}
-        >
-            <Card sx={{ maxWidth: 500, width: '100%' }}>
-                {/* Shop Header */}
-                <Box
-                    sx={{
-                        bgcolor: brandColor,
-                        color: 'white',
-                        p: 3,
-                        textAlign: 'center'
-                    }}
-                >
-                    {shop.logo_url && (
-                        <Avatar
-                            src={shop.logo_url}
-                            sx={{
-                                width: 80,
-                                height: 80,
-                                margin: '0 auto 16px',
-                                border: '3px solid white'
-                            }}
-                        />
-                    )}
-                    <Typography variant="h5" fontWeight="bold" gutterBottom>
-                        {shop.name}
-                    </Typography>
-                    <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                        Join the Queue
-                    </Typography>
-                </Box>
-
-                <CardContent sx={{ p: 3 }}>
-                    {/* Queue Statistics */}
-                    <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
-                        <Chip
-                            icon={<PeopleIcon />}
-                            label={`${stats.waiting + stats.serving} in queue`}
-                            sx={{ flex: 1 }}
-                        />
-                        <Chip
-                            icon={<ScheduleIcon />}
-                            label={`~${stats.totalWait} min wait`}
-                            sx={{ flex: 1 }}
-                        />
-                    </Stack>
-
-                    {error && (
-                        <Alert severity="error" sx={{ mb: 2 }}>
-                            {error}
-                        </Alert>
-                    )}
-
-                    {/* Join Form */}
-                    <form onSubmit={handleJoinQueue}>
-                        <TextField
-                            fullWidth
-                            label="Your Name"
-                            value={customerName}
-                            onChange={(e) => setCustomerName(e.target.value)}
-                            required
-                            disabled={submitting}
-                            sx={{ mb: 2 }}
-                        />
-                        <TextField
-                            fullWidth
-                            label="Phone Number"
-                            value={customerPhone}
-                            onChange={(e) => setCustomerPhone(e.target.value)}
-                            required
-                            disabled={submitting}
-                            type="tel"
-                            placeholder="(555) 123-4567"
-                            sx={{ mb: 3 }}
-                        />
-                        <Button
-                            type="submit"
-                            fullWidth
-                            variant="contained"
-                            size="large"
-                            disabled={submitting}
-                            sx={{
-                                bgcolor: brandColor,
-                                '&:hover': {
-                                    bgcolor: brandColor,
-                                    opacity: 0.9
-                                },
-                                py: 1.5,
-                                fontSize: '1.1rem'
-                            }}
-                        >
-                            {submitting ? (
-                                <CircularProgress size={24} sx={{ color: 'white' }} />
-                            ) : (
-                                'Join Queue'
-                            )}
-                        </Button>
-                    </form>
-
-                    {/* Footer */}
-                    <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: 'block', textAlign: 'center', mt: 2 }}
-                    >
-                        Served by ZeroQwait
-                    </Typography>
-                </CardContent>
-            </Card>
-        </Box>
+      <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: secondaryColor }}>
+        <Loader2 className="size-8 animate-spin" style={{ color: brandColor }} />
+      </div>
     );
+  }
+
+  if (error && !shop) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: secondaryColor }}>
+        <Alert variant="destructive" className="max-w-md">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (!shop) return null;
+
+  const stats = getQueueStats();
+
+  if (success) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: secondaryColor }}>
+        <Card className="w-full max-w-md text-center">
+          <CardContent className="flex flex-col items-center p-8">
+            <CheckCircle2 className="size-20" style={{ color: brandColor }} />
+            <h1 className="mt-4 text-3xl font-bold">You're in Line!</h1>
+            <p className="mt-2 text-xl text-muted-foreground">Position #{queuePosition}</p>
+            <Separator className="my-6" />
+            <p className="text-lg font-semibold">Estimated Wait Time</p>
+            <p className="mt-1 text-4xl font-bold" style={{ color: brandColor }}>
+              ~{estimatedWait} min
+            </p>
+            <p className="mt-6 text-sm text-muted-foreground">
+              Please arrive at {shop.name} when your turn is near. We'll serve you as soon as possible!
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: secondaryColor }}>
+      <Card className="w-full max-w-md overflow-hidden">
+        <div className="flex flex-col items-center p-6 text-center text-white" style={{ backgroundColor: brandColor }}>
+          {shop.logo_url && (
+            <Avatar className="mb-4 size-20 border-4 border-white">
+              <AvatarImage src={shop.logo_url} alt={shop.name} />
+              <AvatarFallback>{shop.name[0]}</AvatarFallback>
+            </Avatar>
+          )}
+          <h1 className="text-2xl font-bold">{shop.name}</h1>
+          <p className="text-sm opacity-90">Join the Queue</p>
+        </div>
+
+        <CardContent className="p-6">
+          <div className="mb-6 grid grid-cols-2 gap-3">
+            <Badge variant="secondary" className="justify-center gap-1 py-2">
+              <Users className="size-4" />
+              {stats.waiting + stats.serving} in queue
+            </Badge>
+            <Badge variant="secondary" className="justify-center gap-1 py-2">
+              <Clock className="size-4" />~{stats.totalWait} min wait
+            </Badge>
+          </div>
+
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <form onSubmit={handleJoinQueue} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="widgetName">Your Name</Label>
+              <Input
+                id="widgetName"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                required
+                disabled={submitting}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="widgetPhone">Phone Number</Label>
+              <Input
+                id="widgetPhone"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                required
+                disabled={submitting}
+                type="tel"
+                placeholder="(555) 123-4567"
+              />
+            </div>
+            <Button type="submit" size="lg" disabled={submitting} style={{ backgroundColor: brandColor }}>
+              {submitting && <Loader2 data-icon="inline-start" className="animate-spin" />}
+              Join Queue
+            </Button>
+          </form>
+
+          <p className="mt-4 text-center text-xs text-muted-foreground">Served by ZeroQwait</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
 };
 
 export default WidgetPage;

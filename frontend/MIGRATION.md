@@ -1,6 +1,6 @@
 # MUI → shadcn/ui + Tailwind CSS Migration Plan
 
-**Status**: ✅ Phase 5 Complete — ready for Phase 6  
+**Status**: ✅ Migration complete — dashboard, public booking, admin, charts/tables, and theme cleanup migrated  
 **Scope**: All authenticated/dashboard surfaces — landing page stays on MUI  
 **Goal**: Ultra-modern agent OS aesthetic (Cursor/Linear/Perplexity feel)  
 **Approach**: Incremental, phase-by-phase — MUI and shadcn/Tailwind coexist during transition  
@@ -657,13 +657,13 @@ useReactTable({ data, columns, getCoreRowModel, getSortedRowModel, getFilteredRo
 | 3 | Services Page (design validation) | ✅ Done | 1 |
 | 4 | Auth Pages | ✅ Done | 2 |
 | 5 | Shared Components | ✅ Done | 3 |
-| 6 | Agent Inbox | ☐ Not started | 5–7 |
-| 7 | Charts & Data Tables | ☐ Not started | 5–6 |
-| 8 | Shop Dashboard Pages | ☐ Not started | 3–4 |
-| 9 | Public-Facing Pages | ☐ Not started | 3 |
-| 10 | Admin Portal | ☐ Not started | 2 |
-| 11 | ThemeContext Replacement | ☐ Not started | 1 |
-| 12 | Cleanup & MUI Removal | ☐ Not started | 1 |
+| 6 | Agent Inbox | ✅ Done | 5–7 |
+| 7 | Charts & Data Tables | ✅ Done | 5–6 |
+| 8 | Shop Dashboard Pages | ✅ Done | 3–4 |
+| 9 | Public-Facing Pages | ✅ Done | 3 |
+| 10 | Admin Portal | ✅ Done | 2 |
+| 11 | ThemeContext Replacement | ✅ Done | 1 |
+| 12 | Cleanup & MUI Removal | ✅ Done | 1 |
 | **Total** | | | **28–33 days** |
 
 Update status to `🔄 In progress` → `✅ Done` as each phase completes.

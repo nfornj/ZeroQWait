@@ -1,117 +1,116 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, Typography, Box, CircularProgress } from '@mui/material';
-import { BarChart } from '@mui/x-charts/BarChart';
-import api from '../../../services/api';
-import { useShop } from '../../../contexts/ShopContext';
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+} from "recharts";
 
-import { useTheme, alpha } from '@mui/material/styles';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+import { Skeleton } from "@/components/ui/skeleton";
+import api from "../../../services/api";
+import { useShop } from "../../../contexts/ShopContext";
 
 export default function StackedRevenueChart() {
-    const { shop } = useShop();
-    const theme = useTheme();
-    const [loading, setLoading] = useState(true);
-    const [chartData, setChartData] = useState<any[]>([]);
-    const [serviceKeys, setServiceKeys] = useState<string[]>([]);
+  const { shop } = useShop();
+  const [loading, setLoading] = useState(true);
+  const [chartData, setChartData] = useState<Record<string, number | string>[]>([]);
+  const [serviceKeys, setServiceKeys] = useState<string[]>([]);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            if (!shop) return;
-            try {
-                const response = await api.get(`/analytics/revenue/monthly-by-service/${shop.id}`);
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!shop) return;
 
-                const data = response.data;
-                if (data.length > 0) {
-                    const keys = new Set<string>();
-                    data.forEach((item: any) => {
-                        Object.keys(item).forEach(k => {
-                            if (k !== 'month') keys.add(k);
-                        });
-                    });
-                    setServiceKeys(Array.from(keys));
-                    setChartData(data);
-                }
-                setLoading(false);
-            } catch (error) {
-                console.error("Failed to fetch revenue data", error);
-                setLoading(false);
-            }
-        };
+      try {
+        const response = await api.get(`/analytics/revenue/monthly-by-service/${shop.id}`);
+        const data = response.data;
 
-        fetchData();
-    }, [shop]);
+        if (data.length > 0) {
+          const keys = new Set<string>();
+          data.forEach((item: Record<string, unknown>) => {
+            Object.keys(item).forEach((key) => {
+              if (key !== "month") keys.add(key);
+            });
+          });
 
-    if (loading) {
-        return (
-            <Card variant="outlined" sx={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300, bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}>
-                <CircularProgress />
-            </Card>
-        );
-    }
-
-    if (chartData.length === 0) {
-        return (
-            <Card variant="outlined" sx={{ width: '100%', height: '100%', bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}>
-                <CardContent>
-                    <Typography variant="h6" gutterBottom>Monthly Revenue by Service</Typography>
-                    <Box height={250} display="flex" alignItems="center" justifyContent="center">
-                        <Typography color="text.secondary">No revenue data available</Typography>
-                    </Box>
-                </CardContent>
-            </Card>
-        )
-    }
-
-    // Generate colors based on theme
-    const getSeriesColor = (index: number) => {
-        // We'll alternate between primary and secondary shades, or just use primary with opacity
-        // Strategy: Use primary.main, primary.dark, primary.light, secondary.main, secondary.light...
-        // Or simpler: just alpha shades of primary if we want "shades of theme"
-        const opacity = 1 - (index * 0.15) % 1; // 1, 0.85, 0.7...
-        // Ensure minimum opacity
-        const finalOpacity = Math.max(opacity, 0.2);
-
-        // Let's create a palette array strategy
-        const candidates = [
-            theme.palette.primary.main,
-            theme.palette.primary.dark,
-            theme.palette.primary.light,
-            theme.palette.secondary.main,
-            theme.palette.secondary.light,
-            alpha(theme.palette.primary.main, 0.5),
-            alpha(theme.palette.secondary.main, 0.5),
-        ];
-
-        return candidates[index % candidates.length];
+          setServiceKeys(Array.from(keys));
+          setChartData(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch revenue data", error);
+      } finally {
+        setLoading(false);
+      }
     };
 
+    fetchData();
+  }, [shop]);
+
+  const chartConfig = useMemo<ChartConfig>(() => {
+    return serviceKeys.reduce<ChartConfig>((config, key, index) => {
+      config[key] = {
+        label: key,
+        color: `var(--chart-${(index % 5) + 1})`,
+      };
+      return config;
+    }, {});
+  }, [serviceKeys]);
+
+  if (loading) {
     return (
-        <Card variant="outlined" sx={{ width: '100%', height: '100%', bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}>
-            <CardContent>
-                <Typography component="h2" variant="subtitle2" gutterBottom>
-                    Monthly Revenue by Service
-                </Typography>
-                <Box sx={{ width: '100%', height: 280 }}>
-                    <BarChart
-                        dataset={chartData}
-                        xAxis={[{ scaleType: 'band', dataKey: 'month' }]}
-                        series={serviceKeys.map((key, index) => ({
-                            dataKey: key,
-                            label: key,
-                            stack: 'total',
-                            color: getSeriesColor(index)
-                        }))}
-                        slotProps={{
-                            legend: {
-                                direction: 'horizontal',
-                                position: { vertical: 'bottom', horizontal: 'center' },
-                            },
-                        }}
-                        margin={{ left: 50, right: 10, top: 20, bottom: 50 }}
-                        grid={{ horizontal: true }}
-                        borderRadius={4}
-                    />
-                </Box>
-            </CardContent>
-        </Card>
+      <Card className="flex min-h-[300px] w-full items-center justify-center glass">
+        <Skeleton className="h-[240px] w-[92%]" />
+      </Card>
     );
+  }
+
+  if (chartData.length === 0) {
+    return (
+      <Card className="h-full w-full glass">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">Monthly Revenue by Service</CardTitle>
+        </CardHeader>
+        <CardContent className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
+          No revenue data available
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="h-full w-full glass">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">Monthly Revenue by Service</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={chartConfig} className="h-[280px] w-full">
+          <BarChart accessibilityLayer data={chartData} margin={{ left: 0, right: 10, top: 20, bottom: 8 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+            <YAxis width={50} tickLine={false} axisLine={false} />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <ChartLegend content={<ChartLegendContent />} />
+            {serviceKeys.map((key, index) => (
+              <Bar
+                key={key}
+                dataKey={key}
+                stackId="revenue"
+                fill={`var(--chart-${(index % 5) + 1})`}
+                radius={[4, 4, 0, 0]}
+              />
+            ))}
+          </BarChart>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  );
 }

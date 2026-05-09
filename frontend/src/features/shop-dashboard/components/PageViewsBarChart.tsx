@@ -1,79 +1,79 @@
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Chip from '@mui/material/Chip';
-import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
-import { BarChart } from '@mui/x-charts/BarChart';
-import { useTheme } from '@mui/material/styles';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+
+const chartData = [
+  { month: "Jan", pageViews: 2234, downloads: 3098, conversions: 4051 },
+  { month: "Feb", pageViews: 3872, downloads: 4215, conversions: 2275 },
+  { month: "Mar", pageViews: 2998, downloads: 2384, conversions: 3129 },
+  { month: "Apr", pageViews: 4125, downloads: 2101, conversions: 4693 },
+  { month: "May", pageViews: 3357, downloads: 4752, conversions: 3904 },
+  { month: "Jun", pageViews: 2789, downloads: 3593, conversions: 2038 },
+  { month: "Jul", pageViews: 2998, downloads: 2384, conversions: 2275 },
+];
+
+const chartConfig = {
+  pageViews: {
+    label: "Page views",
+    color: "var(--chart-1)",
+  },
+  downloads: {
+    label: "Downloads",
+    color: "var(--chart-2)",
+  },
+  conversions: {
+    label: "Conversions",
+    color: "var(--chart-3)",
+  },
+} satisfies ChartConfig;
 
 export default function PageViewsBarChart() {
-  const theme = useTheme();
-  const colorPalette = [
-    (theme.vars || theme).palette.primary.dark,
-    (theme.vars || theme).palette.primary.main,
-    (theme.vars || theme).palette.primary.light,
-  ];
   return (
-    <Card variant="outlined" sx={{ width: '100%' }}>
+    <Card className="w-full">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">Page views and downloads</CardTitle>
+        <div className="flex items-center gap-2">
+          <p className="text-2xl font-semibold tracking-tight">1.3M</p>
+          <Badge variant="destructive">-8%</Badge>
+        </div>
+        <CardDescription>Page views and downloads for the last 6 months</CardDescription>
+      </CardHeader>
       <CardContent>
-        <Typography component="h2" variant="subtitle2" gutterBottom>
-          Page views and downloads
-        </Typography>
-        <Stack sx={{ justifyContent: 'space-between' }}>
-          <Stack
-            direction="row"
-            sx={{
-              alignContent: { xs: 'center', sm: 'flex-start' },
-              alignItems: 'center',
-              gap: 1,
-            }}
-          >
-            <Typography variant="h4" component="p">
-              1.3M
-            </Typography>
-            <Chip size="small" color="error" label="-8%" />
-          </Stack>
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            Page views and downloads for the last 6 months
-          </Typography>
-        </Stack>
-        <BarChart
-          borderRadius={8}
-          colors={colorPalette}
-          xAxis={[
-            {
-              scaleType: 'band',
-              categoryGapRatio: 0.5,
-              data: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
-              height: 24,
-            },
-          ]}
-          yAxis={[{ width: 50 }]}
-          series={[
-            {
-              id: 'page-views',
-              label: 'Page views',
-              data: [2234, 3872, 2998, 4125, 3357, 2789, 2998],
-              stack: 'A',
-            },
-            {
-              id: 'downloads',
-              label: 'Downloads',
-              data: [3098, 4215, 2384, 2101, 4752, 3593, 2384],
-              stack: 'A',
-            },
-            {
-              id: 'conversions',
-              label: 'Conversions',
-              data: [4051, 2275, 3129, 4693, 3904, 2038, 2275],
-              stack: 'A',
-            },
-          ]}
-          height={250}
-          margin={{ left: 0, right: 0, top: 20, bottom: 0 }}
-          grid={{ horizontal: true }}
-          hideLegend
-        />
+        <ChartContainer config={chartConfig} className="h-[250px] w-full">
+          <BarChart accessibilityLayer data={chartData} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="month"
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+            />
+            <YAxis width={48} tickLine={false} axisLine={false} />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <Bar dataKey="pageViews" stackId="total" fill="var(--color-pageViews)" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="downloads" stackId="total" fill="var(--color-downloads)" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="conversions" stackId="total" fill="var(--color-conversions)" radius={[8, 8, 0, 0]} />
+          </BarChart>
+        </ChartContainer>
       </CardContent>
     </Card>
   );

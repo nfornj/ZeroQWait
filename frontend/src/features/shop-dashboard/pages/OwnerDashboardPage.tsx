@@ -1,12 +1,8 @@
 // RESTYLED: Perplexity-style
 import React, { useCallback, useMemo, useState } from "react";
-import {
-  Alert,
-  Box,
-  Stack,
-} from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useShop } from "../../../contexts/ShopContext";
 import api from "../../../services/api";
@@ -1027,31 +1023,23 @@ const OwnerDashboardPage: React.FC = () => {
   }, [briefingQuery.data?.actions, briefingQuery.data?.generated_at, displayedFeedEvents, pendingApprovals, shop?.id]);
 
   return (
-    <Box
-      sx={{
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        minHeight: 0,
-      }}
-    >
-      <Stack spacing={2} sx={{ flex: 1, minHeight: 0 }}>
-        {dashboardError && <Alert severity="error">{dashboardError}</Alert>}
-
-        {!shop?.id && !shopLoading && (
-          <Alert severity="warning">
-            No active shop selected. Choose a shop from the owner navigation bar before using the dashboard.
+    <div className="flex h-full min-h-0 w-full flex-col">
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
+        {dashboardError && (
+          <Alert variant="destructive">
+            <AlertDescription>{dashboardError}</AlertDescription>
           </Alert>
         )}
 
-        <Box
-          sx={{
-            display: "flex",
-            flex: 1,
-            minHeight: 0,
-          }}
-        >
+        {!shop?.id && !shopLoading && (
+          <Alert>
+            <AlertDescription>
+              No active shop selected. Choose a shop from the owner navigation bar before using the dashboard.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <div className="flex min-h-0 flex-1">
           <AgentChat
             messages={messages}
             isStreaming={isStreaming}
@@ -1069,9 +1057,9 @@ const OwnerDashboardPage: React.FC = () => {
               />
             }
           />
-        </Box>
-      </Stack>
-    </Box>
+        </div>
+      </div>
+    </div>
   );
 };
 

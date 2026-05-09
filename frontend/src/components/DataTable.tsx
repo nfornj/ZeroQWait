@@ -1,6 +1,24 @@
-import React, { useMemo, useState } from "react";
-import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
-import { cn } from "../lib/utils";
+import React, { useMemo } from "react";
+import {
+  ColumnDef,
+  SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
+import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
+
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type TableFormatKind = "currency" | "delta" | "percent" | "number";
 
@@ -28,13 +46,12 @@ export interface DataTableProps {
   rowIdKey: string;
 }
 
-type SortDirection = "asc" | "desc";
-
 const compareValues = (left: unknown, right: unknown) => {
   if (left == null && right == null) return 0;
   if (left == null) return 1;
   if (right == null) return -1;
   if (typeof left === "number" && typeof right === "number") return left - right;
+
   return String(left).localeCompare(String(right), undefined, {
     numeric: true,
     sensitivity: "base",
@@ -79,105 +96,130 @@ const formatValue = (value: unknown, format?: DataTableColumnFormat): string => 
 
 const getCellColor = (value: unknown, format?: DataTableColumnFormat): string | undefined => {
   if (!format || (format.kind !== "delta" && format.kind !== "percent")) return undefined;
+
   const num = typeof value === "number" ? value : Number(value);
   if (Number.isNaN(num) || num === 0) return undefined;
+
   const positive = format.upIsPositive === false ? num < 0 : num > 0;
-  return positive ? "text-emerald-400" : "text-red-400";
+  return positive ? "text-success" : "text-destructive";
 };
 
-const alignClass = { left: "text-left", center: "text-center", right: "text-right" };
+const alignClass = {
+  left: "text-left",
+  center: "text-center",
+  right: "text-right",
+};
+
+const SortIcon = ({ direction }: { direction: false | "asc" | "desc" }) => {
+  if (direction === "asc") return <ChevronUp className="size-3.5" />;
+  if (direction === "desc") return <ChevronDown className="size-3.5" />;
+  return <ChevronsUpDown className="size-3.5 opacity-40" />;
+};
 
 const DataTable: React.FC<DataTableProps> = ({ columns, data, rowIdKey }) => {
-  const [sortKey, setSortKey] = useState<string>(columns[0]?.key || rowIdKey);
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [sorting, setSorting] = React.useState<SortingState>([]);
 
-  const sortedRows = useMemo(() => {
-    const rows = [...data];
-    rows.sort((a, b) => {
-      const result = compareValues(a[sortKey], b[sortKey]);
-      return sortDirection === "asc" ? result : -result;
-    });
-    return rows;
-  }, [data, sortDirection, sortKey]);
+  const tableColumns = useMemo<ColumnDef<Record<string, unknown>>[]>(
+    () =>
+      columns.map((column) => ({
+        id: column.key,
+        accessorKey: column.key,
+        header: ({ column: tableColumn }) => (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-8 px-2 text-xs font-semibold text-muted-foreground",
+              column.align === "right" && "ml-auto",
+              column.align === "center" && "mx-auto",
+            )}
+            onClick={() => tableColumn.toggleSorting(tableColumn.getIsSorted() === "asc")}
+          >
+            {column.label}
+            <SortIcon direction={tableColumn.getIsSorted()} />
+          </Button>
+        ),
+        cell: ({ getValue }) => {
+          const value = getValue();
 
-  const handleSort = (key: string) => {
-    if (sortKey === key) {
-      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDirection("asc");
-    }
-  };
+          return (
+            <span className={getCellColor(value, column.format)}>
+              {formatValue(value, column.format)}
+            </span>
+          );
+        },
+        sortingFn: (rowA, rowB) => compareValues(rowA.original[column.key], rowB.original[column.key]),
+        meta: {
+          align: column.align || "left",
+          priority: column.priority,
+        },
+      })),
+    [columns],
+  );
 
-  const SortIcon = ({ columnKey }: { columnKey: string }) => {
-    if (sortKey !== columnKey) return <ChevronsUpDown className="ml-1 h-3 w-3 opacity-40" />;
-    return sortDirection === "asc"
-      ? <ChevronUp className="ml-1 h-3 w-3" />
-      : <ChevronDown className="ml-1 h-3 w-3" />;
-  };
+  const table = useReactTable({
+    data,
+    columns: tableColumns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getRowId: (row, index) => String(row[rowIdKey] ?? index),
+  });
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border">
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  className={cn(
-                    "whitespace-nowrap px-4 py-3 text-xs font-semibold text-muted-foreground",
-                    alignClass[col.align || "left"],
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => handleSort(col.key)}
-                    className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors"
-                  >
-                    {col.label}
-                    <SortIcon columnKey={col.key} />
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sortedRows.map((row, rowIndex) => {
-              const id = row[rowIdKey] ?? rowIndex;
-              return (
-                <tr
-                  key={String(id)}
-                  className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors"
-                >
-                  {columns.map((col) => {
-                    const value = row[col.key];
-                    const colorClass = getCellColor(value, col.format);
-                    return (
-                      <td
-                        key={col.key}
-                        className={cn(
-                          "px-4 py-3 text-foreground",
-                          alignClass[col.align || "left"],
-                          col.priority !== "primary" && "whitespace-nowrap",
-                          colorClass,
-                        )}
-                      >
-                        {formatValue(value, col.format)}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {sortedRows.length === 0 && (
-        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-          No rows available.
-        </div>
-      )}
+    <div className="overflow-hidden rounded-xl border bg-card">
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => {
+                const align = header.column.columnDef.meta?.align || "left";
+
+                return (
+                  <TableHead key={header.id} className={cn("px-2", alignClass[align])}>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(header.column.columnDef.header, header.getContext())}
+                  </TableHead>
+                );
+              })}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.length ? (
+            table.getRowModel().rows.map((row) => (
+              <TableRow key={row.id}>
+                {row.getVisibleCells().map((cell) => {
+                  const align = cell.column.columnDef.meta?.align || "left";
+                  const priority = cell.column.columnDef.meta?.priority;
+
+                  return (
+                    <TableCell
+                      key={cell.id}
+                      className={cn(
+                        "text-foreground",
+                        alignClass[align],
+                        priority !== "primary" && "whitespace-nowrap",
+                      )}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                No rows available.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
 };
