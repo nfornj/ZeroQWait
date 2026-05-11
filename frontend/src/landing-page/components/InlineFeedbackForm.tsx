@@ -1,19 +1,12 @@
-import React, { useState, useRef } from "react";
-import {
-  Box,
-  Button,
-  TextField,
-  Typography,
-  IconButton,
-  CircularProgress,
-  Stack,
-  Chip,
-} from "@mui/material";
-import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
-import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
-import FeedbackRoundedIcon from "@mui/icons-material/FeedbackRounded";
+import React, { useRef, useState } from "react";
 import axios from "axios";
+import { CheckCircle2, Image, Loader2, MessageSquareWarning, X } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 interface InlineFeedbackFormProps {
   sessionId?: string;
@@ -36,8 +29,8 @@ const InlineFeedbackForm: React.FC<InlineFeedbackFormProps> = ({
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] ?? null;
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
       setError("Screenshot must be under 10 MB.");
@@ -60,18 +53,19 @@ const InlineFeedbackForm: React.FC<InlineFeedbackFormProps> = ({
       setError("Please describe the issue.");
       return;
     }
+
     setError(null);
     setSubmitting(true);
     try {
-      const fd = new FormData();
-      fd.append("description", description.trim());
-      if (name.trim()) fd.append("name", name.trim());
-      if (email.trim()) fd.append("email", email.trim());
-      if (sessionId) fd.append("session_id", sessionId);
-      fd.append("page_context", pageContext);
-      if (screenshot) fd.append("screenshot", screenshot);
+      const formData = new FormData();
+      formData.append("description", description.trim());
+      if (name.trim()) formData.append("name", name.trim());
+      if (email.trim()) formData.append("email", email.trim());
+      if (sessionId) formData.append("session_id", sessionId);
+      formData.append("page_context", pageContext);
+      if (screenshot) formData.append("screenshot", screenshot);
 
-      const res = await axios.post("/api/chat-feedback/submit", fd, {
+      const res = await axios.post("/api/chat-feedback/submit", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setTicketId(res.data.ticket_id);
@@ -84,186 +78,85 @@ const InlineFeedbackForm: React.FC<InlineFeedbackFormProps> = ({
 
   if (ticketId) {
     return (
-      <Box
-        sx={{
-          mt: 1.5,
-          p: 2.5,
-          borderRadius: "16px",
-          bgcolor: (t) =>
-            t.palette.mode === "dark"
-              ? "rgba(76,175,80,0.15)"
-              : "rgba(76,175,80,0.08)",
-          border: "1px solid",
-          borderColor: "success.main",
-          maxWidth: 480,
-        }}
-      >
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <CheckCircleRoundedIcon sx={{ color: "success.main", fontSize: 28 }} />
-          <Box>
-            <Typography variant="subtitle2" fontWeight={700} color="success.main">
-              Feedback submitted — thank you!
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Ticket ID:{" "}
-              <Box
-                component="span"
-                sx={{
-                  fontFamily: "monospace",
-                  fontWeight: 700,
-                  color: "text.primary",
-                  letterSpacing: 0.5,
-                }}
-              >
-                {ticketId}
-              </Box>
-            </Typography>
-            <Typography variant="caption" color="text.disabled">
-              We review all submissions and will reach out if needed.
-            </Typography>
-          </Box>
-        </Stack>
-      </Box>
+      <Card className="w-full max-w-md border-primary/40">
+        <CardContent className="flex gap-3 p-5">
+          <CheckCircle2 className="size-6 shrink-0 text-primary" />
+          <div>
+            <p className="font-bold text-primary">Feedback submitted. Thank you.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Ticket ID: <span className="font-mono font-bold text-foreground">{ticketId}</span>
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <Box
-      sx={{
-        mt: 1.5,
-        p: 2.5,
-        borderRadius: "16px",
-        bgcolor: (t) =>
-          t.palette.mode === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
-        border: "1px solid",
-        borderColor: "divider",
-        maxWidth: 480,
-      }}
-    >
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-        <FeedbackRoundedIcon color="primary" fontSize="small" />
-        <Typography variant="subtitle2" fontWeight={700}>
+    <Card className="w-full max-w-md">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MessageSquareWarning className="size-4 text-primary" />
           Submit Feedback
-        </Typography>
-      </Stack>
-
-      <TextField
-        label="Describe the issue *"
-        placeholder="What happened? What did you expect?"
-        multiline
-        minRows={3}
-        maxRows={6}
-        fullWidth
-        size="small"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        sx={{ mb: 1.5 }}
-        inputProps={{ maxLength: 2000 }}
-      />
-
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mb: 1.5 }}>
-        <TextField
-          label="Your name (optional)"
-          size="small"
-          fullWidth
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          inputProps={{ maxLength: 100 }}
-        />
-        <TextField
-          label="Email (optional)"
-          size="small"
-          fullWidth
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          type="email"
-          inputProps={{ maxLength: 200 }}
-        />
-      </Stack>
-
-      {/* Screenshot area */}
-      {previewUrl ? (
-        <Box sx={{ position: "relative", display: "inline-block", mb: 1.5 }}>
-          <Box
-            component="img"
-            src={previewUrl}
-            alt="Screenshot preview"
-            sx={{
-              maxWidth: 200,
-              maxHeight: 120,
-              borderRadius: "10px",
-              objectFit: "contain",
-              border: "1px solid",
-              borderColor: "divider",
-              display: "block",
-            }}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="feedback-description">Describe the issue</Label>
+          <Textarea
+            id="feedback-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="What happened? What did you expect?"
+            maxLength={2000}
           />
-          <IconButton
-            size="small"
-            onClick={removeScreenshot}
-            sx={{
-              position: "absolute",
-              top: -8,
-              right: -8,
-              bgcolor: "background.paper",
-              border: "1px solid",
-              borderColor: "divider",
-              width: 22,
-              height: 22,
-              "&:hover": { bgcolor: "error.light" },
-            }}
-          >
-            <CloseRoundedIcon sx={{ fontSize: 14 }} />
-          </IconButton>
-        </Box>
-      ) : (
-        <Button
-          variant="outlined"
-          size="small"
-          startIcon={<ImageRoundedIcon />}
-          onClick={() => fileInputRef.current?.click()}
-          sx={{ mb: 1.5, borderRadius: "10px", textTransform: "none", fontSize: "0.8rem" }}
-        >
-          Attach screenshot (optional)
-        </Button>
-      )}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        onChange={handleFileChange}
-      />
+        </div>
 
-      {error && (
-        <Typography color="error" variant="caption" display="block" sx={{ mb: 1 }}>
-          {error}
-        </Typography>
-      )}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="feedback-name">Your name (optional)</Label>
+            <Input id="feedback-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={100} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="feedback-email">Email (optional)</Label>
+            <Input id="feedback-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={200} />
+          </div>
+        </div>
 
-      <Stack direction="row" spacing={1} alignItems="center">
-        <Button
-          variant="contained"
-          size="small"
-          onClick={handleSubmit}
-          disabled={submitting || !description.trim()}
-          sx={{ borderRadius: "10px", textTransform: "none", fontWeight: 700 }}
-        >
-          {submitting ? <CircularProgress size={16} sx={{ mr: 1 }} /> : null}
-          {submitting ? "Submitting…" : "Submit feedback"}
-        </Button>
-        {onDismiss && (
-          <Button
-            variant="text"
-            size="small"
-            onClick={onDismiss}
-            sx={{ borderRadius: "10px", textTransform: "none", color: "text.secondary" }}
-          >
-            Cancel
+        {previewUrl ? (
+          <div className="relative w-fit">
+            <img src={previewUrl} alt="Screenshot preview" className="max-h-32 max-w-52 rounded-lg border object-contain" />
+            <Button type="button" size="icon" variant="secondary" className="absolute -right-3 -top-3 size-7" onClick={removeScreenshot}>
+              <X />
+            </Button>
+          </div>
+        ) : (
+          <Button type="button" variant="outline" size="sm" className="self-start" onClick={() => fileInputRef.current?.click()}>
+            <Image data-icon="inline-start" />
+            Attach screenshot
           </Button>
         )}
-      </Stack>
-    </Box>
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={handleSubmit} disabled={submitting || !description.trim()}>
+            {submitting && <Loader2 data-icon="inline-start" className="animate-spin" />}
+            {submitting ? "Submitting..." : "Submit feedback"}
+          </Button>
+          {onDismiss && (
+            <Button size="sm" variant="ghost" onClick={onDismiss}>
+              Cancel
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 
