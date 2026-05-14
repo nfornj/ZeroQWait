@@ -1,39 +1,119 @@
-import { Activity, Clock3, ShieldCheck, Sparkles, Workflow, Zap } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Container from '@mui/material/Container';
+import Grid from '@mui/material/Grid';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
+import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded';
+import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded';
+import QueryStatsRoundedIcon from '@mui/icons-material/QueryStatsRounded';
+import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
+import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded';
+import ThumbUpAltRoundedIcon from '@mui/icons-material/ThumbUpAltRounded';
 
-const highlights = [
-  { icon: Activity, title: "Live context", body: "Queue state, shop services, and customer status stay visible to the assistant." },
-  { icon: ShieldCheck, title: "Policy-aware", body: "Sensitive operations are designed to pause for owner review before execution." },
-  { icon: Workflow, title: "Agent routing", body: "Supervisor routing keeps receptionist, finance, and HR responsibilities clear." },
-  { icon: Clock3, title: "Real-time updates", body: "Customers and owners get current queue and wait-time information." },
-  { icon: Zap, title: "Fast actions", body: "Common actions are available as buttons but still backed by natural language." },
-  { icon: Sparkles, title: "Voice ready", body: "Customer-facing flows can use the existing ASR and Qwen3-TTS voice pipeline." },
+const items = [
+  {
+    icon: <SettingsSuggestRoundedIcon />,
+    title: 'Human-in-the-Loop Control',
+    description:
+      'Your agents propose high-impact actions — closing the queue, updating a schedule, processing a refund — and wait for your explicit approval before acting.',
+  },
+  {
+    icon: <ConstructionRoundedIcon />,
+    title: 'Smart Queue Management',
+    description:
+      'Your Receptionist agent opens, monitors, and closes your queue automatically — notifying customers at every step and adapting to live walk-in traffic.',
+  },
+  {
+    icon: <ThumbUpAltRoundedIcon />,
+    title: 'Voice-First Experience',
+    description:
+      'Speak naturally to manage your shop. Voice input and AI-generated speech make reviewing queues, checking revenue, and updating schedules feel like a conversation.',
+  },
+  {
+    icon: <AutoFixHighRoundedIcon />,
+    title: 'HR Agent',
+    description:
+      'Add employees, assign shifts, and manage availability through conversation. Your HR agent handles the admin burden so you can focus on your team.',
+  },
+  {
+    icon: <SupportAgentRoundedIcon />,
+    title: 'Always-On Agent Team',
+    description:
+      'Your AI agent team runs 24/7 — handling customers, flagging issues, and surfacing insights even when you\'re away from the dashboard.',
+  },
+  {
+    icon: <QueryStatsRoundedIcon />,
+    title: 'Finance Agent',
+    description:
+      'Ask for a revenue summary, top services, or busiest hours at any time. Your Finance agent delivers instant, accurate answers from your live business data.',
+  },
 ];
 
 export default function Highlights() {
   return (
-    <section id="highlights" className="border-b bg-muted/30 py-16 sm:py-24">
-      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-3xl">
-          <p className="text-sm font-semibold uppercase text-primary">Operational highlights</p>
-          <h2 className="mt-2 text-3xl font-black sm:text-4xl">Designed for one real service business at a time.</h2>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {highlights.map((item) => (
-            <Card key={item.title}>
-              <CardContent className="flex gap-4 p-5">
-                <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-                  <item.icon className="size-5" />
-                </div>
+    <Box
+      id="highlights"
+      sx={{
+        pt: { xs: 4, sm: 12 },
+        pb: { xs: 8, sm: 16 },
+        color: 'white',
+        bgcolor: 'grey.900',
+      }}
+    >
+      <Container
+        sx={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: { xs: 3, sm: 6 },
+        }}
+      >
+        <Box
+          sx={{
+            width: { sm: '100%', md: '60%' },
+            textAlign: { sm: 'left', md: 'center' },
+          }}
+        >
+          <Typography component="h2" variant="h4" gutterBottom>
+            What Your Agent Team Does For You
+          </Typography>
+          <Typography variant="body1" sx={{ color: 'grey.400' }}>
+            Six ways your ZeroQwait AI agent team takes work off your plate every single day —
+            from managing walk-ins to delivering real-time financial reports on demand.
+          </Typography>
+        </Box>
+        <Grid container spacing={2}>
+          {items.map((item, index) => (
+            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={index}>
+              <Stack
+                direction="column"
+                component={Card}
+                spacing={1}
+                useFlexGap
+                sx={{
+                  color: 'inherit',
+                  p: 3,
+                  height: '100%',
+                  borderColor: 'hsla(220, 25%, 25%, 0.3)',
+                  backgroundColor: 'grey.800',
+                }}
+              >
+                <Box sx={{ opacity: '50%' }}>{item.icon}</Box>
                 <div>
-                  <p className="font-bold">{item.title}</p>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{item.body}</p>
+                  <Typography gutterBottom sx={{ fontWeight: 'medium' }}>
+                    {item.title}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: 'grey.400' }}>
+                    {item.description}
+                  </Typography>
                 </div>
-              </CardContent>
-            </Card>
+              </Stack>
+            </Grid>
           ))}
-        </div>
-      </div>
-    </section>
+        </Grid>
+      </Container>
+    </Box>
   );
 }

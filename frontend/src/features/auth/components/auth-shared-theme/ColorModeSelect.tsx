@@ -1,0 +1,6 @@
+import { SelectProps } from '@mui/material/Select';
+
+export default function ColorModeSelect(props: SelectProps) {
+  // Temporary disable for v5 compatibility
+  return null;
+}

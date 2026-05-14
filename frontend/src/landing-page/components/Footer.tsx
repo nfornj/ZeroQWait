@@ -1,92 +1,226 @@
-import { Code2, Mail, MessageSquareText } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import ZeroQwaitLogo from "./ZeroQwaitLogo";
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Container from '@mui/material/Container';
+import IconButton from '@mui/material/IconButton';
+import InputLabel from '@mui/material/InputLabel';
+import Link from '@mui/material/Link';
+import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
+import GitHubIcon from '@mui/icons-material/GitHub';
+import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
+import EmailRoundedIcon from '@mui/icons-material/EmailRounded';
+import ZeroQwaitLogo from './ZeroQwaitLogo';
 
-const footerSections = [
+interface FooterLinkItem {
+  label: string;
+  href: string;
+  external?: boolean;
+}
+
+interface FooterSection {
+  title: string;
+  links: FooterLinkItem[];
+}
+
+const footerSections: FooterSection[] = [
   {
-    title: "Product",
+    title: 'Product',
     links: [
-      { label: "Features", href: "#features" },
-      { label: "Testimonials", href: "#testimonials" },
-      { label: "Highlights", href: "#highlights" },
-      { label: "Pricing", href: "#pricing" },
-      { label: "FAQ", href: "#faq" },
+      { label: 'Features', href: '#features' },
+      { label: 'Testimonials', href: '#testimonials' },
+      { label: 'Highlights', href: '#highlights' },
+      { label: 'Pricing', href: '#pricing' },
+      { label: 'FAQ', href: '#faq' },
     ],
   },
   {
-    title: "Account",
+    title: 'Get Started',
     links: [
-      { label: "Register", href: "/signup" },
-      { label: "Sign in", href: "/login" },
-      { label: "Search shops", href: "/search" },
+      { label: 'Search Shops', href: '/search' },
+      { label: 'Register a Shop', href: '/signup' },
+      { label: 'Owner Login', href: '/login' },
+    ],
+  },
+  {
+    title: 'Resources',
+    links: [
+      { label: 'API Docs', href: 'https://zeroqwait.com/docs', external: true },
+      { label: 'Support', href: 'mailto:support@zeroqwait.com', external: true },
+      { label: 'GitHub', href: 'https://github.com/nfornj/FastCuts.git', external: true },
     ],
   },
 ];
 
 function Copyright() {
-  return <p className="text-xs text-muted-foreground">Copyright {new Date().getFullYear()} ZeroQwait. All rights reserved.</p>;
+  return (
+    <Typography variant="body2" sx={{ color: 'text.secondary', mt: 1 }}>
+      {'Copyright © '}
+      <Link color="text.secondary" href="https://zeroqwait.com/">
+        ZeroQwait
+      </Link>
+      &nbsp;
+      {new Date().getFullYear()}
+    </Typography>
+  );
 }
 
 export default function Footer() {
   return (
-    <footer className="bg-muted/30">
-      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.2fr_1fr_1fr] lg:px-8">
-        <div className="flex flex-col gap-4">
-          <ZeroQwaitLogo className="text-lg" />
-          <p className="max-w-sm text-sm leading-6 text-muted-foreground">
-            AI receptionist and owner operations workspace for practical service businesses.
-          </p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="icon" aria-label="GitHub">
-              <Code2 />
-            </Button>
-            <Button variant="outline" size="icon" aria-label="Email">
-              <Mail />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Ask ZeroQ"
-              onClick={() => window.dispatchEvent(new Event("trigger-zeroq-assistant"))}
-            >
-              <MessageSquareText />
-            </Button>
-          </div>
-        </div>
-
+    <Container
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: { xs: 4, sm: 8 },
+        py: { xs: 8, sm: 10 },
+        textAlign: { sm: 'center', md: 'left' },
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          width: '100%',
+          justifyContent: 'space-between',
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            minWidth: { xs: '100%', sm: '60%' },
+          }}
+        >
+          <Box sx={{ width: { xs: '100%', sm: '60%' } }}>
+            <ZeroQwaitLogo />
+            <Typography variant="body2" gutterBottom sx={{ fontWeight: 600, mt: 2 }}>
+              Join the newsletter
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+              Subscribe for weekly updates. No spams ever!
+            </Typography>
+            <InputLabel htmlFor="email-newsletter">Email</InputLabel>
+            <Stack direction="row" spacing={1} useFlexGap>
+              <TextField
+                id="email-newsletter"
+                hiddenLabel
+                size="small"
+                variant="outlined"
+                fullWidth
+                aria-label="Enter your email address"
+                placeholder="Your email address"
+                slotProps={{
+                  htmlInput: {
+                    autoComplete: 'off',
+                    'aria-label': 'Enter your email address',
+                  },
+                }}
+                sx={{ width: '250px' }}
+              />
+              <Button
+                variant="contained"
+                color="primary"
+                size="small"
+                sx={{ flexShrink: 0 }}
+              >
+                Subscribe
+              </Button>
+            </Stack>
+          </Box>
+        </Box>
         {footerSections.map((section) => (
-          <div key={section.title}>
-            <p className="font-bold">{section.title}</p>
-            <ul className="mt-3 flex flex-col gap-2 text-sm text-muted-foreground">
-              {section.links.map((link) => (
-                <li key={link.label}>
-                  <a href={link.href} className="hover:text-foreground hover:underline">
-                    {link.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <Box
+            key={section.title}
+            sx={{
+              display: { xs: 'none', sm: 'flex' },
+              flexDirection: 'column',
+              gap: 1,
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+              {section.title}
+            </Typography>
+            {section.links.map((item) => (
+              <Link
+                key={item.label}
+                color="text.secondary"
+                variant="body2"
+                href={item.href}
+                target={item.external ? '_blank' : undefined}
+                rel={item.external ? 'noreferrer' : undefined}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </Box>
         ))}
-
-        <div className="lg:col-span-3">
-          <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 sm:flex-row sm:items-center">
-            <div className="flex-1">
-              <p className="font-bold">Get product updates</p>
-              <p className="text-sm text-muted-foreground">Follow the migration from queue SaaS to AI operations workspace.</p>
-            </div>
-            <div className="flex min-w-0 gap-2 sm:w-[360px]">
-              <Input type="email" placeholder="you@example.com" aria-label="Email address" />
-              <Button>Subscribe</Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="border-t pt-5 lg:col-span-3">
+      </Box>
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          gap: 2,
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          justifyContent: 'space-between',
+          pt: { xs: 4, sm: 8 },
+          width: '100%',
+          borderTop: '1px solid',
+          borderColor: 'divider',
+        }}
+      >
+        <div>
+          <Link color="text.secondary" variant="body2" href="mailto:support@zeroqwait.com">
+            support@zeroqwait.com
+          </Link>
+          <Typography sx={{ display: 'inline', mx: 0.5, opacity: 0.5 }}>
+            &nbsp;•&nbsp;
+          </Typography>
+          <Link color="text.secondary" variant="body2" href="https://zeroqwait.com/docs" target="_blank" rel="noreferrer">
+            API Docs
+          </Link>
           <Copyright />
         </div>
-      </div>
-    </footer>
+        <Stack
+          direction="row"
+          spacing={1}
+          useFlexGap
+          sx={{ justifyContent: 'left', color: 'text.secondary' }}
+        >
+          <IconButton
+            color="inherit"
+            size="small"
+            href="https://github.com/nfornj/FastCuts.git"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="GitHub"
+            sx={{ alignSelf: 'center' }}
+          >
+            <GitHubIcon />
+          </IconButton>
+          <IconButton
+            color="inherit"
+            size="small"
+            href="https://zeroqwait.com/docs"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Docs"
+            sx={{ alignSelf: 'center' }}
+          >
+            <DescriptionRoundedIcon />
+          </IconButton>
+          <IconButton
+            color="inherit"
+            size="small"
+            href="mailto:support@zeroqwait.com"
+            aria-label="Support"
+            sx={{ alignSelf: 'center' }}
+          >
+            <EmailRoundedIcon />
+          </IconButton>
+        </Stack>
+      </Box>
+    </Container>
   );
 }

@@ -1,12 +1,26 @@
-import { Bot } from "lucide-react";
+import SvgIcon from '@mui/material/SvgIcon';
 
-export default function ZeroQwaitLogo({ className = "" }: { className?: string }) {
+export default function ZeroQwaitLogo() {
   return (
-    <span className={`inline-flex items-center gap-2 font-extrabold ${className}`}>
-      <span className="inline-flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-        <Bot className="size-5" aria-hidden="true" />
-      </span>
-      <span>ZeroQwait</span>
-    </span>
+    <SvgIcon sx={{ height: 21, width: 100, mr: 2 }}>
+      <svg
+        width={100}
+        height={21}
+        viewBox="0 0 100 21"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <text
+          x="0"
+          y="18"
+          fill="currentColor"
+          fontFamily="Arial, sans-serif"
+          fontWeight="bold"
+          fontSize="18"
+        >
+          ZeroQwait
+        </text>
+      </svg>
+    </SvgIcon>
   );
 }

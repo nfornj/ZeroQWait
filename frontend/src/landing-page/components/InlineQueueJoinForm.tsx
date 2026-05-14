@@ -1,19 +1,29 @@
-import React, { useCallback, useState } from "react";
-import axios from "axios";
-import { CheckCircle2, Loader2, Phone, User } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+/**
+ * InlineQueueJoinForm — renders interactive queue join form INSIDE chat bubbles.
+ *
+ * Mirrors InlineRegistrationForm pattern but for collecting customer details
+ * (name, phone, optional service) before joining a queue.
+ */
+import React, { useState, useCallback } from "react";
 import {
+  Box,
+  Button,
+  Card,
+  TextField,
+  Stack,
+  Typography,
+  CircularProgress,
+  Alert,
+  FormControl,
+  InputLabel,
   Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  MenuItem,
+} from "@mui/material";
+import PersonIcon from "@mui/icons-material/Person";
+import PhoneIcon from "@mui/icons-material/Phone";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import ErrorIcon from "@mui/icons-material/Error";
+import axios from "axios";
 
 export interface QueueJoinFormData {
   type: "queue_join_form";
@@ -46,8 +56,13 @@ interface InlineQueueJoinFormProps {
 
 export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
   shopId,
-  services = [],
+  shopName,
+  shopType,
+  sessionId,
+  theme,
+  isDarkMode,
   disabled = false,
+  services = [],
   onFormSubmit,
 }) => {
   const [name, setName] = useState("");
@@ -61,6 +76,7 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
     const trimmedName = name.trim();
     const trimmedPhone = phone.trim();
 
+    // Validate inputs
     if (!trimmedName) {
       setError("Name is required");
       return;
@@ -71,6 +87,7 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
     }
 
     setIsLoading(true);
+
     try {
       const payload: Record<string, unknown> = {
         customer_name: trimmedName,
@@ -88,81 +105,222 @@ export const InlineQueueJoinForm: React.FC<InlineQueueJoinFormProps> = ({
         payload.notes = `Requested service: ${serviceValue.trim()}`;
       }
 
-      const response = await axios.post(`/queues/shop/${shopId}/join`, payload, { withCredentials: true });
+      const response = await axios.post(
+        `/queues/shop/${shopId}/join`,
+        payload,
+        { withCredentials: true }
+      );
+
       const result = response.data;
       onFormSubmit({
         success: true,
         queueItemId: result.id,
         position: result.position,
-        serviceCost: typeof result.service_cost === "number" ? result.service_cost : selectedServiceCost,
+        serviceCost:
+          typeof result.service_cost === "number"
+            ? result.service_cost
+            : selectedServiceCost,
       });
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || err.message || "An error occurred. Please try again.";
+      const errorMsg =
+        err.response?.data?.detail ||
+        err.message ||
+        "An error occurred. Please try again.";
       setError(errorMsg);
-      onFormSubmit({ success: false, error: errorMsg });
+      onFormSubmit({
+        success: false,
+        error: errorMsg,
+      });
     } finally {
       setIsLoading(false);
     }
   }, [name, onFormSubmit, phone, serviceValue, services, shopId]);
 
-  if (disabled) return null;
+  if (disabled) {
+    return null;
+  }
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Complete Your Queue Entry</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+    <Card
+      sx={{
+        bgcolor: isDarkMode ? theme.cardBg : "#fafafa",
+        border: `1px solid ${theme.cardBorder}`,
+        borderRadius: "16px",
+        p: 2,
+      }}
+    >
+      <Stack spacing={2}>
+        {/* Title */}
+        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+          Complete Your Queue Entry
+        </Typography>
+
+        {/* Error Alert */}
         {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
+          <Alert severity="error" sx={{ fontSize: "0.9rem" }}>
+            {error}
           </Alert>
         )}
 
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="queue-name">Your Name</Label>
-          <div className="relative">
-            <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input id="queue-name" className="pl-9" value={name} onChange={(event) => setName(event.target.value)} disabled={isLoading} autoComplete="name" />
-          </div>
-        </div>
+        {/* Name Field */}
+        <TextField
+          label="Your Name"
+          placeholder="e.g., John Smith"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          disabled={isLoading}
+          fullWidth
+          size="small"
+          variant="outlined"
+          autoComplete="name"
+          inputProps={{
+            enterKeyHint: "next",
+            autoCapitalize: "words",
+          }}
+          InputProps={{
+            startAdornment: <PersonIcon sx={{ mr: 1, color: theme.accent, fontSize: "1.2rem" }} />,
+          }}
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              borderRadius: "12px",
+              bgcolor: isDarkMode ? theme.inputBg : "#fff",
+              "& fieldset": { borderColor: theme.cardBorder },
+              "&:hover fieldset": { borderColor: theme.accent },
+              "&.Mui-focused fieldset": { borderColor: theme.accent },
+            },
+          }}
+        />
 
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="queue-phone">Phone Number</Label>
-          <div className="relative">
-            <Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input id="queue-phone" className="pl-9" value={phone} onChange={(event) => setPhone(event.target.value)} disabled={isLoading} type="tel" autoComplete="tel" />
-          </div>
-        </div>
+        {/* Phone Field */}
+        <TextField
+          label="Phone Number"
+          placeholder="e.g., (416) 555-0123"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          disabled={isLoading}
+          fullWidth
+          size="small"
+          variant="outlined"
+          type="tel"
+          autoComplete="tel"
+          inputProps={{
+            inputMode: "tel",
+            enterKeyHint: "done",
+            maxLength: 24,
+          }}
+          InputProps={{
+            startAdornment: <PhoneIcon sx={{ mr: 1, color: theme.accent, fontSize: "1.2rem" }} />,
+          }}
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              borderRadius: "12px",
+              bgcolor: isDarkMode ? theme.inputBg : "#fff",
+              "& fieldset": { borderColor: theme.cardBorder },
+              "&:hover fieldset": { borderColor: theme.accent },
+              "&.Mui-focused fieldset": { borderColor: theme.accent },
+            },
+          }}
+        />
 
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="queue-service">Service</Label>
-          {services.length > 0 ? (
-            <Select value={serviceValue} onValueChange={setServiceValue} disabled={isLoading}>
-              <SelectTrigger id="queue-service">
-                <SelectValue placeholder="Select a service" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {services.map((svc) => (
-                    <SelectItem key={svc.id} value={String(svc.id)}>
-                      {svc.name} - ${svc.cost.toFixed(2)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
+        {/* Service Selection */}
+        {services.length > 0 ? (
+          <FormControl fullWidth size="small">
+            <InputLabel>Service</InputLabel>
+            <Select
+              value={serviceValue}
+              label="Service"
+              onChange={(e) => setServiceValue(e.target.value)}
+              disabled={isLoading}
+              sx={{
+                borderRadius: "12px",
+                bgcolor: isDarkMode ? theme.inputBg : "#fff",
+                "& .MuiOutlinedInput-notchedOutline": { borderColor: theme.cardBorder },
+                "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: theme.accent },
+                "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: theme.accent },
+              }}
+            >
+              {services.map((svc) => (
+                <MenuItem key={svc.id} value={String(svc.id)}>
+                  {svc.name} — ${svc.cost.toFixed(2)}
+                </MenuItem>
+              ))}
             </Select>
-          ) : (
-            <Input id="queue-service" value={serviceValue} onChange={(event) => setServiceValue(event.target.value)} disabled={isLoading} placeholder="Haircut, fade, style" />
-          )}
-        </div>
+          </FormControl>
+        ) : (
+          <TextField
+            label="Service (Optional)"
+            placeholder="e.g., Haircut, Fade, Style"
+            value={serviceValue}
+            onChange={(e) => setServiceValue(e.target.value)}
+            disabled={isLoading}
+            fullWidth
+            size="small"
+            variant="outlined"
+            autoComplete="off"
+            inputProps={{
+              enterKeyHint: "done",
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: "12px",
+                bgcolor: isDarkMode ? theme.inputBg : "#fff",
+                "& fieldset": { borderColor: theme.cardBorder },
+                "&:hover fieldset": { borderColor: theme.accent },
+                "&.Mui-focused fieldset": { borderColor: theme.accent },
+              },
+            }}
+          />
+        )}
 
-        <Button onClick={handleSubmit} disabled={isLoading || !name.trim() || !phone.trim()}>
-          {isLoading ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-          {isLoading ? "Joining Queue..." : "Join Queue"}
+        {/* Submit Button */}
+        <Button
+          variant="contained"
+          onClick={handleSubmit}
+          disabled={isLoading || !name.trim() || !phone.trim()}
+          fullWidth
+          sx={{
+            bgcolor: theme.accent,
+            color: isDarkMode ? "#000" : "#fff",
+            borderRadius: "12px",
+            fontWeight: 600,
+            py: 1.2,
+            "&:hover": {
+              bgcolor: isDarkMode ? theme.accentHover || theme.accent : theme.accent,
+              opacity: 0.9,
+            },
+            "&:disabled": {
+              bgcolor: theme.cardBorder,
+              color: theme.textSecondary,
+            },
+            textTransform: "none",
+            fontSize: "0.95rem",
+          }}
+        >
+          {isLoading ? (
+            <>
+              <CircularProgress size={18} sx={{ mr: 1 }} />
+              Joining Queue...
+            </>
+          ) : (
+            <>
+              <CheckCircleIcon sx={{ mr: 1, fontSize: "1.1rem" }} />
+              Join Queue
+            </>
+          )}
         </Button>
-        <p className="text-center text-xs text-muted-foreground">Your details will be saved to your queue entry.</p>
-      </CardContent>
+
+        {/* Helper text */}
+        <Typography
+          variant="caption"
+          sx={{
+            color: theme.textSecondary,
+            textAlign: "center",
+            fontSize: "0.8rem",
+          }}
+        >
+          Your details will be saved to your queue entry
+        </Typography>
+      </Stack>
     </Card>
   );
 };
