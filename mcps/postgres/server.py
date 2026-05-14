@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 import logging
 import os
+import re
 import sys
 
 import uvicorn
@@ -24,6 +25,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("postgres-mcp")
 
 app = FastAPI(title="ZeroQwait Postgres MCP", version="1.0.0")
+
+# ── raw_read security ─────────────────────────────────────────────────────────
+# Maximum rows returned by a single raw_read call.
+_RAW_READ_MAX_ROWS = 500
+
+# DML / DDL keywords that must not appear (word-boundary matched) in a read query.
+_WRITE_KEYWORDS: frozenset[str] = frozenset({
+    "insert", "update", "delete", "drop", "truncate",
+    "alter", "create", "grant", "revoke",
+})
+
+# Dangerous sub-sequences blocked by substring match (no word boundary needed).
+_BLOCKED_SEQUENCES: tuple[str, ...] = ("--", "/*", "*/", ";--", "xp_", "0x")
+
+# SELECT INTO creates a new table — block it as a phrase.
+_SELECT_INTO_RE = re.compile(r"\bselect\b.+\binto\b", re.IGNORECASE | re.DOTALL)
+
 
 # Only these tables may be read via the safe-query endpoint (allowlist).
 ALLOWED_TABLES: frozenset = frozenset({
@@ -65,6 +83,12 @@ class SafeQueryRequest(ShopRequest):
     limit: int = 50
     order_by: Optional[str] = None
     desc: bool = False
+
+
+class RawReadRequest(ShopRequest):
+    sql: str
+    params: Optional[dict] = None
+    limit: int = 100
 
 
 # ── Helper ─────────────────────────────────────────────────────────────────────
@@ -310,6 +334,76 @@ def _table_columns(table: str) -> set:
     return {"shop_id"} if table in _shop_id_tables else set()
 
 
+@app.post("/query/raw_read")
+async def rest_raw_read(req: RawReadRequest):
+    """
+    Execute any read-only SELECT query with shop_id tenant enforcement.
+
+    Security rules (all enforced server-side, cannot be bypassed by the caller):
+    - Query MUST start with SELECT
+    - No write / DDL keywords (INSERT, UPDATE, DELETE, DROP, TRUNCATE, ALTER, CREATE, GRANT, REVOKE)
+    - No comment sequences (-- /* */ ;-- xp_ 0x)
+    - No SELECT INTO (table-creation via SELECT)
+    - No semicolons (blocks multi-statement injection)
+    - shop_id injected as :_shop_id — the AI's SQL should reference it so
+      one shop never accidentally reads another shop's rows
+    - Row count hard-capped at min(req.limit, 500)
+    """
+    if req.limit > _RAW_READ_MAX_ROWS:
+        raise HTTPException(status_code=400, detail=f"limit cannot exceed {_RAW_READ_MAX_ROWS}")
+
+    sql = req.sql.strip()
+    sql_lower = sql.lower()
+
+    # 1. Must start with SELECT or WITH (CTEs start with WITH ... SELECT)
+    if not (sql_lower.startswith("select") or sql_lower.startswith("with")):
+        raise HTTPException(status_code=400, detail="Only SELECT queries are allowed (may start with WITH for CTEs)")
+
+    # 2. No semicolons (multi-statement injection)
+    if ";" in sql:
+        raise HTTPException(status_code=400, detail="Multiple statements are not allowed (semicolon detected)")
+
+    # 3. Block dangerous sub-sequences
+    for seq in _BLOCKED_SEQUENCES:
+        if seq in sql_lower:
+            raise HTTPException(status_code=400, detail=f"Blocked sequence: {seq!r}")
+
+    # 4. Block write / DDL keywords (word-boundary match avoids false positives
+    #    e.g. 'created_at' does not match 'create', 'deleted_at' does not match 'delete')
+    for kw in _WRITE_KEYWORDS:
+        if re.search(rf"\b{re.escape(kw)}\b", sql_lower):
+            raise HTTPException(status_code=400, detail=f"Blocked keyword: {kw!r}")
+
+    # 5. Block SELECT INTO (writes data to a new table)
+    if _SELECT_INTO_RE.search(sql_lower):
+        raise HTTPException(status_code=400, detail="SELECT INTO is not allowed")
+
+    # 6. Require :_shop_id placeholder — ensures tenant scoping is explicit in SQL
+    if ":_shop_id" not in sql:
+        raise HTTPException(
+            status_code=400,
+            detail="SQL must reference :_shop_id for tenant scoping (e.g. WHERE shop_id = :_shop_id)"
+        )
+
+    # 7. Merge caller params and inject shop_id (caller cannot override _shop_id)
+    merged_params: dict = {k: v for k, v in (req.params or {}).items()}
+    merged_params["_shop_id"] = req.shop_id  # always overwritten — tenant isolation
+
+    db = _db()
+    try:
+        rows = db.execute(text(sql), merged_params).fetchmany(req.limit)
+        return {
+            "shop_id": req.shop_id,
+            "count": len(rows),
+            "rows": [dict(r._mapping) for r in rows],
+        }
+    except Exception as e:
+        logger.error("raw_read error shop_id=%s: %s", req.shop_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
 @app.get("/health")
 async def health():
     db_ok = False
@@ -379,6 +473,30 @@ try:
                 order_by=order_by,
                 desc=desc,
             )
+        )
+
+    @mcp.tool(
+        description=(
+            "Run any complex read-only SELECT for a specific shop. "
+            "Use this for multi-table JOINs, GROUP BY aggregations, window functions, "
+            "subqueries, CTEs, BETWEEN/LIKE/IN filters — anything the named tools can't express. "
+            "shop_id is automatically injected as :_shop_id in every query for tenant isolation. "
+            "Your SQL MUST reference :_shop_id to scope results to the correct shop. "
+            "No writes allowed: INSERT/UPDATE/DELETE/DROP/ALTER are blocked server-side. "
+            "Example: SELECT ss.name, COUNT(*) FROM queue_items qi "
+            "JOIN queues q ON qi.queue_id = q.id "
+            "JOIN shop_services ss ON qi.service_id = ss.id "
+            "WHERE q.shop_id = :_shop_id GROUP BY ss.name ORDER BY 2 DESC"
+        )
+    )
+    async def raw_read(
+        shop_id: int,
+        sql: str,
+        params: Optional[dict] = None,
+        limit: int = 100,
+    ) -> dict:
+        return await rest_raw_read(
+            RawReadRequest(shop_id=shop_id, sql=sql, params=params, limit=limit)
         )
 
     try:
