@@ -67,7 +67,7 @@ export default function StackedRevenueChart() {
 
   if (loading) {
     return (
-      <Card className="flex min-h-[300px] w-full items-center justify-center glass">
+      <Card className="flex min-h-[330px] w-full items-center justify-center rounded-2xl border-border bg-card shadow-none">
         <Skeleton className="h-[240px] w-[92%]" />
       </Card>
     );
@@ -75,11 +75,11 @@ export default function StackedRevenueChart() {
 
   if (chartData.length === 0) {
     return (
-      <Card className="h-full w-full glass">
-        <CardHeader>
-          <CardTitle className="text-sm font-medium">Monthly Revenue by Service</CardTitle>
+      <Card className="h-full w-full rounded-2xl border-border bg-card shadow-none">
+        <CardHeader className="p-5">
+          <CardTitle className="text-base font-bold text-foreground">Monthly revenue by service</CardTitle>
         </CardHeader>
-        <CardContent className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
+        <CardContent className="flex h-[280px] items-center justify-center p-5 pt-0 text-sm text-muted-foreground">
           No revenue data available
         </CardContent>
       </Card>
@@ -87,12 +87,12 @@ export default function StackedRevenueChart() {
   }
 
   return (
-    <Card className="h-full w-full glass">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Monthly Revenue by Service</CardTitle>
+    <Card className="h-full w-full rounded-2xl border-border bg-card shadow-none">
+      <CardHeader className="p-5 pb-2">
+        <CardTitle className="text-base font-bold text-foreground">Monthly revenue by service</CardTitle>
       </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig} className="h-[280px] w-full">
+      <CardContent className="p-5 pt-2">
+        <ChartContainer config={chartConfig} className="h-[300px] w-full">
           <BarChart accessibilityLayer data={chartData} margin={{ left: 0, right: 10, top: 20, bottom: 8 }}>
             <CartesianGrid vertical={false} />
             <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />

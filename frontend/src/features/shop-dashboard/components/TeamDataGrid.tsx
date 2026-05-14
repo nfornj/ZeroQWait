@@ -8,10 +8,11 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { RotateCcw, Trash2 } from "lucide-react";
+import { RotateCcw, Search, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -43,6 +44,24 @@ interface TeamDataGridProps {
 
 export default function TeamDataGrid({ rows, onDelete, onReactivate }: TeamDataGridProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [filter, setFilter] = useState("");
+
+  const filteredRows = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter((row) =>
+      [
+        row.user.username,
+        row.user.email,
+        row.user.role,
+        row.is_active ? "active" : "inactive",
+        String(row.user.id),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [filter, rows]);
 
   const columns = useMemo<ColumnDef<Employee>[]>(
     () => [
@@ -105,7 +124,7 @@ export default function TeamDataGrid({ rows, onDelete, onReactivate }: TeamDataG
   );
 
   const table = useReactTable({
-    data: rows,
+    data: filteredRows,
     columns,
     state: { sorting },
     initialState: { pagination: { pageSize: 10 } },
@@ -117,14 +136,29 @@ export default function TeamDataGrid({ rows, onDelete, onReactivate }: TeamDataG
   });
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="overflow-hidden rounded-xl border bg-card">
+    <div className="rounded-2xl border border-border bg-card p-4 shadow-none">
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight text-foreground">Team roster</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Review employee access, status, and roles.</p>
+        </div>
+        <div className="relative w-full md:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Search team..."
+            className="h-10 rounded-xl border-border bg-background pl-9 shadow-none"
+          />
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-xl border border-border bg-background">
         <Table>
-          <TableHeader>
+          <TableHeader className="bg-muted/35">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
+                  <TableHead key={header.id} className="h-11 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {header.isPlaceholder
                       ? null
                       : flexRender(header.column.columnDef.header, header.getContext())}
@@ -136,7 +170,7 @@ export default function TeamDataGrid({ rows, onDelete, onReactivate }: TeamDataG
           <TableBody>
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow key={row.id} className="hover:bg-muted/35">
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -154,11 +188,23 @@ export default function TeamDataGrid({ rows, onDelete, onReactivate }: TeamDataG
           </TableBody>
         </Table>
       </div>
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-xl border-border bg-background shadow-none"
+          onClick={() => table.previousPage()}
+          disabled={!table.getCanPreviousPage()}
+        >
           Previous
         </Button>
-        <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-xl border-border bg-background shadow-none"
+          onClick={() => table.nextPage()}
+          disabled={!table.getCanNextPage()}
+        >
           Next
         </Button>
       </div>

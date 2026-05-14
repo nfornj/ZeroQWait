@@ -47,6 +47,7 @@ services:
       - PYTHONUNBUFFERED=1
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - DB_HOST=db
+      - DB_PORT=5432
       - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
       - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
       - LLM_PROVIDER=${LLM_PROVIDER:-nvidia}

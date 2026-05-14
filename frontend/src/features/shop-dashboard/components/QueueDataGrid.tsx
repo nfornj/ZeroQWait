@@ -8,7 +8,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Edit, MoreHorizontal, RefreshCcw, Trash2 } from "lucide-react";
+import { Edit, MoreHorizontal, RefreshCcw, Search, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -147,20 +147,29 @@ export default function QueueDataGrid({ rows, onEdit, onDelete, onReset, onRowCl
   });
 
   return (
-    <div className="flex flex-col gap-3">
-      <Input
-        value={filter}
-        onChange={(event) => setFilter(event.target.value)}
-        placeholder="Filter queues..."
-        className="max-w-sm"
-      />
-      <div className="overflow-hidden rounded-xl border bg-card">
+    <div className="rounded-2xl border border-border bg-card p-4 shadow-none">
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight text-foreground">Queue directory</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Open a queue to manage live customers and staffing.</p>
+        </div>
+        <div className="relative w-full md:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Search queues..."
+            className="h-10 rounded-xl border-border bg-background pl-9 shadow-none"
+          />
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-xl border border-border bg-background">
         <Table>
-          <TableHeader>
+          <TableHeader className="bg-muted/35">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
+                  <TableHead key={header.id} className="h-11 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {header.isPlaceholder
                       ? null
                       : flexRender(header.column.columnDef.header, header.getContext())}
@@ -174,7 +183,7 @@ export default function QueueDataGrid({ rows, onEdit, onDelete, onReset, onRowCl
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  className={onRowClick ? "cursor-pointer" : undefined}
+                  className={onRowClick ? "cursor-pointer hover:bg-muted/35" : "hover:bg-muted/35"}
                   onClick={() => onRowClick?.(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
@@ -194,11 +203,23 @@ export default function QueueDataGrid({ rows, onEdit, onDelete, onReset, onRowCl
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
+      <div className="mt-4 flex items-center justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-xl border-border bg-background shadow-none"
+          onClick={() => table.previousPage()}
+          disabled={!table.getCanPreviousPage()}
+        >
           Previous
         </Button>
-        <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-xl border-border bg-background shadow-none"
+          onClick={() => table.nextPage()}
+          disabled={!table.getCanNextPage()}
+        >
           Next
         </Button>
       </div>

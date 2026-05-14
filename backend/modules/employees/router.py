@@ -6,7 +6,7 @@ from modules.auth.service import auth_service
 from db_interface import db_interface
 from shared.auth_utils import get_current_user, get_password_hash
 from permissions import check_shop_access, get_employee_shops
-from datetime import datetime
+from datetime import datetime, timedelta
 
 router = APIRouter()
 
@@ -61,6 +61,34 @@ def list_employees(
 ):
     check_shop_access(shop_id, current_user, require_owner=True)
     return employee_service.get_shop_employees(shop_id, include_inactive=include_inactive)
+
+
+@router.get("/shops/{shop_id}/employee-shifts")
+def list_employee_shifts(
+    shop_id: int,
+    months: int = 3,
+    employee_id: Optional[int] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    check_shop_access(shop_id, current_user, require_owner=True)
+    bounded_months = max(1, min(months, 12))
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=bounded_months * 31)
+
+    try:
+        shifts = db_interface.get_employee_shifts(shop_id, start_date, end_date, user_id=employee_id)
+        enriched_shifts = []
+        for shift in shifts:
+            user = db_interface.get_user_by_id(shift["user_id"])
+            enriched_shifts.append({
+                **shift,
+                "username": user["username"] if user else "Unknown employee",
+                "email": user["email"] if user else "",
+                "profile_photo_url": user.get("profile_photo_url") if user else None,
+            })
+        return enriched_shifts
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load employee shifts: {str(e)}")
 
 
 @router.delete("/shops/{shop_id}/employees/{employee_id}", status_code=status.HTTP_200_OK)

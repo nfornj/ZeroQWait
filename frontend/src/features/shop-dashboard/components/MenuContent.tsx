@@ -51,7 +51,10 @@ export default function MenuContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const isSelected = (path: string) => location.pathname === path;
+  const isSelected = (path: string) => {
+    if (path === '/queues') return location.pathname === path || location.pathname.startsWith('/queues/');
+    return location.pathname === path;
+  };
   const isEmployee = user?.role === 'employee';
 
   const mainItems = isEmployee

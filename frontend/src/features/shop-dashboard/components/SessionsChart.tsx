@@ -41,17 +41,19 @@ export default function SessionsChart({ seriesData = [], xLabels = [] }: Session
   const totalVisits = seriesData.reduce((a, b) => a + b, 0);
 
   return (
-    <Card className="h-full w-full glass">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Daily Visits</CardTitle>
+    <Card className="h-full w-full rounded-2xl border-border bg-card shadow-none">
+      <CardHeader className="p-5 pb-2">
+        <CardTitle className="text-base font-bold text-foreground">Daily visits</CardTitle>
         <div className="flex items-center gap-2">
-          <p className="text-2xl font-semibold tracking-tight">{totalVisits.toLocaleString()}</p>
-          <Badge variant="secondary">Last 30 Days</Badge>
+          <p className="text-3xl font-bold tracking-tight text-foreground">{totalVisits.toLocaleString()}</p>
+          <Badge variant="secondary" className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
+            Last 30 Days
+          </Badge>
         </div>
-        <CardDescription>Number of users per day visited</CardDescription>
+        <CardDescription className="text-sm">Number of users per day visited</CardDescription>
       </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig} className="h-[250px] w-full">
+      <CardContent className="p-5 pt-2">
+        <ChartContainer config={chartConfig} className="h-[280px] w-full">
           <AreaChart accessibilityLayer data={chartData} margin={{ left: 0, right: 12, top: 20, bottom: 20 }}>
             <defs>
               <linearGradient id="visitsGradient" x1="0" y1="0" x2="0" y2="1">

@@ -115,19 +115,33 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" size="icon" onClick={handlePreviousMonth} disabled={!canGoBack}>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="rounded-xl border-border bg-background shadow-none"
+              onClick={handlePreviousMonth}
+              disabled={!canGoBack}
+            >
               <ChevronLeft />
             </Button>
             <p className="min-w-[150px] text-center text-lg font-semibold">
               {format(currentMonth, "MMMM yyyy")}
             </p>
-            <Button type="button" variant="outline" size="icon" onClick={handleNextMonth} disabled={!canGoForward}>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="rounded-xl border-border bg-background shadow-none"
+              onClick={handleNextMonth}
+              disabled={!canGoForward}
+            >
               <ChevronRight />
             </Button>
           </div>
 
           <Select value={selectedEmployee === null ? "all" : String(selectedEmployee)} onValueChange={handleEmployeeChange}>
-            <SelectTrigger className="w-full sm:w-[220px]">
+            <SelectTrigger className="w-full rounded-xl border-border bg-background shadow-none sm:w-[220px]">
               <SelectValue placeholder="Filter by employee" />
             </SelectTrigger>
             <SelectContent>
@@ -143,7 +157,7 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
           </Select>
         </div>
 
-        <Card>
+        <Card className="rounded-2xl border-border bg-background shadow-none">
           <CardContent className="p-4">
             <div className="grid grid-cols-7 gap-2">
               {weekDays.map((day) => (
@@ -205,7 +219,7 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-2xl border-border bg-background shadow-none">
           <CardHeader className="py-3">
             <CardTitle className="text-sm font-medium">Legend</CardTitle>
           </CardHeader>

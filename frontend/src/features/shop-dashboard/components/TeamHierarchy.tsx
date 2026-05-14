@@ -38,7 +38,7 @@ function TreeNode({
     <li>
       <button
         type="button"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+        className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm transition-colors hover:bg-muted/50"
         style={{ paddingLeft: `${level * 16 + 8}px` }}
         onClick={() => hasChildren && setExpanded((value) => !value)}
       >
@@ -126,11 +126,11 @@ export default function TeamHierarchy() {
   }, [shop]);
 
   return (
-    <Card className="flex flex-grow flex-col gap-2 glass">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Team Hierarchy</CardTitle>
+    <Card className="flex flex-grow flex-col gap-2 rounded-2xl border-border bg-card shadow-none">
+      <CardHeader className="p-5 pb-2">
+        <CardTitle className="text-base font-bold text-foreground">Team hierarchy</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-5 pt-0">
         {loading ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-8 w-full" />

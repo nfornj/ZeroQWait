@@ -120,7 +120,7 @@ export default function RecentVisitsDataGrid() {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-2 rounded-xl border p-4">
+      <div className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-5">
         {Array.from({ length: 5 }).map((_, index) => (
           <Skeleton key={index} className="h-10 w-full" />
         ))}
@@ -130,7 +130,7 @@ export default function RecentVisitsDataGrid() {
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border p-8 text-center text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
         No recent visits found.
       </div>
     );
@@ -138,7 +138,7 @@ export default function RecentVisitsDataGrid() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="overflow-hidden rounded-xl border glass">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-none">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -167,10 +167,10 @@ export default function RecentVisitsDataGrid() {
         </Table>
       </div>
       <div className="flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
+        <Button className="rounded-xl border-border bg-card shadow-none" variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
           Previous
         </Button>
-        <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
+        <Button className="rounded-xl border-border bg-card shadow-none" variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
           Next
         </Button>
       </div>

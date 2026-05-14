@@ -57,12 +57,12 @@ const chartConfig = countries.reduce<ChartConfig>((config, country) => {
 
 export default function ChartUserByCountry() {
   return (
-    <Card className="flex h-full flex-col gap-2 glass">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Users by country</CardTitle>
+    <Card className="flex h-full flex-col gap-2 rounded-2xl border-border bg-card shadow-none">
+      <CardHeader className="p-5 pb-2">
+        <CardTitle className="text-base font-bold text-foreground">Users by country</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <ChartContainer config={chartConfig} className="mx-auto aspect-square h-[260px]">
+      <CardContent className="flex flex-col gap-4 p-5 pt-0">
+        <ChartContainer config={chartConfig} className="mx-auto aspect-square h-[220px]">
           <PieChart accessibilityLayer>
             <ChartTooltip content={<ChartTooltipContent nameKey="name" hideLabel />} />
             <Pie

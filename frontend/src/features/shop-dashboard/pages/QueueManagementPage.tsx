@@ -1,10 +1,21 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle, ListOrdered, Plus, Tv, Users } from "lucide-react";
+import {
+  ArrowUpRight,
+  Bot,
+  CheckCircle,
+  ExternalLink,
+  ListOrdered,
+  MonitorUp,
+  Plus,
+  SlidersHorizontal,
+  Tv,
+  Users,
+} from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -13,11 +24,49 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import api from "../../../services/api";
 import Header from "../components/Header";
 import QueueDataGrid from "../components/QueueDataGrid";
 import { useShop } from "../../../contexts/ShopContext";
+
+const dashboardSurfaceStyle = {
+  "--background": "210 20% 98%",
+  "--foreground": "222 47% 11%",
+  "--card": "0 0% 100%",
+  "--card-foreground": "222 47% 11%",
+  "--popover": "0 0% 100%",
+  "--popover-foreground": "222 47% 11%",
+  "--muted": "210 40% 96%",
+  "--muted-foreground": "215 16% 47%",
+  "--border": "214 32% 91%",
+  "--input": "214 32% 91%",
+  "--primary": "154 40% 30%",
+  "--primary-foreground": "0 0% 100%",
+  "--ring": "154 40% 30%",
+} as React.CSSProperties;
+
+const queueSections = [
+  { label: "Queues", sub: "Active lines", icon: ListOrdered },
+  { label: "Displays", sub: "Public screens", icon: MonitorUp },
+  { label: "Staffing", sub: "Coverage context", icon: Users },
+  { label: "Controls", sub: "Reset and edit", icon: SlidersHorizontal },
+];
+
+function MetricCard({ icon: Icon, value, label }: { icon: React.ElementType; value: number; label: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-none">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{label}</p>
+        </div>
+        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background text-primary">
+          <Icon className="h-4 w-4" />
+        </span>
+      </div>
+    </div>
+  );
+}
 
 const QueueManagementPage: React.FC = () => {
   const navigate = useNavigate();
@@ -91,103 +140,151 @@ const QueueManagementPage: React.FC = () => {
   const brandSecondary = contextShop?.secondary_color || shop?.secondary_color || brandPrimary;
   const queueNameForId = (id: number | null) => queues.find((q) => q.id === id)?.name ?? "";
 
-  const Stat = ({ icon: Icon, value, label }: { icon: React.ElementType; value: number; label: string }) => (
-    <Card className="h-full">
-      <CardContent className="flex flex-col gap-2 p-5">
-        <Icon className="size-5 text-primary" />
-        <p className="text-2xl font-semibold tracking-tight">{value}</p>
-        <p className="text-sm text-muted-foreground">{label}</p>
-      </CardContent>
-    </Card>
-  );
-
   return (
-    <div className="w-full max-w-[1700px]">
+    <div className="flex min-h-full w-full flex-col bg-[#f9fafb] px-3 pb-16 md:px-6" style={dashboardSurfaceStyle}>
       <Header />
 
-      <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <Card className="lg:col-span-8">
-          <CardContent className="p-6">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">Queue Operations</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Manage your queues, launch public display modes, and monitor queue status in real time.
-                </p>
-              </div>
-              <Button onClick={() => setOpen(true)} className="self-start md:self-center">
-                <Plus data-icon="inline-start" />
-                Create Queue
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:col-span-4">
-          <Stat icon={ListOrdered} value={queues.length} label="Total Queues" />
-          <Stat icon={CheckCircle} value={activeQueues} label="Active Queues" />
-          <Stat icon={Users} value={shop ? 1 : 0} label="Connected Shops" />
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Queue operations</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Manage walk-ins, public displays, and queue controls from one focused workspace.
+          </p>
         </div>
+        <Button
+          onClick={() => setOpen(true)}
+          className="w-full rounded-xl bg-primary text-primary-foreground shadow-none hover:bg-primary/90 sm:w-auto"
+        >
+          <Plus data-icon="inline-start" />
+          Create queue
+        </Button>
       </div>
 
+      <nav className="mb-6 rounded-2xl border border-border bg-card p-1.5">
+        <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-4">
+          {queueSections.map((item, index) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.label}
+                type="button"
+                className="relative flex items-center gap-3 rounded-xl px-4 py-3.5 text-left transition-all hover:bg-muted/45"
+              >
+                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-foreground">{item.label}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{item.sub}</span>
+                </span>
+                {index === 0 && <span className="absolute bottom-0 left-4 right-4 h-0.5 rounded-full bg-primary" />}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
       {error && (
-        <Alert variant="destructive" className="mb-4">
+        <Alert variant="destructive" className="mb-4 rounded-2xl">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-none lg:col-span-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold text-muted-foreground">
+                <Bot className="h-3.5 w-3.5 text-primary" />
+                Queue workspace
+              </div>
+              <h2 className="mt-4 text-2xl font-bold tracking-tight text-foreground">Live queue control</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                Keep every queue visible, route customers into the right line, and open display modes for the front desk.
+              </p>
+            </div>
+            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <ArrowUpRight className="h-5 w-5" />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:col-span-4 lg:grid-cols-1">
+          <MetricCard icon={ListOrdered} value={queues.length} label="Total queues" />
+          <MetricCard icon={CheckCircle} value={activeQueues} label="Active queues" />
+          <MetricCard icon={Users} value={shop ? 1 : 0} label="Connected shops" />
+        </div>
+      </div>
+
       {shop && (
-        <Card
-          className="mb-4 overflow-hidden border"
+        <div
+          className="mb-6 rounded-2xl border border-border bg-card p-5 shadow-none"
           style={{
-            borderColor: brandPrimary,
-            background: `linear-gradient(135deg, color-mix(in srgb, ${brandPrimary} 18%, transparent) 0%, color-mix(in srgb, ${brandSecondary} 12%, transparent) 100%)`,
+            borderLeftColor: brandPrimary,
+            borderLeftWidth: 3,
+            background: `linear-gradient(135deg, color-mix(in srgb, ${brandPrimary} 8%, white) 0%, color-mix(in srgb, ${brandSecondary} 5%, white) 100%)`,
           }}
         >
-          <CardContent className="flex flex-col gap-4 p-5">
-            <div className="flex items-center gap-2">
-              <Tv className="size-5" style={{ color: brandPrimary }} />
-              <h2 className="font-semibold">AI Public Shop Display</h2>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-card text-primary shadow-sm">
+                <Tv className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold tracking-tight text-foreground">Public display surfaces</h2>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  Launch the standard lobby display or the AI-powered customer experience in a new tab.
+                </p>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Launch your public queue display or open the AI-powered customer experience surface.
-            </p>
-            <Separator />
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Button type="button" variant="outline" size="sm" onClick={() => window.open(`/display/${shop.id}`, "_blank")}>
-                <Tv data-icon="inline-start" />
-                Standard Display
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-xl border-border bg-card shadow-none"
+                onClick={() => window.open(`/display/${shop.id}`, "_blank")}
+              >
+                <MonitorUp data-icon="inline-start" />
+                Standard display
+                <ExternalLink data-icon="inline-end" />
               </Button>
               <Button
                 type="button"
                 size="sm"
+                className="rounded-xl text-white shadow-none hover:opacity-90"
                 onClick={() => window.open(`/shop-ai/${shop.id}`, "_blank")}
                 style={{ background: `linear-gradient(135deg, ${brandPrimary}, ${brandSecondary})` }}
               >
-                <Tv data-icon="inline-start" />
-                Launch AI Agent
+                <Bot data-icon="inline-start" />
+                Launch AI agent
+                <ExternalLink data-icon="inline-end" />
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Badge variant="outline" className="rounded-full border-border bg-card text-muted-foreground">
+              Display ready
+            </Badge>
+            <Badge variant="outline" className="rounded-full border-border bg-card text-muted-foreground">
+              Uses live queue data
+            </Badge>
+          </div>
+        </div>
       )}
 
-      <Card>
-        <CardContent className="p-0">
-          <QueueDataGrid
-            rows={queues}
-            onEdit={(queue) => {
-              console.log("Edit queue", queue);
-            }}
-            onDelete={(id) => setDeleteConfirmId(id)}
-            onReset={(id) => setResetConfirmId(id)}
-            onRowClick={(queue) => navigate(`/queues/${queue.id}`)}
-          />
-        </CardContent>
-      </Card>
+      <QueueDataGrid
+        rows={queues}
+        onEdit={(queue) => {
+          console.log("Edit queue", queue);
+        }}
+        onDelete={(id) => setDeleteConfirmId(id)}
+        onReset={(id) => setResetConfirmId(id)}
+        onRowClick={(queue) => navigate(`/queues/${queue.id}`)}
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="rounded-2xl">
           <DialogHeader>
             <DialogTitle>Create New Queue</DialogTitle>
           </DialogHeader>
@@ -196,12 +293,13 @@ const QueueManagementPage: React.FC = () => {
             value={newQueueName}
             onChange={(event) => setNewQueueName(event.target.value)}
             placeholder="e.g., Barber 2, Walk-ins"
+            className="rounded-xl border-border bg-background"
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button variant="outline" className="rounded-xl" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateQueue} disabled={!newQueueName.trim()}>
+            <Button className="rounded-xl" onClick={handleCreateQueue} disabled={!newQueueName.trim()}>
               Create
             </Button>
           </DialogFooter>
@@ -209,7 +307,7 @@ const QueueManagementPage: React.FC = () => {
       </Dialog>
 
       <Dialog open={deleteConfirmId !== null} onOpenChange={(next) => !next && setDeleteConfirmId(null)}>
-        <DialogContent>
+        <DialogContent className="rounded-2xl">
           <DialogHeader>
             <DialogTitle>Delete Queue</DialogTitle>
           </DialogHeader>
@@ -217,10 +315,14 @@ const QueueManagementPage: React.FC = () => {
             Permanently delete <strong>{queueNameForId(deleteConfirmId)}</strong> and all its history? This cannot be undone.
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>
+            <Button variant="outline" className="rounded-xl" onClick={() => setDeleteConfirmId(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => deleteConfirmId !== null && handleDeleteQueue(deleteConfirmId)}>
+            <Button
+              variant="destructive"
+              className="rounded-xl"
+              onClick={() => deleteConfirmId !== null && handleDeleteQueue(deleteConfirmId)}
+            >
               Delete
             </Button>
           </DialogFooter>
@@ -228,7 +330,7 @@ const QueueManagementPage: React.FC = () => {
       </Dialog>
 
       <Dialog open={resetConfirmId !== null} onOpenChange={(next) => !next && setResetConfirmId(null)}>
-        <DialogContent>
+        <DialogContent className="rounded-2xl">
           <DialogHeader>
             <DialogTitle>Reset Queue Data</DialogTitle>
           </DialogHeader>
@@ -236,10 +338,14 @@ const QueueManagementPage: React.FC = () => {
             Remove all customers from <strong>{queueNameForId(resetConfirmId)}</strong>? The queue itself will remain, but all queue items will be deleted.
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setResetConfirmId(null)}>
+            <Button variant="outline" className="rounded-xl" onClick={() => setResetConfirmId(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => resetConfirmId !== null && handleResetQueue(resetConfirmId)}>
+            <Button
+              variant="destructive"
+              className="rounded-xl"
+              onClick={() => resetConfirmId !== null && handleResetQueue(resetConfirmId)}
+            >
               Reset
             </Button>
           </DialogFooter>
