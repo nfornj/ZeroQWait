@@ -38,6 +38,8 @@ ALLOWED_TABLES: frozenset = frozenset({
     "shop_customers",
     "daily_analytics",
     "conversation_history",
+    "inventory_items",
+    "inventory_movements",
 })
 
 
@@ -93,7 +95,7 @@ async def rest_queue_volume(req: DateRangeRequest):
                 JOIN queues q ON qi.queue_id = q.id
                 WHERE q.shop_id = :shop_id
                   AND qi.checked_in_at >= :since
-                  AND qi.status = 'COMPLETED'
+                  AND qi.status IN ('COMPLETED', 'CANCELLED')
                 GROUP BY DATE(qi.checked_in_at)
                 ORDER BY day ASC
                 """
@@ -193,7 +195,7 @@ async def rest_service_popularity(req: DateRangeRequest):
                     ROUND(AVG(qi.service_cost)::numeric, 2) AS avg_cost
                 FROM queue_items qi
                 JOIN queues q ON qi.queue_id = q.id
-                LEFT JOIN shop_services ss ON qi.service_id = ss.id
+                JOIN shop_services ss ON qi.service_id = ss.id AND ss.shop_id = :shop_id
                 WHERE q.shop_id = :shop_id
                   AND qi.checked_in_at >= :since
                   AND qi.status = 'COMPLETED'
