@@ -18,6 +18,7 @@ export interface ComposerProps {
   placeholder?: string;
   disabled?: boolean;
   isRunning?: boolean;
+  accentColor?: string;
   onOpenFolderPicker?: () => void;
   dictationControl?: ReactNode;
 }
@@ -28,18 +29,20 @@ interface ThreadProps {
 }
 
 export const Composer: FC<ComposerProps> = ({
-  placeholder = "Ask a follow-up",
+  placeholder = "Ask a follow-up...",
   disabled = false,
   isRunning = false,
+  accentColor = "hsl(var(--foreground))",
   onOpenFolderPicker,
   dictationControl,
 }) => {
   return (
     <ComposerPrimitive.Root
-      className="flex flex-col gap-0 overflow-hidden rounded-3xl border border-white/[0.08] bg-[#17181b]/[0.98] shadow-xl"
+      className="flex flex-col gap-0 overflow-hidden rounded-[22px] border border-border/80 bg-background/95 text-foreground shadow-[0_14px_34px_rgba(15,23,42,0.10)] backdrop-blur-sm"
+      style={{ "--composer-accent": accentColor } as React.CSSProperties}
     >
       {/* Attachments row */}
-      <div className="flex flex-wrap gap-1.5 px-3 pt-2.5 empty:hidden">
+      <div className="flex flex-wrap gap-1.5 px-4 pt-3 empty:hidden">
         <ComposerAttachments />
       </div>
 
@@ -50,24 +53,25 @@ export const Composer: FC<ComposerProps> = ({
           disabled={disabled}
           rows={1}
           className={cn(
-            "flex-1 resize-none border-none bg-transparent px-3.5 py-3 text-sm leading-relaxed tracking-[0.01em] text-foreground outline-none placeholder:text-muted-foreground",
-            "min-h-[40px] max-h-[220px]",
+            "flex-1 resize-none border-none bg-transparent px-4 py-3 text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground",
+            "min-h-[42px] max-h-[220px]",
           )}
         />
       </ComposerPrimitive.Input>
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-2 border-t border-white/[0.08] bg-white/[0.02] px-2 py-1.5">
+      <div className="flex items-center justify-between gap-2 border-t border-border/70 bg-background/80 px-3 py-2">
         {/* Left: attachment + folder */}
         <div className="flex items-center gap-0.5">
           <ComposerAddAttachment disabled={disabled} />
           <button
             type="button"
+            aria-label="Open files"
             disabled={disabled}
             onClick={onOpenFolderPicker}
             className={cn(
-              "flex h-[34px] w-[34px] items-center justify-center rounded-[10px] text-white/80 transition-colors",
-              "hover:bg-white/[0.08] disabled:opacity-40"
+              "flex h-[34px] w-[34px] items-center justify-center rounded-full text-muted-foreground transition-colors",
+              "hover:bg-muted hover:text-foreground disabled:opacity-40"
             )}
           >
             <FolderPlus className="h-4 w-4" />
@@ -83,7 +87,8 @@ export const Composer: FC<ComposerProps> = ({
             <ComposerPrimitive.Cancel asChild>
               <button
                 type="button"
-                className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-foreground text-background shadow-none hover:opacity-90"
+                aria-label="Stop response"
+                className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-foreground text-background shadow-none hover:opacity-90"
               >
                 <Square className="h-[18px] w-[18px]" />
               </button>
@@ -92,9 +97,10 @@ export const Composer: FC<ComposerProps> = ({
             <ComposerPrimitive.Send asChild>
               <button
                 type="submit"
+                aria-label="Send message"
                 className={cn(
-                  "flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-foreground text-background shadow-none",
-                  "hover:opacity-90 disabled:bg-white/20 disabled:text-black/50"
+                  "flex h-[36px] w-[36px] items-center justify-center rounded-full bg-[var(--composer-accent)] text-white shadow-[0_8px_18px_rgba(15,23,42,0.14)]",
+                  "hover:opacity-90 disabled:bg-[var(--composer-accent)] disabled:text-white disabled:opacity-70 disabled:shadow-none"
                 )}
               >
                 <ArrowUp className="h-[18px] w-[18px]" />

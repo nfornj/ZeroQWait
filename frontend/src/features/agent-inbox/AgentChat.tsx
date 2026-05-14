@@ -6,14 +6,16 @@ import {
   ChevronDown,
   Mic,
   ChevronLeft,
-  ChevronRight as ChevronRightNav,
   Brain,
   RefreshCw,
   Square,
   Wrench,
-  FolderOpen,
   Volume2,
   VolumeX,
+  AlertTriangle,
+  CheckCircle2,
+  MessageCircle,
+  XCircle,
 } from "lucide-react";
 import {
   AuiIf,
@@ -57,15 +59,13 @@ import {
 import ReactMarkdown from "react-markdown";
 import DataTable from "../../components/DataTable";
 import {
-  ComposerAddAttachment,
-  ComposerAttachments,
   UserMessageAttachments,
 } from "../../components/AssistantUIAttachment";
 import { Composer } from "../../components/assistant-ui/thread";
 import { cn } from "../../lib/utils";
 import { useOwnerBrand } from "../../hooks/useOwnerBrand";
 import { resolveAgentChart } from "./types";
-import type { AgentChart, AgentFile, AgentTable, ChatMessage, ResolvedAgentChart } from "./types";
+import type { AgentChart, AgentFile, AgentTable, ChatMessage, PendingApproval, ResolvedAgentChart } from "./types";
 import { useShop } from "../../contexts/ShopContext";
 
 export interface AgentChatPromptItem {
@@ -105,6 +105,9 @@ interface AgentChatProps {
   isVoiceEnabled?: boolean;
   isSpeaking?: boolean;
   onToggleVoice?: () => void;
+  isSubmittingApproval?: boolean;
+  onApprovalDecision?: (approval: PendingApproval, approved: boolean) => Promise<boolean | void> | boolean | void;
+  onDiscussApproval?: (approval: PendingApproval) => void;
 }
 
 type AgentChatInnerProps = Omit<AgentChatProps, "messages" | "onSend"> & {
@@ -130,6 +133,14 @@ type InteractablesMethods = {
 type InteractablesAuiClient = AssistantClient & {
   interactables: () => InteractablesMethods;
 };
+
+type ApprovalActionContextValue = {
+  isSubmittingApproval?: boolean;
+  onApprovalDecision?: AgentChatProps["onApprovalDecision"];
+  onDiscussApproval?: AgentChatProps["onDiscussApproval"];
+};
+
+const ApprovalActionContext = React.createContext<ApprovalActionContextValue>({});
 
 const CHAIN_OF_THOUGHT_PARENT_SUFFIX = "reasoning";
 
@@ -551,6 +562,95 @@ const MarkdownMessageText: React.FC<{ text: string; role: ChatMessage["role"] }>
   );
 };
 
+const formatApprovalActionLabel = (action?: string) => {
+  if (!action) return "Approve";
+  if (action.includes("assign_shift")) return "Approve shift";
+  if (action.includes("close_queue")) return "Approve closure";
+  if (action.includes("add_employee")) return "Approve hire";
+  if (action.includes("record_payment")) return "Approve payment";
+  if (action.includes("create_invoice")) return "Approve invoice";
+  return "Approve";
+};
+
+const InlinePendingActionCard: React.FC<{
+  approval: PendingApproval;
+  accent: string;
+}> = ({ approval, accent }) => {
+  const { isSubmittingApproval, onApprovalDecision, onDiscussApproval } = React.useContext(ApprovalActionContext);
+  const title = approval.title || approval.action.replace(/[_-]+/g, " ");
+  const description =
+    approval.summary ||
+    approval.expected_impact ||
+    approval.reason ||
+    "This agent action is paused until the owner decides.";
+
+  return (
+    <div
+      className="mt-2 rounded-2xl border bg-background/95 p-4"
+      style={{ borderColor: `${accent}33` }}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full"
+          style={{ backgroundColor: `${accent}14`, color: accent }}
+        >
+          <AlertTriangle className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-bold text-foreground">{title}</p>
+            <span
+              className="rounded-full px-2 py-0.5 text-[11px] font-bold"
+              style={{ backgroundColor: `${accent}14`, color: accent }}
+            >
+              Needs decision
+            </span>
+            {approval.risk_level && (
+              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                {String(approval.risk_level)} risk
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
+          <p className="mt-2 text-xs font-semibold text-muted-foreground">
+            Linked to Agent Actions. Approving or rejecting updates the agent workflow.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2 pl-12">
+        <button
+          type="button"
+          disabled={isSubmittingApproval || !onApprovalDecision}
+          onClick={() => void onApprovalDecision?.(approval, true)}
+          className="inline-flex min-h-9 items-center gap-2 rounded-full px-3 text-sm font-bold text-white transition-opacity disabled:opacity-50"
+          style={{ backgroundColor: accent }}
+        >
+          <CheckCircle2 className="h-4 w-4" />
+          {isSubmittingApproval ? "Submitting..." : formatApprovalActionLabel(approval.action)}
+        </button>
+        <button
+          type="button"
+          disabled={isSubmittingApproval || !onApprovalDecision}
+          onClick={() => void onApprovalDecision?.(approval, false)}
+          className="inline-flex min-h-9 items-center gap-2 rounded-full border border-border px-3 text-sm font-bold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+        >
+          <XCircle className="h-4 w-4" />
+          Reject
+        </button>
+        <button
+          type="button"
+          onClick={() => onDiscussApproval?.(approval)}
+          className="inline-flex min-h-9 items-center gap-2 rounded-full border border-border px-3 text-sm font-bold text-foreground transition-colors hover:bg-muted"
+        >
+          <MessageCircle className="h-4 w-4" />
+          Discuss
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ── Message rich content ──────────────────────────────────────────────────────
 
 const MessageRichContent: React.FC<{
@@ -574,6 +674,9 @@ const MessageRichContent: React.FC<{
       {charts.map((chart) => <InlineChart key={chart.id} chart={chart} accent={accent} />)}
       {tables.map((table) => <InlineTable key={table.id} table={table} />)}
       {files.map((file) => <InlineFile key={file.id} file={file} accent={accent} />)}
+      {externalMessage?.pendingAction && role === "assistant" && (
+        <InlinePendingActionCard approval={externalMessage.pendingAction} accent={accent} />
+      )}
     </div>
   );
 };
@@ -797,7 +900,7 @@ const ComposerDictationButton: React.FC<{ disabled?: boolean; supported: boolean
   disabled = false,
   supported,
 }) => {
-  const baseCls = "flex h-[34px] w-[34px] items-center justify-center rounded-[10px] text-muted-foreground/82 hover:bg-white/[0.08] disabled:opacity-40 transition-colors";
+  const baseCls = "flex h-[34px] w-[34px] items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40";
 
   if (!supported) {
     return (
@@ -846,6 +949,9 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
   isVoiceEnabled = false,
   isSpeaking = false,
   onToggleVoice,
+  isSubmittingApproval = false,
+  onApprovalDecision,
+  onDiscussApproval,
 }) => {
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const threadRuntime = useThreadRuntime();
@@ -996,17 +1102,17 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
 
           {/* Composer footer */}
           <div
-            className="w-full max-w-[760px] mx-auto mt-auto pt-2 pb-2 md:pb-3 border-t"
+            className="w-full max-w-[760px] mx-auto mt-auto pt-3 pb-4 md:pb-5"
             style={{
-              borderColor: "rgba(255,255,255,0.08)",
-              background: "linear-gradient(180deg, transparent 0%, hsl(var(--background) / 0.92) 22%)",
+              background: "linear-gradient(180deg, transparent 0%, hsl(var(--background) / 0.94) 24%)",
             }}
           >
             <ThreadPrimitive.ViewportFooter className="w-full p-0">
               <Composer
-                placeholder="Ask a follow-up"
+                placeholder="Ask a follow-up..."
                 disabled={isUploading || isStreaming}
                 isRunning={isStreaming}
+                accentColor={brandPrimary}
                 onOpenFolderPicker={openFolderPicker}
                 dictationControl={
                   <>
@@ -1017,11 +1123,12 @@ const AgentChatInner: React.FC<AgentChatInnerProps> = ({
                         disabled={isUploading || isStreaming}
                         aria-label={isVoiceEnabled ? "Disable voice" : "Enable voice"}
                         className={cn(
-                          "flex h-[34px] w-[34px] items-center justify-center rounded-[10px] transition-colors disabled:opacity-40",
-                          isVoiceEnabled ? "bg-white/[0.18]" : "hover:bg-white/[0.08]",
+                          "flex h-[34px] w-[34px] items-center justify-center rounded-full text-muted-foreground transition-colors disabled:opacity-40",
+                          isVoiceEnabled ? "" : "hover:bg-muted hover:text-foreground",
                         )}
                         style={{
                           color: isVoiceEnabled ? brandPrimary : undefined,
+                          backgroundColor: isVoiceEnabled ? `${brandPrimary}14` : undefined,
                           animation: isSpeaking ? "voice-pulse 1s ease-in-out infinite" : "none",
                         }}
                       >
@@ -1057,6 +1164,9 @@ const AgentChat: React.FC<AgentChatProps> = ({
   isVoiceEnabled = false,
   isSpeaking = false,
   onToggleVoice,
+  isSubmittingApproval = false,
+  onApprovalDecision,
+  onDiscussApproval,
 }) => {
   const { shop } = useShop();
   const brand = useOwnerBrand();
@@ -1121,6 +1231,15 @@ const AgentChat: React.FC<AgentChatProps> = ({
     adapters: { attachments: attachmentAdapter, dictation: dictationAdapter },
   });
 
+  const approvalActionContext = useMemo<ApprovalActionContextValue>(
+    () => ({
+      isSubmittingApproval,
+      onApprovalDecision,
+      onDiscussApproval,
+    }),
+    [isSubmittingApproval, onApprovalDecision, onDiscussApproval],
+  );
+
   useEffect(() => {
     if (!interactablesStorageKey || typeof window === "undefined") {
       aui.interactables().setPersistenceAdapter(undefined);
@@ -1144,38 +1263,40 @@ const AgentChat: React.FC<AgentChatProps> = ({
 
   return (
     <AssistantRuntimeProvider runtime={runtime} aui={aui}>
-      <div className="flex flex-col md:flex-row gap-0 flex-1 min-h-0 w-full">
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-          {header && (
-            <div className="px-3 md:px-6 pt-3 md:pt-4 pb-2 md:pb-2.5 flex-shrink-0">
-              {header}
+      <ApprovalActionContext.Provider value={approvalActionContext}>
+        <div className="flex flex-col md:flex-row gap-0 flex-1 min-h-0 w-full">
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+            {header && (
+              <div className="px-3 md:px-6 pt-3 md:pt-4 pb-2 md:pb-2.5 flex-shrink-0">
+                {header}
+              </div>
+            )}
+            <div className="flex-1 min-h-0">
+              <AgentChatInner
+                isStreaming={isStreaming}
+                isUploading={isUploading}
+                title={title}
+                subtitle={subtitle}
+                summaryChips={summaryChips}
+                promptSections={promptSections}
+                brandPrimary={brandPrimary}
+                brandSecondary={brandSecondary}
+                hasDictation={Boolean(dictationAdapter)}
+                messageCount={messages.length}
+                isVoiceEnabled={isVoiceEnabled}
+                isSpeaking={isSpeaking}
+                onToggleVoice={onToggleVoice}
+              />
+            </div>
+          </div>
+
+          {sidebar && (
+            <div className="w-full md:w-[380px] md:min-w-[340px] md:max-w-[420px] flex-shrink-0 min-h-[320px] md:min-h-0 flex self-stretch md:h-full">
+              {sidebar}
             </div>
           )}
-          <div className="flex-1 min-h-0">
-            <AgentChatInner
-              isStreaming={isStreaming}
-              isUploading={isUploading}
-              title={title}
-              subtitle={subtitle}
-              summaryChips={summaryChips}
-              promptSections={promptSections}
-              brandPrimary={brandPrimary}
-              brandSecondary={brandSecondary}
-              hasDictation={Boolean(dictationAdapter)}
-              messageCount={messages.length}
-              isVoiceEnabled={isVoiceEnabled}
-              isSpeaking={isSpeaking}
-              onToggleVoice={onToggleVoice}
-            />
-          </div>
         </div>
-
-        {sidebar && (
-          <div className="w-full md:w-[360px] md:min-w-[320px] md:max-w-[400px] flex-shrink-0 min-h-[320px] md:min-h-0 flex self-stretch md:h-full">
-            {sidebar}
-          </div>
-        )}
-      </div>
+      </ApprovalActionContext.Provider>
     </AssistantRuntimeProvider>
   );
 };

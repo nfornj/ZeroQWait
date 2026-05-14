@@ -194,8 +194,8 @@ export const ComposerAddAttachment: React.FC<{ disabled?: boolean }> = ({ disabl
         disabled={disabled}
         aria-label="Add Attachment"
         className={cn(
-          "flex h-[34px] w-[34px] items-center justify-center rounded-[10px] text-white/80 transition-colors",
-          "hover:bg-white/[0.08] disabled:opacity-40"
+          "flex h-[34px] w-[34px] items-center justify-center rounded-full text-muted-foreground transition-colors",
+          "hover:bg-muted hover:text-foreground disabled:opacity-40"
         )}
       >
         <Plus className="h-4 w-4" />

@@ -13,6 +13,7 @@ import AgentChat, {
 import AgentTaskBoard, {
   AgentTaskBoardExternalTask,
 } from "../../agent-inbox/AgentTaskBoard";
+import useApprovalDecisions from "../../agent-inbox/hooks/useApprovalDecisions";
 import {
   ownerDashboardKeys,
   useOwnerBriefingQuery,
@@ -28,10 +29,10 @@ import type {
   AgentFile,
   AgentTable,
   ChatMessage,
+  InsightItem,
   PendingApproval,
   ThinkingStep,
 } from "../../agent-inbox/types";
-import Header from "../components/Header";
 
 const apiBaseUrl = process.env.REACT_APP_API_URL || "/api";
 
@@ -183,6 +184,32 @@ const formatTaskActionLabel = (value?: string | null): string => {
     .join(" ");
 };
 
+const AgentWorkspaceHeader: React.FC<{ pendingCount: number }> = ({ pendingCount }) => (
+  <div className="hidden w-full items-center justify-between gap-4 pb-1 md:flex">
+    <div className="min-w-0">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span>Workspace</span>
+        <span>›</span>
+        <span className="font-semibold text-foreground">Agent</span>
+      </div>
+      <h1 className="mt-2 whitespace-nowrap text-xl font-bold tracking-normal text-foreground">Agent Workspace</h1>
+    </div>
+    <div className="flex flex-wrap justify-end gap-2">
+      {["Receptionist", "HR", "Finance"].map((label) => (
+        <span
+          key={label}
+          className="rounded-2xl border border-border bg-background px-3 py-1.5 text-sm font-bold text-foreground shadow-sm"
+        >
+          {label}
+        </span>
+      ))}
+      <span className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-sm font-bold text-amber-700">
+        {pendingCount} needs decision
+      </span>
+    </div>
+  </div>
+);
+
 const getAttachmentFiles = (attachments: AgentChatSendPayload["attachments"]): File[] => {
   return (attachments || []).flatMap((attachment) => (attachment.file instanceof File ? [attachment.file] : []));
 };
@@ -234,6 +261,52 @@ const OwnerDashboardPage: React.FC = () => {
     ]);
   }, []);
 
+  const appendSystemMessage = useCallback((content: string, agent?: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: toId("msg_system"),
+        role: "system",
+        content,
+        status: "done",
+        timestamp: nowIso(),
+        agent,
+      },
+    ]);
+  }, []);
+
+  const prependInsightItem = useCallback((_item: InsightItem) => {
+    // The dashboard action rail does not render the full inbox insight stack.
+    // Approval outcomes are still reflected through system messages, feed events,
+    // and refreshed briefing/pending data.
+  }, []);
+
+  const refreshPendingApprovals = useCallback(async () => {
+    if (!shop?.id) return;
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.pending(shop.id) });
+  }, [queryClient, shop?.id]);
+
+  const refreshBriefing = useCallback(async () => {
+    if (!shop?.id) return;
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.briefing(shop.id) });
+  }, [queryClient, shop?.id]);
+
+  const refreshFeed = useCallback(async () => {
+    if (!shop?.id) return;
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop.id) });
+  }, [queryClient, shop?.id]);
+
+  const { handleApprovalDecision: submitApprovalDecision, isApproving } = useApprovalDecisions({
+    shopId: shop?.id,
+    addFeedEvent,
+    appendSystemMessage,
+    prependInsightItem,
+    refreshPendingApprovals,
+    refreshBriefing,
+    refreshFeed,
+    setError: setDashboardError,
+  });
+
   const pendingApprovals = useMemo(() => {
     const merged = [...streamedPendingApprovals, ...(pendingQuery.data || [])];
     const deduped = new Map<string, PendingApproval>();
@@ -245,6 +318,40 @@ const OwnerDashboardPage: React.FC = () => {
     });
     return Array.from(deduped.values());
   }, [pendingQuery.data, streamedPendingApprovals]);
+
+  const handleAgentActionDecision = useCallback(
+    async (approval: PendingApproval, approved: boolean) => {
+      const succeeded = await submitApprovalDecision(approval, approved);
+      if (!succeeded) return false;
+
+      setStreamedPendingApprovals((prev) =>
+        prev.filter((item) => {
+          if (approval.action_id && item.action_id) {
+            return item.action_id !== approval.action_id;
+          }
+          return item.action !== approval.action || item.shop_id !== approval.shop_id;
+        }),
+      );
+      setMessages((prev) =>
+        prev.map((message) => {
+          const pendingAction = message.pendingAction;
+          if (!pendingAction) return message;
+          const sameActionId = approval.action_id && pendingAction.action_id === approval.action_id;
+          const sameFallbackAction =
+            !approval.action_id &&
+            pendingAction.action === approval.action &&
+            pendingAction.shop_id === approval.shop_id;
+
+          return sameActionId || sameFallbackAction
+            ? { ...message, pendingAction: undefined }
+            : message;
+        }),
+      );
+
+      return true;
+    },
+    [submitApprovalDecision],
+  );
 
   const displayedFeedEvents = useMemo(() => {
     const merged = [...localFeedEvents, ...(feedQuery.data || [])];
@@ -593,6 +700,15 @@ const OwnerDashboardPage: React.FC = () => {
 
           if (eventType === "approval_required") {
             const approval = normalizePendingApproval((eventJson.details || eventJson) as Record<string, any>, shop.id);
+            updateAssistantMessage((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    pendingAction: approval,
+                    thinkingComplete: true,
+                  }
+                : msg,
+            );
             setStreamedPendingApprovals((prev) => {
               const exists = prev.some((item) => item.action_id && item.action_id === approval.action_id);
               if (exists) return prev;
@@ -791,7 +907,19 @@ const OwnerDashboardPage: React.FC = () => {
         setIsStreaming(false);
       }
     },
-    [addFeedEvent, queryClient, shop?.id, token, uploadDocumentsToKnowledgeBase]
+    [addFeedEvent, queryClient, shop?.id, shopLoading, token, uploadDocumentsToKnowledgeBase]
+  );
+
+  const handleDiscussAction = useCallback(
+    (task: AgentTaskBoardExternalTask) => {
+      const approval = task.approval;
+      const prompt = approval
+        ? `Review the pending approval '${approval.title || approval.action}'. Reason: ${approval.reason || task.description || "not provided"}. Expected impact: ${approval.expected_impact || "not provided"}. Tell me whether I should approve it.`
+        : `Help me review this agent action: ${task.title}. ${task.description}`;
+
+      void handleSend({ text: prompt });
+    },
+    [handleSend],
   );
 
   const contextPromptSections = useMemo<AgentChatPromptSection[]>(() => {
@@ -930,6 +1058,18 @@ const OwnerDashboardPage: React.FC = () => {
   const taskBoardTasks = useMemo<AgentTaskBoardExternalTask[]>(() => {
     const tasks = new Map<string, AgentTaskBoardExternalTask>();
     const briefingActions = briefingQuery.data?.actions || [];
+    const decidedActionIds = new Set(
+      displayedFeedEvents
+        .filter((event) => event.type === "approval_decision")
+        .map((event) => {
+          const payload =
+            event.payload && typeof event.payload === "object"
+              ? (event.payload as Record<string, unknown>)
+              : {};
+          return typeof payload.action_id === "string" ? payload.action_id : undefined;
+        })
+        .filter((actionId): actionId is string => Boolean(actionId)),
+    );
 
     pendingApprovals.forEach((approval, index) => {
       const matchingEvent = approval.action_id
@@ -961,11 +1101,14 @@ const OwnerDashboardPage: React.FC = () => {
         assignee: "Owner",
         createdAt: matchingEvent?.timestamp || briefingQuery.data?.generated_at || FALLBACK_TASK_TIMESTAMP,
         actionId: approval.action_id,
+        status: "needs_decision",
+        agent: approval.category || approval.action,
+        approval,
       });
     });
 
     displayedFeedEvents.forEach((event, index) => {
-      if (event.type !== "approval_required") {
+      if (event.type !== "approval_required" && event.type !== "approval_decision") {
         return;
       }
 
@@ -974,7 +1117,13 @@ const OwnerDashboardPage: React.FC = () => {
           ? (event.payload as Record<string, unknown>)
           : {};
       const actionId = typeof payload.action_id === "string" ? payload.action_id : undefined;
-      const taskId = actionId || `feed_task_${event.id || index}`;
+      if (event.type === "approval_required" && actionId && decidedActionIds.has(actionId)) {
+        return;
+      }
+      const taskId =
+        event.type === "approval_decision"
+          ? `decision_task_${actionId || event.id || index}`
+          : actionId || `feed_task_${event.id || index}`;
 
       if (tasks.has(taskId)) {
         return;
@@ -994,6 +1143,9 @@ const OwnerDashboardPage: React.FC = () => {
         assignee: "Owner",
         createdAt: event.timestamp || briefingQuery.data?.generated_at || FALLBACK_TASK_TIMESTAMP,
         actionId,
+        status: event.type === "approval_decision" ? "done" : "needs_decision",
+        done: event.type === "approval_decision",
+        agent: typeof payload.agent === "string" ? payload.agent : "supervisor",
       });
     });
 
@@ -1014,6 +1166,7 @@ const OwnerDashboardPage: React.FC = () => {
         source: "agent",
         assignee: "Owner",
         createdAt: briefingQuery.data?.generated_at || FALLBACK_TASK_TIMESTAMP,
+        status: "recommended",
       });
     });
 
@@ -1048,12 +1201,34 @@ const OwnerDashboardPage: React.FC = () => {
             title="Hello there!"
             subtitle="How can I help you today?"
             promptSections={contextPromptSections}
-            header={<Header />}
+            header={<AgentWorkspaceHeader pendingCount={pendingApprovals.length} />}
             interactablesStorageKey={shop?.id ? `owner-dashboard-task-board:${shop.id}` : undefined}
+            isSubmittingApproval={isApproving}
+            onApprovalDecision={handleAgentActionDecision}
+            onDiscussApproval={(approval) =>
+              handleDiscussAction({
+                id: approval.action_id || `approval_${approval.action}`,
+                title: approval.title || formatTaskActionLabel(approval.action),
+                description:
+                  approval.summary ||
+                  approval.reason ||
+                  `Action '${formatTaskActionLabel(approval.action)}' is waiting for owner approval.`,
+                source: "approval",
+                assignee: "Owner",
+                createdAt: nowIso(),
+                actionId: approval.action_id,
+                status: "needs_decision",
+                agent: approval.category || approval.action,
+                approval,
+              })
+            }
             sidebar={
               <AgentTaskBoard
                 interactableId={`owner-task-board-${shop?.id || "default"}`}
                 externalTasks={taskBoardTasks}
+                isSubmittingDecision={isApproving}
+                onDecision={handleAgentActionDecision}
+                onDiscuss={handleDiscussAction}
               />
             }
           />
