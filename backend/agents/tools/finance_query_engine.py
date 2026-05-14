@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 MAX_ROWS = int(os.getenv("FINANCE_QUERY_MAX_ROWS", "100"))
 STATEMENT_TIMEOUT_MS = int(os.getenv("FINANCE_QUERY_STATEMENT_TIMEOUT_MS", "5000"))
 MAX_RETRIES = int(os.getenv("FINANCE_QUERY_MAX_RETRIES", "2"))
-LLM_TIMEOUT_SECONDS = float(os.getenv("FINANCE_QUERY_LLM_TIMEOUT_SECONDS", "300"))
+# Reduced from 300s to 20s: if LLM can't answer in 20s, it's likely the wrong agent (misrouted query)
+LLM_TIMEOUT_SECONDS = float(os.getenv("FINANCE_QUERY_LLM_TIMEOUT_SECONDS", "20"))
 
 AI_DATABASE_URL = os.getenv("AI_DATABASE_URL") or os.getenv("FINANCE_AI_DATABASE_URL")
 

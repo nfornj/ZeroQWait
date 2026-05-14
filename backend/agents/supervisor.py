@@ -129,6 +129,13 @@ _INVENTORY_PATTERNS: Tuple[re.Pattern[str], ...] = (
     # Products catalog / what do we carry / what products
     re.compile(r"\b(?:what\s+products?|which\s+products?|products?\s+(?:we|do\s+we|you)\s+(?:carry|sell|have|offer|stock))\b", re.IGNORECASE),
     re.compile(r"\b(?:hair\s+color|hair\s+dye|pomade|clippers?\s+oil|razor\s+blades?|shaving\s+cream|aftershave)\b", re.IGNORECASE),
+    # Profit margin / retail margin for items/products (calculated from inventory data: retail_price - supplier_cost)
+    # These must come AFTER _FINANCE_OPERATION_PATTERNS check to avoid misrouting service profitability queries
+    re.compile(r"\b(?:retail\s+)?(?:profit\s+)?margin\b.*\b(?:item|product)\b", re.IGNORECASE),
+    re.compile(r"\b(?:item|product)\b.*\b(?:retail\s+)?(?:profit\s+)?margin\b", re.IGNORECASE),
+    re.compile(r"\b(?:best|highest|most|top)\s+margin\b.*\b(?:item|product)\b", re.IGNORECASE),
+    re.compile(r"\b(?:item|product)\b.*\b(?:best|highest|most|top)\s+margin\b", re.IGNORECASE),
+    re.compile(r"\bmargin\b.*\b(?:per\s+)?(?:item|product|inventory)\b", re.IGNORECASE),
 )
 
 _POS_PATTERNS: Tuple[re.Pattern[str], ...] = (
@@ -193,13 +200,15 @@ class RoutingDecision(BaseModel):
     thought_process: str = Field(
         description="Brief reasoning (1-2 sentences) explaining why this intent was chosen."
     )
-    next_agent: Literal["booking", "finance", "hr", "crm", "general"] = Field(
+    next_agent: Literal["booking", "finance", "inventory", "hr", "crm", "pos", "general"] = Field(
         description=(
             "The specialist to route to. "
             "booking = queue, appointments, wait times, services, bookings. "
             "finance = revenue, analytics, reports, invoices, payments, POS, client retention, visit history, inactive customers. "
+            "inventory = stock levels, products, items, supplies, restock, usage, COGS, profit margins on items/products. "
             "hr = employees, shifts, scheduling, availability, clock in/out. "
             "crm = CRM leads, contacts, companies, pipeline, deals, Odoo ERP operations. "
+            "pos = point-of-sale checkout, ring up customers, process payments. "
             "general = greetings, help, capabilities, anything that doesn't fit above."
         )
     )
@@ -465,6 +474,8 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route", "pla
         "- booking: queue management, appointments, wait times, services, bookings, slots, close/open queue, call next customer\n"
         "- finance: revenue, analytics, financial reports, invoices, payments, POS, billing, "
         "refunds, daily/weekly/monthly summaries, client retention, inactive customers, visit history, top clients, export CSV\n"
+        "- inventory: stock levels, products, items, supplies, restock, usage, COGS, profit margins on items/products, "
+        "retail margins, item pricing (NOT service revenue)\n"
         "- hr: employees, shifts, scheduling, availability, staffing, clock in/out, roster\n"
         "- crm: CRM leads, contacts, companies, pipeline, deals, Odoo ERP operations, "
         "accounting, journal entries, products catalog\n"
