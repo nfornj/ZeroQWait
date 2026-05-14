@@ -69,6 +69,8 @@ services:
       - BOOKING_MCP_URL=${BOOKING_MCP_URL:-http://booking-mcp:8890}
       - FINANCE_MCP_URL=${FINANCE_MCP_URL:-http://finance-mcp:8891}
       - HR_MCP_URL=${HR_MCP_URL:-http://hr-mcp:8892}
+      - ODOO_MCP_URL=${ODOO_MCP_URL:-http://odoo-mcp:8893}
+      - POSTGRES_MCP_URL=${POSTGRES_MCP_URL:-http://postgres-mcp:8894}
       - TEMPORAL_ENABLED=${TEMPORAL_ENABLED:-false}
       - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-temporal:7233}
       - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
@@ -102,6 +104,10 @@ services:
       finance-mcp:
         condition: service_healthy
       hr-mcp:
+        condition: service_healthy
+      odoo-mcp:
+        condition: service_started
+      postgres-mcp:
         condition: service_healthy
     restart: unless-stopped
 
@@ -164,6 +170,43 @@ services:
       - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
       - HOST=0.0.0.0
       - PORT=8892
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  odoo-mcp:
+    build:
+      context: .
+      dockerfile: ./mcps/odoo/Dockerfile
+    environment:
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
+      - HOST=0.0.0.0
+      - PORT=8893
+      - ODOO_URL=${ODOO_URL:-http://odoo:8069}
+      - ODOO_DB=${ODOO_DB:-odoo}
+      - ODOO_USER=${ODOO_USER:-admin}
+      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
+      - ODOO_ENABLED=${ODOO_ENABLED:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres-mcp:
+    build:
+      context: .
+      dockerfile: ./mcps/postgres/Dockerfile
+    environment:
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
+      - HOST=0.0.0.0
+      - PORT=8894
     depends_on:
       db:
         condition: service_healthy
