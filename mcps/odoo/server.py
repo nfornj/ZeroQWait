@@ -70,11 +70,10 @@ class LeadsListRequest(ShopRequest):
 
 class LeadCreateRequest(ShopRequest):
     name: str
-    contact_name: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
+    partner_id: Optional[int] = None
     expected_revenue: Optional[float] = None
     description: Optional[str] = None
+    lead_type: str = "opportunity"
 
 
 class LeadMoveRequest(ShopRequest):
@@ -99,8 +98,9 @@ class InvoiceCreateRequest(ShopRequest):
 
 
 class PaymentRegisterRequest(ShopRequest):
-    invoice_id: int
-    amount: Optional[float] = None
+    amount: float
+    partner_id: int
+    invoice_id: Optional[int] = None
     payment_date: Optional[str] = None
     journal_name: Optional[str] = None
 
@@ -156,13 +156,11 @@ async def rest_contacts_create(req: ContactCreateRequest):
 @app.post("/contacts/update")
 async def rest_contacts_update(req: ContactUpdateRequest):
     return _odoo().update_contact(
-        partner_id=req.contact_id,
-        vals={k: v for k, v in {
-            "name": req.name,
-            "email": req.email,
-            "phone": req.phone,
-            "city": req.city,
-        }.items() if v is not None},
+        contact_id=req.contact_id,
+        name=req.name,
+        email=req.email,
+        phone=req.phone,
+        city=req.city,
     )
 
 
@@ -177,23 +175,22 @@ async def rest_leads_create(req: LeadCreateRequest):
     cid = _company_id(req.shop_id)
     return _odoo().create_lead(
         name=req.name,
-        contact_name=req.contact_name,
-        email=req.email,
-        phone=req.phone,
-        expected_revenue=req.expected_revenue,
+        partner_id=req.partner_id,
+        expected_revenue=req.expected_revenue or 0.0,
         description=req.description,
+        lead_type=req.lead_type,
         company_id=cid,
     )
 
 
 @app.post("/leads/move")
 async def rest_leads_move(req: LeadMoveRequest):
-    return _odoo().move_lead_to_stage(lead_id=req.lead_id, stage_name=req.stage_name)
+    return _odoo().update_lead_stage(lead_id=req.lead_id, stage_name=req.stage_name)
 
 
 @app.post("/leads/note")
 async def rest_leads_note(req: LeadNoteRequest):
-    return _odoo().add_note_to_lead(lead_id=req.lead_id, note=req.note)
+    return _odoo().add_note_to_lead(lead_id=req.lead_id, body=req.note)
 
 
 @app.post("/pipeline/summary")
@@ -226,11 +223,11 @@ async def rest_invoices_confirm(req: ShopRequest):
 
 @app.post("/payments/register")
 async def rest_payments_register(req: PaymentRegisterRequest):
+    cid = _company_id(req.shop_id)
     return _odoo().register_payment(
-        invoice_id=req.invoice_id,
         amount=req.amount,
-        payment_date=req.payment_date,
-        journal_name=req.journal_name,
+        partner_id=req.partner_id,
+        company_id=cid,
     )
 
 
@@ -298,21 +295,19 @@ try:
     async def create_lead(
         shop_id: int,
         name: str,
-        contact_name: Optional[str] = None,
-        email: Optional[str] = None,
-        phone: Optional[str] = None,
+        partner_id: Optional[int] = None,
         expected_revenue: Optional[float] = None,
         description: Optional[str] = None,
+        lead_type: str = "opportunity",
     ) -> dict:
         return await rest_leads_create(
             LeadCreateRequest(
                 shop_id=shop_id,
                 name=name,
-                contact_name=contact_name,
-                email=email,
-                phone=phone,
+                partner_id=partner_id,
                 expected_revenue=expected_revenue,
                 description=description,
+                lead_type=lead_type,
             )
         )
 

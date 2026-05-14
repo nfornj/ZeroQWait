@@ -742,17 +742,16 @@ class OdooClient:
             return {"error": str(e)}
 
     def add_note_to_lead(self, lead_id: int, body: str) -> Dict[str, Any]:
-        """Add a log note to a CRM lead via mail.message."""
+        """Add a log note to a CRM lead via message_post."""
         if not self.enabled:
             return _DISABLED
         try:
-            msg_id = self._execute("mail.message", "create", {
-                "model": "crm.lead",
-                "res_id": lead_id,
-                "body": body,
-                "message_type": "comment",
-                "subtype_xmlid": "mail.mt_note",
-            })
+            msg_id = self._execute(
+                "crm.lead", "message_post",
+                [lead_id],
+                body=body,
+                message_type="comment",
+            )
             return {"message_id": msg_id, "lead_id": lead_id}
         except Exception as e:
             logger.error("Odoo add_note_to_lead failed: %s", e)

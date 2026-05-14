@@ -190,7 +190,7 @@ services:
       - ODOO_DB=${ODOO_DB:-odoo}
       - ODOO_USER=${ODOO_USER:-admin}
       - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
-      - ODOO_ENABLED=${ODOO_ENABLED:-false}
+      - ODOO_ENABLED=${ODOO_ENABLED:-true}
     depends_on:
       db:
         condition: service_healthy

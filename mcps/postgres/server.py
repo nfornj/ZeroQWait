@@ -85,15 +85,16 @@ async def rest_queue_volume(req: DateRangeRequest):
             text(
                 """
                 SELECT
-                    DATE(qi.completed_at) AS day,
-                    COUNT(*) AS completed,
-                    SUM(CASE WHEN qi.status = 'completed' THEN 1 ELSE 0 END) AS served,
-                    SUM(CASE WHEN qi.status = 'no_show' THEN 1 ELSE 0 END) AS no_show
+                    DATE(qi.checked_in_at) AS day,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN qi.status = 'COMPLETED' THEN 1 ELSE 0 END) AS served,
+                    SUM(CASE WHEN qi.status = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelled
                 FROM queue_items qi
                 JOIN queues q ON qi.queue_id = q.id
                 WHERE q.shop_id = :shop_id
-                  AND qi.completed_at >= :since
-                GROUP BY DATE(qi.completed_at)
+                  AND qi.checked_in_at >= :since
+                  AND qi.status = 'COMPLETED'
+                GROUP BY DATE(qi.checked_in_at)
                 ORDER BY day ASC
                 """
             ),
@@ -161,6 +162,7 @@ async def rest_wait_time_trend(req: DateRangeRequest):
                 WHERE q.shop_id = :shop_id
                   AND qi.checked_in_at >= :since
                   AND qi.service_started_at IS NOT NULL
+                  AND qi.status = 'COMPLETED'
                 GROUP BY day
                 ORDER BY day ASC
                 """
@@ -194,7 +196,7 @@ async def rest_service_popularity(req: DateRangeRequest):
                 LEFT JOIN shop_services ss ON qi.service_id = ss.id
                 WHERE q.shop_id = :shop_id
                   AND qi.checked_in_at >= :since
-                  AND qi.status = 'completed'
+                  AND qi.status = 'COMPLETED'
                 GROUP BY ss.name
                 ORDER BY total_served DESC
                 LIMIT 20
