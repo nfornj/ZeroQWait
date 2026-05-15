@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+data:
+  # Staging-specific overrides
+  # Shared postgres from zeroqwait namespace, separate database
+  DB_NAME: "zeroqwait-staging"
+  DB_HOST: "postgres.zeroqwait.svc.cluster.local"
+  # Shared Redis from zeroqwait namespace
+  REDIS_HOST: "redis.zeroqwait.svc.cluster.local"
+  # Shared TTS/ASR/VoiceMCP from zeroqwait namespace
+  TTS_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881"
+  ASR_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881/transcribe"
+  # Staging MCP services (within zeroqwait-staging namespace)
+  BOOKING_MCP_URL: "http://booking-mcp.zeroqwait-staging.svc.cluster.local:8890"
+  FINANCE_MCP_URL: "http://finance-mcp.zeroqwait-staging.svc.cluster.local:8891"
+  HR_MCP_URL: "http://hr-mcp.zeroqwait-staging.svc.cluster.local:8892"
+  # Staging frontend URL
+  FRONTEND_URL: "http://staging.192.168.2.134.nip.io"
+  # Disable heavy optional integrations in staging
+  TEMPORAL_ENABLED: "false"
+  TELEGRAM_DEV_SHOP_ID: ""
+  ODOO_ENABLED: "false"

@@ -17,7 +17,7 @@
 | Protected Artefact | Current Value | Why It Matters |
 | ---- | ---- | ---- |
 | Agent framework | LangGraph (langgraph >= 0.4) on FastAPI | Core state machine for all agent graphs; changing breaks checkpoint compatibility |
-| LLM model | `qwen3:14b-q4_K_M` via Ollama | Swapping models breaks agent behaviour and costs GPU re-pull time |
+| LLM model | `meta/llama-3.1-8b-instruct` via NVIDIA NIM API | Swapping models breaks agent behaviour and requires re-validating all agent prompts |
 | TTS engine | Qwen3-TTS (`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`) | Kokoro / Coqui incident on 2026-02-14 required emergency rollback |
 | TTS voice | `Vivian` | Voice is a brand experience choice |
 | TTS port | `8880` | Ingress and backend config hard-wired to this port |
@@ -174,7 +174,7 @@ These three items must appear consistently across:
 | **Agent Checkpoints**       | langgraph-checkpoint-postgres             | Persistent agent state per tenant in PostgreSQL                     |
 | **Database**                | PostgreSQL 15                            | Via K8s StatefulSet (prod DB: `fastcuts_db`, user: `fastcuts_user`) |
 | **Cache**                   | Redis 5.0.1                              | Session history, category cache, rate limiting, agent state cache   |
-| **AI/LLM**                  | LangGraph + langchain-ollama + Ollama     | Model: `qwen3:14b-q4_K_M` (~8-9GB, Q4_K_M quantized, GPU-only)      |
+| **AI/LLM**                  | LangGraph + langchain-openai + NVIDIA NIM API | Model: `meta/llama-3.1-8b-instruct` (hosted, no local GPU required); Ollama scaled to 0 in `llm` ns |
 | **Embeddings**              | sentence-transformers (all-MiniLM-L6-v2) | Semantic cache for query analysis                                   |
 | **MCP Tooling**             | Model Context Protocol servers            | BookingMCP, FinanceMCP, HRMCP — tools decoupled from agents        |
 | **Voice ASR**               | Whisper (via `asr_service/`)             | GPU-accelerated, separate K8s pod                                   |
@@ -686,16 +686,21 @@ Implementation details:
   - Strict frontend endpoint: `http://localhost:3000` (no random/ephemeral frontend host ports).
 - `deploy-prod.yml` (branch: `prod`) runs local image pipeline + applies K8s manifests + rollout checks in `zeroqwait`.
 
-### LLM Setup (Ollama)
+### LLM Setup (NVIDIA NIM API — primary)
 
-- Ollama runs in K8s namespace `llm` via Helm chart (ollama-1.38.0, image `ollama/ollama:latest`)
-- **GPU**: NVIDIA GeForce RTX 5070 Ti (16GB VRAM), CUDA 13.0, Driver 580.126.09
-- **Persistent storage**: 50Gi PVC (`ollama-data-pvc`, local-path) mounted at `/root/.ollama`
-- Internal URL: `http://ollama.llm.svc.cluster.local:11434/v1` (ClusterIP, used by backend)
-- External URL: `http://192.168.2.134:30002/v1` (NodePort, for debugging only)
-- Models: `qwen3:14b-q4_K_M` (~8-9GB, Q4_K_M quantized, GPU-only via `num_gpu=-1`, primary)
-- Config: `OLLAMA_URL` and `MODEL_NAME` in backend-configmap
-- **Model repull required** after PVC data loss: `sudo kubectl exec deployment/ollama -n llm -- ollama pull qwen3:14b-q4_K_M`
+- **Provider**: NVIDIA NIM hosted API (`api.nvidia.com`)
+- **Model**: `meta/llama-3.1-8b-instruct` (default; overridable via `NVIDIA_MODEL` env var)
+- **API key**: `NVIDIA_API_KEY` stored in `backend-secret` K8s secret (70-char `nvapi-*` key)
+- **Config**: `LLM_PROVIDER: nvidia` and `NVIDIA_MODEL: meta/llama-3.1-8b-instruct` in `backend-configmap`
+- **Factory**: `backend/agents/llm_factory.py` — activates NVIDIA provider when `NVIDIA_API_KEY` is set; falls back to Ollama only if key is absent
+- **GPU**: RTX 5070 Ti GPU is now fully available for TTS (`tts-service`) and ASR (`asr-service`) — no longer shared with a local LLM
+
+### LLM Fallback (Ollama — scaled to 0, emergency only)
+
+- Ollama deployment exists in K8s namespace `llm` but is scaled to **0 replicas** (2026-05-15)
+- **To restore as fallback**: `sudo kubectl scale deployment/ollama -n llm --replicas=1`
+- **Model repull required** after scale-up: `sudo kubectl exec deployment/ollama -n llm -- ollama pull qwen3:14b-q4_K_M`
+- **PVC**: `ollama-data-pvc` (50Gi) preserved — model weights are retained on disk
 
 ---
 
@@ -910,8 +915,9 @@ Tier source of truth: `backend/agents/llm_factory.load_shop_subscription_tier(sh
 
 | Variable          | Default                                                          | Description         |
 | ----------------- | ---------------------------------------------------------------- | ------------------- |
-| `OLLAMA_URL`      | `http://localhost:11434/v1`                                      | Ollama API endpoint |
-| `MODEL_NAME`      | `llama3.2:latest`                                                | LLM model name      |
+| `NVIDIA_API_KEY`  | *(in K8s secret)*                                                | NVIDIA NIM API key (primary LLM) |
+| `NVIDIA_MODEL`    | `meta/llama-3.1-8b-instruct`                                     | NVIDIA NIM model name |
+| `LLM_PROVIDER`    | `nvidia`                                                         | Active LLM provider (`nvidia`\|`ollama`\|`groq`) |
 | `DB_HOST`         | `localhost`                                                      | PostgreSQL host     |
 | `DB_PORT`         | `5433` (local dev, Docker Compose) / `5432` (K8s prod)          | PostgreSQL port — Docker Compose default is 5433 to avoid conflict with Homebrew postgres on 5432 |
 | `DB_NAME`         | `zeroqwait`                                                      | Database name       |
