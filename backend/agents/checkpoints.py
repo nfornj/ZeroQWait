@@ -101,6 +101,37 @@ def get_sync_checkpoint_saver(db_url: Optional[str] = None):
     return PostgresSaver.from_conn_string(db_url)
 
 
+def get_pooled_checkpoint_saver(db_url: Optional[str] = None):
+    """Create a PostgresSaver backed by a connection pool.
+
+    Uses psycopg_pool.ConnectionPool so that each checkpoint operation
+    draws a fresh connection from the pool. This prevents stale-connection
+    failures (psycopg.OperationalError: the connection is closed) that
+    occur when a single long-lived connection is held across idle periods.
+
+    Returns a ready-to-use PostgresSaver (setup() already called).
+    """
+    try:
+        from psycopg_pool import ConnectionPool
+        pg_module = import_module("langgraph.checkpoint.postgres")
+        PostgresSaver = getattr(pg_module, "PostgresSaver")
+    except ImportError as e:
+        raise ImportError(
+            "Pooled checkpoint driver not available. "
+            "Install psycopg[binary] and psycopg_pool."
+        ) from e
+
+    db_url = _build_db_url(db_url)
+    pool = ConnectionPool(
+        conninfo=db_url,
+        max_size=5,
+        kwargs={"autocommit": True, "prepare_threshold": 0},
+    )
+    checkpointer = PostgresSaver(pool)
+    checkpointer.setup()
+    return checkpointer
+
+
 async def setup_checkpoint_tables(db_url: Optional[str] = None):
     """
     Ensure PostgreSQL tables exist for LangGraph checkpoints.

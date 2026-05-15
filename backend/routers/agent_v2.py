@@ -62,7 +62,7 @@ from agents.memory_context import (
     merge_and_rank_memories,
 )
 from agents.state import AgentState
-from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_saver
+from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_saver, get_pooled_checkpoint_saver
 from agents.chat_service import (
     _create_chat_work_context,
     _finalize_chat_work_context,
@@ -706,10 +706,7 @@ def _resolve_thinking_node(event: Any) -> Optional[str]:
 
 # PostgreSQL checkpoint persistence is mandatory.
 try:
-    _CHECKPOINTER_CM = get_sync_checkpoint_saver()
-    _CHECKPOINTER = _CHECKPOINTER_CM.__enter__()
-    if hasattr(_CHECKPOINTER, "setup"):
-        _CHECKPOINTER.setup()
+    _CHECKPOINTER = get_pooled_checkpoint_saver()
     _SUPERVISOR_RUNNABLE = create_supervisor_runnable(checkpointer=_CHECKPOINTER)
 except Exception as e:
     raise RuntimeError(
