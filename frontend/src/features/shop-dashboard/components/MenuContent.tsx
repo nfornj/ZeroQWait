@@ -1,4 +1,4 @@
-import { Bot, GitBranch, TrendingUp, Scissors, CalendarDays, List, Settings, Users } from 'lucide-react';
+import { Bot, GitBranch, TrendingUp, Scissors, CalendarDays, List, Settings, Users, Package } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,7 @@ const managementNavItems = [
   { text: 'Appointments', icon: CalendarDays, path: '/appointments' },
   { text: 'Queues', icon: List, path: '/queues' },
   { text: 'Team', icon: Users, path: '/employees' },
+  { text: 'Inventory', icon: Package, path: '/inventory' },
   { text: 'Settings', icon: Settings, path: '/settings' },
 ];
 

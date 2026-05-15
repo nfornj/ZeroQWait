@@ -111,7 +111,6 @@ export interface ChatMessage {
   /** How long the full response took in milliseconds (set when status → done/error) */
   processingDuration?: number;
   agent?: string;
-  processingStartedAt?: string;
   retryMessage?: string;
   attachments?: readonly CompleteAttachment[];
   pendingAction?: PendingApproval;

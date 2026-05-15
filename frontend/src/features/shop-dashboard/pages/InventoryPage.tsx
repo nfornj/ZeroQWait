@@ -1,42 +1,48 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box,
-  Typography,
-  Button,
-  Card,
-  CardContent,
-  Chip,
+  AlertTriangle,
+  Clock,
+  History,
+  Package,
+  PackageMinus,
+  PackagePlus,
+  Plus,
+  RefreshCcw,
+  Search,
+} from 'lucide-react';
+
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import {
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  TextField,
-  MenuItem,
-  Alert,
-  CircularProgress,
-  IconButton,
-  Tooltip,
-  Stack,
-  Divider,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
+  TableHeader,
   TableRow,
-  Paper,
-  Badge,
-  InputAdornment,
-} from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
-import InventoryRoundedIcon from '@mui/icons-material/InventoryRounded';
-import AddShoppingCartRoundedIcon from '@mui/icons-material/AddShoppingCartRounded';
-import RemoveShoppingCartRoundedIcon from '@mui/icons-material/RemoveShoppingCartRounded';
-import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
-import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
-import Header from '../components/Header';
+} from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
+
 import { useShop } from '../../../contexts/ShopContext';
 import {
   getInventoryItems,
@@ -49,24 +55,35 @@ import {
   InventoryMovement,
   AddItemPayload,
 } from '../../../services/api';
+import Header from '../components/Header';
 
-// ── Category colour map ───────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-const CATEGORY_COLORS: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
-  color: 'secondary',
-  styling: 'primary',
-  beard: 'info',
-  shave: 'default',
-  cleansing: 'success',
-  equipment: 'warning',
-  consumable: 'default',
-  sanitation: 'error',
-  retail: 'primary',
+const CATEGORIES = [
+  'color', 'styling', 'beard', 'shave', 'cleansing',
+  'equipment', 'consumable', 'sanitation', 'retail', 'other',
+];
+const UNITS = ['piece', 'bottle', 'tube', 'pack', 'box', 'ml', 'oz', 'g', 'kg', 'litre'];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  color:         'bg-purple-100 text-purple-700 border-purple-200',
+  styling:       'bg-blue-100 text-blue-700 border-blue-200',
+  beard:         'bg-cyan-100 text-cyan-700 border-cyan-200',
+  shave:         'bg-slate-100 text-slate-700 border-slate-200',
+  cleansing:     'bg-green-100 text-green-700 border-green-200',
+  equipment:     'bg-amber-100 text-amber-700 border-amber-200',
+  consumable:    'bg-orange-100 text-orange-700 border-orange-200',
+  sanitation:    'bg-red-100 text-red-700 border-red-200',
+  retail:        'bg-indigo-100 text-indigo-700 border-indigo-200',
+  other:         'bg-gray-100 text-gray-600 border-gray-200',
+  uncategorized: 'bg-gray-100 text-gray-500 border-gray-200',
 };
 
-// ── Stock status helpers ──────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
-function stockStatus(item: InventoryItem): 'ok' | 'low' | 'out' {
+type StockStatus = 'ok' | 'low' | 'out';
+
+function stockStatus(item: InventoryItem): StockStatus {
   if (item.current_stock <= 0) return 'out';
   if (item.current_stock <= item.reorder_threshold) return 'low';
   return 'ok';
@@ -74,34 +91,32 @@ function stockStatus(item: InventoryItem): 'ok' | 'low' | 'out' {
 
 function StockBadge({ item }: { item: InventoryItem }) {
   const status = stockStatus(item);
-  const color =
-    status === 'out' ? 'error' : status === 'low' ? 'warning' : 'success';
-  const label =
-    status === 'out' ? 'Out of stock' : status === 'low' ? 'Low stock' : 'In stock';
+  const cls =
+    status === 'out'
+      ? 'bg-red-100 text-red-700 border-red-200'
+      : status === 'low'
+      ? 'bg-amber-100 text-amber-700 border-amber-200'
+      : 'bg-emerald-100 text-emerald-700 border-emerald-200';
   return (
-    <Chip
-      size="small"
-      color={color}
-      label={`${item.current_stock} ${item.unit}`}
-      title={label}
-      sx={{ fontWeight: 600, minWidth: 64 }}
-    />
+    <Badge
+      variant="outline"
+      className={cn('rounded-full border font-semibold', cls)}
+    >
+      {item.current_stock} {item.unit}
+    </Badge>
   );
 }
 
-// ── Movement history modal ────────────────────────────────────────────────────
+// ── Movement History Modal ─────────────────────────────────────────────────────
 
-function HistoryModal({
-  open,
-  item,
-  shopId,
-  onClose,
-}: {
+interface HistoryModalProps {
   open: boolean;
   item: InventoryItem | null;
   shopId: number;
   onClose: () => void;
-}) {
+}
+
+function HistoryModal({ open, item, shopId, onClose }: HistoryModalProps) {
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -114,91 +129,92 @@ function HistoryModal({
       .finally(() => setLoading(false));
   }, [open, item, shopId]);
 
-  const movementLabel = (type: string) => {
-    const map: Record<string, string> = {
-      restock: 'Restock',
-      usage: 'Usage',
-      adjust: 'Adjustment',
-      initial: 'Initial stock',
-    };
-    return map[type] ?? type;
+  const movementLabel: Record<string, string> = {
+    restock: 'Restock',
+    usage: 'Usage',
+    adjust: 'Adjustment',
+    initial: 'Initial',
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>
-        Movement history — {item?.name}
-      </DialogTitle>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <History className="h-4 w-4" />
+            History — {item?.name}
+          </DialogTitle>
+        </DialogHeader>
+
         {loading ? (
-          <Box display="flex" justifyContent="center" py={3}>
-            <CircularProgress size={32} />
-          </Box>
+          <div className="space-y-2 py-4">
+            {[1, 2, 3].map((n) => <Skeleton key={n} className="h-8 w-full" />)}
+          </div>
         ) : movements.length === 0 ? (
-          <Typography color="text.secondary">No movements recorded yet.</Typography>
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            No movements recorded yet.
+          </p>
         ) : (
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
+          <div className="max-h-72 overflow-y-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell align="right">Qty</TableCell>
-                  <TableCell>Notes</TableCell>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead>Notes</TableHead>
                 </TableRow>
-              </TableHead>
+              </TableHeader>
               <TableBody>
                 {movements.map((m) => (
                   <TableRow key={m.id}>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                       {new Date(m.created_at).toLocaleString(undefined, {
-                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                        month: 'short', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
                       })}
                     </TableCell>
-                    <TableCell>{movementLabel(m.movement_type)}</TableCell>
+                    <TableCell className="text-sm">
+                      {movementLabel[m.movement_type] ?? m.movement_type}
+                    </TableCell>
                     <TableCell
-                      align="right"
-                      sx={{
-                        fontWeight: 700,
-                        color: m.quantity >= 0 ? 'success.main' : 'error.main',
-                      }}
+                      className={cn(
+                        'text-right text-sm font-bold',
+                        m.quantity >= 0 ? 'text-emerald-600' : 'text-red-600',
+                      )}
                     >
                       {m.quantity >= 0 ? '+' : ''}{m.quantity}
                     </TableCell>
-                    <TableCell sx={{ color: 'text.secondary', fontSize: '0.78rem' }}>
+                    <TableCell className="text-xs text-muted-foreground">
                       {m.notes ?? '—'}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          </TableContainer>
+          </div>
         )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Close</Button>
-      </DialogActions>
     </Dialog>
   );
 }
 
-// ── Restock / Usage modal ─────────────────────────────────────────────────────
+// ── Restock / Usage Modal ──────────────────────────────────────────────────────
 
-function StockActionModal({
-  open,
-  mode,
-  item,
-  shopId,
-  onClose,
-  onDone,
-}: {
+interface StockActionModalProps {
   open: boolean;
   mode: 'restock' | 'usage';
   item: InventoryItem | null;
   shopId: number;
   onClose: () => void;
   onDone: () => void;
-}) {
+}
+
+function StockActionModal({ open, mode, item, shopId, onClose, onDone }: StockActionModalProps) {
   const [qty, setQty] = useState('');
   const [notes, setNotes] = useState('');
   const [unitCost, setUnitCost] = useState('');
@@ -229,91 +245,108 @@ function StockActionModal({
     }
   };
 
-  const title = mode === 'restock' ? `Restock — ${item?.name}` : `Record usage — ${item?.name}`;
+  const isRestock = mode === 'restock';
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{title}</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} mt={1}>
-          {error && <Alert severity="error">{error}</Alert>}
-          <TextField
-            label="Quantity"
-            type="number"
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            inputProps={{ min: 0.01, step: 0.01 }}
-            InputProps={{ endAdornment: <InputAdornment position="end">{item?.unit}</InputAdornment> }}
-            required
-            fullWidth
-          />
-          {mode === 'restock' && (
-            <TextField
-              label="Unit cost (optional)"
-              type="number"
-              value={unitCost}
-              onChange={(e) => setUnitCost(e.target.value)}
-              inputProps={{ min: 0, step: 0.01 }}
-              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
-              fullWidth
-            />
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {isRestock
+              ? <PackagePlus className="h-4 w-4 text-emerald-600" />
+              : <PackageMinus className="h-4 w-4 text-amber-600" />}
+            {isRestock ? 'Restock' : 'Record usage'} — {item?.name}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
-          <TextField
-            label="Notes (optional)"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            multiline
-            rows={2}
-            fullWidth
-          />
-        </Stack>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="qty">
+              Quantity <span className="text-muted-foreground">({item?.unit})</span>
+            </Label>
+            <Input
+              id="qty"
+              type="number"
+              min={0.01}
+              step={0.01}
+              placeholder="0"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+            />
+          </div>
+
+          {isRestock && (
+            <div className="space-y-1.5">
+              <Label htmlFor="unitCost">Unit cost (optional)</Label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
+                <Input
+                  id="unitCost"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="0.00"
+                  value={unitCost}
+                  onChange={(e) => setUnitCost(e.target.value)}
+                  className="pl-7"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="notes">Notes (optional)</Label>
+            <Textarea
+              id="notes"
+              rows={2}
+              placeholder="e.g. Ordered from supplier..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={saving}>
+            {saving ? 'Saving...' : isRestock ? 'Restock' : 'Record'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button
-          variant="contained"
-          onClick={handleSubmit}
-          disabled={saving}
-          startIcon={saving ? <CircularProgress size={16} /> : undefined}
-        >
-          {mode === 'restock' ? 'Restock' : 'Record'}
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 }
 
-// ── Add item modal ────────────────────────────────────────────────────────────
+// ── Add Item Modal ─────────────────────────────────────────────────────────────
 
-const CATEGORIES = ['color', 'styling', 'beard', 'shave', 'cleansing', 'equipment', 'consumable', 'sanitation', 'retail', 'other'];
-const UNITS = ['piece', 'bottle', 'tube', 'pack', 'box', 'ml', 'oz', 'g', 'kg', 'litre'];
-
-function AddItemModal({
-  open,
-  shopId,
-  onClose,
-  onDone,
-}: {
+interface AddItemModalProps {
   open: boolean;
   shopId: number;
   onClose: () => void;
   onDone: () => void;
-}) {
-  const [form, setForm] = useState<AddItemPayload>({
-    name: '', unit: 'piece', category: '', sku: '', initial_stock: 0,
-    reorder_threshold: 0, cost_per_unit: undefined, supplier: '',
-  });
+}
+
+function AddItemModal({ open, shopId, onClose, onDone }: AddItemModalProps) {
+  const emptyForm: AddItemPayload = {
+    name: '', unit: 'piece', category: '', sku: '',
+    initial_stock: 0, reorder_threshold: 0, cost_per_unit: undefined, supplier: '',
+  };
+  const [form, setForm] = useState<AddItemPayload>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (open) {
-      setForm({ name: '', unit: 'piece', category: '', sku: '', initial_stock: 0, reorder_threshold: 0, cost_per_unit: undefined, supplier: '' });
-      setError('');
-    }
+    if (open) { setForm(emptyForm); setError(''); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const set = (field: keyof AddItemPayload, value: any) =>
+  const set = <K extends keyof AddItemPayload>(field: K, value: AddItemPayload[K]) =>
     setForm((f) => ({ ...f, [field]: value }));
 
   const handleSubmit = async () => {
@@ -336,84 +369,164 @@ function AddItemModal({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Add inventory item</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} mt={1}>
-          {error && <Alert severity="error">{error}</Alert>}
-          <TextField
-            label="Item name"
-            value={form.name}
-            onChange={(e) => set('name', e.target.value)}
-            required fullWidth
-          />
-          <Stack direction="row" spacing={2}>
-            <TextField
-              select label="Unit" value={form.unit}
-              onChange={(e) => set('unit', e.target.value)}
-              fullWidth
-            >
-              {UNITS.map((u) => <MenuItem key={u} value={u}>{u}</MenuItem>)}
-            </TextField>
-            <TextField
-              select label="Category" value={form.category}
-              onChange={(e) => set('category', e.target.value)}
-              fullWidth
-            >
-              <MenuItem value="">— none —</MenuItem>
-              {CATEGORIES.map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
-            </TextField>
-          </Stack>
-          <Stack direction="row" spacing={2}>
-            <TextField
-              label="SKU (optional)" value={form.sku}
-              onChange={(e) => set('sku', e.target.value)}
-              fullWidth
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Package className="h-4 w-4" />
+            Add inventory item
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="itemName">Item name *</Label>
+            <Input
+              id="itemName"
+              placeholder="e.g. Pomade"
+              value={form.name}
+              onChange={(e) => set('name', e.target.value)}
             />
-            <TextField
-              label="Supplier (optional)" value={form.supplier}
-              onChange={(e) => set('supplier', e.target.value)}
-              fullWidth
-            />
-          </Stack>
-          <Stack direction="row" spacing={2}>
-            <TextField
-              label="Initial stock" type="number" value={form.initial_stock}
-              onChange={(e) => set('initial_stock', parseFloat(e.target.value) || 0)}
-              inputProps={{ min: 0, step: 0.01 }} fullWidth
-            />
-            <TextField
-              label="Reorder threshold" type="number" value={form.reorder_threshold}
-              onChange={(e) => set('reorder_threshold', parseFloat(e.target.value) || 0)}
-              inputProps={{ min: 0, step: 0.01 }} fullWidth
-            />
-          </Stack>
-          <TextField
-            label="Cost per unit (optional)" type="number"
-            value={form.cost_per_unit ?? ''}
-            onChange={(e) => set('cost_per_unit', e.target.value ? parseFloat(e.target.value) : undefined)}
-            inputProps={{ min: 0, step: 0.01 }}
-            InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
-            fullWidth
-          />
-        </Stack>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Unit</Label>
+              <Select value={form.unit} onValueChange={(v) => set('unit', v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Category</Label>
+              <Select value={form.category ?? 'none'} onValueChange={(v) => set('category', v === 'none' ? undefined : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="— none —" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— none —</SelectItem>
+                  {CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="sku">SKU (optional)</Label>
+              <Input
+                id="sku"
+                placeholder="SKU-001"
+                value={form.sku ?? ''}
+                onChange={(e) => set('sku', e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="supplier">Supplier (optional)</Label>
+              <Input
+                id="supplier"
+                placeholder="Supplier name"
+                value={form.supplier ?? ''}
+                onChange={(e) => set('supplier', e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="initialStock">Initial stock</Label>
+              <Input
+                id="initialStock"
+                type="number"
+                min={0}
+                step={0.01}
+                value={form.initial_stock ?? 0}
+                onChange={(e) => set('initial_stock', parseFloat(e.target.value) || 0)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reorderThreshold">Reorder threshold</Label>
+              <Input
+                id="reorderThreshold"
+                type="number"
+                min={0}
+                step={0.01}
+                value={form.reorder_threshold ?? 0}
+                onChange={(e) => set('reorder_threshold', parseFloat(e.target.value) || 0)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="costPerUnit">Cost per unit (optional)</Label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
+              <Input
+                id="costPerUnit"
+                type="number"
+                min={0}
+                step={0.01}
+                placeholder="0.00"
+                value={form.cost_per_unit ?? ''}
+                onChange={(e) =>
+                  set('cost_per_unit', e.target.value ? parseFloat(e.target.value) : undefined)
+                }
+                className="pl-7"
+              />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={saving}>
+            {saving ? 'Adding...' : 'Add item'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button
-          variant="contained"
-          onClick={handleSubmit}
-          disabled={saving}
-          startIcon={saving ? <CircularProgress size={16} /> : <AddIcon />}
-        >
-          Add item
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── Loading skeleton ───────────────────────────────────────────────────────────
+
+function InventorySkeleton() {
+  return (
+    <div className="space-y-3 px-4">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Skeleton key={n} className="h-10 w-full rounded-xl" />
+      ))}
+    </div>
+  );
+}
+
+// ── CSS variables ──────────────────────────────────────────────────────────────
+
+const surfaceStyle = {
+  '--background': '210 20% 98%',
+  '--foreground': '222 47% 11%',
+  '--card': '0 0% 100%',
+  '--card-foreground': '222 47% 11%',
+  '--border': '214 32% 91%',
+  '--muted': '210 40% 96%',
+  '--muted-foreground': '215 16% 47%',
+  '--primary': '154 40% 30%',
+  '--primary-foreground': '0 0% 100%',
+} as React.CSSProperties;
+
+// ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
   const { shop } = useShop();
@@ -464,7 +577,6 @@ export default function InventoryPage() {
       )
     : items;
 
-  // Group by category
   const grouped = filteredItems.reduce<Record<string, InventoryItem[]>>((acc, item) => {
     const cat = item.category ?? 'uncategorized';
     if (!acc[cat]) acc[cat] = [];
@@ -473,228 +585,244 @@ export default function InventoryPage() {
   }, {});
 
   const totalValue = items.reduce(
-    (sum, i) => sum + (i.current_stock * (i.cost_per_unit ?? 0)), 0,
+    (sum, i) => sum + i.current_stock * (i.cost_per_unit ?? 0),
+    0,
   );
 
   if (!shopId) {
     return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="warning">No shop selected. Please select a shop first.</Alert>
-      </Box>
+      <div className="p-6">
+        <Alert>
+          <AlertDescription>No shop selected. Please select a shop first.</AlertDescription>
+        </Alert>
+      </div>
     );
   }
 
   return (
-    <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1200px' }, mx: 'auto' }}>
+    <div className="w-full" style={surfaceStyle}>
       <Header />
 
-      {/* Page title + actions */}
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2, pt: 2, pb: 1 }}>
-        <Stack direction="row" alignItems="center" spacing={1.5}>
-          <InventoryRoundedIcon color="primary" />
-          <Typography variant="h5" fontWeight={700}>Inventory</Typography>
+      {/* Page header */}
+      <div className="flex items-center justify-between px-4 pb-4 pt-2">
+        <div className="flex items-center gap-2">
+          <Package className="h-5 w-5 text-primary" />
+          <h1 className="text-xl font-bold tracking-tight text-foreground">Inventory</h1>
           {alertCount > 0 && (
-            <Chip
-              icon={<WarningAmberRoundedIcon fontSize="small" />}
-              label={`${alertCount} low-stock`}
-              color="warning"
-              size="small"
-              sx={{ fontWeight: 700 }}
-            />
+            <Badge
+              variant="outline"
+              className="rounded-full border-amber-200 bg-amber-100 font-semibold text-amber-700"
+            >
+              <AlertTriangle className="mr-1 h-3 w-3" />
+              {alertCount} low-stock
+            </Badge>
           )}
-        </Stack>
-        <Stack direction="row" spacing={1}>
-          <Tooltip title="Refresh">
-            <IconButton onClick={load} disabled={loading} size="small">
-              {loading ? <CircularProgress size={18} /> : <RefreshIcon />}
-            </IconButton>
-          </Tooltip>
+        </div>
+        <div className="flex items-center gap-2">
           <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setAddOpen(true)}
-            size="small"
-            sx={{ borderRadius: 3 }}
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={load}
+            disabled={loading}
           >
+            <RefreshCcw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            Refresh
+          </Button>
+          <Button size="sm" className="gap-1.5" onClick={() => setAddOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />
             Add item
           </Button>
-        </Stack>
-      </Stack>
+        </div>
+      </div>
 
       {/* Summary cards */}
-      <Stack direction="row" spacing={2} sx={{ px: 2, pb: 2 }} flexWrap="wrap" useFlexGap>
-        <Card sx={{ flex: '1 1 140px', borderRadius: 3 }}>
-          <CardContent sx={{ pb: '12px !important' }}>
-            <Typography variant="caption" color="text.secondary">Total items</Typography>
-            <Typography variant="h4" fontWeight={700}>{items.length}</Typography>
+      <div className="grid grid-cols-3 gap-3 px-4 pb-4">
+        <Card className="rounded-2xl border-border bg-card shadow-none">
+          <CardContent className="p-4">
+            <p className="text-2xl font-bold tracking-tight text-foreground">{items.length}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Total items</p>
           </CardContent>
         </Card>
-        <Card sx={{ flex: '1 1 140px', borderRadius: 3, bgcolor: alertCount > 0 ? 'warning.light' : undefined }}>
-          <CardContent sx={{ pb: '12px !important' }}>
-            <Typography variant="caption" color="text.secondary">Low / out of stock</Typography>
-            <Typography variant="h4" fontWeight={700} color={alertCount > 0 ? 'warning.dark' : 'text.primary'}>
+        <Card
+          className={cn(
+            'rounded-2xl border-border bg-card shadow-none',
+            alertCount > 0 && 'border-amber-200 bg-amber-50',
+          )}
+        >
+          <CardContent className="p-4">
+            <p className={cn(
+              'text-2xl font-bold tracking-tight',
+              alertCount > 0 ? 'text-amber-700' : 'text-foreground',
+            )}>
               {alertCount}
-            </Typography>
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Low / out of stock</p>
           </CardContent>
         </Card>
-        <Card sx={{ flex: '1 1 160px', borderRadius: 3 }}>
-          <CardContent sx={{ pb: '12px !important' }}>
-            <Typography variant="caption" color="text.secondary">Estimated stock value</Typography>
-            <Typography variant="h4" fontWeight={700}>
+        <Card className="rounded-2xl border-border bg-card shadow-none">
+          <CardContent className="p-4">
+            <p className="text-2xl font-bold tracking-tight text-foreground">
               ${totalValue.toFixed(2)}
-            </Typography>
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Estimated stock value</p>
           </CardContent>
         </Card>
-      </Stack>
+      </div>
 
       {error && (
-        <Alert severity="error" sx={{ mx: 2, mb: 2 }} onClose={() => setError('')}>
-          {error}
-        </Alert>
+        <div className="px-4 pb-3">
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        </div>
       )}
 
       {/* Search */}
-      <Box sx={{ px: 2, pb: 2 }}>
-        <TextField
-          placeholder="Search by name, category, supplier, or SKU…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          size="small"
-          fullWidth
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchRoundedIcon fontSize="small" />
-              </InputAdornment>
-            ),
-          }}
-          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
-        />
-      </Box>
+      <div className="px-4 pb-4">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by name, category, supplier, or SKU..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
-      {/* Items table grouped by category */}
+      {/* Items by category */}
       {loading && items.length === 0 ? (
-        <Box display="flex" justifyContent="center" py={6}>
-          <CircularProgress />
-        </Box>
+        <InventorySkeleton />
       ) : Object.entries(grouped).length === 0 ? (
-        <Box sx={{ px: 2, py: 4, textAlign: 'center' }}>
-          <Typography color="text.secondary">
-            {search ? 'No items match your search.' : 'No inventory items yet. Add your first item.'}
-          </Typography>
-        </Box>
+        <div className="px-4 py-12 text-center">
+          <Package className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">
+            {search
+              ? 'No items match your search.'
+              : 'No inventory items yet. Add your first item.'}
+          </p>
+        </div>
       ) : (
-        Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([category, catItems]) => (
-          <Box key={category} sx={{ px: 2, mb: 3 }}>
-            <Stack direction="row" alignItems="center" spacing={1} mb={1}>
-              <Chip
-                label={category}
-                size="small"
-                color={CATEGORY_COLORS[category] ?? 'default'}
-                sx={{ fontWeight: 700, textTransform: 'capitalize' }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {catItems.length} item{catItems.length !== 1 ? 's' : ''}
-              </Typography>
-            </Stack>
-            <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3 }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow sx={{ bgcolor: 'action.hover' }}>
-                    <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>SKU</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>Supplier</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }} align="center">Stock</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }} align="center">Reorder at</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }} align="right">Cost/unit</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }} align="center">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {catItems.map((item) => {
-                    const status = stockStatus(item);
-                    return (
-                      <TableRow
-                        key={item.id}
-                        sx={{
-                          bgcolor: status === 'out' ? 'error.lighter' : status === 'low' ? 'warning.lighter' : undefined,
-                          '&:last-child td, &:last-child th': { border: 0 },
-                        }}
-                      >
-                        <TableCell>
-                          <Stack direction="row" alignItems="center" spacing={1}>
-                            {status !== 'ok' && (
-                              <WarningAmberRoundedIcon
-                                fontSize="small"
-                                color={status === 'out' ? 'error' : 'warning'}
-                              />
-                            )}
-                            <Typography variant="body2" fontWeight={600}>
-                              {item.name}
-                            </Typography>
-                          </Stack>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="caption" color="text.secondary">
-                            {item.sku ?? '—'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="caption" color="text.secondary">
-                            {item.supplier ?? '—'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="center">
-                          <StockBadge item={item} />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Typography variant="body2">
-                            {item.reorder_threshold} {item.unit}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2">
-                            {item.cost_per_unit != null ? `$${item.cost_per_unit.toFixed(2)}` : '—'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Stack direction="row" spacing={0.5} justifyContent="center">
-                            <Tooltip title="Restock">
-                              <IconButton
-                                size="small"
-                                color="success"
-                                onClick={() => openAction(item, 'restock')}
-                              >
-                                <AddShoppingCartRoundedIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Record usage">
-                              <IconButton
-                                size="small"
-                                color="warning"
-                                onClick={() => openAction(item, 'usage')}
-                              >
-                                <RemoveShoppingCartRoundedIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Movement history">
-                              <IconButton
-                                size="small"
-                                onClick={() => setHistoryItem(item)}
-                              >
-                                <HistoryRoundedIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          </Stack>
-                        </TableCell>
+        <div className="space-y-6 px-4 pb-8">
+          {Object.entries(grouped)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([category, catItems]) => (
+              <div key={category}>
+                <div className="mb-2 flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize',
+                      CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other,
+                    )}
+                  >
+                    {category}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {catItems.length} item{catItems.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="font-semibold">Name</TableHead>
+                        <TableHead className="font-semibold">SKU</TableHead>
+                        <TableHead className="font-semibold">Supplier</TableHead>
+                        <TableHead className="text-center font-semibold">Stock</TableHead>
+                        <TableHead className="text-center font-semibold">Reorder at</TableHead>
+                        <TableHead className="text-right font-semibold">Cost/unit</TableHead>
+                        <TableHead className="text-center font-semibold">Actions</TableHead>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Box>
-        ))
+                    </TableHeader>
+                    <TableBody>
+                      {catItems.map((item) => {
+                        const status = stockStatus(item);
+                        return (
+                          <TableRow
+                            key={item.id}
+                            className={cn(
+                              status === 'out' && 'bg-red-50/60',
+                              status === 'low' && 'bg-amber-50/60',
+                            )}
+                          >
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {status !== 'ok' && (
+                                  <AlertTriangle
+                                    className={cn(
+                                      'h-3.5 w-3.5 flex-shrink-0',
+                                      status === 'out' ? 'text-red-500' : 'text-amber-500',
+                                    )}
+                                  />
+                                )}
+                                <span className="text-sm font-semibold text-foreground">
+                                  {item.name}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-xs text-muted-foreground">
+                                {item.sku ?? '—'}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-xs text-muted-foreground">
+                                {item.supplier ?? '—'}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <StockBadge item={item} />
+                            </TableCell>
+                            <TableCell className="text-center text-sm">
+                              {item.reorder_threshold} {item.unit}
+                            </TableCell>
+                            <TableCell className="text-right text-sm">
+                              {item.cost_per_unit != null
+                                ? '$' + item.cost_per_unit.toFixed(2)
+                                : '—'}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center justify-center gap-1">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                                  title="Restock"
+                                  onClick={() => openAction(item, 'restock')}
+                                >
+                                  <PackagePlus className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                                  title="Record usage"
+                                  onClick={() => openAction(item, 'usage')}
+                                >
+                                  <PackageMinus className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  title="Movement history"
+                                  onClick={() => setHistoryItem(item)}
+                                >
+                                  <Clock className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            ))}
+        </div>
       )}
 
       {/* Modals */}
@@ -718,6 +846,6 @@ export default function InventoryPage() {
         shopId={shopId}
         onClose={() => setHistoryItem(null)}
       />
-    </Box>
+    </div>
   );
 }

@@ -1,195 +1,136 @@
 import React, { useEffect, useState } from 'react';
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Divider,
-  Stack,
-  Typography,
-} from '@mui/material';
-import InventoryRoundedIcon from '@mui/icons-material/InventoryRounded';
-import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
-import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
-import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
-import { Link as RouterLink } from 'react-router-dom';
-import { useShop } from '../../../contexts/ShopContext';
-import { getInventoryItems, getLowStockAlerts, InventoryItem } from '../../../services/api';
+import { AlertTriangle, ArrowRight, CheckCircle2, Package } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
-export default function InventorySummaryWidget() {
-  const { shop } = useShop();
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
+
+import {
+  getInventoryItems,
+  getLowStockAlerts,
+  InventoryItem,
+} from '../../../services/api';
+
+interface InventorySummaryWidgetProps {
+  shopId: number;
+}
+
+export default function InventorySummaryWidget({ shopId }: InventorySummaryWidgetProps) {
   const [items, setItems] = useState<InventoryItem[]>([]);
-  const [alerts, setAlerts] = useState<InventoryItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [outCount, setOutCount] = useState(0);
+  const [lowCount, setLowCount] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!shop?.id) return;
     setLoading(true);
-    setError(false);
     Promise.all([
-      getInventoryItems(shop.id),
-      getLowStockAlerts(shop.id),
+      getInventoryItems(shopId),
+      getLowStockAlerts(shopId),
     ])
       .then(([itemsRes, alertsRes]) => {
-        setItems(itemsRes.data.items);
-        setAlerts(alertsRes.data.alerts);
+        const allItems = itemsRes.data.items;
+        const alerts = alertsRes.data.alerts;
+        setItems(allItems);
+        setOutCount(alerts.filter((a) => a.current_stock <= 0).length);
+        setLowCount(alerts.filter((a) => a.current_stock > 0).length);
       })
-      .catch(() => setError(true))
+      .catch(() => {})
       .finally(() => setLoading(false));
-  }, [shop?.id]);
+  }, [shopId]);
 
-  const totalItems = items.length;
-  const outCount = alerts.filter((i) => i.current_stock <= 0).length;
-  const lowCount = alerts.filter((i) => i.current_stock > 0).length;
   const totalValue = items.reduce(
     (sum, i) => sum + i.current_stock * (i.cost_per_unit ?? 0),
     0,
   );
 
-  const statusColor =
-    outCount > 0 ? 'error' : lowCount > 0 ? 'warning' : 'success';
-  const statusLabel =
-    outCount > 0
-      ? `${outCount} out of stock`
-      : lowCount > 0
-      ? `${lowCount} low stock`
-      : 'All stocked';
+  const hasAlerts = outCount > 0 || lowCount > 0;
+
+  const statusBadge = outCount > 0
+    ? { label: 'Critical', cls: 'border-red-200 bg-red-100 text-red-700' }
+    : lowCount > 0
+    ? { label: 'Low stock', cls: 'border-amber-200 bg-amber-100 text-amber-700' }
+    : { label: 'All good', cls: 'border-emerald-200 bg-emerald-100 text-emerald-700' };
 
   return (
     <Card
-      variant="outlined"
-      sx={{ borderRadius: 3, height: '100%', display: 'flex', flexDirection: 'column' }}
+      className={cn(
+        'rounded-2xl border-border bg-card shadow-none',
+        hasAlerts && outCount > 0 && 'border-red-200',
+        hasAlerts && outCount === 0 && 'border-amber-200',
+      )}
     >
-      <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-        {/* Header */}
-        <Stack direction="row" alignItems="center" justifyContent="space-between">
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <InventoryRoundedIcon color="primary" fontSize="small" />
-            <Typography variant="subtitle1" fontWeight={700}>
-              Inventory
-            </Typography>
-          </Stack>
-          <Chip
-            size="small"
-            color={statusColor}
-            icon={
-              statusColor === 'success' ? (
-                <CheckCircleOutlineRoundedIcon fontSize="small" />
-              ) : (
-                <WarningAmberRoundedIcon fontSize="small" />
-              )
-            }
-            label={loading ? '…' : statusLabel}
-            sx={{ fontWeight: 600 }}
-          />
-        </Stack>
+      <CardContent className="p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background">
+              <Package className="h-4 w-4 text-primary" />
+            </span>
+            <span className="text-sm font-semibold text-foreground">Inventory</span>
+          </div>
+          <Badge
+            variant="outline"
+            className={cn('rounded-full border text-xs font-semibold', statusBadge.cls)}
+          >
+            {hasAlerts
+              ? <AlertTriangle className="mr-1 h-3 w-3" />
+              : <CheckCircle2 className="mr-1 h-3 w-3" />}
+            {statusBadge.label}
+          </Badge>
+        </div>
 
-        <Divider />
-
-        {/* Stats row */}
         {loading ? (
-          <Box display="flex" justifyContent="center" py={2}>
-            <CircularProgress size={28} />
-          </Box>
-        ) : error ? (
-          <Typography variant="body2" color="error">
-            Failed to load inventory data.
-          </Typography>
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-24" />
+            <Skeleton className="h-4 w-32" />
+          </div>
         ) : (
-          <>
-            <Stack direction="row" spacing={2}>
-              <Box flex={1} textAlign="center">
-                <Typography variant="h4" fontWeight={700}>
-                  {totalItems}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Total items
-                </Typography>
-              </Box>
-              <Box flex={1} textAlign="center">
-                <Typography
-                  variant="h4"
-                  fontWeight={700}
-                  color={alerts.length > 0 ? 'warning.main' : 'success.main'}
-                >
-                  {alerts.length}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Need restocking
-                </Typography>
-              </Box>
-              <Box flex={1} textAlign="center">
-                <Typography variant="h4" fontWeight={700}>
-                  ${totalValue.toFixed(0)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Est. value
-                </Typography>
-              </Box>
-            </Stack>
+          <div className="space-y-2">
+            <div className="flex items-baseline gap-1">
+              <span className="text-2xl font-bold tracking-tight text-foreground">
+                {items.length}
+              </span>
+              <span className="text-xs text-muted-foreground">items tracked</span>
+            </div>
 
-            {/* Low/out stock list */}
-            {alerts.length > 0 && (
-              <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                  Items needing attention
-                </Typography>
-                <Stack spacing={0.5}>
-                  {alerts.slice(0, 4).map((item) => (
-                    <Stack
-                      key={item.id}
-                      direction="row"
-                      justifyContent="space-between"
-                      alignItems="center"
-                      sx={{
-                        px: 1,
-                        py: 0.4,
-                        borderRadius: 1.5,
-                        bgcolor: item.current_stock <= 0 ? 'error.light' : 'warning.light',
-                        opacity: 0.9,
-                      }}
-                    >
-                      <Typography variant="caption" fontWeight={600} noWrap sx={{ maxWidth: 160 }}>
-                        {item.name}
-                      </Typography>
-                      <Chip
-                        size="small"
-                        label={
-                          item.current_stock <= 0
-                            ? 'Out'
-                            : `${item.current_stock} ${item.unit}`
-                        }
-                        color={item.current_stock <= 0 ? 'error' : 'warning'}
-                        sx={{ height: 18, fontSize: '0.68rem', fontWeight: 700 }}
-                      />
-                    </Stack>
-                  ))}
-                  {alerts.length > 4 && (
-                    <Typography variant="caption" color="text.secondary" sx={{ pl: 1 }}>
-                      +{alerts.length - 4} more…
-                    </Typography>
-                  )}
-                </Stack>
-              </Box>
-            )}
-          </>
+            <div className="flex flex-wrap gap-2">
+              {outCount > 0 && (
+                <span className="text-xs font-semibold text-red-600">
+                  {outCount} out of stock
+                </span>
+              )}
+              {lowCount > 0 && (
+                <span className="text-xs font-semibold text-amber-600">
+                  {lowCount} low stock
+                </span>
+              )}
+              {!hasAlerts && (
+                <span className="text-xs text-muted-foreground">
+                  No alerts
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Est. value: <span className="font-semibold text-foreground">${totalValue.toFixed(2)}</span>
+            </p>
+          </div>
         )}
 
-        {/* Footer link */}
-        <Box mt="auto" pt={1}>
+        <div className="mt-4">
           <Button
-            component={RouterLink}
-            to="/inventory"
-            size="small"
-            endIcon={<ArrowForwardRoundedIcon fontSize="small" />}
-            sx={{ borderRadius: 2, fontWeight: 600, textTransform: 'none' }}
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-0 text-xs text-primary hover:bg-transparent hover:text-primary/80"
+            asChild
           >
-            Manage inventory
+            <Link to="/inventory">
+              View inventory <ArrowRight className="h-3 w-3" />
+            </Link>
           </Button>
-        </Box>
+        </div>
       </CardContent>
     </Card>
   );
