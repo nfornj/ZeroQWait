@@ -35,7 +35,7 @@ def _add_company_filter(domain: list, company_id: Optional[int]) -> list:
 
 _M2O_FIELDS = {"country_id", "parent_id", "partner_id", "stage_id",
                "user_id", "journal_id", "account_id", "categ_id",
-               "move_id", "company_id"}
+               "move_id", "company_id", "uom_id", "uom_po_id"}
 
 
 def _resolve_m2o(records: list) -> list:
@@ -560,7 +560,7 @@ class OdooClient:
                 ["id", "name", "qty_on_hand", "uom_id", "default_code", "barcode"],
                 limit=200,
             )
-            return {"items": [_resolve_m2o(i, ["uom_id"]) for i in items], "count": len(items)}
+            return {"items": _resolve_m2o(items), "count": len(items)}
         except Exception as e:
             logger.error("Odoo get_low_stock_items failed: %s", e)
             return {"error": str(e)}

@@ -105,6 +105,53 @@ class PaymentRegisterRequest(ShopRequest):
     journal_name: Optional[str] = None
 
 
+class InvoiceConfirmRequest(ShopRequest):
+    invoice_id: int
+
+
+class CompaniesListRequest(ShopRequest):
+    limit: int = 50
+
+
+class CompanyCreateRequest(ShopRequest):
+    name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    street: Optional[str] = None
+    city: Optional[str] = None
+
+
+class PaymentsListRequest(ShopRequest):
+    limit: int = 50
+
+
+class JournalEntriesRequest(ShopRequest):
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    limit: int = 100
+
+
+class ProductsListRequest(ShopRequest):
+    limit: int = 50
+    product_type: Optional[str] = None
+
+
+class ProductCreateRequest(ShopRequest):
+    name: str
+    list_price: float
+    product_type: str = "service"
+    description: Optional[str] = None
+
+
+class ProductUpdateRequest(ShopRequest):
+    product_id: int
+    updates: dict
+
+
+class LowStockRequest(ShopRequest):
+    threshold: float = 0
+
+
 # ── REST endpoints ─────────────────────────────────────────────────────────────
 
 
@@ -211,14 +258,13 @@ async def rest_invoices_create(req: InvoiceCreateRequest):
     return _odoo().create_invoice(
         partner_id=req.partner_id,
         lines=req.lines,
-        currency=req.currency,
         company_id=cid,
     )
 
 
 @app.post("/invoices/confirm")
-async def rest_invoices_confirm(req: ShopRequest):
-    return {"error": "Missing invoice_id in request"}
+async def rest_invoices_confirm(req: InvoiceConfirmRequest):
+    return _odoo().confirm_invoice(invoice_id=req.invoice_id)
 
 
 @app.post("/payments/register")
@@ -229,6 +275,80 @@ async def rest_payments_register(req: PaymentRegisterRequest):
         partner_id=req.partner_id,
         company_id=cid,
     )
+
+
+@app.post("/payments/list")
+async def rest_payments_list(req: PaymentsListRequest):
+    cid = _company_id(req.shop_id)
+    return _odoo().get_payments(limit=req.limit, company_id=cid)
+
+
+@app.post("/companies/list")
+async def rest_companies_list(req: CompaniesListRequest):
+    cid = _company_id(req.shop_id)
+    return _odoo().get_companies(limit=req.limit, company_id=cid)
+
+
+@app.post("/companies/create")
+async def rest_companies_create(req: CompanyCreateRequest):
+    return _odoo().create_company(
+        name=req.name,
+        phone=req.phone,
+        email=req.email,
+        street=req.street,
+        city=req.city,
+    )
+
+
+@app.post("/accounting/journal-entries")
+async def rest_journal_entries(req: JournalEntriesRequest):
+    cid = _company_id(req.shop_id)
+    return _odoo().get_journal_entries(
+        date_from=req.date_from,
+        date_to=req.date_to,
+        limit=req.limit,
+        company_id=cid,
+    )
+
+
+@app.post("/accounting/balance")
+async def rest_account_balance(req: ShopRequest):
+    cid = _company_id(req.shop_id)
+    return _odoo().get_account_balance(company_id=cid)
+
+
+@app.post("/products/list")
+async def rest_products_list(req: ProductsListRequest):
+    cid = _company_id(req.shop_id)
+    return _odoo().get_products(limit=req.limit, product_type=req.product_type, company_id=cid)
+
+
+@app.post("/products/create")
+async def rest_products_create(req: ProductCreateRequest):
+    cid = _company_id(req.shop_id)
+    return _odoo().create_product(
+        name=req.name,
+        list_price=req.list_price,
+        product_type=req.product_type,
+        company_id=cid,
+        description=req.description,
+    )
+
+
+@app.post("/products/update")
+async def rest_products_update(req: ProductUpdateRequest):
+    return _odoo().update_product(product_id=req.product_id, updates=req.updates)
+
+
+@app.post("/inventory/low-stock")
+async def rest_low_stock(req: LowStockRequest):
+    cid = _company_id(req.shop_id)
+    return _odoo().get_low_stock_items(company_id=cid, threshold=req.threshold)
+
+
+@app.get("/leads/stages")
+async def rest_lead_stages():
+    return _odoo().get_lead_stages()
 
 
 @app.post("/revenue/summary")
@@ -330,6 +450,103 @@ try:
     @mcp.tool(description="Get revenue summary from Odoo accounting for a shop.")
     async def get_revenue_summary(shop_id: int) -> dict:
         return await rest_revenue_summary(ShopRequest(shop_id=shop_id))
+
+    @mcp.tool(description="Create a new customer invoice in Odoo for a shop.")
+    async def create_invoice(shop_id: int, partner_id: int, lines: list) -> dict:
+        return await rest_invoices_create(
+            InvoiceCreateRequest(shop_id=shop_id, partner_id=partner_id, lines=lines)
+        )
+
+    @mcp.tool(description="Confirm (post) a draft invoice in Odoo. invoice_id is returned by create_invoice.")
+    async def confirm_invoice(shop_id: int, invoice_id: int) -> dict:
+        return await rest_invoices_confirm(
+            InvoiceConfirmRequest(shop_id=shop_id, invoice_id=invoice_id)
+        )
+
+    @mcp.tool(description="Register a customer payment in Odoo for a shop.")
+    async def register_payment(
+        shop_id: int,
+        amount: float,
+        partner_id: int,
+    ) -> dict:
+        return await rest_payments_register(
+            PaymentRegisterRequest(shop_id=shop_id, amount=amount, partner_id=partner_id)
+        )
+
+    @mcp.tool(description="List partner-companies/organizations in Odoo for a shop.")
+    async def list_companies(shop_id: int, limit: int = 50) -> dict:
+        return await rest_companies_list(CompaniesListRequest(shop_id=shop_id, limit=limit))
+
+    @mcp.tool(description="Create a new Odoo company (for tenant isolation) associated with a shop.")
+    async def create_company(
+        shop_id: int,
+        name: str,
+        phone: Optional[str] = None,
+        email: Optional[str] = None,
+        street: Optional[str] = None,
+        city: Optional[str] = None,
+    ) -> dict:
+        return await rest_companies_create(
+            CompanyCreateRequest(shop_id=shop_id, name=name, phone=phone, email=email, street=street, city=city)
+        )
+
+    @mcp.tool(description="List customer payments recorded in Odoo for a shop.")
+    async def list_payments(shop_id: int, limit: int = 50) -> dict:
+        return await rest_payments_list(PaymentsListRequest(shop_id=shop_id, limit=limit))
+
+    @mcp.tool(description="Get accounting journal entries from Odoo for a shop, optionally filtered by date range.")
+    async def get_journal_entries(
+        shop_id: int,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        limit: int = 100,
+    ) -> dict:
+        return await rest_journal_entries(
+            JournalEntriesRequest(shop_id=shop_id, date_from=date_from, date_to=date_to, limit=limit)
+        )
+
+    @mcp.tool(description="Get account balances (debit/credit grouped by account) from Odoo for a shop.")
+    async def get_account_balance(shop_id: int) -> dict:
+        return await rest_account_balance(ShopRequest(shop_id=shop_id))
+
+    @mcp.tool(description="List products and services in Odoo for a shop. product_type: 'service', 'consu', or 'product'.")
+    async def list_products(
+        shop_id: int,
+        limit: int = 50,
+        product_type: Optional[str] = None,
+    ) -> dict:
+        return await rest_products_list(
+            ProductsListRequest(shop_id=shop_id, limit=limit, product_type=product_type)
+        )
+
+    @mcp.tool(description="Create a product or service in Odoo for a shop.")
+    async def create_product(
+        shop_id: int,
+        name: str,
+        list_price: float,
+        product_type: str = "service",
+        description: Optional[str] = None,
+    ) -> dict:
+        return await rest_products_create(
+            ProductCreateRequest(
+                shop_id=shop_id, name=name, list_price=list_price,
+                product_type=product_type, description=description,
+            )
+        )
+
+    @mcp.tool(description="Update fields on an existing Odoo product. Pass updates as a dict of field->value.")
+    async def update_product(shop_id: int, product_id: int, updates: dict) -> dict:
+        return await rest_products_update(
+            ProductUpdateRequest(shop_id=shop_id, product_id=product_id, updates=updates)
+        )
+
+    @mcp.tool(description="Get low-stock items from Odoo inventory for a shop. threshold defaults to 0 (out-of-stock).")
+    async def get_low_stock_items(shop_id: int, threshold: float = 0) -> dict:
+        return await rest_low_stock(LowStockRequest(shop_id=shop_id, threshold=threshold))
+
+    @mcp.tool(description="List available CRM pipeline stages in Odoo.")
+    async def get_lead_stages(shop_id: int) -> dict:
+        return await rest_lead_stages()
 
     try:
         app.mount("/mcp", mcp.sse_app())
