@@ -1,8 +1,5 @@
 import React, { type FC, type ReactNode } from "react";
-import CreateNewFolderRoundedIcon from "@mui/icons-material/CreateNewFolderRounded";
-import NorthRoundedIcon from "@mui/icons-material/NorthRounded";
-import StopRoundedIcon from "@mui/icons-material/StopRounded";
-import { alpha, Box, IconButton, Typography, useTheme } from "@mui/material";
+import { FolderPlus, ArrowUp, Square } from "lucide-react";
 import {
   AuiIf,
   ComposerPrimitive,
@@ -15,11 +12,13 @@ import {
   ComposerAttachments,
   UserMessageAttachments,
 } from "../AssistantUIAttachment";
+import { cn } from "../../lib/utils";
 
 export interface ComposerProps {
   placeholder?: string;
   disabled?: boolean;
   isRunning?: boolean;
+  accentColor?: string;
   onOpenFolderPicker?: () => void;
   dictationControl?: ReactNode;
 }
@@ -30,170 +29,86 @@ interface ThreadProps {
 }
 
 export const Composer: FC<ComposerProps> = ({
-  placeholder = "Ask a follow-up",
+  placeholder = "Ask a follow-up...",
   disabled = false,
   isRunning = false,
+  accentColor = "hsl(var(--foreground))",
   onOpenFolderPicker,
   dictationControl,
 }) => {
-  const muiTheme = useTheme();
-
   return (
     <ComposerPrimitive.Root
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 0,
-        padding: 0,
-        border: `1px solid ${
-          muiTheme.palette.mode === "dark"
-            ? alpha("#f5f3ef", 0.08)
-            : alpha("#1f1d1a", 0.08)
-        }`,
-        borderRadius: 24,
-        background:
-          muiTheme.palette.mode === "dark"
-            ? alpha("#17181b", 0.98)
-            : alpha("#fcfbf9", 0.98),
-        boxShadow:
-          muiTheme.palette.mode === "dark"
-            ? "0 10px 28px rgba(0, 0, 0, 0.22)"
-            : "0 8px 24px rgba(28, 23, 16, 0.06)",
-        overflow: "hidden",
-      }}
+      className="flex flex-col gap-0 overflow-hidden rounded-[22px] border border-border/80 bg-background/95 text-foreground shadow-[0_14px_34px_rgba(15,23,42,0.10)] backdrop-blur-sm"
+      style={{ "--composer-accent": accentColor } as React.CSSProperties}
     >
-      <Box
-        sx={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 0.75,
-          px: 1.25,
-          pt: 1,
-          "&:empty": {
-            display: "none",
-          },
-        }}
-      >
+      {/* Attachments row */}
+      <div className="flex flex-wrap gap-1.5 px-4 pt-3 empty:hidden">
         <ComposerAttachments />
-      </Box>
+      </div>
 
+      {/* Textarea */}
       <ComposerPrimitive.Input asChild>
         <textarea
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
-          style={{
-            flex: 1,
-            minHeight: 40,
-            maxHeight: 220,
-            border: "none",
-            outline: "none",
-            resize: "none",
-            background: "transparent",
-            color: muiTheme.palette.text.primary,
-            fontFamily: "inherit",
-            fontSize: "1rem",
-            lineHeight: 1.45,
-            padding: "12px 14px 10px",
-            letterSpacing: "0.01em",
-          }}
+          className={cn(
+            "flex-1 resize-none border-none bg-transparent px-4 py-3 text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground",
+            "min-h-[42px] max-h-[220px]",
+          )}
         />
       </ComposerPrimitive.Input>
 
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 1,
-          px: 0.75,
-          py: 0.5,
-          borderTop: "1px solid",
-          borderColor:
-            muiTheme.palette.mode === "dark"
-              ? alpha("#f5f3ef", 0.08)
-              : alpha("#1f1d1a", 0.08),
-          backgroundColor:
-            muiTheme.palette.mode === "dark"
-              ? alpha("#ffffff", 0.02)
-              : alpha("#1f1d1a", 0.015),
-        }}
-      >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-2 border-t border-border/70 bg-background/80 px-3 py-2">
+        {/* Left: attachment + folder */}
+        <div className="flex items-center gap-0.5">
           <ComposerAddAttachment disabled={disabled} />
-
-          <IconButton
-            size="small"
+          <button
+            type="button"
+            aria-label="Open files"
             disabled={disabled}
             onClick={onOpenFolderPicker}
-            sx={{
-              width: 34,
-              height: 34,
-              color: muiTheme.palette.mode === "dark" ? alpha("#f5f3ef", 0.82) : "#6f6a63",
-              borderRadius: 2.5,
-              "&:hover": {
-                backgroundColor:
-                  muiTheme.palette.mode === "dark"
-                    ? alpha("#f5f3ef", 0.08)
-                    : alpha("#1f1d1a", 0.06),
-              },
-              "&.Mui-disabled": {
-                color: alpha(muiTheme.palette.text.secondary, 0.4),
-              },
-            }}
+            className={cn(
+              "flex h-[34px] w-[34px] items-center justify-center rounded-full text-muted-foreground transition-colors",
+              "hover:bg-muted hover:text-foreground disabled:opacity-40"
+            )}
           >
-            <CreateNewFolderRoundedIcon fontSize="small" />
-          </IconButton>
-        </Box>
+            <FolderPlus className="h-4 w-4" />
+          </button>
+        </div>
 
-        <Box sx={{ flex: 1 }} />
+        <div className="flex-1" />
 
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+        {/* Right: dictation + send/stop */}
+        <div className="flex items-center gap-0.5">
           {dictationControl}
-
           {isRunning ? (
             <ComposerPrimitive.Cancel asChild>
-              <IconButton
-                size="small"
-                sx={{
-                  width: 34,
-                  height: 34,
-                  bgcolor: muiTheme.palette.mode === "dark" ? "#f5f3ef" : "#5f5a53",
-                  color: muiTheme.palette.mode === "dark" ? "#1f1f21" : "#ffffff",
-                  boxShadow: "none",
-                  "&:hover": {
-                    bgcolor: muiTheme.palette.mode === "dark" ? "#ffffff" : "#4f4a43",
-                  },
-                }}
+              <button
+                type="button"
+                aria-label="Stop response"
+                className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-foreground text-background shadow-none hover:opacity-90"
               >
-                <StopRoundedIcon sx={{ fontSize: 18 }} />
-              </IconButton>
+                <Square className="h-[18px] w-[18px]" />
+              </button>
             </ComposerPrimitive.Cancel>
           ) : (
             <ComposerPrimitive.Send asChild>
-              <IconButton
-                size="small"
-                sx={{
-                  width: 34,
-                  height: 34,
-                  bgcolor: muiTheme.palette.mode === "dark" ? "#f5f3ef" : "#5f5a53",
-                  color: muiTheme.palette.mode === "dark" ? "#1f1f21" : "#ffffff",
-                  boxShadow: "none",
-                  "&:hover": {
-                    bgcolor: muiTheme.palette.mode === "dark" ? "#ffffff" : "#4f4a43",
-                  },
-                  "&.Mui-disabled": {
-                    bgcolor: muiTheme.palette.mode === "dark" ? alpha("#f5f3ef", 0.22) : "#c9c3ba",
-                    color: muiTheme.palette.mode === "dark" ? alpha("#1f1f21", 0.55) : "#f7f4ef",
-                  },
-                }}
+              <button
+                type="submit"
+                aria-label="Send message"
+                className={cn(
+                  "flex h-[36px] w-[36px] items-center justify-center rounded-full bg-[var(--composer-accent)] text-white shadow-[0_8px_18px_rgba(15,23,42,0.14)]",
+                  "hover:opacity-90 disabled:bg-[var(--composer-accent)] disabled:text-white disabled:opacity-70 disabled:shadow-none"
+                )}
               >
-                <NorthRoundedIcon sx={{ fontSize: 18 }} />
-              </IconButton>
+                <ArrowUp className="h-[18px] w-[18px]" />
+              </button>
             </ComposerPrimitive.Send>
           )}
-        </Box>
-      </Box>
+        </div>
+      </div>
     </ComposerPrimitive.Root>
   );
 };
@@ -202,49 +117,20 @@ export const ThreadWelcome: FC<{ title?: string; subtitle?: string }> = ({
   title = "Hello there!",
   subtitle = "How can I help you today?",
 }) => {
-  const muiTheme = useTheme();
-
   return (
-    <Box
-      sx={{
-        my: "auto",
-        display: "flex",
-        flex: 1,
-        flexDirection: "column",
-        justifyContent: "center",
-        px: 2,
-      }}
-    >
-      <Typography
-        variant="h2"
-        sx={{
-          fontWeight: 700,
-          letterSpacing: "-0.035em",
-          color: "text.primary",
-        }}
-      >
-        {title}
-      </Typography>
-      <Typography
-        variant="h5"
-        sx={{
-          fontWeight: 400,
-          color: muiTheme.palette.text.secondary,
-          letterSpacing: "-0.02em",
-        }}
-      >
-        {subtitle}
-      </Typography>
-    </Box>
+    <div className="my-auto flex flex-1 flex-col justify-center px-4">
+      <h2 className="text-4xl font-bold tracking-[-0.035em] text-foreground">{title}</h2>
+      <p className="mt-1 text-xl font-normal tracking-[-0.02em] text-muted-foreground">{subtitle}</p>
+    </div>
   );
 };
 
 export const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root data-role="assistant">
-      <Box sx={{ width: "100%", color: "text.primary" }}>
+      <div className="w-full text-foreground">
         <MessagePrimitive.Parts />
-      </Box>
+      </div>
     </MessagePrimitive.Root>
   );
 };
@@ -253,20 +139,11 @@ export const UserMessage: FC = () => {
   return (
     <MessagePrimitive.Root data-role="user">
       <UserMessageAttachments />
-      <Box sx={{ display: "flex", justifyContent: "flex-end", width: "100%" }}>
-        <Box
-          sx={{
-            maxWidth: "85%",
-            px: 2,
-            py: 1.25,
-            borderRadius: 3,
-            bgcolor: "action.hover",
-            color: "text.primary",
-          }}
-        >
+      <div className="flex w-full justify-end">
+        <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-2.5 text-foreground">
           <MessagePrimitive.Parts />
-        </Box>
-      </Box>
+        </div>
+      </div>
     </MessagePrimitive.Root>
   );
 };
@@ -276,24 +153,10 @@ export const Thread: FC<ThreadProps> = ({
   footer = <Composer />,
 }) => {
   return (
-    <ThreadPrimitive.Root
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        flex: 1,
-        minHeight: 0,
-      }}
-    >
+    <ThreadPrimitive.Root className="flex flex-1 min-h-0 flex-col">
       <ThreadPrimitive.Viewport
         autoScroll
-        style={{
-          display: "flex",
-          flex: 1,
-          flexDirection: "column",
-          minHeight: 0,
-          overflowX: "hidden",
-          overflowY: "auto",
-        }}
+        className="flex flex-1 min-h-0 flex-col overflow-x-hidden overflow-y-auto"
       >
         <AuiIf condition={(state: any) => state.thread.isEmpty}>{welcome}</AuiIf>
         <ThreadPrimitive.Messages>

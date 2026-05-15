@@ -40,8 +40,8 @@ export const useApprovalDecisions = ({
   const [isApproving, setIsApproving] = useState(false);
 
   const handleApprovalDecision = useCallback(
-    async (approval: PendingApproval, approved: boolean) => {
-      if (!shopId) return;
+    async (approval: PendingApproval, approved: boolean): Promise<boolean> => {
+      if (!shopId) return false;
 
       setError(null);
       setIsApproving(true);
@@ -148,6 +148,7 @@ export const useApprovalDecisions = ({
         await refreshPendingApprovals();
         await refreshBriefing();
         await refreshFeed();
+        return true;
       } catch (err: any) {
         const detail = err?.message || "Failed to submit approval decision";
         setError(detail);
@@ -156,6 +157,7 @@ export const useApprovalDecisions = ({
           title: "Approval failed",
           description: detail,
         });
+        return false;
       } finally {
         setIsApproving(false);
       }

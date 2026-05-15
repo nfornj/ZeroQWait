@@ -1,31 +1,30 @@
-/**
- * Card wrapper that applies the shared owner-brand glass surface styling.
- */
 import React from "react";
-import Card from "@mui/material/Card";
-import type { CardProps } from "@mui/material/Card";
-
+import { cn } from "../lib/utils";
 import { useOwnerBrand } from "../hooks/useOwnerBrand";
 
-const GlassCard = React.forwardRef<HTMLDivElement, CardProps>(function GlassCard(
-  { sx, ...props },
+interface GlassCardProps extends React.HTMLAttributes<HTMLDivElement> {
+  children?: React.ReactNode;
+}
+
+const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(function GlassCard(
+  { className, style, children, ...props },
   ref,
 ) {
   const brand = useOwnerBrand();
 
   return (
-    <Card
+    <div
       ref={ref}
-      variant="outlined"
-      sx={{
-        borderRadius: 3,
-        borderColor: brand.glass.border,
-        bgcolor: brand.glass.bg,
-        backdropFilter: "blur(20px)",
-        ...sx,
+      className={cn("rounded-xl backdrop-blur-xl", className)}
+      style={{
+        border: `1px solid ${brand.glass.border}`,
+        backgroundColor: brand.glass.bg,
+        ...style,
       }}
       {...props}
-    />
+    >
+      {children}
+    </div>
   );
 });
 

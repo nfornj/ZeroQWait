@@ -1,37 +1,31 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
-  alpha,
-  Box,
-  Button,
-  Chip,
-  CircularProgress,
-  Divider,
-  Paper,
-  Stack,
-  TextField,
-  Typography,
-  useTheme,
-} from "@mui/material";
-import AccountTreeRoundedIcon from "@mui/icons-material/AccountTreeRounded";
-import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
-import CachedRoundedIcon from "@mui/icons-material/CachedRounded";
-import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
-import ContentCutRoundedIcon from "@mui/icons-material/ContentCutRounded";
-import StorageRoundedIcon from "@mui/icons-material/StorageRounded";
-import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
-import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
-import HubRoundedIcon from "@mui/icons-material/HubRounded";
-import MemoryRoundedIcon from "@mui/icons-material/MemoryRounded";
-import PendingActionsRoundedIcon from "@mui/icons-material/PendingActionsRounded";
-import PointOfSaleRoundedIcon from "@mui/icons-material/PointOfSaleRounded";
-import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
-import SendRoundedIcon from "@mui/icons-material/SendRounded";
-import StorefrontRoundedIcon from "@mui/icons-material/StorefrontRounded";
-import ToolRoundedIcon from "@mui/icons-material/BuildRounded";
+  Brain,
+  BriefcaseBusiness,
+  CalendarClock,
+  CheckCircle,
+  Clock,
+  Database,
+  GitBranch,
+  Hammer,
+  Landmark,
+  MemoryStick,
+  Network,
+  RefreshCw,
+  Scissors,
+  Send,
+  Sparkles,
+  Store,
+  Users,
+} from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Background,
   BackgroundVariant,
@@ -49,6 +43,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { useShop } from "../../contexts/ShopContext";
+import { useThemeContext } from "../../contexts/ThemeContext";
 import { useAgentStream } from "../agent-inbox/hooks/useAgentStream";
 import { useAgentWebSocket } from "../agent-inbox/hooks/useAgentWebSocket";
 import {
@@ -146,18 +141,18 @@ const latestAssistant = (messages: ChatMessage[]) =>
   [...messages].reverse().find((message) => message.role === "assistant");
 
 const NODE_SEEDS: NodeSeed[] = [
-  { id: "temporal", label: "Temporal", subtitle: "Heartbeats & cron", color: "#0ea5e9", icon: <AccessTimeRoundedIcon />, position: { x: 0, y: 40 }, hasTarget: false },
-  { id: "owner", label: "Owner", subtitle: "Commands & approvals", color: "#9333ea", icon: <StorefrontRoundedIcon />, position: { x: 0, y: 280 } },
-  { id: "soul", label: "SOUL", subtitle: "Shop identity memory", color: "#a855f7", icon: <PsychologyRoundedIcon />, position: { x: 0, y: 500 } },
-  { id: "supervisor", label: "Supervisor", subtitle: "Routes the agent team", color: "#22c55e", icon: <HubRoundedIcon />, position: { x: 320, y: 280 } },
-  { id: "receptionist", label: "Receptionist", subtitle: "Queue & bookings", color: "#14b8a6", icon: <ContentCutRoundedIcon />, position: { x: 640, y: 40 } },
-  { id: "finance", label: "Finance", subtitle: "Revenue & reports", color: "#f59e0b", icon: <PointOfSaleRoundedIcon />, position: { x: 640, y: 200 } },
-  { id: "hr", label: "HR", subtitle: "Staff & shifts", color: "#ef4444", icon: <GroupsRoundedIcon />, position: { x: 640, y: 360 } },
-  { id: "crm", label: "CRM", subtitle: "Contacts & pipeline", color: "#6366f1", icon: <AccountTreeRoundedIcon />, position: { x: 640, y: 520 } },
-  { id: "tools", label: "MCP Tools", subtitle: "Booking · Finance · HR", color: "#64748b", icon: <ToolRoundedIcon />, position: { x: 960, y: 120 } },
-  { id: "commitments", label: "Commitments", subtitle: "Follow-ups & promises", color: "#ec4899", icon: <PendingActionsRoundedIcon />, position: { x: 960, y: 280 } },
-  { id: "schedules", label: "Schedules", subtitle: "Natural language cron", color: "#06b6d4", icon: <EventRepeatRoundedIcon />, position: { x: 960, y: 440 } },
-  { id: "data", label: "Postgres + Redis", subtitle: "Durable & short memory", color: "#475569", icon: <StorageRoundedIcon />, position: { x: 320, y: 540 }, hasSource: false },
+  { id: "temporal", label: "Temporal", subtitle: "Heartbeats & cron", color: "#0ea5e9", icon: <Clock />, position: { x: 0, y: 40 }, hasTarget: false },
+  { id: "owner", label: "Owner", subtitle: "Commands & approvals", color: "#9333ea", icon: <Store />, position: { x: 0, y: 280 } },
+  { id: "soul", label: "SOUL", subtitle: "Shop identity memory", color: "#a855f7", icon: <Brain />, position: { x: 0, y: 500 } },
+  { id: "supervisor", label: "Supervisor", subtitle: "Routes the agent team", color: "#22c55e", icon: <Network />, position: { x: 320, y: 280 } },
+  { id: "receptionist", label: "Receptionist", subtitle: "Queue & bookings", color: "#14b8a6", icon: <Scissors />, position: { x: 640, y: 40 } },
+  { id: "finance", label: "Finance", subtitle: "Revenue & reports", color: "#f59e0b", icon: <Landmark />, position: { x: 640, y: 200 } },
+  { id: "hr", label: "HR", subtitle: "Staff & shifts", color: "#ef4444", icon: <Users />, position: { x: 640, y: 360 } },
+  { id: "crm", label: "CRM", subtitle: "Contacts & pipeline", color: "#6366f1", icon: <GitBranch />, position: { x: 640, y: 520 } },
+  { id: "tools", label: "MCP Tools", subtitle: "Booking · Finance · HR", color: "#64748b", icon: <Hammer />, position: { x: 960, y: 120 } },
+  { id: "commitments", label: "Commitments", subtitle: "Follow-ups & promises", color: "#ec4899", icon: <BriefcaseBusiness />, position: { x: 960, y: 280 } },
+  { id: "schedules", label: "Schedules", subtitle: "Natural language cron", color: "#06b6d4", icon: <CalendarClock />, position: { x: 960, y: 440 } },
+  { id: "data", label: "Postgres + Redis", subtitle: "Durable & short memory", color: "#475569", icon: <Database />, position: { x: 320, y: 540 }, hasSource: false },
 ];
 
 const EDGE_SEEDS: EdgeSeed[] = [
@@ -255,8 +250,8 @@ const BrainCanvas: React.FC<BrainCanvasProps> = ({ activeEdgeIds, activeNodeIds,
 
   // Update node activity / status without resetting positions
   useEffect(() => {
-    setNodes((current) =>
-      current.map((n) => ({
+    setNodes((current: Node[]) =>
+      current.map((n: Node) => ({
         ...n,
         data: {
           ...n.data,
@@ -269,8 +264,8 @@ const BrainCanvas: React.FC<BrainCanvasProps> = ({ activeEdgeIds, activeNodeIds,
 
   // Update edge animation/style live
   useEffect(() => {
-    setEdges((current) =>
-      current.map((e) => {
+    setEdges((current: Edge[]) =>
+      current.map((e: Edge) => {
         const active = activeEdgeIds.has(e.id);
         return {
           ...e,
@@ -316,7 +311,7 @@ const BrainCanvas: React.FC<BrainCanvasProps> = ({ activeEdgeIds, activeNodeIds,
         pannable
         zoomable
         nodeStrokeWidth={2}
-        nodeColor={(n) => (n.data as BrainNodeData).color}
+        nodeColor={(n: Node) => (n.data as BrainNodeData).color}
         maskColor={isDark ? "rgba(2,6,23,0.6)" : "rgba(241,245,249,0.7)"}
         style={{ width: 160, height: 110 }}
       />
@@ -325,12 +320,12 @@ const BrainCanvas: React.FC<BrainCanvasProps> = ({ activeEdgeIds, activeNodeIds,
 };
 
 const AgentBrainPage: React.FC = () => {
-  const theme = useTheme();
   const queryClient = useQueryClient();
   const { shop, loading: shopLoading } = useShop();
-  const brandPrimary = shop?.primary_color || theme.palette.primary.main;
-  const brandSecondary = shop?.secondary_color || theme.palette.secondary.main;
-  const isDark = theme.palette.mode === "dark";
+  const { mode } = useThemeContext();
+  const brandPrimary = shop?.primary_color || "hsl(var(--primary))";
+  const brandSecondary = shop?.secondary_color || "hsl(var(--secondary))";
+  const isDark = mode === "dark";
   const [prompt, setPrompt] = useState("Give me a live operations summary and route to the right specialist if needed.");
   const [localApprovals, setLocalApprovals] = useState<PendingApproval[]>([]);
   const [localInsights, setLocalInsights] = useState<any[]>([]);
@@ -466,49 +461,48 @@ const AgentBrainPage: React.FC = () => {
   const assistantText = String(assistant?.content || "").trim();
 
   return (
-    <Box sx={{ width: "100%", p: { xs: 1.5, md: 2.5 }, maxWidth: 1500, mx: "auto" }}>
-      <Stack spacing={2}>
-        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ xs: "stretch", md: "center" }} justifyContent="space-between">
-          <Box>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <MemoryRoundedIcon sx={{ color: brandPrimary }} />
-              <Typography variant="h5" fontWeight={800}>Agent Brain</Typography>
-              <Chip
-                size="small"
-                icon={connectionStatus === "connected" ? <CheckCircleRoundedIcon /> : <CachedRoundedIcon />}
-                label={connectionStatus === "connected" ? "Live" : connectionStatus}
-                color={connectionStatus === "connected" ? "success" : "default"}
-              />
-            </Stack>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+    <div className="mx-auto w-full max-w-[1500px] p-4 md:p-6">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <MemoryStick className="size-5" style={{ color: brandPrimary }} />
+              <h1 className="text-2xl font-bold tracking-tight">Agent Brain</h1>
+              <Badge variant={connectionStatus === "connected" ? "default" : "secondary"} className="gap-1.5">
+                {connectionStatus === "connected" ? <CheckCircle className="size-3.5" /> : <RefreshCw className="size-3.5" />}
+                {connectionStatus === "connected" ? "Live" : connectionStatus}
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
               {shop?.name || "Selected shop"} brain runtime: Supervisor, specialists, Temporal, memory, tools, and approvals.
-            </Typography>
-          </Box>
-          <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent={{ xs: "flex-start", md: "flex-end" }}>
-            <Chip label={`Feed ${allEvents.length}`} size="small" />
-            <Chip label={`Approvals ${(pendingQuery.data || []).length + localApprovals.length}`} size="small" color="warning" variant="outlined" />
-            <Chip
-              label={briefingQuery.data?.source === "scheduled" ? "Temporal active" : "Temporal armed"}
-              size="small"
-              sx={{ borderColor: alpha("#0ea5e9", 0.35), color: "#0284c7" }}
-              variant="outlined"
-            />
-          </Stack>
-        </Stack>
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 md:justify-end">
+            <Badge variant="secondary">Feed {allEvents.length}</Badge>
+            <Badge variant="outline">Approvals {(pendingQuery.data || []).length + localApprovals.length}</Badge>
+            <Badge variant="outline" className="border-cyan-500/40 text-cyan-600">
+              {briefingQuery.data?.source === "scheduled" ? "Temporal active" : "Temporal armed"}
+            </Badge>
+          </div>
+        </div>
 
-        {error && <Alert severity="warning" sx={{ borderRadius: 2 }}>{error}</Alert>}
-        {shopLoading && <Alert severity="info" sx={{ borderRadius: 2 }}>Loading active shop context...</Alert>}
+        {error && (
+          <Alert>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        {shopLoading && (
+          <Alert>
+            <AlertDescription>Loading active shop context...</AlertDescription>
+          </Alert>
+        )}
 
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "minmax(0, 1fr) 360px" }, gap: 2 }}>
-          <Paper
-            variant="outlined"
-            sx={{
-              position: "relative",
-              height: { xs: 620, md: 720 },
-              overflow: "hidden",
-              borderRadius: 3,
-              borderColor: alpha(brandPrimary, 0.16),
-              bgcolor: isDark ? alpha("#020617", 0.78) : alpha("#f8fafc", 0.9),
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <Card
+            className="relative h-[620px] overflow-hidden md:h-[720px]"
+            style={{
+              borderColor: `color-mix(in srgb, ${brandPrimary} 16%, transparent)`,
+              background: isDark ? "rgb(2 6 23 / 0.78)" : "rgb(248 250 252 / 0.9)",
             }}
           >
             <ReactFlowProvider>
@@ -519,83 +513,86 @@ const AgentBrainPage: React.FC = () => {
                 isDark={isDark}
               />
             </ReactFlowProvider>
-          </Paper>
+          </Card>
 
-          <Stack spacing={2}>
-            <Paper variant="outlined" sx={{ borderRadius: 3, p: 2, borderColor: alpha(brandPrimary, 0.16) }}>
-              <Stack spacing={1.25}>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <AutoAwesomeRoundedIcon sx={{ color: brandSecondary }} />
-                  <Typography variant="subtitle1" fontWeight={800}>Run through brain</Typography>
-                </Stack>
-                <TextField
+          <div className="flex flex-col gap-4">
+            <Card style={{ borderColor: `color-mix(in srgb, ${brandPrimary} 16%, transparent)` }}>
+              <CardContent className="flex flex-col gap-3 p-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="size-5" style={{ color: brandSecondary }} />
+                  <h2 className="font-bold">Run through brain</h2>
+                </div>
+                <Textarea
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
-                  minRows={3}
-                  multiline
-                  fullWidth
-                  size="small"
+                  rows={4}
                   disabled={!shop?.id || isStreaming}
                 />
                 <Button
-                  variant="contained"
-                  startIcon={isStreaming ? <CircularProgress color="inherit" size={16} /> : <SendRoundedIcon />}
                   onClick={handleSubmit}
                   disabled={!shop?.id || !prompt.trim() || isStreaming}
-                  sx={{ alignSelf: "flex-start", borderRadius: 2 }}
+                  className="self-start"
                 >
+                  {isStreaming ? <RefreshCw data-icon="inline-start" className="animate-spin" /> : <Send data-icon="inline-start" />}
                   {isStreaming ? "Running" : "Send"}
                 </Button>
                 {assistantText && (
-                  <Box sx={{ p: 1.25, borderRadius: 2, bgcolor: alpha(brandPrimary, 0.06), border: `1px solid ${alpha(brandPrimary, 0.12)}` }}>
-                    <Typography variant="caption" color="text.secondary">Latest response</Typography>
-                    <Typography variant="body2" sx={{ mt: 0.5 }}>{assistantText}</Typography>
-                  </Box>
+                  <div
+                    className="rounded-lg border p-3 text-sm"
+                    style={{
+                      borderColor: `color-mix(in srgb, ${brandPrimary} 12%, transparent)`,
+                      background: `color-mix(in srgb, ${brandPrimary} 6%, transparent)`,
+                    }}
+                  >
+                    <p className="text-xs text-muted-foreground">Latest response</p>
+                    <p className="mt-1">{assistantText}</p>
+                  </div>
                 )}
-              </Stack>
-            </Paper>
+              </CardContent>
+            </Card>
 
-            <Paper variant="outlined" sx={{ borderRadius: 3, p: 2, borderColor: alpha(brandPrimary, 0.16) }}>
-              <Stack spacing={1.25}>
-                <Typography variant="subtitle1" fontWeight={800}>Live signals</Typography>
-                <Divider />
-                <Stack spacing={1.1} sx={{ maxHeight: 430, overflowY: "auto", pr: 0.5 }}>
+            <Card style={{ borderColor: `color-mix(in srgb, ${brandPrimary} 16%, transparent)` }}>
+              <CardContent className="flex flex-col gap-3 p-4">
+                <h2 className="font-bold">Live signals</h2>
+                <Separator />
+                <div className="flex max-h-[430px] flex-col gap-3 overflow-y-auto pr-1">
                   {allEvents.length === 0 && (
-                    <Typography variant="body2" color="text.secondary">Waiting for real-time agent activity.</Typography>
+                    <p className="text-sm text-muted-foreground">Waiting for real-time agent activity.</p>
                   )}
                   {allEvents.slice(0, 14).map((event) => (
-                    <Box
+                    <div
                       key={event.id || `${event.type}_${event.timestamp}_${event.title}`}
-                      sx={{ borderLeft: `3px solid ${eventMatchesBriefing(event) ? "#0ea5e9" : alpha(brandPrimary, 0.5)}`, pl: 1.25 }}
+                      className="border-l-2 pl-3"
+                      style={{ borderColor: eventMatchesBriefing(event) ? "#0ea5e9" : brandPrimary }}
                     >
-                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                        <Chip size="small" label={event.type.replace(/_/g, " ")} />
-                        <Typography variant="caption" color="text.secondary">{formatTime(event.timestamp)}</Typography>
-                      </Stack>
-                      <Typography variant="subtitle2" sx={{ mt: 0.5 }}>{event.title}</Typography>
-                      <Typography variant="body2" color="text.secondary">{event.description}</Typography>
-                    </Box>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary">{event.type.replace(/_/g, " ")}</Badge>
+                        <span className="text-xs text-muted-foreground">{formatTime(event.timestamp)}</span>
+                      </div>
+                      <p className="mt-1 text-sm font-semibold">{event.title}</p>
+                      <p className="text-sm text-muted-foreground">{event.description}</p>
+                    </div>
                   ))}
-                </Stack>
-              </Stack>
-            </Paper>
+                </div>
+              </CardContent>
+            </Card>
 
-            <Paper variant="outlined" sx={{ borderRadius: 3, p: 2, borderColor: alpha(brandPrimary, 0.16) }}>
-              <Typography variant="subtitle1" fontWeight={800} mb={1}>Brain state</Typography>
-              <Stack spacing={0.75}>
-                <Typography variant="body2" color="text.secondary">Morning heartbeat: 08:00 UTC</Typography>
-                <Typography variant="body2" color="text.secondary">Evening wrap-up: 20:00 UTC</Typography>
-                <Typography variant="body2" color="text.secondary">SOUL storage: Postgres foundation ready</Typography>
-                <Typography variant="body2" color="text.secondary">Commitment auto-action: approval gated</Typography>
-                {localInsights.length > 0 && (
-                  <Typography variant="body2" color="text.secondary">New insights this session: {localInsights.length}</Typography>
-                )}
-              </Stack>
-            </Paper>
-          </Stack>
-        </Box>
-      </Stack>
-    </Box>
+            <Card style={{ borderColor: `color-mix(in srgb, ${brandPrimary} 16%, transparent)` }}>
+              <CardContent className="p-4">
+                <h2 className="mb-2 font-bold">Brain state</h2>
+                <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+                  <p>Morning heartbeat: 08:00 UTC</p>
+                  <p>Evening wrap-up: 20:00 UTC</p>
+                  <p>SOUL storage: Postgres foundation ready</p>
+                  <p>Commitment auto-action: approval gated</p>
+                  {localInsights.length > 0 && <p>New insights this session: {localInsights.length}</p>}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

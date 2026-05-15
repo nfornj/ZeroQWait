@@ -1,257 +1,143 @@
 import * as React from 'react';
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import MuiCard from '@mui/material/Card';
-import Checkbox from '@mui/material/Checkbox';
-import Divider from '@mui/material/Divider';
-import FormLabel from '@mui/material/FormLabel';
-import FormControl from '@mui/material/FormControl';
-import FormControlLabel from '@mui/material/FormControlLabel';
-import Link from '@mui/material/Link';
-import TextField from '@mui/material/TextField';
-import Typography from '@mui/material/Typography';
-import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
-import ForgotPassword from './ForgotPassword';
-import { GoogleIcon, FacebookIcon, ZeroQwaitLogo } from './CustomIcons';
-import { useAuth } from '../../../../../contexts/AuthContext';
 import axios from 'axios';
-import Alert from '@mui/material/Alert';
-
-const Card = styled(MuiCard)(({ theme }) => ({
-  display: 'flex',
-  flexDirection: 'column',
-  alignSelf: 'center',
-  width: '100%',
-  padding: theme.spacing(4),
-  gap: theme.spacing(2),
-  boxShadow:
-    'hsla(220, 30%, 5%, 0.05) 0px 5px 15px 0px, hsla(220, 25%, 10%, 0.05) 0px 15px 35px -5px',
-  [theme.breakpoints.up('sm')]: {
-    width: '450px',
-  },
-  ...theme.applyStyles('dark', {
-    boxShadow:
-      'hsla(220, 30%, 5%, 0.5) 0px 5px 15px 0px, hsla(220, 25%, 10%, 0.08) 0px 15px 35px -5px',
-  }),
-}));
+import { Button } from '../../../../../components/ui/button';
+import { Input } from '../../../../../components/ui/input';
+import { Label } from '../../../../../components/ui/label';
+import { Checkbox } from '../../../../../components/ui/checkbox';
+import { Separator } from '../../../../../components/ui/separator';
+import { ZeroQwaitLogo, GoogleIcon } from './CustomIcons';
+import ForgotPassword from './ForgotPassword';
+import { useAuth } from '../../../../../contexts/AuthContext';
+import { cn } from '../../../../../lib/utils';
 
 export default function SignInCard() {
-  const [emailError, setEmailError] = React.useState(false);
-  const [emailErrorMessage, setEmailErrorMessage] = React.useState('');
-  const [passwordError, setPasswordError] = React.useState(false);
-  const [passwordErrorMessage, setPasswordErrorMessage] = React.useState('');
+  const [emailError, setEmailError] = React.useState('');
+  const [passwordError, setPasswordError] = React.useState('');
   const [open, setOpen] = React.useState(false);
 
   const { login, loading, error, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
 
-  // Add refs to read values directly if FormData fails
   const emailRef = React.useRef<HTMLInputElement>(null);
   const passwordRef = React.useRef<HTMLInputElement>(null);
 
-  const handleClickOpen = () => {
-    setOpen(true);
-  };
-
-  const handleClose = () => {
-    setOpen(false);
-  };
-
-  // Navigate based on user role after successful login
   React.useEffect(() => {
     if (isAuthenticated && !loading && !error && user) {
-      // Function to redirect to shop-specific subdomain
       const redirectToShopDashboard = async () => {
         try {
-          const token = localStorage.getItem("token");
-          if (!token) {
-            navigate("/dashboard");
-            return;
-          }
+          const token = localStorage.getItem('token');
+          if (!token) { navigate('/dashboard'); return; }
 
-          // Fetch user's shops using axios (uses configured baseURL)
-          const response = await axios.get("/shops/my-shops", {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
+          const response = await axios.get('/shops/my-shops', {
+            headers: { Authorization: `Bearer ${token}` },
           });
-
           const shops = response.data;
-          console.log("[LoginPage] Shops fetched:", shops);
 
           if (shops && shops.length > 0) {
             const shop = shops[0];
-            // The shop should have a slug - use it or generate from name
-            const shopSlug = shop.slug || shop.name.toLowerCase().replace(/\s+/g, "-");
-
-            console.log("[LoginPage] Shop slug:", shopSlug);
-
-            // Build the subdomain URL
+            const shopSlug = shop.slug || shop.name.toLowerCase().replace(/\s+/g, '-');
             const currentHost = window.location.hostname;
             const protocol = window.location.protocol;
-            let newUrl = "";
+            let newUrl = '';
 
-            if (currentHost.includes("nip.io") || currentHost.includes("np.io")) {
-              // nip.io / np.io URLs logic
+            if (currentHost.includes('nip.io') || currentHost.includes('np.io')) {
               const isBaseDomain = currentHost.match(/^\d+\.\d+\.\d+\.\d+\.(nip|np)\.io$/);
-
               if (isBaseDomain) {
-                // We are on the base, prepend slug
                 newUrl = `${protocol}//${shopSlug}.${currentHost}/dashboard`;
               } else {
-                // We might be on www.192... or another subdomain.
-                // We want to REPLACE the subdomain with the shop slug.
                 const ipSuffixMatch = currentHost.match(/(\d+\.\d+\.\d+\.\d+\.(nip|np)\.io)$/);
-                if (ipSuffixMatch) {
-                  newUrl = `${protocol}//${shopSlug}.${ipSuffixMatch[1]}/dashboard`;
-                } else {
-                  // Fallback
-                  newUrl = "/dashboard";
-                }
+                newUrl = ipSuffixMatch
+                  ? `${protocol}//${shopSlug}.${ipSuffixMatch[1]}/dashboard`
+                  : '/dashboard';
               }
-            } else if (currentHost === "localhost") {
-              // For pure localhost (no subclomain support usually unless configured in hosts)
-              newUrl = "/dashboard";
+            } else if (currentHost === 'localhost') {
+              newUrl = '/dashboard';
             } else {
-              // Production domain logic (e.g. zeroqwait.com)
               const parts = currentHost.split('.');
-              if (parts.length === 2) { // zeroqwait.com
-                newUrl = `${protocol}//${shopSlug}.${currentHost}/dashboard`;
-              } else { // www.zeroqwait.com or existing.zeroqwait.com
-                // Replace subdomain or add it
-                const domain = parts.slice(-2).join('.'); // zeroqwait.com
-                newUrl = `${protocol}//${shopSlug}.${domain}/dashboard`;
-              }
+              const domain = parts.slice(-2).join('.');
+              newUrl = `${protocol}//${shopSlug}.${domain}/dashboard`;
             }
 
-            // Append token to URL to persist session across subdomains
-            if (newUrl.startsWith("http")) {
-              newUrl += `?token=${token}`;
-            }
+            if (newUrl.startsWith('http')) newUrl += `?token=${token}`;
 
-            console.log(`[LoginPage] Redirecting to: ${newUrl}`);
-            if (newUrl.startsWith("http")) {
+            if (newUrl.startsWith('http')) {
               window.location.href = newUrl;
             } else {
               navigate(newUrl);
             }
           } else {
-            console.log("[LoginPage] No shops found, redirecting to /dashboard");
-            navigate("/dashboard");
+            navigate('/dashboard');
           }
-        } catch (err) {
-          console.error("[LoginPage] Error fetching shop info:", err);
-          navigate("/dashboard");
+        } catch {
+          navigate('/dashboard');
         }
       };
 
-      console.log("[SignInCard] User role:", user.role);
       const role = user.role?.toString().toUpperCase().trim();
-
-      if (role === "SHOP_OWNER") {
-        // Try to redirect to shop subdomain, but fallback to regular dashboard
+      if (role === 'SHOP_OWNER') {
         redirectToShopDashboard();
-      } else if (role === "EMPLOYEE") {
-        console.log("[SignInCard] Redirecting to /employee-dashboard");
-        navigate("/employee-dashboard");
-      } else if (role === "SUPER_ADMIN") {
-        console.log("[SignInCard] Redirecting to /admin (HARD NAV)");
-        window.location.href = "/admin";
+      } else if (role === 'EMPLOYEE') {
+        navigate('/employee-dashboard');
+      } else if (role === 'SUPER_ADMIN') {
+        window.location.href = '/admin';
       } else {
-        console.log("[SignInCard] Redirecting to home");
-        navigate("/");
+        navigate('/');
       }
     }
   }, [isAuthenticated, loading, error, user, navigate]);
 
-
-
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); // Always prevent default first
+    event.preventDefault();
+    setEmailError('');
+    setPasswordError('');
 
-    // Reset errors
-    setEmailError(false);
-    setEmailErrorMessage('');
-    setPasswordError(false);
-    setPasswordErrorMessage('');
-
-    // HYBRID APPROACH: Try FormData first, fall back to ref values
     const data = new FormData(event.currentTarget);
     let email = data.get('email') as string;
     let password = data.get('password') as string;
 
-    console.log("[SignInCard] FormData values:", { email, passwordLength: password?.length || 0 });
-
-    // Fallback to ref values if FormData is empty (can happen with certain autofill behaviors)
     if ((!email || email.trim() === '') && emailRef.current) {
       email = emailRef.current.value;
-      console.log("[SignInCard] FormData empty, using ref value for email:", email);
     }
-
     if ((!password || password.trim() === '') && passwordRef.current) {
       password = passwordRef.current.value;
-      console.log("[SignInCard] FormData empty, using ref value for password (length):", password?.length || 0);
     }
 
-    // Debugging: Log what we ended up with
-    console.log("[SignInCard] Final values to validate:", { email, passwordLength: password ? password.length : 0 });
-
-    // Validate
     let isValid = true;
-
     if (!email || email.trim().length === 0) {
-      setEmailError(true);
-      setEmailErrorMessage('Please enter your email or username.');
+      setEmailError('Please enter your email or username.');
       isValid = false;
-      console.warn("[SignInCard] Validation failed: email is empty");
     }
-
     if (!password || password.length < 3) {
-      setPasswordError(true);
-      setPasswordErrorMessage('Password must be at least 3 characters long.');
+      setPasswordError('Password must be at least 3 characters long.');
       isValid = false;
-      console.warn("[SignInCard] Validation failed: password is too short or empty");
     }
+    if (!isValid) return;
 
-    if (!isValid) {
-      console.warn("[SignInCard] Validation failed, stopping submission");
-      return;
-    }
-
-    // Call existing login function
-    console.log("[SignInCard] Attempting login for:", email);
     await login(email, password);
   };
 
   return (
-    <Card variant="outlined">
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-        <ZeroQwaitLogo />
-      </Box>
-      <Typography
-        component="h1"
-        variant="h4"
-        sx={{ width: '100%', fontSize: 'clamp(2rem, 10vw, 2.15rem)' }}
-      >
-        Sign in
-      </Typography>
+    <div className="w-full max-w-[440px] rounded-2xl border border-white/10 bg-white/[0.06] p-8 backdrop-blur-xl shadow-2xl">
+      {/* Logo */}
+      <div className="mb-6 flex items-center">
+        <ZeroQwaitLogo className="text-white" />
+      </div>
+
+      <h1 className="mb-1 text-2xl font-bold text-white">Sign in</h1>
+      <p className="mb-6 text-sm text-white/50">Welcome back — continue where you left off.</p>
+
       {error && (
-        <Alert severity="error" sx={{ width: '100%' }}>
+        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error}
-        </Alert>
+        </div>
       )}
-      <Box
-        component="form"
-        onSubmit={handleSubmit}
-        noValidate
-        sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2 }}
-      >
-        <FormControl>
-          <FormLabel htmlFor="email">Email or Username</FormLabel>
-          <TextField
-            error={emailError}
-            helperText={emailErrorMessage}
+
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        {/* Email */}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="email" className="text-sm text-white/70">Email or Username</Label>
+          <Input
             id="email"
             type="text"
             name="email"
@@ -259,72 +145,86 @@ export default function SignInCard() {
             autoComplete="username"
             autoFocus
             required
-            fullWidth
-            variant="outlined"
-            color={emailError ? 'error' : 'primary'}
-            inputRef={emailRef}
+            ref={emailRef}
+            className={cn(
+              'border-white/10 bg-white/5 text-white placeholder:text-white/30 focus-visible:ring-violet-500',
+              emailError && 'border-red-500/60'
+            )}
           />
-        </FormControl>
-        <FormControl>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <FormLabel htmlFor="password">Password</FormLabel>
-            <Link
-              component="button"
+          {emailError && <p className="text-xs text-red-400">{emailError}</p>}
+        </div>
+
+        {/* Password */}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password" className="text-sm text-white/70">Password</Label>
+            <button
               type="button"
-              onClick={handleClickOpen}
-              variant="body2"
-              sx={{ alignSelf: 'baseline' }}
+              onClick={() => setOpen(true)}
+              className="text-xs text-violet-400 hover:text-violet-300 transition-colors"
             >
               Forgot your password?
-            </Link>
-          </Box>
-          <TextField
-            error={passwordError}
-            helperText={passwordErrorMessage}
-            name="password"
-            placeholder="••••••"
-            type="password"
+            </button>
+          </div>
+          <Input
             id="password"
+            name="password"
+            type="password"
+            placeholder="••••••"
             autoComplete="current-password"
             required
-            fullWidth
-            variant="outlined"
-            color={passwordError ? 'error' : 'primary'}
-            inputRef={passwordRef}
+            ref={passwordRef}
+            className={cn(
+              'border-white/10 bg-white/5 text-white placeholder:text-white/30 focus-visible:ring-violet-500',
+              passwordError && 'border-red-500/60'
+            )}
           />
-        </FormControl>
-        <FormControlLabel
-          control={<Checkbox value="remember" color="primary" />}
-          label="Remember me"
-        />
-        <ForgotPassword open={open} handleClose={handleClose} />
-        <Button type="submit" fullWidth variant="contained" disabled={loading}>
+          {passwordError && <p className="text-xs text-red-400">{passwordError}</p>}
+        </div>
+
+        {/* Remember me */}
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="remember"
+            name="remember"
+            className="border-white/20 data-[state=checked]:bg-violet-600 data-[state=checked]:border-violet-600"
+          />
+          <Label htmlFor="remember" className="text-sm text-white/60 cursor-pointer">Remember me</Label>
+        </div>
+
+        <ForgotPassword open={open} handleClose={() => setOpen(false)} />
+
+        <Button
+          type="submit"
+          disabled={loading}
+          className="mt-1 w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold"
+        >
           {loading ? 'Signing in...' : 'Sign in'}
         </Button>
-        <Typography sx={{ textAlign: 'center' }}>
+
+        <p className="text-center text-sm text-white/50">
           Don&apos;t have an account?{' '}
-          <span>
-            <Link
-              href="/signup"
-              variant="body2"
-              sx={{ alignSelf: 'center' }}
-            >
-              Sign up
-            </Link>
-          </span>
-        </Typography>
-      </Box>
-      <Divider>or</Divider>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Button
-          fullWidth
-          variant="outlined"
-          onClick={() => alert('Sign in with Google')}
-          startIcon={<GoogleIcon />}
-        >
-          Sign in with Google
-        </Button>
-      </Box>
-    </Card>
+          <a href="/signup" className="text-violet-400 hover:text-violet-300 transition-colors">
+            Sign up
+          </a>
+        </p>
+      </form>
+
+      <div className="my-5 flex items-center gap-3">
+        <Separator className="flex-1 bg-white/10" />
+        <span className="text-xs text-white/30">or</span>
+        <Separator className="flex-1 bg-white/10" />
+      </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white gap-2"
+        onClick={() => alert('Sign in with Google')}
+      >
+        <GoogleIcon />
+        Sign in with Google
+      </Button>
+    </div>
   );
 }

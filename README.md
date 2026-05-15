@@ -1,141 +1,121 @@
 # ZeroQwait
 
-ZeroQwait is an AI operations system for service businesses — barbershops, salons, clinics, auto shops, and any appointment or queue-based business. It provides an AI receptionist for customers and a supervised AI operations workspace for owners.
+ZeroQwait is an AI operations system for service businesses. The product is aimed at barbershops, salons, clinics, and similar appointment or queue-based businesses that need an AI receptionist for customers and a supervised AI operations workspace for owners.
+
+The current product direction is not a generic queue SaaS. It is a vertical Agent-as-a-Service product built around a shop-specific supervisor agent, specialist agents, approval-gated actions, and real business workflows.
 
 Live production URL: https://zeroqwait.com
 
-## What It Does
+## Product Shape
 
-**For customers** — landing page chat with voice support, shop discovery, service questions, queue joining, and real-time position updates.
+ZeroQwait currently has two primary experiences:
 
-**For shop owners** — a supervisor agent backed by specialist agents (Receptionist, Finance, HR, CRM) that monitors the business, surfaces insights, proposes actions, and waits for approval before executing high-impact changes. The owner interacts through a streamed chat inbox with inline charts, file attachments, and an approval feed.
+- Customer-facing receptionist experience
+   Customer chat, queue help, service discovery, and voice interactions on the landing page and public shop surfaces.
+- Owner-facing operations workspace
+   A supervisor agent for queue, finance, HR, and CRM workflows with streamed chat, charts, files, approvals, and feed-style operational updates.
+
+The customer-facing chat is still served by the legacy `pydantic-ai` path during migration. The owner-facing workspace is served by the LangGraph-based v2 agent stack.
 
 ## Core Capabilities
 
-- AI receptionist on the landing page and public shop surfaces (voice + text, Whisper ASR, Qwen3-TTS)
-- Owner operations chat with SSE streaming, inline charts, and file uploads
-- Finance summaries and revenue trend visualization from daily analytics
-- HR and staffing management with Human-in-the-Loop approval checkpoints
-- Booking and queue management via the Booking MCP
-- CRM via Odoo 17 — contacts, leads, pipeline, invoices, and payments
-- Inventory and POS agent flows
-- Payroll calculation workflows via Temporal
-- Shop SOUL — persistent shop personality and learned patterns injected into agent context
-- Inferred commitments — the agent tracks promises made in chat and follows up automatically
-- Natural-language schedule parser — owner can set recurring agent tasks in plain English
-- Agent Brain page — visual node graph of active SOUL patterns, commitments, and schedules
-- Telegram integration — receive agent notifications and reply to the supervisor via Telegram
-- Multi-tenant isolation: every shop gets its own agent state, DB context, and checkpoints
+- AI receptionist for shop discovery, service questions, and queue or booking help
+- Owner operations chat with streamed responses and inline charts
+- Finance summaries and revenue trend visualization
+- HR and staffing actions with approval checkpoints
+- CRM integration through Odoo-backed tools
+- Voice pipeline with Whisper ASR and Qwen3-TTS
+- Multi-tenant shop isolation across agents, data, and checkpoints
 
-## Stack
+## Current Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 18, TypeScript, MUI v7, MUI X Chat, MUI X Charts |
-| Backend | FastAPI, Python 3.12, SQLAlchemy 2, Alembic |
-| Agent framework | LangGraph ≥ 0.4, langgraph-checkpoint-postgres, langchain-ollama |
-| LLM | Ollama — `qwen3:14b-q4_K_M` (local GPU, RTX 5070 Ti) |
-| Legacy customer chat | `pydantic-ai` path in `backend/agent_logic.py` (transition) |
-| Async workflows | Temporal (soul evolution, commitment resolver, payroll, custom schedules) |
-| Database | PostgreSQL 15 |
-| Cache / sessions | Redis 7 |
-| Voice ASR | faster-whisper (`medium`) |
-| Voice TTS | Qwen3-TTS 1.7B — voice `Vivian`, port 8880 |
-| ERP / CRM | Odoo 17 via XML-RPC |
-| Messaging | Telegram bot (notifications + owner chat) |
-| Container registry | GitHub Container Registry (`ghcr.io/nfornj`) |
-| Production orchestration | K3s, namespace `zeroqwait`, Traefik ingress, GitOps via Argo CD |
-| CI / CD | GitHub Actions, self-hosted runner, `deploy-test.yml` / `deploy-prod.yml` |
+- Frontend: React 18, TypeScript, MUI 7, MUI X Chat, MUI X Charts
+- Backend: FastAPI on Python 3.12
+- Agent orchestration: LangGraph, LangChain Ollama, PostgreSQL checkpoints
+- Legacy customer chat: `pydantic-ai` transition path in `backend/agent_logic.py`
+- Database: PostgreSQL 15
+- Cache and session state: Redis 7
+- Voice: faster-whisper ASR and Qwen3-TTS (`Vivian`)
+- ERP / CRM: Odoo 17 via XML-RPC
+- Deployment: Docker Compose for local and non-prod test flows, K3s for production, GitHub Actions on a self-hosted runner
 
-## Agent Architecture
+## Repository Status
 
-```
-Owner chat  →  POST /api/v2/agent/chat/stream
-                      │
-               Supervisor Agent (LangGraph)
-               ├── classify_intent
-               ├── execute_plan → specialist agent or tool
-               ├── synthesize_response (SOUL-injected)
-               └── human_approval breakpoint (HITL)
-                      │
-        ┌─────────────┼──────────────────┐
-   Receptionist    Finance       HR / Payroll
-   Booking MCP    Finance MCP      HR MCP
-        │              │              │
-   CRM (Odoo)   Inventory / POS   Telegram
-        │              │              │
-              PostgreSQL + Redis
-         LangGraph checkpoint store
-```
+The authoritative product and deployment story is:
 
-**Agent brain modules** (all in `backend/agents/`):
-
-| Module | Purpose |
-|---|---|
-| `supervisor.py` | Central router and response synthesizer |
-| `receptionist.py` | Customer-facing booking and queue agent |
-| `finance.py` | Revenue, analytics, and financial reporting |
-| `hr.py` | Employee management and shift scheduling |
-| `crm.py` | Odoo CRM — leads, contacts, pipeline |
-| `soul_reader.py` / `soul_updater.py` | Persistent shop personality and learned patterns |
-| `commitment_scanner.py` / `commitment_workflows.py` | Inferred follow-through on owner promises |
-| `schedule_intent_parser.py` / `custom_schedule_workflow.py` | Natural-language recurring task scheduling |
-| `payroll_workflows.py` | Temporal-based payroll calculation |
-| `appointment_workflows.py` | Appointment booking and confirmation flows |
-| `inventory.py` / `pos_agent.py` | Inventory tracking and POS operations |
-| `telegram_agent_bridge.py` | Bidirectional Telegram notification and chat |
-| `briefings.py` | Daily and on-demand business briefings |
-| `memory_context.py` | Per-conversation memory injection |
-| `llm_factory.py` | Tier-aware LLM client factory |
-| `checkpoints.py` | PostgreSQL-backed AsyncPostgresSaver setup |
-
-## MCP Tool Servers
-
-| Server | Tools |
-|---|---|
-| `mcps/booking/` | queue, appointments, wait times, service search |
-| `mcps/finance/` | daily revenue, weekly summary, top services, customer metrics |
-| `mcps/hr/` | employees, shifts, clock-in/out |
-| `mcps/voice/` | TTS and ASR proxy |
-
-## Frontend Pages
-
-| Page | Path | Description |
-|---|---|---|
-| Landing page | `/` | Marketing, hero, features, pricing, AI chat bubble |
-| Public shop | `/shop/:slug` | Customer-facing queue joining |
-| Owner dashboard | `/dashboard` | Analytics, queue, team management |
-| Agent inbox | `/dashboard/inbox` | Supervisor chat, approval cards, activity feed |
-| Agent brain | `/dashboard/brain` | Visual SOUL + commitment + schedule graph |
-| Admin | `/admin` | Platform administration |
+- Current product: AI operations system for service businesses
+- Current data layer: PostgreSQL and Redis
+- Current production deployment: K3s in the `zeroqwait` namespace
+- Current non-prod deployment: the single-stack Docker Compose test path published to `http://localhost:3000` and `http://localhost:8000`
 
 ## Local Development
 
 ### Prerequisites
 
-- Python 3.12, Node.js 18+, Docker and Docker Compose
-- `uv` for backend dependency management
+- Python 3.12
+- Node.js 18+
+- Docker and Docker Compose
+- `uv` recommended for backend dependency sync
 
-### Setup
+### Recommended Setup
+
+1. Clone the repo.
 
 ```bash
-# 1. Backend
+git clone <your-repo-url>
+cd FastCuts
+```
+
+2. Set up the backend environment.
+
+```bash
 cd backend
 uv sync --dev
-# Create backend/.env with DB, Redis, Ollama, TTS, MCP, and FRONTEND_URL settings
+```
 
-# 2. Frontend
+Ensure `backend/.env` exists before starting the backend. If you do not already have one, create it with the database, Redis, Ollama, TTS, MCP, and frontend URL settings used by your local environment.
+
+3. Set up the frontend.
+
+```bash
 cd ../frontend
 npm install
+```
 
-# 3. Supporting services
+4. Start the local supporting stack.
+
+```bash
 cd ..
 docker compose up -d db redis booking-mcp finance-mcp hr-mcp odoo
-
-# 4. Run backend and frontend
-cd backend && uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
-cd frontend && REACT_APP_API_URL=http://localhost:8000/api npm start
 ```
+
+5. Bootstrap the database (first time only, or after recreating the `db` container).
+
+```bash
+# Enable pgvector — required for the AI embedding column
+docker exec zeroqwait-db-1 psql -U postgres -d zeroqwait -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# Create all app tables
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/init_database.py
+cd ..
+```
+
+> The Docker Compose postgres is exposed on port **5433** (not 5432) to avoid conflicting with any system postgres. Ensure `backend/.env` has `DB_PORT=5433`.
+
+6. Start the backend and frontend in source mode.
+
+```bash
+cd backend
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+```bash
+cd frontend
+npm start
+```
+
+6. Open the app.
 
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000
@@ -143,80 +123,61 @@ cd frontend && REACT_APP_API_URL=http://localhost:8000/api npm start
 
 ### Full Non-Prod Test Deploy
 
+The authoritative non-prod deployment path is:
+
 ```bash
 bash deployment/scripts/deploy-test.sh
 ```
 
-Brings up the single `zeroqwait` Docker Compose stack at `http://localhost:3000` / `http://localhost:8000`.
+That script brings up the single `zeroqwait` Docker Compose stack and publishes the canonical local URLs:
 
-## Deployment
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8000
 
-| Trigger | Outcome |
-|---|---|
-| Push to any non-`prod` branch | `deploy-test.yml` — Docker Compose test stack on runner host |
-| Push to `prod` branch | `deploy-prod.yml` — K3s production deploy to `zeroqwait.com` |
-| Manual pipeline build | `deployment/scripts/run-local-pipeline.sh` — build, tag, push to GHCR, update manifests |
+## Deployment Model
 
-Production K3s pods: `backend`, `frontend`, `postgres`, `redis`, `asr-service`, `tts-service`, `voice-mcp`, `booking-mcp`, `finance-mcp`, `hr-mcp`, `temporal-worker`, `ollama`.
+- Non-`prod` branch push: GitHub Actions runs the test deployment flow through `deployment/scripts/deploy-test.sh`
+- `prod` branch push: GitHub Actions runs the production deployment flow to K3s
+- Local image versioning and registry flow: `deployment/scripts/run-local-pipeline.sh`
 
-Images are versioned as `ghcr.io/nfornj/<service>:vYYYYMMDDHHMMSS-<sha>` and managed through Argo CD GitOps.
+Production runs on K3s with supporting services and manifests in `k8s-manifests/`.
 
 ## Project Structure
 
 ```text
 FastCuts/
-├── backend/
-│   ├── agents/           LangGraph agent graphs, SOUL, commitments, scheduling, Temporal workflows
-│   ├── agent/            Legacy pydantic-ai cache, analyzer, and customer chat path
-│   ├── agent_logic.py    Legacy customer-facing chat (landing page, public booking)
-│   ├── routers/          API routers (agent, agent_v2, voice, analytics, payments, POS, Telegram)
-│   ├── modules/          Auth, users, shops, employees, queues, admin
-│   ├── integrations/     Odoo XML-RPC client
-│   ├── services/         Business logic services
-│   ├── migrations/       Alembic database migrations
-│   └── main.py           FastAPI app entry point
-├── frontend/
-│   └── src/
-│       ├── landing-page/ Marketing page and AI chat bubble
-│       ├── features/
-│       │   ├── agent-inbox/    Owner supervisor chat, approvals, feed
-│       │   ├── agent-brain/    Visual SOUL / commitment / schedule graph
-│       │   ├── shop-dashboard/ Analytics, queue, team management
-│       │   └── public-booking/ Customer-facing shop and queue page
-│       └── contexts/     Auth, Shop, Theme contexts
-├── mcps/                 Booking, Finance, HR, Voice MCP servers
-├── asr_service/          Whisper ASR microservice
-├── tts_service/          Qwen3-TTS microservice (GPU, Vivian voice)
-├── voice_mcp/            Voice gateway proxy
-├── k8s-manifests/        Production K3s deployment manifests
-├── deployment/           Deploy scripts, Argo CD setup, GHCR pipeline tooling
-├── docker-compose.yml    Local and non-prod stack
-└── claude.md             Project architecture and operating rules for coding agents
+├── backend/                  FastAPI app, LangGraph agents, DB and auth modules
+├── frontend/                 React app, landing page, owner dashboard, agent inbox UI
+├── mcps/                     Booking, finance, HR, and voice MCP services
+├── deployment/               Deployment scripts, local registry tooling, docs
+├── k8s-manifests/            Production K3s manifests
+├── asr_service/              Whisper ASR service
+├── tts_service/              Qwen3-TTS service
+├── voice_mcp/                Voice gateway / proxy
+├── docker-compose.yml        Local and non-prod stack definition
+└── claude.md                 Project operating context and architecture notes
 ```
+
+## Documentation Map
+
+- `README.md`: top-level product, stack, and development overview
+- `docs/README.md`: documentation index and current-vs-legacy guidance
+- `backend/README.md`: backend runtime and API overview
+- `deployment/docs/README.md`: current deployment model and script guide
+- `claude.md`: detailed product, architecture, and operational context used by coding agents
 
 ## Key API Surfaces
 
-| Group | Endpoints |
-|---|---|
-| Legacy customer chat | `POST /api/agent/master/chat`, `POST /api/agent/master/chat/stream` |
-| Owner agent v2 | `POST /api/v2/agent/chat`, `POST /api/v2/agent/chat/stream`, `POST /api/v2/agent/approve`, `GET /api/v2/agent/history`, `GET /api/v2/agent/pending` |
-| Voice | `POST /api/voice/transcribe`, `POST /api/voice/tts`, `GET /api/voice/tts/health` |
-| Auth | `POST /api/auth/token`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password` |
-| Shops and queues | `GET /api/shops/`, `GET /api/shops/my-shops`, `GET /api/shops/s/{slug}`, `POST /api/queues/shop/{id}/join` |
-| Payments | `POST /api/payments/...` |
-| Payroll | `GET /api/payroll/...`, `POST /api/payroll/...` |
-| POS | `GET /api/pos/...`, `POST /api/pos/...` |
-| Telegram | `POST /api/telegram/webhook` |
-| Inventory | `GET /api/inventory/...`, `POST /api/inventory/...` |
+- Legacy customer chat: `/api/agent/master/chat` and `/api/agent/master/chat/stream`
+- Owner agent v2: `/api/v2/agent/chat`, `/api/v2/agent/chat/stream`, `/api/v2/agent/approve`
+- Voice: `/api/voice/transcribe`, `/api/voice/tts`
+- Auth: `/api/auth/token`, `/api/auth/forgot-password`, `/api/auth/reset-password`
 
 ## Notes For Contributors
 
-- Backend dependency source of truth: `backend/pyproject.toml` and `backend/uv.lock`
-- Frontend runs against `/api` in containers and `http://localhost:8000/api` in source mode
-- Do not use `localhost:5000` in any K8s manifest — GHCR only
-- TTS service: Qwen3-TTS, voice `Vivian`, port `8880` — do not replace or remap
-- LLM: `qwen3:14b-q4_K_M` via Ollama — do not change without explicit approval
-- `backend/agent/` and `backend/agent_logic.py` are still active — do not delete until customer chat migrates to the LangGraph receptionist
+- The backend dependency source of truth is `backend/pyproject.toml` and `backend/uv.lock`
+- The frontend runs against `/api` in containerized mode and `http://localhost:8000/api` in source-run mode
+- The owner agent stack is already live in the repo; do not document it as future work unless the note is explicitly marked as historical
 
 ## License
 

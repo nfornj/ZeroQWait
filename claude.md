@@ -618,6 +618,7 @@ Users toggle between **Voice Mode** and **Chat Mode** via a pill button in the t
 - **Connection**: Constructed from `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` env vars
 - **Prod credentials**: user=`fastcuts_user`, db=`fastcuts_db`
 - **Pool**: 5 connections, 10 overflow, pre-ping enabled
+- **pgvector required**: The `conversation_history` table has an `embedding vector(384)` column for semantic caching. The Docker Compose `db` service uses `pgvector/pgvector:pg15` (not plain `postgres:15-alpine`). After first launch, enable the extension and run the bootstrap: `CREATE EXTENSION IF NOT EXISTS vector;` then `PYTHONPATH=. python scripts/init_database.py`.
 
 ### Key Tables
 
@@ -761,6 +762,21 @@ Implementation details:
 8. **Static uploads persistence**: Backend `/app/static/uploads` uses `emptyDir` — should use PVC to survive pod restarts.
 - **Files changed**: `MasterAIAgent.tsx` (initial chatHistory), `agent_logic.py` (greeting prefilter, conversation fallback, conversation agent system prompt)
 
+### Fix 9: Signup Registration Failure — Wrong HTTP Client, Missing Tables, No pgvector (2026-05-04)
+
+- **Issue**: Shop owner signup returned "Registration failed. Please try again." — browser console showed a CORS error.
+- **Root Causes** (three stacked problems):
+  1. `ShopOwnerSignUp.tsx` used the global `axios` with bare relative paths (`'users'`, `'auth/token'`, `'shops/'`) instead of the configured `api` client from `services/api.ts`. Without the `/api` base URL, requests resolved to the current page path (e.g. `/signup/users`) and never reached the backend.
+  2. The backend was connecting to the local Homebrew PostgreSQL 14 (port 5432) which had no app tables — `users`, `shops`, etc. had never been created. Every API request crashed with a 500 Internal Server Error.
+  3. FastAPI does not attach CORS headers to 500 error responses. The browser saw the missing header and reported it as a CORS violation, masking the real database crash. The crash itself was caused by the `conversation_history.embedding vector(384)` column requiring pgvector, which was not installed in either the plain `postgres:15-alpine` Docker image or Homebrew postgres 14.
+- **Fixes**:
+  1. `ShopOwnerSignUp.tsx`: replaced `import axios from 'axios'` with `import api from '../../../../services/api'`; changed all three requests to use `api.post('/users', ...)`, `api.post('/auth/token', ...)`, `api.post('/shops/', ...)`; removed the redundant manual `Authorization` header (the `api` interceptor injects it automatically).
+  2. `docker-compose.yml`: switched `db` image from `postgres:15-alpine` to `pgvector/pgvector:pg15` (drop-in replacement, same Postgres 15 engine, adds vector type support).
+  3. `docker-compose.yml`: changed default host port from `5432` to `5433` so the Docker postgres does not collide with the Homebrew postgres process that owns port 5432 on the dev machine.
+  4. `backend/.env` (gitignored): updated `DB_PORT` from `5432` to `5433` to match. Enabled pgvector extension inside the container and ran `scripts/init_database.py` to create all app tables.
+- **Files changed**: `frontend/src/features/auth/components/auth-sign-up/ShopOwnerSignUp.tsx`, `docker-compose.yml`, `backend/.env` (local only)
+- **Key lesson**: When a backend returns a 500, FastAPI strips CORS headers — the browser reports it as a CORS error even when CORS config is correct. Always verify the backend actually returns a success response (not a 5xx) before debugging CORS config.
+
 ### Fix 8: Voice Consistency + Streaming Latency (2026-04-06)
 
 - **Issue**: Users heard inconsistent voices across responses and noticed slow voice response progression.
@@ -782,6 +798,11 @@ Implementation details:
 
 1. **Semantic cache `__version__` errors**: `SemanticCache.set()` and `.get()` still throw `Failed to set cache: '__version__'` because the `json.load` monkey-patch only covers model initialization, not subsequent `encode()` calls. The semantic cache effectively doesn't work, but the agent functions normally without it. Fix: extend the monkey-patch scope or upgrade sentence-transformers.
 2. **Duplicate `except` block**: `SemanticCache.set()` (around line 97-109 in `agent_logic.py`) has two `except Exception` clauses — the second is dead code.
+
+### Resolved Issues (2026-05-04)
+
+- **Frontend TypeScript compilation errors** in `AssistantUIAttachment.tsx`, `AgentBrainPage.tsx`, `AgentTaskBoard.tsx`: conditional hook call (Rules of Hooks violation), missing `Node`/`Edge` type annotations on `setNodes`/`setEdges` callbacks, and `JSONSchema7` type mismatch fixed. `tsconfig.json` updated from `moduleResolution: node` to `bundler` to match the CRA/Webpack toolchain.
+- **Signup broken (CORS/500)**: see Fix 9 above.
 
 ### AaaS Transition Status (2026-04-23)
 
@@ -892,7 +913,7 @@ Tier source of truth: `backend/agents/llm_factory.load_shop_subscription_tier(sh
 | `OLLAMA_URL`      | `http://localhost:11434/v1`                                      | Ollama API endpoint |
 | `MODEL_NAME`      | `llama3.2:latest`                                                | LLM model name      |
 | `DB_HOST`         | `localhost`                                                      | PostgreSQL host     |
-| `DB_PORT`         | `5432`                                                           | PostgreSQL port     |
+| `DB_PORT`         | `5433` (local dev, Docker Compose) / `5432` (K8s prod)          | PostgreSQL port — Docker Compose default is 5433 to avoid conflict with Homebrew postgres on 5432 |
 | `DB_NAME`         | `zeroqwait`                                                      | Database name       |
 | `DB_USER`         | `postgres`                                                       | Database user       |
 | `DB_PASSWORD`     | `password`                                                       | Database password   |

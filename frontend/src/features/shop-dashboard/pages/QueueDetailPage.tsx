@@ -1,46 +1,46 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
+  ArrowLeft,
+  CheckCircle,
+  Clock,
+  History,
+  Play,
+  Shuffle,
+  Trash2,
+  UserCheck,
+  Users,
+} from "lucide-react";
+import axios from "axios";
+import { useNavigate, useParams } from "react-router-dom";
+
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
   Dialog,
-  DialogActions,
   DialogContent,
+  DialogFooter,
+  DialogHeader,
   DialogTitle,
-  FormControl,
-  Grid,
-  IconButton,
-  InputLabel,
-  MenuItem,
-  Paper,
-  Select,
-  Stack,
-  Tab,
-  Tabs,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import { alpha, useTheme } from '@mui/material/styles';
+} from "@/components/ui/dialog";
 import {
-  DataGrid,
-  GridColDef,
-  GridRenderCellParams,
-  GridActionsCellItem,
-} from '@mui/x-data-grid';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import DeleteIcon from '@mui/icons-material/Delete';
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
-import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
-import HourglassTopRoundedIcon from '@mui/icons-material/HourglassTopRounded';
-import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
-import PersonOffRoundedIcon from '@mui/icons-material/PersonOffRounded';
-import axios from 'axios';
-import { useNavigate, useParams } from 'react-router-dom';
-import Header from '../components/Header';
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import Header from "../components/Header";
 
 interface QueueItem {
   id: number;
@@ -66,15 +66,23 @@ interface ActiveEmployee {
   clock_in: string;
 }
 
-const statusColors: Record<string, 'warning' | 'info' | 'success' | 'default'> = {
-  waiting: 'warning',
-  being_served: 'info',
-  completed: 'success',
-  checked_out: 'success',
-  cancelled: 'default',
-};
+const CHECKED_OUT_MARKER_PREFIX = "CHECKED_OUT_AT:";
 
-const CHECKED_OUT_MARKER_PREFIX = 'CHECKED_OUT_AT:';
+const dashboardSurfaceStyle = {
+  "--background": "210 20% 98%",
+  "--foreground": "222 47% 11%",
+  "--card": "0 0% 100%",
+  "--card-foreground": "222 47% 11%",
+  "--popover": "0 0% 100%",
+  "--popover-foreground": "222 47% 11%",
+  "--muted": "210 40% 96%",
+  "--muted-foreground": "215 16% 47%",
+  "--border": "214 32% 91%",
+  "--input": "214 32% 91%",
+  "--primary": "154 40% 30%",
+  "--primary-foreground": "0 0% 100%",
+  "--ring": "154 40% 30%",
+} as React.CSSProperties;
 
 type QueueRow = QueueItem & {
   display_status: string;
@@ -84,46 +92,64 @@ type QueueRow = QueueItem & {
 function formatWaitTime(checkedInAt: string): string {
   const diff = Date.now() - new Date(checkedInAt).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Just now';
+  if (mins < 1) return "Just now";
   if (mins < 60) return `${mins}m`;
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
+const statusVariant = (status: string): React.ComponentProps<typeof Badge>["variant"] => {
+  if (status === "waiting" || status === "being_served") return "secondary";
+  if (status === "completed" || status === "checked_out") return "default";
+  return "outline";
+};
+
+function MetricCard({ icon: Icon, value, label }: { icon: React.ElementType; value: number; label: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-none">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{label}</p>
+        </div>
+        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background text-primary">
+          <Icon className="h-4 w-4" />
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const QueueDetailPage: React.FC = () => {
-  const theme = useTheme();
   const navigate = useNavigate();
   const { queueId } = useParams<{ queueId: string }>();
 
   const [items, setItems] = useState<QueueItem[]>([]);
   const [employees, setEmployees] = useState<ActiveEmployee[]>([]);
   const [shopId, setShopId] = useState<number | null>(null);
-  const [queueName, setQueueName] = useState('Queue');
-  const [error, setError] = useState('');
-  const [tableView, setTableView] = useState<'live' | 'historical'>('live');
+  const [queueName, setQueueName] = useState("Queue");
+  const [error, setError] = useState("");
+  const [tableView, setTableView] = useState<"live" | "historical">("live");
   const [reassignDialogOpen, setReassignDialogOpen] = useState(false);
   const [reassignTarget, setReassignTarget] = useState<QueueItem | null>(null);
-  const [selectedEmployee, setSelectedEmployee] = useState<number | ''>('');
+  const [selectedEmployee, setSelectedEmployee] = useState<string>("");
 
-  const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
+  const token = localStorage.getItem("token");
+  const headers = React.useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
   const fetchData = useCallback(async () => {
     if (!queueId) return;
     try {
-      // Get queue items
       const itemsRes = await axios.get(`/queues/${queueId}/items`, { headers });
       setItems(itemsRes.data);
 
-      // Get shop from my-shops for employee list
       if (!shopId) {
-        const shopRes = await axios.get('/shops/my-shops', { headers });
+        const shopRes = await axios.get("/shops/my-shops", { headers });
         if (shopRes.data.length > 0) {
           const sid = shopRes.data[0].id;
           setShopId(sid);
-          // Get queue name from all queues
           const queuesRes = await axios.get(`/queues/shop/${sid}/all`, { headers });
-          const q = queuesRes.data.find((q: any) => q.id === Number(queueId));
-          if (q) setQueueName(q.name);
+          const queue = queuesRes.data.find((candidate: any) => candidate.id === Number(queueId));
+          if (queue) setQueueName(queue.name);
         }
       }
 
@@ -132,9 +158,9 @@ const QueueDetailPage: React.FC = () => {
         setEmployees(empRes.data);
       }
     } catch {
-      // silent — keep UI usable
+      // Keep the last successful snapshot visible while polling continues.
     }
-  }, [queueId, shopId]);
+  }, [headers, queueId, shopId]);
 
   useEffect(() => {
     fetchData();
@@ -145,36 +171,36 @@ const QueueDetailPage: React.FC = () => {
   const handleServe = async (itemId: number) => {
     try {
       await axios.post(`/queues/items/${itemId}/serve`, {}, { headers });
-      setError('');
+      setError("");
       fetchData();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to serve customer');
+      setError(err.response?.data?.detail || "Failed to serve customer");
     }
   };
 
   const handleComplete = async (itemId: number) => {
     try {
       await axios.patch(`/queues/items/${itemId}/status?new_status=completed`, {}, { headers });
-      setError('');
+      setError("");
       fetchData();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to complete customer');
+      setError(err.response?.data?.detail || "Failed to complete customer");
     }
   };
 
   const handleRemove = async (itemId: number) => {
     try {
       await axios.delete(`/queues/items/${itemId}`, { headers });
-      setError('');
+      setError("");
       fetchData();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to remove customer');
+      setError(err.response?.data?.detail || "Failed to remove customer");
     }
   };
 
   const openReassign = (item: QueueItem) => {
     setReassignTarget(item);
-    setSelectedEmployee(item.assigned_employee_id || '');
+    setSelectedEmployee(item.assigned_employee_id ? String(item.assigned_employee_id) : "");
     setReassignDialogOpen(true);
   };
 
@@ -183,33 +209,33 @@ const QueueDetailPage: React.FC = () => {
     try {
       await axios.patch(
         `/queues/items/${reassignTarget.id}/reassign`,
-        { employee_id: selectedEmployee },
+        { employee_id: Number(selectedEmployee) },
         { headers },
       );
       setReassignDialogOpen(false);
       setReassignTarget(null);
-      setError('');
+      setError("");
       fetchData();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to reassign');
+      setError(err.response?.data?.detail || "Failed to reassign");
     }
   };
 
   const isCheckedOut = (item: QueueItem) =>
-    typeof item.notes === 'string' && item.notes.includes(CHECKED_OUT_MARKER_PREFIX);
+    typeof item.notes === "string" && item.notes.includes(CHECKED_OUT_MARKER_PREFIX);
 
-  const activeItems = items.filter((i) => i.status === 'waiting' || i.status === 'being_served');
+  const activeItems = items.filter((item) => item.status === "waiting" || item.status === "being_served");
   const liveRows: QueueRow[] = activeItems
     .slice()
     .sort((a, b) => (a.position || 0) - (b.position || 0))
-    .map((item, idx) => ({
+    .map((item, index) => ({
       ...item,
       display_status: item.status,
-      live_position: idx + 1,
+      live_position: index + 1,
     }));
 
   const historicalRows: QueueRow[] = items
-    .filter((i) => i.status !== 'waiting' && i.status !== 'being_served')
+    .filter((item) => item.status !== "waiting" && item.status !== "being_served")
     .slice()
     .sort((a, b) => {
       const aTs = new Date(a.completed_at || a.checked_in_at).getTime();
@@ -218,14 +244,14 @@ const QueueDetailPage: React.FC = () => {
     })
     .map((item) => ({
       ...item,
-      display_status: isCheckedOut(item) ? 'checked_out' : item.status,
+      display_status: isCheckedOut(item) ? "checked_out" : item.status,
       live_position: item.position,
     }));
 
-  const waitingCount = items.filter((i) => i.status === 'waiting').length;
-  const servingCount = items.filter((i) => i.status === 'being_served').length;
-  const checkedOutCount = items.filter((i) => isCheckedOut(i)).length;
-  const completedCount = items.filter((i) => i.status === 'completed' && !isCheckedOut(i)).length;
+  const waitingCount = items.filter((item) => item.status === "waiting").length;
+  const servingCount = items.filter((item) => item.status === "being_served").length;
+  const checkedOutCount = items.filter((item) => isCheckedOut(item)).length;
+  const completedCount = items.filter((item) => item.status === "completed" && !isCheckedOut(item)).length;
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -233,279 +259,252 @@ const QueueDetailPage: React.FC = () => {
     (item) => new Date(item.checked_in_at).getTime() < startOfToday.getTime(),
   ).length;
 
-  const columns: GridColDef<QueueRow>[] = [
-    {
-      field: 'live_position',
-      headerName: '#',
-      width: 60,
-      valueGetter: (_value, row) =>
-        tableView === 'live' ? row.live_position : row.position,
-    },
-    { field: 'customer_name', headerName: 'Customer', flex: 1, minWidth: 140 },
-    { field: 'customer_phone', headerName: 'Phone', width: 130 },
-    {
-      field: 'display_status',
-      headerName: 'Status',
-      width: 130,
-      renderCell: (params: GridRenderCellParams) => (
-        <Chip
-          label={params.value?.replace('_', ' ')}
-          color={statusColors[params.value as string] || 'default'}
-          size="small"
-          variant="outlined"
-          sx={{ textTransform: 'capitalize' }}
-        />
-      ),
-    },
-    {
-      field: 'assigned_employee',
-      headerName: 'Assigned To',
-      width: 160,
-      valueGetter: (value: any) => value?.username || 'Unassigned',
-      renderCell: (params: GridRenderCellParams) => {
-        const name = params.value as string;
-        return (
-          <Chip
-            label={name}
-            size="small"
-            color={name === 'Unassigned' ? 'default' : 'primary'}
-            variant={name === 'Unassigned' ? 'outlined' : 'filled'}
-          />
-        );
-      },
-    },
-    {
-      field: 'checked_in_at',
-      headerName: 'Wait Time',
-      width: 110,
-      valueGetter: (value: string) => value,
-      renderCell: (params: GridRenderCellParams) => {
-        const row = params.row as QueueItem;
-        if (row.status === 'completed' || row.status === 'cancelled') return '—';
-        return formatWaitTime(params.value as string);
-      },
-    },
-    {
-      field: 'actions',
-      headerName: 'Actions',
-      type: 'actions',
-      width: 160,
-      getActions: (params) => {
-        const row = params.row as QueueItem;
-        if (row.status !== 'waiting' && row.status !== 'being_served') return [];
-        if (tableView !== 'live') return [];
-        const actions = [];
-        if (row.status === 'waiting') {
-          actions.push(
-            <GridActionsCellItem
-              key="serve"
-              icon={<Tooltip title="Serve Now"><PlayArrowIcon /></Tooltip>}
-              label="Serve"
-              onClick={() => handleServe(row.id)}
-            />,
-          );
-        }
-        if (row.status === 'being_served') {
-          actions.push(
-            <GridActionsCellItem
-              key="complete"
-              icon={<Tooltip title="Complete"><CheckCircleRoundedIcon color="success" /></Tooltip>}
-              label="Complete"
-              onClick={() => handleComplete(row.id)}
-            />,
-          );
-        }
-        actions.push(
-          <GridActionsCellItem
-            key="reassign"
-            icon={<Tooltip title="Reassign"><SwapHorizIcon /></Tooltip>}
-            label="Reassign"
-            onClick={() => openReassign(row)}
-            disabled={employees.length === 0}
-          />,
-          <GridActionsCellItem
-            key="remove"
-            icon={<Tooltip title="Remove"><DeleteIcon color="error" /></Tooltip>}
-            label="Remove"
-            onClick={() => handleRemove(row.id)}
-          />,
-        );
-        return actions;
-      },
-    },
-  ];
+  const rows = tableView === "live" ? liveRows : historicalRows;
 
   return (
-    <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
+    <div className="flex min-h-full w-full flex-col bg-[#f9fafb] px-3 pb-16 md:px-6" style={dashboardSurfaceStyle}>
       <Header />
 
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
-        <IconButton onClick={() => navigate('/queues')}>
-          <ArrowBackIcon />
-        </IconButton>
-        <Typography variant="h5" fontWeight={700}>
-          {queueName}
-        </Typography>
-        <Chip label={`${activeItems.length} active`} color="primary" size="small" />
-      </Stack>
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-xl text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+              onClick={() => navigate("/queues")}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/10">
+              {activeItems.length} active
+            </Badge>
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">{queueName}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Monitor live customers, assignments, and completion flow for this queue.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          <Badge variant="outline" className="rounded-full border-border bg-card px-3 py-1 text-muted-foreground">
+            Checked out: {checkedOutCount}
+          </Badge>
+          <Badge variant="outline" className="rounded-full border-border bg-card px-3 py-1 text-muted-foreground">
+            Previous days: {historicalPreviousDaysCount}
+          </Badge>
+        </div>
+      </div>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
-          {error}
+        <Alert variant="destructive" className="mb-4 rounded-2xl">
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid size={{ xs: 6, sm: 3 }}>
-          <Card variant="outlined" sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Stack spacing={0.5} alignItems="center">
-                <PeopleRoundedIcon color="primary" />
-                <Typography variant="h5" fontWeight={700}>{items.length}</Typography>
-                <Typography variant="body2" color="text.secondary">Total</Typography>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 6, sm: 3 }}>
-          <Card variant="outlined" sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Stack spacing={0.5} alignItems="center">
-                <HourglassTopRoundedIcon color="warning" />
-                <Typography variant="h5" fontWeight={700}>{waitingCount}</Typography>
-                <Typography variant="body2" color="text.secondary">Waiting</Typography>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 6, sm: 3 }}>
-          <Card variant="outlined" sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Stack spacing={0.5} alignItems="center">
-                <CheckCircleRoundedIcon color="info" />
-                <Typography variant="h5" fontWeight={700}>{servingCount}</Typography>
-                <Typography variant="body2" color="text.secondary">Being Served</Typography>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 6, sm: 3 }}>
-          <Card variant="outlined" sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Stack spacing={0.5} alignItems="center">
-                <PersonOffRoundedIcon color="success" />
-                <Typography variant="h5" fontWeight={700}>{completedCount}</Typography>
-                <Typography variant="body2" color="text.secondary">Completed</Typography>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <MetricCard icon={Users} value={items.length} label="Total customers" />
+        <MetricCard icon={Clock} value={waitingCount} label="Waiting" />
+        <MetricCard icon={UserCheck} value={servingCount} label="Being served" />
+        <MetricCard icon={CheckCircle} value={completedCount} label="Completed" />
+      </div>
 
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mb: 1.5 }}>
-        <Chip label={`Checked Out: ${checkedOutCount}`} color="success" variant="outlined" size="small" />
-        <Chip label={`Historical (Prev Days): ${historicalPreviousDaysCount}`} color="default" variant="outlined" size="small" />
-      </Stack>
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-none lg:col-span-8">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-border bg-background text-primary">
+              <Users className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="text-base font-semibold tracking-tight text-foreground">Clocked-in employees</h2>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Current coverage and active customer load for this queue.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {employees.length > 0 ? (
+              employees.map((employee) => (
+                <Badge key={employee.user_id} variant="outline" className="rounded-full border-border bg-background px-3 py-1 text-foreground">
+                  {employee.username} ({employee.active_items} customer{employee.active_items !== 1 ? "s" : ""})
+                </Badge>
+              ))
+            ) : (
+              <div className="rounded-xl border border-dashed border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+                No clocked-in employees are assigned right now.
+              </div>
+            )}
+          </div>
+        </div>
 
-      {employees.length > 0 && (
-        <Card variant="outlined" sx={{ borderRadius: 3, mb: 2 }}>
-          <CardContent>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-              Clocked-In Employees
-            </Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {employees.map((emp) => (
-                <Chip
-                  key={emp.user_id}
-                  label={`${emp.username} (${emp.active_items} customers)`}
-                  color="primary"
-                  variant="outlined"
-                  size="small"
-                />
-              ))}
-            </Stack>
-          </CardContent>
-        </Card>
-      )}
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-none lg:col-span-4">
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background text-primary">
+            <History className="h-5 w-5" />
+          </div>
+          <h2 className="mt-4 text-base font-semibold tracking-tight text-foreground">Queue history</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            Switch between the live queue and completed or checked-out customers without leaving this page.
+          </p>
+        </div>
+      </div>
 
-      <Paper sx={{ width: '100%', overflow: 'hidden', borderRadius: 3 }} variant="outlined">
-        <Tabs
-          value={tableView}
-          onChange={(_e, value) => setTableView(value)}
-          sx={{ px: 1.5, pt: 1 }}
-        >
-          <Tab value="live" label={`Live Queue (${liveRows.length})`} />
-          <Tab value="historical" label={`Historical (${historicalRows.length})`} />
-        </Tabs>
-        <DataGrid
-          autoHeight
-          rows={tableView === 'live' ? liveRows : historicalRows}
-          columns={columns}
-          initialState={{
-            pagination: { paginationModel: { pageSize: 20 } },
-            sorting: { sortModel: [{ field: 'live_position', sort: 'asc' }] },
-          }}
-          pageSizeOptions={[10, 20, 50]}
-          disableRowSelectionOnClick
-          density="compact"
-          sx={{
-            border: 0,
-            backgroundColor: 'background.paper',
-            '& .MuiDataGrid-columnHeaders': {
-              bgcolor: 'background.default',
-              borderBottom: '1px solid',
-              borderColor: 'divider',
-            },
-            '& .MuiDataGrid-cell:focus, & .MuiDataGrid-columnHeader:focus': {
-              outline: 'none',
-            },
-          }}
-        />
-      </Paper>
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-none">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-base font-semibold tracking-tight text-foreground">Customer flow</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Serve, complete, reassign, or remove live customers.</p>
+          </div>
+          <Tabs value={tableView} onValueChange={(value) => setTableView(value as "live" | "historical")}>
+            <TabsList className="rounded-xl bg-muted p-1">
+              <TabsTrigger
+                value="live"
+                className="rounded-lg px-3 data-[state=active]:bg-card data-[state=active]:shadow-sm"
+              >
+                Live queue ({liveRows.length})
+              </TabsTrigger>
+              <TabsTrigger
+                value="historical"
+                className="rounded-lg px-3 data-[state=active]:bg-card data-[state=active]:shadow-sm"
+              >
+                Historical ({historicalRows.length})
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
 
-      {/* Reassign Dialog */}
-      <Dialog
-        open={reassignDialogOpen}
-        onClose={() => setReassignDialogOpen(false)}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle>Reassign Customer</DialogTitle>
-        <DialogContent>
+        <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-background">
+          <Table>
+            <TableHeader className="bg-muted/35">
+              <TableRow>
+                <TableHead className="h-11 text-xs font-semibold uppercase tracking-wide text-muted-foreground">#</TableHead>
+                <TableHead className="h-11 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Customer</TableHead>
+                <TableHead className="h-11 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Phone</TableHead>
+                <TableHead className="h-11 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</TableHead>
+                <TableHead className="h-11 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assigned to</TableHead>
+                <TableHead className="h-11 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Wait time</TableHead>
+                <TableHead className="h-11 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length ? (
+                rows.map((row) => (
+                  <TableRow key={row.id} className="hover:bg-muted/35">
+                    <TableCell>{tableView === "live" ? row.live_position : row.position}</TableCell>
+                    <TableCell className="font-medium text-foreground">{row.customer_name}</TableCell>
+                    <TableCell className="whitespace-nowrap">{row.customer_phone || "-"}</TableCell>
+                    <TableCell>
+                      <Badge variant={statusVariant(row.display_status)} className="rounded-full capitalize">
+                        {row.display_status.replace("_", " ")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={row.assigned_employee ? "default" : "outline"}
+                        className="rounded-full"
+                      >
+                        {row.assigned_employee?.username || "Unassigned"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {row.status === "completed" || row.status === "cancelled" ? "-" : formatWaitTime(row.checked_in_at)}
+                    </TableCell>
+                    <TableCell>
+                      {tableView === "live" && (row.status === "waiting" || row.status === "being_served") && (
+                        <div className="flex min-w-max flex-wrap gap-2">
+                          {row.status === "waiting" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="rounded-xl border-border bg-card shadow-none"
+                              onClick={() => handleServe(row.id)}
+                            >
+                              <Play data-icon="inline-start" />
+                              Serve
+                            </Button>
+                          )}
+                          {row.status === "being_served" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="rounded-xl border-border bg-card shadow-none"
+                              onClick={() => handleComplete(row.id)}
+                            >
+                              <CheckCircle data-icon="inline-start" />
+                              Complete
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="rounded-xl border-border bg-card shadow-none"
+                            onClick={() => openReassign(row)}
+                            disabled={employees.length === 0}
+                          >
+                            <Shuffle data-icon="inline-start" />
+                            Reassign
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="rounded-xl border-border bg-card text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => handleRemove(row.id)}
+                          >
+                            <Trash2 data-icon="inline-start" />
+                            Remove
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">
+                    No queue items in this view.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      <Dialog open={reassignDialogOpen} onOpenChange={setReassignDialogOpen}>
+        <DialogContent className="rounded-2xl sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reassign Customer</DialogTitle>
+          </DialogHeader>
           {reassignTarget && (
-            <Stack spacing={2} sx={{ mt: 1 }}>
-              <Typography variant="body2" color="text.secondary">
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-muted-foreground">
                 Move <strong>{reassignTarget.customer_name}</strong> to a different employee:
-              </Typography>
-              <FormControl fullWidth size="small">
-                <InputLabel>Employee</InputLabel>
-                <Select
-                  value={selectedEmployee}
-                  label="Employee"
-                  onChange={(e) => setSelectedEmployee(e.target.value as number)}
-                >
-                  {employees.map((emp) => (
-                    <MenuItem key={emp.user_id} value={emp.user_id}>
-                      {emp.username} — {emp.active_items} customer{emp.active_items !== 1 ? 's' : ''}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Stack>
+              </p>
+              <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
+                <SelectTrigger className="rounded-xl border-border bg-background">
+                  <SelectValue placeholder="Employee" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {employees.map((employee) => (
+                      <SelectItem key={employee.user_id} value={String(employee.user_id)}>
+                        {employee.username} - {employee.active_items} customer{employee.active_items !== 1 ? "s" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
           )}
+          <DialogFooter>
+            <Button variant="outline" className="rounded-xl" onClick={() => setReassignDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button className="rounded-xl" onClick={handleReassign} disabled={!selectedEmployee}>
+              Reassign
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setReassignDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={handleReassign}
-            variant="contained"
-            disabled={!selectedEmployee}
-          >
-            Reassign
-          </Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+    </div>
   );
 };
 

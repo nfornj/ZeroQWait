@@ -1,436 +1,320 @@
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import {
-    Box,
-    Typography,
-    Card,
-    CardContent,
-    Chip,
-    Avatar,
-    CircularProgress,
-    Alert,
-    Paper,
-    Divider,
-    Stack,
-    keyframes,
-    useMediaQuery,
-    useTheme
-} from '@mui/material';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import PeopleIcon from '@mui/icons-material/People';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import axios from 'axios';
-import { gradientPresets, GradientPreset } from '../../../contexts/ThemeContext';
-
-// Define animations
-const pulse = keyframes`
-  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
-  70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(255, 255, 255, 0); }
-  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
-`;
-
-const fadeIn = keyframes`
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-`;
+import React, { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import axios from "axios";
+import { CheckCircle2, Clock, Loader2, Users } from "lucide-react";
+import { gradientPresets, GradientPreset } from "../../../contexts/ThemeContext";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 interface Shop {
-    id: number;
-    name: string;
-    description?: string;
-    shop_type: string;
-    address: string;
-    city: string;
-    state: string;
-    phone: string;
-    slug?: string;
-    average_service_time: number;
-    logo_url?: string;
-    primary_color?: string;
-    dashboard_gradient?: GradientPreset;
+  id: number;
+  name: string;
+  description?: string;
+  shop_type: string;
+  address: string;
+  city: string;
+  state: string;
+  phone: string;
+  slug?: string;
+  average_service_time: number;
+  logo_url?: string;
+  primary_color?: string;
+  dashboard_gradient?: GradientPreset;
 }
 
 interface QueueItem {
+  id: number;
+  customer_name: string;
+  position: number;
+  status: string;
+  checked_in_at: string;
+  service_started_at?: string;
+  assigned_employee?: {
     id: number;
-    customer_name: string;
-    position: number;
-    status: string;
-    checked_in_at: string;
-    service_started_at?: string;
-    assigned_employee?: {
-        id: number;
-        username: string;
-        email: string;
-        profile_photo_url?: string;
-    };
+    username: string;
+    email: string;
+    profile_photo_url?: string;
+  };
 }
 
 interface Queue {
-    id: number;
-    shop_id: number;
-    name: string;
-    queue_items: QueueItem[];
+  id: number;
+  shop_id: number;
+  name: string;
+  queue_items: QueueItem[];
 }
 
 const InShopDisplayPage: React.FC = () => {
-    const { shopId } = useParams<{ shopId: string }>();
-    const [shop, setShop] = useState<Shop | null>(null);
-    const [queue, setQueue] = useState<Queue | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [currentTime, setCurrentTime] = useState(new Date());
-    const [error, setError] = useState<string | null>(null);
-    const theme = useTheme();
-    const isMdUp = useMediaQuery(theme.breakpoints.up('md'));
+  const { shopId } = useParams<{ shopId: string }>();
+  const [shop, setShop] = useState<Shop | null>(null);
+  const [queue, setQueue] = useState<Queue | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        fetchShopData();
+  useEffect(() => {
+    void fetchShopData();
 
-        // Refresh queue every 3 seconds for real-time updates
-        const queueInterval = setInterval(fetchQueueData, 3000);
-        // Update clock every second
-        const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const queueInterval = setInterval(fetchQueueData, 3000);
+    const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
 
-        return () => {
-            clearInterval(queueInterval);
-            clearInterval(clockInterval);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [shopId]);
-
-    const fetchShopData = async () => {
-        try {
-            let response;
-            const hostname = window.location.hostname;
-            const isSubdomain = hostname.includes('.') && !hostname.includes('localhost') && !hostname.includes('127.0.0.1');
-
-            if (isSubdomain) {
-                const slug = hostname.split('.')[0];
-                response = await axios.get(`/shops/s/${slug}`);
-            } else if (shopId) {
-                // Determine if shopId is a slug or an ID
-                const isSlug = isNaN(Number(shopId));
-                if (isSlug) {
-                    response = await axios.get(`/shops/s/${shopId}`);
-                } else {
-                    response = await axios.get(`/shops/${shopId}`);
-                }
-            } else {
-                throw new Error("No shop identifier found");
-            }
-
-            setShop(response.data);
-            if (response.data.id) {
-                fetchQueueForShop(response.data.id);
-            }
-            setLoading(false);
-        } catch (err) {
-            console.error(err);
-            setError("Could not load shop data.");
-            setLoading(false);
-        }
+    return () => {
+      clearInterval(queueInterval);
+      clearInterval(clockInterval);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shopId]);
 
-    const fetchQueueData = () => {
-        if (shop?.id) {
-            fetchQueueForShop(shop.id);
-        }
-    };
+  const fetchShopData = async () => {
+    try {
+      let response;
+      const hostname = window.location.hostname;
+      const isSubdomain = hostname.includes(".") && !hostname.includes("localhost") && !hostname.includes("127.0.0.1");
 
-    const fetchQueueForShop = async (id: number) => {
-        try {
-            const token = localStorage.getItem('token');
-            const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-            const response = await axios.get(`/queues/shop/${id}/active`, config);
-            setQueue(response.data);
-        } catch (err) {
-            // Silently fail on refresh
-        }
-    };
+      if (isSubdomain) {
+        const slug = hostname.split(".")[0];
+        response = await axios.get(`/shops/s/${slug}`);
+      } else if (shopId) {
+        const isSlug = isNaN(Number(shopId));
+        response = isSlug ? await axios.get(`/shops/s/${shopId}`) : await axios.get(`/shops/${shopId}`);
+      } else {
+        throw new Error("No shop identifier found");
+      }
 
-    const waitingCustomers = queue?.queue_items.filter(item => item.status === 'waiting') || [];
-    const servingCustomers = queue?.queue_items.filter(item => item.status === 'being_served') || [];
-    const estimatedWaitTime = waitingCustomers.length * (shop?.average_service_time || 30);
-    const primaryColor = shop?.primary_color || '#1976d2';
-
-    // Determine background gradient
-    const gradientKey = shop?.dashboard_gradient || 'violet';
-    const bgGradient = gradientPresets[gradientKey]?.light || gradientPresets.violet.light;
-
-    if (loading) {
-        return (
-            <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh" sx={{ background: bgGradient }}>
-                <CircularProgress sx={{ color: 'white' }} size={80} />
-            </Box>
-        );
+      setShop(response.data);
+      if (response.data.id) {
+        void fetchQueueForShop(response.data.id);
+      }
+      setLoading(false);
+    } catch (err) {
+      console.error(err);
+      setError("Could not load shop data.");
+      setLoading(false);
     }
+  };
 
-    if (error || !shop) {
-        return (
-            <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh" sx={{ background: bgGradient }}>
-                <Alert severity="error" variant="filled">{error || "Shop not found"}</Alert>
-            </Box>
-        );
+  const fetchQueueData = () => {
+    if (shop?.id) {
+      void fetchQueueForShop(shop.id);
     }
+  };
 
+  const fetchQueueForShop = async (id: number) => {
+    try {
+      const token = localStorage.getItem("token");
+      const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+      const response = await axios.get(`/queues/shop/${id}/active`, config);
+      setQueue(response.data);
+    } catch {
+      // Silently fail on refresh
+    }
+  };
+
+  const waitingCustomers = queue?.queue_items.filter((item) => item.status === "waiting") || [];
+  const servingCustomers = queue?.queue_items.filter((item) => item.status === "being_served") || [];
+  const estimatedWaitTime = waitingCustomers.length * (shop?.average_service_time || 30);
+  const primaryColor = shop?.primary_color || "#1976d2";
+  const gradientKey = shop?.dashboard_gradient || "violet";
+  const bgGradient = gradientPresets[gradientKey]?.light || gradientPresets.violet.light;
+
+  if (loading) {
     return (
-        <Box
-            sx={{
-                minHeight: '100vh',
-                height: '100vh',
-                background: bgGradient,
-                backgroundSize: 'cover',
-                backgroundAttachment: 'fixed',
-                p: { xs: 2, md: 4 },
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column',
-                color: '#1a1a1a',
-            }}
-        >
-            {/* Glassmorphic Header */}
-            <Paper
-                component="header"
-                elevation={4}
-                sx={{
-                    p: 2,
-                    mb: 3,
-                    borderRadius: 3,
-                    background: 'rgba(255, 255, 255, 0.85)',
-                    backdropFilter: 'blur(12px)',
-                    border: '1px solid rgba(255, 255, 255, 0.3)',
-                    boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.1)',
-                }}
-            >
-                <Stack direction="row" alignItems="center" justifyContent="space-between">
-                    <Stack direction="row" alignItems="center" spacing={3}>
-                        {shop.logo_url && (
-                            <Avatar
-                                src={shop.logo_url}
-                                sx={{ width: 80, height: 80, border: `3px solid ${primaryColor}`, boxShadow: 2 }}
-                            />
-                        )}
-                        <Box>
-                            <Typography variant="h3" fontWeight="900" sx={{ background: `linear-gradient(45deg, ${primaryColor}, #333)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                                {shop.name}
-                            </Typography>
-                            <Typography variant="h6" color="text.secondary" fontWeight="500">
-                                Queue Status
-                            </Typography>
-                        </Box>
-                    </Stack>
-                    <Box textAlign="right">
-                        <Typography variant="h3" fontWeight="bold" sx={{ fontFamily: 'monospace' }}>
-                            {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </Typography>
-                        <Stack direction="row" alignItems="center" justifyContent="flex-end" spacing={1}>
-                            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'success.main', boxShadow: '0 0 10px #2e7d32' }} />
-                            <Typography variant="subtitle1" fontWeight="500" color="success.main">
-                                Live
-                            </Typography>
-                        </Stack>
-                    </Box>
-                </Stack>
-            </Paper>
-
-            {/* Main Content Flex Layout (Replacing Grid) */}
-            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3, flex: 1, overflow: 'hidden' }}>
-
-                {/* Left Column: Now Serving */}
-                <Box sx={{ width: { xs: '100%', md: '40%' }, height: '100%' }}>
-                    <Card
-                        elevation={6}
-                        sx={{
-                            height: '100%',
-                            borderRadius: 4,
-                            background: servingCustomers.length > 0 ? `linear-gradient(135deg, ${primaryColor}, #111)` : 'rgba(255, 255, 255, 0.8)',
-                            backdropFilter: 'blur(10px)',
-                            color: servingCustomers.length > 0 ? 'white' : 'text.primary',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            position: 'relative',
-                            overflow: 'hidden',
-                            transition: 'all 0.5s ease',
-                        }}
-                    >
-                        <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 4 }}>
-                            <Stack direction="row" alignItems="center" spacing={2} mb={2}>
-                                <CheckCircleIcon sx={{ fontSize: 40, color: servingCustomers.length > 0 ? '#4ade80' : 'text.secondary' }} />
-                                <Typography variant="h4" fontWeight="800" letterSpacing={1}>
-                                    NOW SERVING
-                                </Typography>
-                            </Stack>
-                            <Divider sx={{ mb: 4, borderColor: 'rgba(255,255,255,0.2)' }} />
-
-                            {servingCustomers.length > 0 ? (
-                                <Stack spacing={4} alignItems="center" justifyContent="center" sx={{ flex: 1 }}>
-                                    {servingCustomers.slice(0, 1).map((customer) => (
-                                        <Box key={customer.id} textAlign="center" sx={{ animation: `${fadeIn} 0.5s ease-out` }}>
-                                            <Box
-                                                sx={{
-                                                    display: 'inline-flex',
-                                                    justifyContent: 'center',
-                                                    alignItems: 'center',
-                                                    width: 200,
-                                                    height: 200,
-                                                    borderRadius: '50%',
-                                                    border: '8px solid white',
-                                                    mb: 3,
-                                                    animation: `${pulse} 2s infinite`,
-                                                    bgcolor: 'rgba(255,255,255,0.1)'
-                                                }}
-                                            >
-                                                <Typography variant="h1" fontWeight="900" sx={{ fontSize: '8rem' }}>
-                                                    {customer.position}
-                                                </Typography>
-                                            </Box>
-                                            <Typography variant="h3" fontWeight="bold" sx={{ textShadow: '0 2px 10px rgba(0,0,0,0.3)' }}>
-                                                {customer.customer_name}
-                                            </Typography>
-
-                                            {customer.assigned_employee && (
-                                                <Paper sx={{ mt: 4, p: 2, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(5px)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                                                    <Avatar src={customer.assigned_employee.profile_photo_url} sx={{ width: 50, height: 50, border: '2px solid white' }} />
-                                                    <Box textAlign="left">
-                                                        <Typography variant="caption" display="block" sx={{ opacity: 0.8, textTransform: 'uppercase', letterSpacing: 1 }}>Served By</Typography>
-                                                        <Typography variant="h6" fontWeight="bold">{customer.assigned_employee.username}</Typography>
-                                                    </Box>
-                                                </Paper>
-                                            )}
-                                        </Box>
-                                    ))}
-                                    {servingCustomers.length > 1 && (
-                                        <Typography variant="h6" sx={{ opacity: 0.8 }}>+ {servingCustomers.length - 1} others being served</Typography>
-                                    )}
-                                </Stack>
-                            ) : (
-                                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.6 }}>
-                                    <AccessTimeIcon sx={{ fontSize: 80, mb: 2 }} />
-                                    <Typography variant="h4">Stations Available</Typography>
-                                    <Typography variant="h6">Next customer please step forward</Typography>
-                                </Box>
-                            )}
-                        </CardContent>
-                    </Card>
-                </Box>
-
-                {/* Right Column: Queue Stats and List */}
-                <Box sx={{ width: { xs: '100%', md: '60%' }, height: '100%', display: 'flex', flexDirection: 'column' }}>
-
-                    {/* Stats Row */}
-                    <Box sx={{ display: 'flex', gap: 3, mb: 3 }}>
-                        <Box sx={{ flex: 1 }}>
-                            <Card elevation={2} sx={{ borderRadius: 3, bgcolor: 'rgba(255, 255, 255, 0.9)' }}>
-                                <CardContent sx={{ display: 'flex', alignItems: 'center', py: 3 }}>
-                                    <Box sx={{ p: 2, borderRadius: '50%', bgcolor: `${primaryColor}22`, mr: 3 }}>
-                                        <PeopleIcon sx={{ fontSize: 40, color: primaryColor }} />
-                                    </Box>
-                                    <Box>
-                                        <Typography variant="h3" fontWeight="800" color="text.primary">
-                                            {waitingCustomers.length}
-                                        </Typography>
-                                        <Typography variant="subtitle1" color="text.secondary" fontWeight="600">
-                                            Waiting in Queue
-                                        </Typography>
-                                    </Box>
-                                </CardContent>
-                            </Card>
-                        </Box>
-                        <Box sx={{ flex: 1 }}>
-                            <Card elevation={2} sx={{ borderRadius: 3, bgcolor: 'rgba(255, 255, 255, 0.9)' }}>
-                                <CardContent sx={{ display: 'flex', alignItems: 'center', py: 3 }}>
-                                    <Box sx={{ p: 2, borderRadius: '50%', bgcolor: 'warning.light', mr: 3, color: 'warning.dark' }}>
-                                        <AccessTimeIcon sx={{ fontSize: 40 }} />
-                                    </Box>
-                                    <Box>
-                                        <Typography variant="h3" fontWeight="800" color="text.primary">
-                                            ~{estimatedWaitTime}<span style={{ fontSize: '1.5rem' }}>m</span>
-                                        </Typography>
-                                        <Typography variant="subtitle1" color="text.secondary" fontWeight="600">
-                                            Est. Wait Time
-                                        </Typography>
-                                    </Box>
-                                </CardContent>
-                            </Card>
-                        </Box>
-                    </Box>
-
-                    {/* Waiting List */}
-                    <Card elevation={4} sx={{ flex: 1, borderRadius: 4, bgcolor: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(10px)', overflow: 'hidden' }}>
-                        <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 0 }}>
-                            <Box sx={{ p: 3, bgcolor: 'rgba(255,255,255,0.5)', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-                                <Typography variant="h5" fontWeight="bold">Up Next</Typography>
-                            </Box>
-
-                            <Box sx={{ flex: 1, overflowY: 'auto', p: 3 }}>
-                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                                    {waitingCustomers.length === 0 ? (
-                                        <Box width="100%">
-                                            <Box textAlign="center" py={8} sx={{ opacity: 0.5 }}>
-                                                <Typography variant="h4" gutterBottom>Queue is Empty</Typography>
-                                                <Typography variant="h6">We are ready to serve you!</Typography>
-                                            </Box>
-                                        </Box>
-                                    ) : (
-                                        waitingCustomers.map((customer, index) => (
-                                            <Box key={customer.id} sx={{ width: { xs: '100%', sm: '48%', lg: '31%' } }}>
-                                                <Paper
-                                                    elevation={index < 3 ? 3 : 1}
-                                                    sx={{
-                                                        p: 2,
-                                                        borderRadius: 3,
-                                                        borderLeft: `6px solid ${index === 0 ? '#4ade80' : index < 3 ? primaryColor : '#ccc'}`,
-                                                        bgcolor: 'white',
-                                                        transition: 'transform 0.2s',
-                                                        '&:hover': { transform: 'translateY(-2px)' }
-                                                    }}
-                                                >
-                                                    <Stack direction="row" alignItems="center" justifyContent="space-between">
-                                                        <Stack direction="row" alignItems="center" spacing={2}>
-                                                            <Avatar sx={{ bgcolor: index < 3 ? 'primary.main' : 'grey.300', color: 'white', fontWeight: 'bold' }}>
-                                                                {customer.position}
-                                                            </Avatar>
-                                                            <Box>
-                                                                <Typography variant="h6" fontWeight="bold" noWrap sx={{ maxWidth: 140 }}>
-                                                                    {customer.customer_name}
-                                                                </Typography>
-                                                                <Typography variant="caption" color="text.secondary">
-                                                                    {new Date(customer.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Stack>
-                                                        {index < 3 && (
-                                                            <Chip
-                                                                size="small"
-                                                                label={index === 0 ? "NEXT" : "SOON"}
-                                                                color={index === 0 ? "success" : "primary"}
-                                                                variant={index === 0 ? "filled" : "outlined"}
-                                                            />
-                                                        )}
-                                                    </Stack>
-                                                </Paper>
-                                            </Box>
-                                        ))
-                                    )}
-                                </Box>
-                            </Box>
-                        </CardContent>
-                    </Card>
-
-                    {/* Footer */}
-                    <Box sx={{ mt: 3, textAlign: 'center' }}>
-                        <Paper sx={{ display: 'inline-block', px: 4, py: 1, borderRadius: 20, bgcolor: 'rgba(255,255,255,0.9)', boxShadow: 2 }}>
-                            <Typography variant="h6" fontWeight="500">
-                                📱 Join the queue at <Box component="span" sx={{ color: primaryColor, fontWeight: 'bold' }}>
-                                    {shop.slug ? `${shop.slug}.zeroqwait.com` : `zeroqwait.com/queue/${shop.id}`}
-                                </Box>
-                            </Typography>
-                        </Paper>
-                    </Box>
-
-                </Box>
-            </Box>
-        </Box>
+      <div className="flex min-h-screen items-center justify-center" style={{ background: bgGradient }}>
+        <Loader2 className="size-20 animate-spin text-white" />
+      </div>
     );
+  }
+
+  if (error || !shop) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-4" style={{ background: bgGradient }}>
+        <Alert variant="destructive" className="max-w-lg">
+          <AlertDescription>{error || "Shop not found"}</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  return (
+    <main
+      className="flex h-screen min-h-screen flex-col overflow-hidden p-4 text-slate-950 md:p-8"
+      style={{ background: bgGradient, backgroundSize: "cover", backgroundAttachment: "fixed" }}
+    >
+      <header className="mb-6 rounded-3xl border border-white/30 bg-white/85 p-4 shadow-xl backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex min-w-0 items-center gap-5">
+            {shop.logo_url && (
+              <Avatar className="size-20 shrink-0 border-4 shadow-md" style={{ borderColor: primaryColor }}>
+                <AvatarImage src={shop.logo_url} alt={shop.name} />
+                <AvatarFallback>{shop.name[0]}</AvatarFallback>
+              </Avatar>
+            )}
+            <div className="min-w-0">
+              <h1
+                className="truncate text-4xl font-black tracking-tight md:text-5xl"
+                style={{
+                  background: `linear-gradient(45deg, ${primaryColor}, #333)`,
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                }}
+              >
+                {shop.name}
+              </h1>
+              <p className="text-xl font-medium text-slate-600">Queue Status</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="font-mono text-4xl font-bold md:text-5xl">
+              {currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </p>
+            <div className="mt-1 flex items-center justify-end gap-2">
+              <span className="size-2.5 rounded-full bg-green-500 shadow-[0_0_10px_#22c55e]" />
+              <span className="font-medium text-green-600">Live</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="grid min-h-0 flex-1 gap-6 md:grid-cols-[0.9fr_1.35fr]">
+        <Card
+          className="min-h-0 overflow-hidden border-0 backdrop-blur"
+          style={{
+            background: servingCustomers.length > 0 ? `linear-gradient(135deg, ${primaryColor}, #111)` : "rgba(255, 255, 255, 0.8)",
+            color: servingCustomers.length > 0 ? "white" : undefined,
+          }}
+        >
+          <CardContent className="flex h-full flex-col p-6 md:p-8">
+            <div className="mb-6 flex items-center gap-3">
+              <CheckCircle2 className={servingCustomers.length > 0 ? "size-10 text-green-300" : "size-10 text-muted-foreground"} />
+              <h2 className="text-3xl font-extrabold tracking-wide">NOW SERVING</h2>
+            </div>
+            <Separator className="mb-8 bg-white/20" />
+
+            {servingCustomers.length > 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-6">
+                {servingCustomers.slice(0, 1).map((customer) => (
+                  <div key={customer.id} className="animate-in fade-in slide-in-from-bottom-4 text-center duration-500">
+                    <div className="mb-6 inline-flex size-48 animate-pulse items-center justify-center rounded-full border-8 border-white bg-white/10 md:size-56">
+                      <span className="text-8xl font-black">{customer.position}</span>
+                    </div>
+                    <p className="text-4xl font-bold drop-shadow">{customer.customer_name}</p>
+
+                    {customer.assigned_employee && (
+                      <div className="mt-6 inline-flex items-center gap-3 rounded-2xl bg-white/15 p-3 backdrop-blur">
+                        <Avatar className="size-12 border-2 border-white">
+                          <AvatarImage src={customer.assigned_employee.profile_photo_url} alt={customer.assigned_employee.username} />
+                          <AvatarFallback>{customer.assigned_employee.username[0]}</AvatarFallback>
+                        </Avatar>
+                        <div className="text-left">
+                          <p className="text-xs uppercase tracking-widest opacity-80">Served By</p>
+                          <p className="text-lg font-bold">{customer.assigned_employee.username}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {servingCustomers.length > 1 && <p className="text-xl opacity-80">+ {servingCustomers.length - 1} others being served</p>}
+              </div>
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center text-center opacity-60">
+                <Clock className="mb-4 size-20" />
+                <p className="text-3xl font-semibold">Stations Available</p>
+                <p className="text-xl">Next customer please step forward</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <section className="flex min-h-0 flex-col gap-6">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <Card className="bg-white/90">
+              <CardContent className="flex items-center gap-5 p-6">
+                <div className="rounded-full p-4" style={{ backgroundColor: `${primaryColor}22` }}>
+                  <Users className="size-10" style={{ color: primaryColor }} />
+                </div>
+                <div>
+                  <p className="text-4xl font-extrabold">{waitingCustomers.length}</p>
+                  <p className="font-semibold text-muted-foreground">Waiting in Queue</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-white/90">
+              <CardContent className="flex items-center gap-5 p-6">
+                <div className="rounded-full bg-amber-100 p-4 text-amber-700">
+                  <Clock className="size-10" />
+                </div>
+                <div>
+                  <p className="text-4xl font-extrabold">
+                    ~{estimatedWaitTime}
+                    <span className="text-2xl">m</span>
+                  </p>
+                  <p className="font-semibold text-muted-foreground">Est. Wait Time</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="min-h-0 flex-1 overflow-hidden bg-white/85 backdrop-blur">
+            <CardContent className="flex h-full flex-col p-0">
+              <div className="border-b bg-white/50 p-5">
+                <h2 className="text-2xl font-bold">Up Next</h2>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                {waitingCustomers.length === 0 ? (
+                  <div className="flex h-full flex-col items-center justify-center text-center opacity-50">
+                    <p className="text-3xl font-semibold">Queue is Empty</p>
+                    <p className="text-xl">We are ready to serve you!</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {waitingCustomers.map((customer, index) => (
+                      <div
+                        key={customer.id}
+                        className="rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5"
+                        style={{ borderLeftWidth: 6, borderLeftColor: index === 0 ? "#4ade80" : index < 3 ? primaryColor : "#ccc" }}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <Avatar className="size-11 text-white" style={{ backgroundColor: index < 3 ? primaryColor : "#d1d5db" }}>
+                              <AvatarFallback>{customer.position}</AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                              <p className="truncate text-lg font-bold">{customer.customer_name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(customer.checked_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </p>
+                            </div>
+                          </div>
+                          {index < 3 && (
+                            <Badge variant={index === 0 ? "default" : "outline"}>{index === 0 ? "NEXT" : "SOON"}</Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="text-center">
+            <div className="inline-flex rounded-full bg-white/90 px-6 py-2 shadow-md">
+              <p className="text-lg font-medium">
+                Join the queue at{" "}
+                <span className="font-bold" style={{ color: primaryColor }}>
+                  {shop.slug ? `${shop.slug}.zeroqwait.com` : `zeroqwait.com/queue/${shop.id}`}
+                </span>
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
 };
 
 export default InShopDisplayPage;

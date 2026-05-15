@@ -1,42 +1,30 @@
 import React, { useEffect, useMemo, useState } from "react";
-import AddRoundedIcon from "@mui/icons-material/AddRounded";
-import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
-import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
-import InsertDriveFileOutlinedIcon from "@mui/icons-material/InsertDriveFileOutlined";
-import {
-  alpha,
-  Avatar,
-  Box,
-  Dialog,
-  DialogContent,
-  IconButton,
-  Tooltip,
-  Typography,
-  useTheme,
-} from "@mui/material";
+import { Plus, X, FileText, ImageIcon, File } from "lucide-react";
 import {
   AttachmentPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
   useAttachment,
 } from "@assistant-ui/react";
+import {
+  Dialog,
+  DialogContent,
+} from "./ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "./ui/tooltip";
+import { cn } from "../lib/utils";
 
 const useFileSrc = (file: File | undefined) => {
   const [src, setSrc] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!file) {
-      setSrc(undefined);
-      return;
-    }
-
-    const objectUrl = URL.createObjectURL(file);
-    setSrc(objectUrl);
-
-    return () => {
-      URL.revokeObjectURL(objectUrl);
-    };
+    if (!file) { setSrc(undefined); return; }
+    const url = URL.createObjectURL(file);
+    setSrc(url);
+    return () => URL.revokeObjectURL(url);
   }, [file]);
 
   return src;
@@ -45,61 +33,36 @@ const useFileSrc = (file: File | undefined) => {
 const useAttachmentPreviewSrc = () => {
   const attachment = useAttachment();
   const isImage = attachment.type === "image" || attachment.contentType?.startsWith("image/");
-  const filePreview = useFileSrc(attachment.file);
+
   const contentPreview = useMemo(() => {
-    if (!isImage) {
-      return undefined;
-    }
-
-    if (!Array.isArray(attachment.content)) {
-      return undefined;
-    }
-
+    if (!isImage || !Array.isArray(attachment.content)) return undefined;
     for (const item of attachment.content) {
-      if (item?.type === "image" && typeof item.image === "string") {
-        return item.image;
-      }
-
-      if (item?.type === "file" && typeof item.data === "string" && item.mimeType?.startsWith("image/")) {
-        return item.data;
-      }
+      if (item?.type === "image" && typeof item.image === "string") return item.image;
+      if (item?.type === "file" && typeof item.data === "string" && item.mimeType?.startsWith("image/")) return item.data;
     }
-
     return undefined;
   }, [attachment.content, isImage]);
 
-  return (isImage ? filePreview : undefined) ?? contentPreview;
+  const fileSrc = useFileSrc(isImage ? attachment.file : undefined);
+  return fileSrc ?? contentPreview;
 };
 
 const AttachmentPreviewDialog: React.FC<React.PropsWithChildren> = ({ children }) => {
   const [open, setOpen] = useState(false);
   const src = useAttachmentPreviewSrc();
 
-  if (!src) {
-    return <>{children}</>;
-  }
+  if (!src) return <>{children}</>;
 
   return (
     <>
-      <Box component="button" type="button" onClick={() => setOpen(true)} sx={{ all: "unset", cursor: "pointer" }}>
+      <button type="button" onClick={() => setOpen(true)} className="cursor-pointer border-none bg-transparent p-0">
         {children}
-      </Box>
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="md" fullWidth>
-        <DialogContent
-          sx={{
-            p: 1.5,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            bgcolor: "background.default",
-          }}
-        >
-          <Box
-            component="img"
-            src={src}
-            alt="Attachment preview"
-            sx={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 2 }}
-          />
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-3xl">
+          <div className="flex items-center justify-center p-2">
+            <img src={src} alt="Attachment preview" className="max-h-[80vh] max-w-full rounded-xl object-contain" />
+          </div>
         </DialogContent>
       </Dialog>
     </>
@@ -108,181 +71,96 @@ const AttachmentPreviewDialog: React.FC<React.PropsWithChildren> = ({ children }
 
 const AttachmentThumb: React.FC = () => {
   const attachment = useAttachment();
-  const muiTheme = useTheme();
   const src = useAttachmentPreviewSrc();
   const isImage = attachment.type === "image" || attachment.contentType?.startsWith("image/");
 
   return (
-    <Avatar
-      variant="rounded"
-      sx={{
-        width: "100%",
-        height: "100%",
-        borderRadius: 2.5,
-        bgcolor: alpha(muiTheme.palette.text.primary, muiTheme.palette.mode === "dark" ? 0.14 : 0.06),
-        color: alpha(muiTheme.palette.text.secondary, 0.9),
-      }}
-    >
+    <div className="flex h-full w-full items-center justify-center rounded-xl bg-white/10 text-muted-foreground">
       {src ? (
-        <Box component="img" src={src} alt="Attachment preview" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <img src={src} alt="Attachment preview" className="h-full w-full rounded-xl object-cover" />
       ) : isImage ? (
-        <ImageOutlinedIcon sx={{ fontSize: 26 }} />
+        <ImageIcon className="h-6 w-6" />
       ) : attachment.type === "document" ? (
-        <DescriptionOutlinedIcon sx={{ fontSize: 26 }} />
+        <FileText className="h-6 w-6" />
       ) : (
-        <InsertDriveFileOutlinedIcon sx={{ fontSize: 26 }} />
+        <File className="h-6 w-6" />
       )}
-    </Avatar>
+    </div>
   );
 };
 
 const AttachmentRemove: React.FC = () => {
   return (
     <AttachmentPrimitive.Remove asChild>
-      <IconButton
-        size="small"
+      <button
+        type="button"
         aria-label="Remove file"
-        sx={{
-          position: "absolute",
-          top: 4,
-          right: 4,
-          width: 18,
-          height: 18,
-          bgcolor: "common.white",
-          color: "text.secondary",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
-          '&:hover': {
-            bgcolor: "common.white",
-            color: "error.main",
-          },
-        }}
+        className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-white text-gray-600 shadow hover:text-red-500"
       >
-        <CloseRoundedIcon sx={{ fontSize: 12 }} />
-      </IconButton>
+        <X className="h-3 w-3" />
+      </button>
     </AttachmentPrimitive.Remove>
   );
 };
 
 const AttachmentUI: React.FC<{ removable?: boolean }> = ({ removable = false }) => {
   const attachment = useAttachment();
-  const muiTheme = useTheme();
   const isImage = attachment.type === "image" || attachment.contentType?.startsWith("image/");
-  const typeLabel = attachment.type === "image" ? "Image" : attachment.type === "document" ? "Document" : "File";
-  const previewLabel = `${typeLabel} attachment: ${attachment.name}`;
-  const icon = isImage ? (
-    <ImageOutlinedIcon sx={{ fontSize: 26 }} />
-  ) : attachment.type === "document" ? (
-    <DescriptionOutlinedIcon sx={{ fontSize: 26 }} />
-  ) : (
-    <InsertDriveFileOutlinedIcon sx={{ fontSize: 26 }} />
-  );
+  const previewLabel = `${attachment.type ?? "File"} attachment: ${attachment.name}`;
+  const Icon = isImage ? ImageIcon : attachment.type === "document" ? FileText : File;
 
   if (isImage) {
     return (
       <AttachmentPrimitive.Root>
-        <Box
-          sx={{
-            position: "relative",
-            width: 56,
-            height: 56,
-            flex: "0 0 auto",
-          }}
-        >
-          <Tooltip title={attachment.name} arrow>
-            <Box>
-              <AttachmentPreviewDialog>
-                <Box
-                  role="button"
-                  tabIndex={0}
-                  aria-label={previewLabel}
-                  sx={{
-                    width: "100%",
-                    height: "100%",
-                    overflow: "hidden",
-                    borderRadius: 2.5,
-                    border: "1px solid",
-                    borderColor: alpha(muiTheme.palette.text.primary, muiTheme.palette.mode === "dark" ? 0.18 : 0.1),
-                    bgcolor: "action.hover",
-                    transition: "opacity 160ms ease, transform 160ms ease",
-                    '&:hover': {
-                      opacity: 0.78,
-                      transform: "translateY(-1px)",
-                    },
-                  }}
-                >
-                  <AttachmentThumb />
-                </Box>
-              </AttachmentPreviewDialog>
-            </Box>
+        <div className="relative h-14 w-14 flex-shrink-0">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <AttachmentPreviewDialog>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={previewLabel}
+                    className="h-14 w-14 overflow-hidden rounded-xl border border-white/20 bg-muted transition-all hover:opacity-75 hover:-translate-y-px"
+                  >
+                    <AttachmentThumb />
+                  </div>
+                </AttachmentPreviewDialog>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>{attachment.name}</TooltipContent>
           </Tooltip>
-          {removable ? <AttachmentRemove /> : null}
-        </Box>
+          {removable && <AttachmentRemove />}
+        </div>
       </AttachmentPrimitive.Root>
     );
   }
 
   return (
     <AttachmentPrimitive.Root>
-      <Tooltip title={attachment.name} arrow>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: 1,
-            minWidth: 0,
-            maxWidth: 240,
-            px: 1,
-            py: 0.75,
-            borderRadius: 3,
-            border: "1px solid",
-            borderColor: alpha(muiTheme.palette.text.primary, muiTheme.palette.mode === "dark" ? 0.18 : 0.1),
-            bgcolor: "action.hover",
-          }}
-        >
-          <Avatar
-            variant="rounded"
-            sx={{
-              width: 34,
-              height: 34,
-              borderRadius: 2,
-              bgcolor: alpha(muiTheme.palette.text.primary, muiTheme.palette.mode === "dark" ? 0.14 : 0.06),
-              color: alpha(muiTheme.palette.text.secondary, 0.9),
-              flex: "0 0 auto",
-            }}
-          >
-            {icon}
-          </Avatar>
-          <Typography
-            variant="body2"
-            sx={{
-              minWidth: 0,
-              flex: 1,
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              color: "text.primary",
-            }}
-          >
-            {attachment.name}
-          </Typography>
-          {removable ? (
-            <AttachmentPrimitive.Remove asChild>
-              <IconButton
-                size="small"
-                aria-label="Remove file"
-                sx={{
-                  width: 24,
-                  height: 24,
-                  color: "text.secondary",
-                  flex: "0 0 auto",
-                }}
-              >
-                <CloseRoundedIcon sx={{ fontSize: 14 }} />
-              </IconButton>
-            </AttachmentPrimitive.Remove>
-          ) : null}
-        </Box>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex min-w-0 max-w-[240px] items-center gap-2 rounded-2xl border border-white/20 bg-muted px-2.5 py-2">
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/10 text-muted-foreground">
+              <Icon className="h-5 w-5" />
+            </div>
+            <span className="flex-1 truncate text-sm font-semibold text-foreground">
+              {attachment.name}
+            </span>
+            {removable && (
+              <AttachmentPrimitive.Remove asChild>
+                <button
+                  type="button"
+                  aria-label="Remove file"
+                  className="flex h-5 w-5 flex-shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </AttachmentPrimitive.Remove>
+            )}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>{attachment.name}</TooltipContent>
       </Tooltip>
     </AttachmentPrimitive.Root>
   );
@@ -290,48 +168,38 @@ const AttachmentUI: React.FC<{ removable?: boolean }> = ({ removable = false }) 
 
 export const UserMessageAttachments: React.FC = () => {
   return (
-    <Box sx={{ display: "flex", width: "100%", justifyContent: "flex-end", gap: 1, flexWrap: "wrap" }}>
+    <div className="flex w-full flex-wrap justify-end gap-2">
       <MessagePrimitive.Attachments>
         {() => <AttachmentUI />}
       </MessagePrimitive.Attachments>
-    </Box>
+    </div>
   );
 };
 
 export const ComposerAttachments: React.FC = () => {
   return (
-    <Box sx={{ display: "flex", width: "100%", alignItems: "center", gap: 1, overflowX: "auto", flexWrap: "wrap" }}>
+    <div className="flex w-full flex-wrap items-center gap-2 overflow-x-auto">
       <ComposerPrimitive.Attachments>
         {() => <AttachmentUI removable />}
       </ComposerPrimitive.Attachments>
-    </Box>
+    </div>
   );
 };
 
 export const ComposerAddAttachment: React.FC<{ disabled?: boolean }> = ({ disabled = false }) => {
-  const muiTheme = useTheme();
-
   return (
     <ComposerPrimitive.AddAttachment asChild>
-      <IconButton
-        size="small"
+      <button
+        type="button"
         disabled={disabled}
         aria-label="Add Attachment"
-        sx={{
-          width: 34,
-          height: 34,
-          borderRadius: 2.5,
-          color: muiTheme.palette.mode === "dark" ? alpha("#f5f3ef", 0.82) : "#6f6a63",
-          '&:hover': {
-            bgcolor: muiTheme.palette.mode === "dark" ? alpha("#f5f3ef", 0.08) : alpha("#1f1d1a", 0.06),
-          },
-          '&.Mui-disabled': {
-            color: alpha(muiTheme.palette.text.secondary, 0.4),
-          },
-        }}
+        className={cn(
+          "flex h-[34px] w-[34px] items-center justify-center rounded-full text-muted-foreground transition-colors",
+          "hover:bg-muted hover:text-foreground disabled:opacity-40"
+        )}
       >
-        <AddRoundedIcon fontSize="small" />
-      </IconButton>
+        <Plus className="h-4 w-4" />
+      </button>
     </ComposerPrimitive.AddAttachment>
   );
 };

@@ -1,130 +1,116 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-    Container,
-    Box,
-    Typography,
-    Card,
-    CardContent,
-    Button,
-    CircularProgress,
-    Alert,
-    Chip
-} from '@mui/material';
-import StorefrontIcon from '@mui/icons-material/Storefront';
-import QueueIcon from '@mui/icons-material/Queue';
-import api from '../../../services/api';
-import { useAuth } from '../../../contexts/AuthContext';
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { ListOrdered, MapPin, Phone, Store } from "lucide-react";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import api from "../../../services/api";
+import { useAuth } from "../../../contexts/AuthContext";
 
 interface Shop {
-    id: number;
-    name: string;
-    description?: string;
-    shop_type: string;
-    address: string;
-    city: string;
-    state: string;
-    phone: string;
+  id: number;
+  name: string;
+  description?: string;
+  shop_type: string;
+  address: string;
+  city: string;
+  state: string;
+  phone: string;
 }
 
 const EmployeeDashboardPage: React.FC = () => {
-    const [shops, setShops] = useState<Shop[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const { user } = useAuth();
-    const navigate = useNavigate();
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
-    useEffect(() => {
-        fetchMyShops();
-    }, []);
+  useEffect(() => {
+    fetchMyShops();
+  }, []);
 
-    const fetchMyShops = async () => {
-        try {
-            setLoading(true);
-            const response = await api.get(`/employees/my-shops`);
-            setShops(response.data);
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to load shops');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    if (loading) {
-        return (
-            <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
-                <CircularProgress />
-            </Box>
-        );
+  const fetchMyShops = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get(`/employees/my-shops`);
+      setShops(response.data);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Failed to load shops");
+    } finally {
+      setLoading(false);
     }
+  };
 
+  if (loading) {
     return (
-        <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-            <Box sx={{ mb: 4 }}>
-                <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
-                    Welcome, {user?.username}!
-                </Typography>
-                <Typography variant="body1" color="text.secondary">
-                    Manage queues for your assigned shops
-                </Typography>
-            </Box>
-
-            {error && (
-                <Alert severity="error" sx={{ mb: 3 }}>
-                    {error}
-                </Alert>
-            )}
-
-            {shops.length === 0 ? (
-                <Alert severity="info">
-                    You are not assigned to any shops yet. Contact your shop owner to get access.
-                </Alert>
-            ) : (
-                <Box display="flex" flexWrap="wrap" gap={3}>
-                    {shops.map((shop) => (
-                        <Box sx={{ flex: 1, minWidth: '250px' }} key={shop.id}>
-                            <Card sx={{ height: '100%' }}>
-                                <CardContent>
-                                    <Box sx={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', mb: 2 }}>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <StorefrontIcon color="primary" />
-                                            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                                {shop.name}
-                                            </Typography>
-                                        </Box>
-                                        <Chip label={shop.shop_type} size="small" color="primary" />
-                                    </Box>
-
-                                    {shop.description && (
-                                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                            {shop.description}
-                                        </Typography>
-                                    )}
-
-                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                        📍 {shop.address}, {shop.city}, {shop.state}
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                                        📞 {shop.phone}
-                                    </Typography>
-
-                                    <Button
-                                        fullWidth
-                                        variant="contained"
-                                        startIcon={<QueueIcon />}
-                                        onClick={() => navigate(`/dashboard?shop=${shop.id}`)}
-                                    >
-                                        Manage Queue
-                                    </Button>
-                                </CardContent>
-                            </Card>
-                        </Box>
-                    ))}
-                </Box>
-            )}
-        </Container>
+      <div className="mx-auto flex min-h-[80vh] w-full max-w-6xl flex-col justify-center gap-4 p-6">
+        <Skeleton className="h-12 w-72" />
+        <Skeleton className="h-40 w-full" />
+      </div>
     );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-6xl px-4 py-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-semibold tracking-tight">Welcome, {user?.username}!</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Manage queues for your assigned shops</p>
+      </div>
+
+      {error && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {shops.length === 0 ? (
+        <Alert>
+          <AlertDescription>
+            You are not assigned to any shops yet. Contact your shop owner to get access.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {shops.map((shop) => (
+            <Card key={shop.id} className="h-full">
+              <CardContent className="flex h-full flex-col gap-4 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Store className="size-5 text-primary" />
+                    <h2 className="font-semibold">{shop.name}</h2>
+                  </div>
+                  <Badge>{shop.shop_type}</Badge>
+                </div>
+
+                {shop.description && (
+                  <p className="text-sm text-muted-foreground">{shop.description}</p>
+                )}
+
+                <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-2">
+                    <MapPin className="size-4" />
+                    {shop.address}, {shop.city}, {shop.state}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <Phone className="size-4" />
+                    {shop.phone}
+                  </span>
+                </div>
+
+                <Button className="mt-auto w-full" onClick={() => navigate(`/dashboard?shop=${shop.id}`)}>
+                  <ListOrdered data-icon="inline-start" />
+                  Manage Queue
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default EmployeeDashboardPage;

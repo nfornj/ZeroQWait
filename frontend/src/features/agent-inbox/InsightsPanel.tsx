@@ -1,33 +1,27 @@
 import React, { useCallback } from "react";
+import { BarChart2, Download, AlertTriangle } from "lucide-react";
 import {
-  alpha,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  Divider,
-  Stack,
-  Typography,
-  useTheme,
-} from "@mui/material";
-import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
-import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
-import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
-import { BarChart } from "@mui/x-charts/BarChart";
-import { LineChart } from "@mui/x-charts/LineChart";
-import { PieChart } from "@mui/x-charts/PieChart";
-import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
-import DataTable from "../../components/DataTable";
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from "recharts";
+import { Button } from "../../components/ui/button";
+import { useOwnerBrand } from "../../hooks/useOwnerBrand";
 import { resolveAgentChart } from "./types";
-import type { InsightItem, AgentChart, AgentFile, AgentTable, ResolvedAgentChart } from "./types";
-import { useShop } from "../../contexts/ShopContext";
+import type { InsightItem, AgentChart, AgentFile, ResolvedAgentChart } from "./types";
 
 interface InsightsPanelProps {
   items: InsightItem[];
 }
 
-/** Trigger a browser download from a base64 string or URL. */
 const downloadFile = (file: AgentFile) => {
   const link = document.createElement("a");
   if (file.content.startsWith("http://") || file.content.startsWith("https://")) {
@@ -41,252 +35,221 @@ const downloadFile = (file: AgentFile) => {
   document.body.removeChild(link);
 };
 
-const buildChartPalette = (chart: ResolvedAgentChart, accent: string) => {
-  const explicit = Array.isArray(chart.colors) ? chart.colors.filter((value) => typeof value === "string" && value.trim()) : [];
-  return explicit.length > 0 ? explicit : [accent, "#0284c7", "#0f766e", "#ca8a04"];
-};
+const FALLBACK_COLORS = ["#0284c7", "#0f766e", "#ca8a04"];
 
-const toChartSeries = (chart: ResolvedAgentChart, palette: string[]) =>
-  chart.series.map((series, index) => ({
-    data: chart.data.map((point) => {
-      const rawValue = point[series.key];
-      return typeof rawValue === "number" ? rawValue : Number(rawValue ?? 0);
-    }),
-    label: series.label,
-    color: series.color || palette[index % palette.length],
-  }));
+const buildChartPalette = (chart: ResolvedAgentChart, accent: string) => {
+  const explicit = Array.isArray(chart.colors)
+    ? chart.colors.filter((v) => typeof v === "string" && v.trim())
+    : [];
+  return explicit.length > 0 ? explicit : [accent, ...FALLBACK_COLORS];
+};
 
 const MiniChart: React.FC<{ chart: AgentChart; accent: string }> = ({ chart, accent }) => {
   const resolvedChart = resolveAgentChart(chart);
+  if (!resolvedChart) return null;
 
-  if (!resolvedChart) {
-    return null;
-  }
-
-  const labels = resolvedChart.data.map((point) => String(point[resolvedChart.xKey] ?? ""));
   const palette = buildChartPalette(resolvedChart, accent);
-  const chartSeries = toChartSeries(resolvedChart, palette);
-  const primarySeries = chartSeries[0];
+  const primaryColor = palette[0] ?? accent;
 
-  if (resolvedChart.chartType === "sparkline" && primarySeries) {
+  if (resolvedChart.chartType === "sparkline") {
+    const sparkData = resolvedChart.data.map((point) => {
+      const key = resolvedChart.series[0]?.key;
+      const val = key ? point[key] : 0;
+      return { value: typeof val === "number" ? val : Number(val ?? 0) };
+    });
     return (
-      <SparkLineChart
-        data={primarySeries.data}
-        height={48}
-        curve="natural"
-        area
-        color={primarySeries.color}
-      />
+      <ResponsiveContainer width="100%" height={48}>
+        <LineChart data={sparkData}>
+          <Line type="monotone" dataKey="value" stroke={primaryColor} dot={false} strokeWidth={2} />
+        </LineChart>
+      </ResponsiveContainer>
     );
   }
 
-  if (resolvedChart.chartType === "pie" && primarySeries) {
+  if (resolvedChart.chartType === "pie") {
+    const key = resolvedChart.series[0]?.key;
+    const pieData = resolvedChart.data.map((point, i) => ({
+      name: String(point[resolvedChart.xKey] ?? i),
+      value: key ? (typeof point[key] === "number" ? point[key] as number : Number(point[key] ?? 0)) : 0,
+    }));
     return (
-      <PieChart
-        series={[
-          {
-            data: resolvedChart.data.map((point, index) => ({
-              id: index,
-              value: primarySeries.data[index] ?? 0,
-              label: String(point[resolvedChart.xKey] ?? ""),
-            })),
-          },
-        ]}
-        height={120}
-        hideLegend={!resolvedChart.showLegend}
-      />
+      <ResponsiveContainer width="100%" height={120}>
+        <PieChart>
+          <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={24} outerRadius={48}>
+            {pieData.map((_, i) => (
+              <Cell key={i} fill={palette[i % palette.length]} />
+            ))}
+          </Pie>
+          {resolvedChart.showLegend && <Tooltip />}
+        </PieChart>
+      </ResponsiveContainer>
     );
   }
 
   if (resolvedChart.chartType === "line") {
     return (
-      <LineChart
-        xAxis={[{ data: labels, scaleType: "band" }]}
-        series={chartSeries}
-        height={120}
-        margin={{ top: 8, right: 8, bottom: 24, left: 36 }}
-        hideLegend={!resolvedChart.showLegend}
-        grid={{ horizontal: resolvedChart.showGrid, vertical: false }}
-      />
+      <ResponsiveContainer width="100%" height={120}>
+        <LineChart data={resolvedChart.data} margin={{ top: 8, right: 8, bottom: 16, left: 24 }}>
+          <XAxis dataKey={resolvedChart.xKey} tick={{ fontSize: 10 }} />
+          {resolvedChart.showGrid && <YAxis tick={{ fontSize: 10 }} />}
+          {resolvedChart.series.map((s, i) => (
+            <Line
+              key={s.key}
+              type="monotone"
+              dataKey={s.key}
+              stroke={s.color || palette[i % palette.length]}
+              dot={false}
+              strokeWidth={2}
+              name={s.label}
+            />
+          ))}
+          {resolvedChart.showLegend && <Tooltip />}
+        </LineChart>
+      </ResponsiveContainer>
     );
   }
 
-  // Default: bar
   return (
-    <BarChart
-      xAxis={[{ data: labels, scaleType: "band" }]}
-      series={chartSeries}
-      height={120}
-      margin={{ top: 8, right: 8, bottom: 24, left: 36 }}
-      hideLegend={!resolvedChart.showLegend}
-      grid={{ horizontal: resolvedChart.showGrid, vertical: false }}
-    />
+    <ResponsiveContainer width="100%" height={120}>
+      <BarChart data={resolvedChart.data} margin={{ top: 8, right: 8, bottom: 16, left: 24 }}>
+        <XAxis dataKey={resolvedChart.xKey} tick={{ fontSize: 10 }} />
+        {resolvedChart.showGrid && <YAxis tick={{ fontSize: 10 }} />}
+        {resolvedChart.series.map((s, i) => (
+          <Bar
+            key={s.key}
+            dataKey={s.key}
+            fill={s.color || palette[i % palette.length]}
+            name={s.label}
+            radius={[3, 3, 0, 0]}
+          />
+        ))}
+        {resolvedChart.showLegend && <Tooltip />}
+      </BarChart>
+    </ResponsiveContainer>
   );
 };
 
 const InsightsPanel: React.FC<InsightsPanelProps> = ({ items }) => {
-  const muiTheme = useTheme();
-  const { shop } = useShop();
-  const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
-  const cardBg =
-    muiTheme.palette.mode === "dark"
-      ? "rgba(255, 255, 255, 0.05)"
-      : alpha("#ffffff", 0.68);
-  const cardBorder =
-    muiTheme.palette.mode === "dark"
-      ? alpha(brandPrimary, 0.24)
-      : alpha(brandPrimary, 0.16);
+  const brand = useOwnerBrand();
 
   const handleDownload = useCallback((file: AgentFile) => {
     downloadFile(file);
   }, []);
 
   return (
-    <Card
-      variant="outlined"
-      sx={{
-        borderRadius: 3,
-        borderColor: cardBorder,
-        bgcolor: cardBg,
-        backdropFilter: "blur(20px)",
+    <div
+      className="rounded-2xl border backdrop-blur-xl"
+      style={{
+        borderColor: brand.glass.border,
+        backgroundColor: brand.glass.bg,
       }}
     >
-      <CardContent sx={{ py: 1.5 }}>
-        <Stack spacing={1}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="h6">Insights</Typography>
-            {items.length > 0 && (
-              <Chip
-                size="small"
-                label={items.length}
-                sx={{
-                  bgcolor: alpha(brandPrimary, 0.14),
-                  color: brandPrimary,
-                  border: `1px solid ${alpha(brandPrimary, 0.22)}`,
-                  fontWeight: 700,
-                }}
-              />
-            )}
-          </Stack>
-
-          <Divider sx={{ borderColor: alpha(brandPrimary, 0.12) }} />
-
-          {items.length === 0 && (
-            <Stack alignItems="center" spacing={0.5} py={2}>
-              <BarChartRoundedIcon sx={{ fontSize: 28, color: alpha(brandPrimary, 0.3) }} />
-              <Typography variant="body2" color="text.secondary" textAlign="center">
-                Ask financial or analytics questions to see charts and insights here.
-              </Typography>
-            </Stack>
+      <div className="px-4 py-3">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-base font-semibold">Insights</p>
+          {items.length > 0 && (
+            <span
+              className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold border"
+              style={{
+                backgroundColor: `${brand.primary}24`,
+                color: brand.primary,
+                borderColor: `${brand.primary}38`,
+              }}
+            >
+              {items.length}
+            </span>
           )}
+        </div>
 
-          <Stack spacing={1.5} sx={{ maxHeight: 400, overflowY: "auto" }}>
-            {items.map((item) => (
-              <Box
-                key={item.id}
-                sx={{
-                  p: 1.5,
-                  borderRadius: 2,
-                  border: `1px solid ${muiTheme.palette.divider}`,
-                  bgcolor:
-                    muiTheme.palette.mode === "dark"
-                      ? "rgba(255,255,255,0.02)"
-                      : "rgba(255,255,255,0.6)",
-                }}
-              >
-                {item.type === "chart" && item.chart && (
-                  <>
-                    <Stack direction="row" spacing={0.75} alignItems="center" mb={0.5}>
-                      <BarChartRoundedIcon sx={{ fontSize: 16, color: brandPrimary }} />
-                      <Box>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                          {item.chart.title}
-                        </Typography>
-                        {item.chart.description ? (
-                          <Typography variant="caption" color="text.secondary">
-                            {item.chart.description}
-                          </Typography>
-                        ) : null}
-                      </Box>
-                    </Stack>
-                    <MiniChart chart={item.chart} accent={brandPrimary} />
-                  </>
-                )}
+        <hr className="mb-3" style={{ borderColor: `${brand.primary}1f` }} />
 
-                {item.type === "summary" && item.summary && (
-                  <Stack spacing={1}>
-                    <Stack direction="row" spacing={0.75} alignItems="center">
-                      <WarningAmberRoundedIcon sx={{ fontSize: 16, color: brandPrimary }} />
-                      <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                        {item.summary.title}
-                      </Typography>
-                    </Stack>
-                    <Typography variant="body2" color="text.secondary">
-                      {item.summary.body}
-                    </Typography>
-                    {!!item.summary.chips?.length && (
-                      <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-                        {item.summary.chips.map((chip) => (
-                          <Chip
-                            key={`${item.id}_${chip}`}
-                            size="small"
-                            label={chip}
-                            sx={{
-                              bgcolor: alpha(brandPrimary, 0.1),
-                              color: brandPrimary,
-                              border: `1px solid ${alpha(brandPrimary, 0.18)}`,
-                            }}
-                          />
-                        ))}
-                      </Stack>
-                    )}
-                  </Stack>
-                )}
+        {items.length === 0 && (
+          <div className="flex flex-col items-center gap-1.5 py-4">
+            <BarChart2 className="h-7 w-7 opacity-30" style={{ color: brand.primary }} />
+            <p className="text-sm text-muted-foreground text-center">
+              Ask financial or analytics questions to see charts and insights here.
+            </p>
+          </div>
+        )}
 
-                {item.type === "table" && item.table && (
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
-                      {item.table.title}
-                    </Typography>
-                    <DataTable
-                      columns={item.table.columns}
-                      data={item.table.data}
-                      rowIdKey={item.table.rowIdKey}
-                    />
-                  </Box>
-                )}
+        <div className="flex flex-col gap-3 max-h-96 overflow-y-auto">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-xl border p-3"
+              style={{
+                borderColor: "hsl(var(--border))",
+                backgroundColor: "rgba(255,255,255,0.02)",
+              }}
+            >
+              {item.type === "chart" && item.chart && (
+                <>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <BarChart2 className="h-4 w-4 flex-shrink-0" style={{ color: brand.primary }} />
+                    <div>
+                      <p className="text-sm font-semibold">{item.chart.title}</p>
+                      {item.chart.description && (
+                        <p className="text-xs text-muted-foreground">{item.chart.description}</p>
+                      )}
+                    </div>
+                  </div>
+                  <MiniChart chart={item.chart} accent={brand.primary} />
+                </>
+              )}
 
-                {item.type === "file" && item.file && (
-                  <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
-                      <FileDownloadRoundedIcon sx={{ fontSize: 16, color: brandPrimary }} />
-                      <Typography
-                        variant="body2"
-                        sx={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                      >
-                        {item.file.filename}
-                      </Typography>
-                    </Stack>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => handleDownload(item.file!)}
-                      sx={{ textTransform: "none", fontWeight: 600, flexShrink: 0 }}
-                    >
-                      Download
-                    </Button>
-                  </Stack>
-                )}
+              {item.type === "summary" && item.summary && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" style={{ color: brand.primary }} />
+                    <p className="text-sm font-semibold">{item.summary.title}</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{item.summary.body}</p>
+                  {!!item.summary.chips?.length && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.summary.chips.map((chip) => (
+                        <span
+                          key={`${item.id}_${chip}`}
+                          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs border"
+                          style={{
+                            backgroundColor: `${brand.primary}1a`,
+                            color: brand.primary,
+                            borderColor: `${brand.primary}2e`,
+                          }}
+                        >
+                          {chip}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
-                <Typography variant="caption" sx={{ opacity: 0.6, mt: 0.5, display: "block" }}>
-                  {new Date(item.timestamp).toLocaleTimeString()}
-                </Typography>
-              </Box>
-            ))}
-          </Stack>
-        </Stack>
-      </CardContent>
-    </Card>
+              {item.type === "file" && item.file && (
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Download className="h-4 w-4 flex-shrink-0" style={{ color: brand.primary }} />
+                    <p className="text-sm font-semibold truncate">{item.file.filename}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleDownload(item.file!)}
+                    className="flex-shrink-0 h-7 text-xs font-semibold"
+                  >
+                    Download
+                  </Button>
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground/60 mt-1.5 block">
+                {new Date(item.timestamp).toLocaleTimeString()}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 };
 

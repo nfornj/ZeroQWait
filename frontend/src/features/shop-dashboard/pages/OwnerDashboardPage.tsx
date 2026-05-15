@@ -1,21 +1,8 @@
 // RESTYLED: Perplexity-style
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  IconButton,
-  Stack,
-  Tooltip,
-} from "@mui/material";
-import AddCommentOutlinedIcon from "@mui/icons-material/AddCommentOutlined";
+import React, { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useShop } from "../../../contexts/ShopContext";
 import api from "../../../services/api";
@@ -26,6 +13,7 @@ import AgentChat, {
 import AgentTaskBoard, {
   AgentTaskBoardExternalTask,
 } from "../../agent-inbox/AgentTaskBoard";
+import useApprovalDecisions from "../../agent-inbox/hooks/useApprovalDecisions";
 import {
   ownerDashboardKeys,
   useOwnerBriefingQuery,
@@ -34,7 +22,6 @@ import {
   useOwnerPoliciesQuery,
   usePendingApprovalsQuery,
 } from "../../agent-inbox/ownerDashboardQueries";
-import { useApprovalDecisions } from "../../agent-inbox/hooks/useApprovalDecisions";
 import { createAgentChartFromPayload } from "../../agent-inbox/types";
 import type {
   AgentChart,
@@ -46,7 +33,6 @@ import type {
   PendingApproval,
   ThinkingStep,
 } from "../../agent-inbox/types";
-import Header from "../components/Header";
 
 const apiBaseUrl = process.env.REACT_APP_API_URL || "/api";
 
@@ -161,8 +147,6 @@ const normalizePendingApproval = (raw: Record<string, any>, fallbackShopId: numb
     risk_level: nested.risk_level || detailPayload.risk_level,
     urgency: nested.urgency || detailPayload.urgency,
     recommended_decision: nested.recommended_decision || detailPayload.recommended_decision,
-    approval_request_id: nested.approval_request_id || detailPayload.approval_request_id,
-    created_at: nested.created_at || detailPayload.created_at,
   };
 };
 
@@ -200,45 +184,31 @@ const formatTaskActionLabel = (value?: string | null): string => {
     .join(" ");
 };
 
-const summarizeApprovalValue = (value: unknown): string | null => {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-
-  if (Array.isArray(value)) {
-    return `${value.length} item${value.length === 1 ? "" : "s"}`;
-  }
-
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const label = record.name || record.title || record.email || record.phone || record.id;
-    return label ? String(label) : null;
-  }
-
-  return null;
-};
-
-const buildApprovalTaskDetails = (approval: PendingApproval): string[] => {
-  const details = approval.details || {};
-  const lines = [
-    approval.risk_level ? `Risk: ${String(approval.risk_level)}` : null,
-    approval.urgency ? `Urgency: ${String(approval.urgency)}` : null,
-    approval.recommended_decision ? `Suggested: ${String(approval.recommended_decision)}` : null,
-    ...Object.entries(details)
-      .filter(([key]) => !["shop_id", "user_id", "policy_key", "policy_mode", "details"].includes(key))
-      .map(([key, value]) => {
-        const summary = summarizeApprovalValue(value);
-        if (!summary) return null;
-        return `${formatTaskActionLabel(key)}: ${summary}`;
-      }),
-  ].filter((line): line is string => Boolean(line && line.trim()));
-
-  return Array.from(new Set(lines)).slice(0, 5);
-};
+const AgentWorkspaceHeader: React.FC<{ pendingCount: number }> = ({ pendingCount }) => (
+  <div className="hidden w-full items-center justify-between gap-4 pb-1 md:flex">
+    <div className="min-w-0">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span>Workspace</span>
+        <span>›</span>
+        <span className="font-semibold text-foreground">Agent</span>
+      </div>
+      <h1 className="mt-2 whitespace-nowrap text-xl font-bold tracking-normal text-foreground">Agent Workspace</h1>
+    </div>
+    <div className="flex flex-wrap justify-end gap-2">
+      {["Receptionist", "HR", "Finance"].map((label) => (
+        <span
+          key={label}
+          className="rounded-2xl border border-border bg-background px-3 py-1.5 text-sm font-bold text-foreground shadow-sm"
+        >
+          {label}
+        </span>
+      ))}
+      <span className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-sm font-bold text-amber-700">
+        {pendingCount} needs decision
+      </span>
+    </div>
+  </div>
+);
 
 const getAttachmentFiles = (attachments: AgentChatSendPayload["attachments"]): File[] => {
   return (attachments || []).flatMap((attachment) => (attachment.file instanceof File ? [attachment.file] : []));
@@ -246,18 +216,6 @@ const getAttachmentFiles = (attachments: AgentChatSendPayload["attachments"]): F
 
 const STREAM_INTERRUPTED_MESSAGE = "The response stream was interrupted before completion. Partial output may be shown below.";
 const STREAM_RETRY_MESSAGE = "The response was interrupted before it finished. Please try again.";
-
-const ownerChatMessagesKey = (shopId: number) => `owner-chat-messages:${shopId}`;
-const ownerChatActiveKey = (shopId: number) => `owner-chat-active:${shopId}`;
-
-const persistOwnerChatSnapshot = (shopId: number, messages: ChatMessage[], active: boolean) => {
-  try {
-    sessionStorage.setItem(ownerChatMessagesKey(shopId), JSON.stringify(messages));
-    sessionStorage.setItem(ownerChatActiveKey(shopId), active ? "1" : "0");
-  } catch {
-    // sessionStorage full or unavailable — skip silently
-  }
-};
 
 const normalizeStreamErrorDetail = (error: unknown, fallback: string) => {
   const detail = getErrorDetail(error, fallback).trim();
@@ -285,141 +243,6 @@ const OwnerDashboardPage: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
-  const messagesRef = useRef<ChatMessage[]>([]);
-  const mountedRef = useRef(true);
-
-  // Abort controller for the active stream — aborted when component unmounts
-  // or when a new message is sent while a previous stream is still running.
-  const activeStreamAbortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  // Keep the stream alive across route/tab switches. The async stream handler
-  // writes progress to sessionStorage so the Agent view can restore it later.
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  // Restore conversation history when the component mounts (covers tab
-  // switches and page refreshes).  We check sessionStorage first so that
-  // charts / tables generated during the current browser session survive
-  // navigation.  When sessionStorage is empty we fall back to the API which
-  // returns text-only checkpoint history.
-  const historyLoadedForRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!shop?.id || historyLoadedForRef.current === shop.id) return;
-    historyLoadedForRef.current = shop.id;
-
-    // 1. Try sessionStorage (preserves charts across refreshes / tab switches)
-    try {
-      const raw = sessionStorage.getItem(ownerChatMessagesKey(shop.id));
-      if (raw) {
-        const parsed: ChatMessage[] = JSON.parse(raw);
-        if (parsed.length > 0) {
-          setMessages(parsed);
-          setIsStreaming(sessionStorage.getItem(ownerChatActiveKey(shop.id)) === "1");
-          return;
-        }
-      }
-    } catch {
-      // Ignore parse errors — fall through to API
-    }
-
-    // 2. Fallback: LangGraph checkpoint (text-only, cross-session)
-    const authToken = token || localStorage.getItem("token");
-    fetch(`${apiBaseUrl}/v2/agent/history?shop_id=${shop.id}`, {
-      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        const raw: { role: string; content: string; timestamp?: string | null }[] =
-          data?.messages ?? [];
-        if (raw.length === 0) return;
-        const restored: ChatMessage[] = raw
-          .filter((m) => m.content && m.content.trim())
-          .map((m, i) => ({
-            id: toId(`msg_history_${i}`),
-            role: m.role === "user" ? ("user" as const) : ("assistant" as const),
-            content: m.content,
-            status: "done" as const,
-            timestamp: m.timestamp ?? nowIso(),
-          }));
-        if (restored.length > 0) {
-          setMessages(restored);
-        }
-      })
-      .catch(() => {
-        // Non-fatal — chat will start empty on history load failure
-      });
-  }, [shop?.id, token]);
-
-  // Persist messages (including charts / tables) to sessionStorage on every
-  // change — including during streaming so thinking steps survive tab switches.
-  // We save a snapshot where any in-progress "streaming" message is marked
-  // "done" so that when it is restored after unmount it renders cleanly.
-  useEffect(() => {
-    if (!shop?.id || messages.length === 0) return;
-    persistOwnerChatSnapshot(shop.id, messages, isStreaming);
-  }, [isStreaming, messages, shop?.id]);
-
-  useEffect(() => {
-    if (!shop?.id) return;
-
-    const intervalId = window.setInterval(() => {
-      const active = sessionStorage.getItem(ownerChatActiveKey(shop.id)) === "1";
-      if (!active) return;
-
-      try {
-        const raw = sessionStorage.getItem(ownerChatMessagesKey(shop.id));
-        if (!raw) return;
-        const parsed: ChatMessage[] = JSON.parse(raw);
-        if (parsed.length > 0) {
-          setMessages(parsed);
-          setIsStreaming(true);
-        }
-      } catch {
-        // Ignore malformed session snapshots.
-      }
-    }, 1000);
-
-    return () => window.clearInterval(intervalId);
-  }, [shop?.id]);
-
-  // ── New chat ────────────────────────────────────────────────────────────
-  const [showNewChatDialog, setShowNewChatDialog] = useState(false);
-  const [isResettingChat, setIsResettingChat] = useState(false);
-
-  const handleNewChatConfirm = useCallback(async () => {
-    if (!shop?.id) return;
-    setIsResettingChat(true);
-    try {
-      const authToken = token || localStorage.getItem("token");
-      await fetch(`${apiBaseUrl}/v2/agent/reset-conversation?shop_id=${shop.id}`, {
-        method: "POST",
-        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-      });
-    } catch {
-      // Best-effort — clear locally even if API fails
-    } finally {
-      setIsResettingChat(false);
-    }
-    // Clear persisted messages and reset state
-    try {
-      sessionStorage.removeItem(ownerChatMessagesKey(shop.id));
-      sessionStorage.removeItem(ownerChatActiveKey(shop.id));
-    } catch {
-      // ignore
-    }
-    historyLoadedForRef.current = null;
-    setMessages([]);
-    setShowNewChatDialog(false);
-  }, [shop?.id, token]);
-
 
   const briefingQuery = useOwnerBriefingQuery(shop?.id);
   const pendingQuery = usePendingApprovalsQuery(shop?.id);
@@ -438,20 +261,51 @@ const OwnerDashboardPage: React.FC = () => {
     ]);
   }, []);
 
-  const commitMessages = useCallback(
-    (updater: (current: ChatMessage[]) => ChatMessage[], active = false) => {
-      const next = updater(messagesRef.current);
-      messagesRef.current = next;
-      if (shop?.id) {
-        persistOwnerChatSnapshot(shop.id, next, active);
-      }
-      if (mountedRef.current) {
-        setMessages(next);
-      }
-      return next;
-    },
-    [shop?.id],
-  );
+  const appendSystemMessage = useCallback((content: string, agent?: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: toId("msg_system"),
+        role: "system",
+        content,
+        status: "done",
+        timestamp: nowIso(),
+        agent,
+      },
+    ]);
+  }, []);
+
+  const prependInsightItem = useCallback((_item: InsightItem) => {
+    // The dashboard action rail does not render the full inbox insight stack.
+    // Approval outcomes are still reflected through system messages, feed events,
+    // and refreshed briefing/pending data.
+  }, []);
+
+  const refreshPendingApprovals = useCallback(async () => {
+    if (!shop?.id) return;
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.pending(shop.id) });
+  }, [queryClient, shop?.id]);
+
+  const refreshBriefing = useCallback(async () => {
+    if (!shop?.id) return;
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.briefing(shop.id) });
+  }, [queryClient, shop?.id]);
+
+  const refreshFeed = useCallback(async () => {
+    if (!shop?.id) return;
+    await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop.id) });
+  }, [queryClient, shop?.id]);
+
+  const { handleApprovalDecision: submitApprovalDecision, isApproving } = useApprovalDecisions({
+    shopId: shop?.id,
+    addFeedEvent,
+    appendSystemMessage,
+    prependInsightItem,
+    refreshPendingApprovals,
+    refreshBriefing,
+    refreshFeed,
+    setError: setDashboardError,
+  });
 
   const pendingApprovals = useMemo(() => {
     const merged = [...streamedPendingApprovals, ...(pendingQuery.data || [])];
@@ -464,6 +318,40 @@ const OwnerDashboardPage: React.FC = () => {
     });
     return Array.from(deduped.values());
   }, [pendingQuery.data, streamedPendingApprovals]);
+
+  const handleAgentActionDecision = useCallback(
+    async (approval: PendingApproval, approved: boolean) => {
+      const succeeded = await submitApprovalDecision(approval, approved);
+      if (!succeeded) return false;
+
+      setStreamedPendingApprovals((prev) =>
+        prev.filter((item) => {
+          if (approval.action_id && item.action_id) {
+            return item.action_id !== approval.action_id;
+          }
+          return item.action !== approval.action || item.shop_id !== approval.shop_id;
+        }),
+      );
+      setMessages((prev) =>
+        prev.map((message) => {
+          const pendingAction = message.pendingAction;
+          if (!pendingAction) return message;
+          const sameActionId = approval.action_id && pendingAction.action_id === approval.action_id;
+          const sameFallbackAction =
+            !approval.action_id &&
+            pendingAction.action === approval.action &&
+            pendingAction.shop_id === approval.shop_id;
+
+          return sameActionId || sameFallbackAction
+            ? { ...message, pendingAction: undefined }
+            : message;
+        }),
+      );
+
+      return true;
+    },
+    [submitApprovalDecision],
+  );
 
   const displayedFeedEvents = useMemo(() => {
     const merged = [...localFeedEvents, ...(feedQuery.data || [])];
@@ -536,96 +424,6 @@ const OwnerDashboardPage: React.FC = () => {
     [addFeedEvent, queryClient, shop?.id],
   );
 
-  const appendSystemMessage = useCallback(
-    (content: string, _agent?: string) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: toId("msg_system"),
-          role: "system" as const,
-          content,
-          status: "done" as const,
-          timestamp: nowIso(),
-        },
-      ]);
-    },
-    [],
-  );
-
-  const { handleApprovalDecision, isApproving } = useApprovalDecisions({
-    shopId: shop?.id,
-    addFeedEvent,
-    appendSystemMessage,
-    prependInsightItem: (_item: InsightItem) => {},
-    refreshPendingApprovals: async () => {
-      if (shop?.id) {
-        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.pending(shop.id) });
-      }
-    },
-    refreshBriefing: async () => {
-      if (shop?.id) {
-        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.briefing(shop.id) });
-      }
-    },
-    refreshFeed: async () => {
-      if (shop?.id) {
-        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop.id) });
-      }
-    },
-    setError: setDashboardError,
-  });
-
-  const handleApprovalTaskClick = useCallback(
-    (actionId: string) => {
-      const approval =
-        pendingApprovals.find((item) => item.action_id === actionId) ||
-        displayedFeedEvents.reduce<PendingApproval | undefined>((match, event) => {
-          if (match || event.type !== "approval_required") {
-            return match;
-          }
-          const payload =
-            event.payload && typeof event.payload === "object"
-              ? (event.payload as Record<string, unknown>)
-              : null;
-          return payload?.action_id === actionId
-            ? normalizePendingApproval(payload as Record<string, any>, shop?.id || 0)
-            : undefined;
-        }, undefined);
-      if (!approval) {
-        const el = document.querySelector(`[data-approval-id="${actionId}"]`);
-        el?.scrollIntoView({ behavior: "smooth", block: "center" });
-        return;
-      }
-
-      setMessages((prev) => {
-        const alreadyExists = prev.some(
-          (message) => message.pendingAction?.action_id && message.pendingAction.action_id === actionId,
-        );
-        if (alreadyExists) {
-          return prev;
-        }
-
-        return [
-          ...prev,
-          {
-            id: toId("msg_approval_task"),
-            role: "assistant" as const,
-            content: "Approval request opened from the Task Board.",
-            status: "done" as const,
-            timestamp: nowIso(),
-            pendingAction: approval,
-            thinkingComplete: true,
-          },
-        ];
-      });
-
-      window.setTimeout(() => {
-        const el = document.querySelector(`[data-approval-id="${actionId}"]`);
-        el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 50);
-    },
-    [displayedFeedEvents, pendingApprovals, shop?.id],
-  );
 
   const handleSend = useCallback(
     async ({ text, attachments = [] }: AgentChatSendPayload) => {
@@ -650,35 +448,31 @@ const OwnerDashboardPage: React.FC = () => {
       const shouldRequestAssistantResponse = Boolean(messageText);
       const assistantMessageId = shouldRequestAssistantResponse ? toId("msg_assistant") : null;
 
-      commitMessages(
-        (prev) => [
-          ...prev,
-          {
-            id: toId("msg_user"),
-            role: "user",
-            content: messageText,
-            status: "done",
-            timestamp: nowIso(),
-            attachments,
-          },
-          ...(assistantMessageId
-            ? [
-                {
-                  id: assistantMessageId,
-                  role: "assistant" as const,
-                  content: "",
-                  status: "streaming" as const,
-                  timestamp: nowIso(),
-                  processingStartedAt: nowIso(),
-                  retryMessage: messageText,
-                  thinkingSteps: [],
-                  thinkingComplete: false,
-                },
-              ]
-            : []),
-        ],
-        Boolean(assistantMessageId),
-      );
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: toId("msg_user"),
+          role: "user",
+          content: messageText,
+          status: "done",
+          timestamp: nowIso(),
+          attachments,
+        },
+        ...(assistantMessageId
+          ? [
+              {
+                id: assistantMessageId,
+                role: "assistant" as const,
+                content: "",
+                status: "streaming" as const,
+                timestamp: nowIso(),
+                retryMessage: messageText,
+                thinkingSteps: [],
+                thinkingComplete: false,
+              },
+            ]
+          : []),
+      ]);
 
       addFeedEvent({
         type: "chat",
@@ -729,23 +523,14 @@ const OwnerDashboardPage: React.FC = () => {
 
       setIsStreaming(true);
 
-      // Create a fresh AbortController for this stream.  Any previous stream
-      // (e.g. rapid send) is cancelled first.
-      if (activeStreamAbortRef.current) {
-        activeStreamAbortRef.current.abort();
-      }
-      const abortController = new AbortController();
-      activeStreamAbortRef.current = abortController;
-
       let streamEndedWithDone = false;
       let streamTerminalStatus: "completed" | "error" | null = null;
       let streamErrorDetail: string | null = null;
-        let sawRenderableAssistantContent = false;
+      let sawRenderableAssistantContent = false;
 
-        try {
+      try {
         const response = await fetch(`${apiBaseUrl}/v2/agent/chat/stream`, {
           method: "POST",
-          signal: abortController.signal,
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -766,9 +551,8 @@ const OwnerDashboardPage: React.FC = () => {
         let buffer = "";
 
         const updateAssistantMessage = (updater: (message: ChatMessage) => ChatMessage) => {
-          commitMessages(
-            (prev) => prev.map((msg) => (msg.id === assistantMessageId ? updater(msg) : msg)),
-            true,
+          setMessages((prev) =>
+            prev.map((msg) => (msg.id === assistantMessageId ? updater(msg) : msg))
           );
         };
 
@@ -916,33 +700,20 @@ const OwnerDashboardPage: React.FC = () => {
 
           if (eventType === "approval_required") {
             const approval = normalizePendingApproval((eventJson.details || eventJson) as Record<string, any>, shop.id);
+            updateAssistantMessage((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    pendingAction: approval,
+                    thinkingComplete: true,
+                  }
+                : msg,
+            );
             setStreamedPendingApprovals((prev) => {
               const exists = prev.some((item) => item.action_id && item.action_id === approval.action_id);
               if (exists) return prev;
               return [approval, ...prev];
             });
-            // Inject a standalone approval card message into chat
-            commitMessages(
-              (prev) => {
-                const alreadyExists = prev.some(
-                  (m) => m.pendingAction?.action_id && m.pendingAction.action_id === approval.action_id,
-                );
-                if (alreadyExists) return prev;
-                return [
-                  ...prev,
-                  {
-                    id: toId("msg_approval"),
-                    role: "assistant" as const,
-                    content: "",
-                    status: "done" as const,
-                    timestamp: nowIso(),
-                    pendingAction: approval,
-                    thinkingComplete: true,
-                  },
-                ];
-              },
-              true,
-            );
             addFeedEvent({
               type: "approval_required",
               title: "Approval required",
@@ -1078,29 +849,6 @@ const OwnerDashboardPage: React.FC = () => {
           queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.feed(shop.id) }),
         ]);
       } catch (error) {
-        // An AbortError means the component unmounted or the user navigated
-        // away — not a real failure.  The partial state has already been
-        // persisted to sessionStorage by the save effect; just mark done.
-        if (error instanceof DOMException && error.name === "AbortError") {
-          commitMessages(
-            (prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? {
-                      ...msg,
-                      status: "done",
-                      thinkingComplete: true,
-                      processingDuration: msg.processingStartedAt
-                        ? Date.now() - Date.parse(msg.processingStartedAt)
-                        : undefined,
-                    }
-                  : msg
-              ),
-            false,
-          );
-          setIsStreaming(false);
-          return;
-        }
         const detail = normalizeStreamErrorDetail(error, STREAM_RETRY_MESSAGE);
         streamTerminalStatus = "error";
         streamErrorDetail = streamErrorDetail || detail;
@@ -1110,9 +858,8 @@ const OwnerDashboardPage: React.FC = () => {
           title: "Chat stream failed",
           description: detail,
         });
-        commitMessages(
-          (prev) => prev.map((msg) => (msg.id === assistantMessageId ? { ...msg, status: "error" } : msg)),
-          false,
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === assistantMessageId ? { ...msg, status: "error" } : msg))
         );
       } finally {
         if (!streamEndedWithDone && streamTerminalStatus === null) {
@@ -1127,53 +874,52 @@ const OwnerDashboardPage: React.FC = () => {
           });
         }
 
-        commitMessages(
-          (prev) => {
-            const target = prev.find((msg) => msg.id === assistantMessageId);
-            if (!target) return prev;
+        setMessages((prev) => {
+          const target = prev.find((msg) => msg.id === assistantMessageId);
+          if (!target) return prev;
 
-            const contentEmpty = !String(target.content || "").trim();
-            const hasRichPayload = Boolean(
-              (target.charts && target.charts.length > 0) ||
-                (target.tables && target.tables.length > 0) ||
-                (target.files && target.files.length > 0)
-            );
+          const contentEmpty = !String(target.content || "").trim();
+          const hasRichPayload = Boolean(
+            (target.charts && target.charts.length > 0) ||
+              (target.tables && target.tables.length > 0) ||
+              (target.files && target.files.length > 0)
+          );
 
-            if (streamTerminalStatus === "error") {
-              return prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? {
-                      ...msg,
-                      content: contentEmpty && !hasRichPayload ? (streamErrorDetail || STREAM_RETRY_MESSAGE) : msg.content,
-                      status: "error",
-                      thinkingComplete: true,
-                      processingDuration: msg.processingStartedAt
-                        ? Date.now() - Date.parse(msg.processingStartedAt)
-                        : undefined,
-                    }
-                  : msg
-              );
-            }
-
+          if (streamTerminalStatus === "error") {
             return prev.map((msg) =>
               msg.id === assistantMessageId
                 ? {
                     ...msg,
-                    status: streamEndedWithDone || streamTerminalStatus === "completed" ? "done" : msg.status,
+                    content: contentEmpty && !hasRichPayload ? (streamErrorDetail || STREAM_RETRY_MESSAGE) : msg.content,
+                    status: "error",
                     thinkingComplete: true,
-                    processingDuration: msg.processingStartedAt
-                      ? Date.now() - Date.parse(msg.processingStartedAt)
-                      : undefined,
                   }
                 : msg
             );
-          },
-          false,
-        );
+          }
+
+          return prev.map((msg) =>
+            msg.id === assistantMessageId
+              ? { ...msg, status: streamEndedWithDone || streamTerminalStatus === "completed" ? "done" : msg.status, thinkingComplete: true }
+              : msg
+          );
+        });
         setIsStreaming(false);
       }
     },
-    [addFeedEvent, commitMessages, queryClient, shop?.id, token, uploadDocumentsToKnowledgeBase]
+    [addFeedEvent, queryClient, shop?.id, shopLoading, token, uploadDocumentsToKnowledgeBase]
+  );
+
+  const handleDiscussAction = useCallback(
+    (task: AgentTaskBoardExternalTask) => {
+      const approval = task.approval;
+      const prompt = approval
+        ? `Review the pending approval '${approval.title || approval.action}'. Reason: ${approval.reason || task.description || "not provided"}. Expected impact: ${approval.expected_impact || "not provided"}. Tell me whether I should approve it.`
+        : `Help me review this agent action: ${task.title}. ${task.description}`;
+
+      void handleSend({ text: prompt });
+    },
+    [handleSend],
   );
 
   const contextPromptSections = useMemo<AgentChatPromptSection[]>(() => {
@@ -1312,6 +1058,18 @@ const OwnerDashboardPage: React.FC = () => {
   const taskBoardTasks = useMemo<AgentTaskBoardExternalTask[]>(() => {
     const tasks = new Map<string, AgentTaskBoardExternalTask>();
     const briefingActions = briefingQuery.data?.actions || [];
+    const decidedActionIds = new Set(
+      displayedFeedEvents
+        .filter((event) => event.type === "approval_decision")
+        .map((event) => {
+          const payload =
+            event.payload && typeof event.payload === "object"
+              ? (event.payload as Record<string, unknown>)
+              : {};
+          return typeof payload.action_id === "string" ? payload.action_id : undefined;
+        })
+        .filter((actionId): actionId is string => Boolean(actionId)),
+    );
 
     pendingApprovals.forEach((approval, index) => {
       const matchingEvent = approval.action_id
@@ -1338,22 +1096,19 @@ const OwnerDashboardPage: React.FC = () => {
         description:
           approval.summary ||
           approval.reason ||
-          approval.expected_impact ||
           `Action '${formatTaskActionLabel(approval.action)}' is waiting for owner approval.`,
         source: "approval",
         assignee: "Owner",
-        createdAt:
-          approval.created_at ||
-          matchingEvent?.timestamp ||
-          briefingQuery.data?.generated_at ||
-          FALLBACK_TASK_TIMESTAMP,
+        createdAt: matchingEvent?.timestamp || briefingQuery.data?.generated_at || FALLBACK_TASK_TIMESTAMP,
         actionId: approval.action_id,
-        detailLines: buildApprovalTaskDetails(approval),
+        status: "needs_decision",
+        agent: approval.category || approval.action,
+        approval,
       });
     });
 
     displayedFeedEvents.forEach((event, index) => {
-      if (event.type !== "approval_required") {
+      if (event.type !== "approval_required" && event.type !== "approval_decision") {
         return;
       }
 
@@ -1362,7 +1117,13 @@ const OwnerDashboardPage: React.FC = () => {
           ? (event.payload as Record<string, unknown>)
           : {};
       const actionId = typeof payload.action_id === "string" ? payload.action_id : undefined;
-      const taskId = actionId || `feed_task_${event.id || index}`;
+      if (event.type === "approval_required" && actionId && decidedActionIds.has(actionId)) {
+        return;
+      }
+      const taskId =
+        event.type === "approval_decision"
+          ? `decision_task_${actionId || event.id || index}`
+          : actionId || `feed_task_${event.id || index}`;
 
       if (tasks.has(taskId)) {
         return;
@@ -1376,19 +1137,15 @@ const OwnerDashboardPage: React.FC = () => {
           "Approval task",
         description:
           (typeof payload.summary === "string" && payload.summary.trim()) ||
-          (typeof payload.expected_impact === "string" && payload.expected_impact.trim()) ||
-          (typeof payload.reason === "string" && payload.reason.trim()) ||
           event.description ||
           "Agent approval task",
-        source: actionId ? "approval" : "agent",
+        source: "agent",
         assignee: "Owner",
-        createdAt:
-          (typeof payload.created_at === "string" && payload.created_at.trim()) ||
-          event.timestamp ||
-          briefingQuery.data?.generated_at ||
-          FALLBACK_TASK_TIMESTAMP,
+        createdAt: event.timestamp || briefingQuery.data?.generated_at || FALLBACK_TASK_TIMESTAMP,
         actionId,
-        detailLines: buildApprovalTaskDetails(normalizePendingApproval(payload, shop?.id || 0)),
+        status: event.type === "approval_decision" ? "done" : "needs_decision",
+        done: event.type === "approval_decision",
+        agent: typeof payload.agent === "string" ? payload.agent : "supervisor",
       });
     });
 
@@ -1409,6 +1166,7 @@ const OwnerDashboardPage: React.FC = () => {
         source: "agent",
         assignee: "Owner",
         createdAt: briefingQuery.data?.generated_at || FALLBACK_TASK_TIMESTAMP,
+        status: "recommended",
       });
     });
 
@@ -1418,102 +1176,65 @@ const OwnerDashboardPage: React.FC = () => {
   }, [briefingQuery.data?.actions, briefingQuery.data?.generated_at, displayedFeedEvents, pendingApprovals, shop?.id]);
 
   return (
-    <Box
-      sx={{
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        minHeight: 0,
-      }}
-    >
-      <Stack spacing={2} sx={{ flex: 1, minHeight: 0 }}>
-        {dashboardError && <Alert severity="error">{dashboardError}</Alert>}
-
-        {!shop?.id && !shopLoading && (
-          <Alert severity="warning">
-            No active shop selected. Choose a shop from the owner navigation bar before using the dashboard.
+    <div className="flex h-full min-h-0 w-full flex-col">
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
+        {dashboardError && (
+          <Alert variant="destructive">
+            <AlertDescription>{dashboardError}</AlertDescription>
           </Alert>
         )}
 
-        <Box
-          sx={{
-            display: "flex",
-            flex: 1,
-            minHeight: 0,
-          }}
-        >
+        {!shop?.id && !shopLoading && (
+          <Alert>
+            <AlertDescription>
+              No active shop selected. Choose a shop from the owner navigation bar before using the dashboard.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <div className="flex min-h-0 flex-1">
           <AgentChat
             messages={messages}
             isStreaming={isStreaming}
             isUploading={isUploadingDocuments}
             onSend={handleSend}
-            onApprovalDecision={handleApprovalDecision}
-            isApproving={isApproving}
             title="Hello there!"
             subtitle="How can I help you today?"
             promptSections={contextPromptSections}
-            header={
-              <Box sx={{ display: "flex", alignItems: "center", width: "100%" }}>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Header />
-                </Box>
-                <Tooltip title="New chat">
-                  <IconButton
-                    size="small"
-                    onClick={() => setShowNewChatDialog(true)}
-                    disabled={isStreaming || messages.length === 0}
-                    sx={{ flexShrink: 0, ml: 1 }}
-                    aria-label="Start new chat"
-                  >
-                    <AddCommentOutlinedIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-            }
+            header={<AgentWorkspaceHeader pendingCount={pendingApprovals.length} />}
             interactablesStorageKey={shop?.id ? `owner-dashboard-task-board:${shop.id}` : undefined}
+            isSubmittingApproval={isApproving}
+            onApprovalDecision={handleAgentActionDecision}
+            onDiscussApproval={(approval) =>
+              handleDiscussAction({
+                id: approval.action_id || `approval_${approval.action}`,
+                title: approval.title || formatTaskActionLabel(approval.action),
+                description:
+                  approval.summary ||
+                  approval.reason ||
+                  `Action '${formatTaskActionLabel(approval.action)}' is waiting for owner approval.`,
+                source: "approval",
+                assignee: "Owner",
+                createdAt: nowIso(),
+                actionId: approval.action_id,
+                status: "needs_decision",
+                agent: approval.category || approval.action,
+                approval,
+              })
+            }
             sidebar={
               <AgentTaskBoard
                 interactableId={`owner-task-board-${shop?.id || "default"}`}
                 externalTasks={taskBoardTasks}
-                onApprovalTaskClick={handleApprovalTaskClick}
+                isSubmittingDecision={isApproving}
+                onDecision={handleAgentActionDecision}
+                onDiscuss={handleDiscussAction}
               />
             }
           />
-        </Box>
-      </Stack>
-
-      {/* New chat confirmation dialog */}
-      <Dialog
-        open={showNewChatDialog}
-        onClose={() => !isResettingChat && setShowNewChatDialog(false)}
-        aria-labelledby="new-chat-dialog-title"
-      >
-        <DialogTitle id="new-chat-dialog-title">Start a new conversation?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            This will permanently delete your current conversation history. The AI will start
-            fresh with no memory of previous messages.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => setShowNewChatDialog(false)}
-            disabled={isResettingChat}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleNewChatConfirm}
-            color="error"
-            variant="contained"
-            disabled={isResettingChat}
-          >
-            {isResettingChat ? "Clearing…" : "Clear and start fresh"}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
+        </div>
+      </div>
+    </div>
   );
 };
 

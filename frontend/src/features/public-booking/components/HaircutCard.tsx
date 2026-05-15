@@ -1,259 +1,97 @@
 import React, { useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardActions,
-  Typography,
-  IconButton,
-  Box,
-  Rating,
-  Chip,
-  Link,
-  Collapse,
-  Alert,
-} from "@mui/material";
-import {
-  Phone as PhoneIcon,
-  Language as LanguageIcon,
-  ExpandMore as ExpandMoreIcon,
-} from "@mui/icons-material";
-import { styled } from "@mui/material/styles";
+import { ChevronDown, Globe, Phone, Star } from "lucide-react";
 import { HaircutService } from "../../../services/api";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 interface HaircutCardProps {
   haircut: HaircutService;
   onFavoriteRemoved?: (id: number) => void;
 }
 
-const ExpandMore = styled(IconButton)<{ expand: boolean }>(
-  ({ theme, expand }) => ({
-    transform: !expand ? "rotate(0deg)" : "rotate(180deg)",
-    marginLeft: "auto",
-    transition: theme.transitions.create("transform", {
-      duration: theme.transitions.duration.shortest,
-    }),
-  })
-);
-
-const HaircutCard: React.FC<HaircutCardProps> = ({
-  haircut,
-  onFavoriteRemoved,
-}) => {
+const HaircutCard: React.FC<HaircutCardProps> = ({ haircut }) => {
   const [expanded, setExpanded] = useState(false);
-
-  const handleExpandClick = () => {
-    setExpanded(!expanded);
-  };
+  const rating = Number(haircut.rating || 0);
+  const filledStars = Math.max(0, Math.min(5, Math.round(rating)));
 
   return (
-    <Card
-      elevation={0}
-      sx={{
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        border: '1px solid #EBEBEB',
-        overflow: 'hidden',
-        transition: 'all 0.3s ease-in-out',
-        '&:hover': {
-          transform: 'translateY(-4px)',
-          boxShadow: '0px 8px 24px rgba(0, 0, 0, 0.12)',
-          borderColor: 'transparent'
-        },
-      }}
-    >
-      {/* Header */}
-      <Box
-        sx={{
-          position: 'relative',
-          background: 'linear-gradient(135deg, rgba(255, 90, 95, 0.1) 0%, rgba(0, 166, 153, 0.05) 100%)',
-          p: 3,
-          pb: 2
-        }}
-      >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            mb: 2
-          }}
-        >
-          <Typography
-            variant="h6"
-            component="h2"
-            sx={{
-              fontWeight: 600,
-              fontSize: '1.25rem',
-              color: 'text.primary',
-              flexGrow: 1,
-              mr: 1
-            }}
-          >
-            {haircut.name}
-          </Typography>
-        </Box>
-
-        {/* Rating and Price */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Rating
-              value={haircut.rating}
-              precision={0.5}
-              readOnly
-              size="small"
-              sx={{ fontSize: '1.1rem' }}
-            />
-            <Typography
-              variant="body2"
-              sx={{
-                fontWeight: 500,
-                color: 'text.secondary',
-                ml: 0.5
-              }}
-            >
-              {haircut.rating}
-            </Typography>
-          </Box>
+    <Card className="flex h-full flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-lg">
+      <CardHeader className="bg-gradient-to-br from-primary/10 to-secondary/40">
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle className="text-xl leading-tight">{haircut.name}</CardTitle>
           {haircut.price_range && (
-            <Chip
-              label={haircut.price_range}
-              size="small"
-              sx={{
-                bgcolor: 'white',
-                color: 'primary.main',
-                fontWeight: 600,
-                border: '1px solid',
-                borderColor: 'primary.light'
-              }}
-            />
+            <Badge variant="outline" className="shrink-0 bg-background">
+              {haircut.price_range}
+            </Badge>
           )}
-        </Box>
-      </Box>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-0.5" aria-label={`Rating ${rating}`}>
+            {Array.from({ length: 5 }).map((_, index) => (
+              <Star
+                key={index}
+                className={cn(
+                  "size-4",
+                  index < filledStars ? "fill-primary text-primary" : "text-muted-foreground/40",
+                )}
+              />
+            ))}
+          </div>
+          <span className="font-medium">{rating || "New"}</span>
+        </div>
+      </CardHeader>
 
-      <CardContent sx={{ flexGrow: 1, pt: 2 }}>
-        {/* Location */}
-        <Box sx={{ mb: 2 }}>
-          <Typography
-            variant="body1"
-            sx={{
-              fontWeight: 500,
-              color: 'text.primary',
-              mb: 0.5
-            }}
-          >
-            {haircut.address}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {`${haircut.city}, ${haircut.state} ${haircut.zip_code}`}
-          </Typography>
-        </Box>
+      <CardContent className="flex flex-1 flex-col gap-4 pt-5">
+        <div>
+          <p className="font-medium">{haircut.address}</p>
+          <p className="text-sm text-muted-foreground">
+            {haircut.city}, {haircut.state} {haircut.zip_code}
+          </p>
+        </div>
 
-        {/* Contact Info */}
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+        <div className="flex flex-wrap gap-3 text-sm font-medium">
           {haircut.phone && (
-            <Link
-              href={`tel:${haircut.phone}`}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                textDecoration: 'none',
-                color: 'primary.main',
-                fontSize: '0.875rem',
-                fontWeight: 500,
-                '&:hover': {
-                  textDecoration: 'underline'
-                }
-              }}
-            >
-              <PhoneIcon sx={{ fontSize: 16, mr: 0.5 }} />
+            <a className="inline-flex items-center gap-1.5 text-primary hover:underline" href={`tel:${haircut.phone}`}>
+              <Phone className="size-4" />
               {haircut.phone}
-            </Link>
+            </a>
           )}
           {haircut.website && (
-            <Link
+            <a
+              className="inline-flex items-center gap-1.5 text-primary hover:underline"
               href={haircut.website}
               target="_blank"
               rel="noopener noreferrer"
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                textDecoration: 'none',
-                color: 'secondary.main',
-                fontSize: '0.875rem',
-                fontWeight: 500,
-                '&:hover': {
-                  textDecoration: 'underline'
-                }
-              }}
             >
-              <LanguageIcon sx={{ fontSize: 16, mr: 0.5 }} />
+              <Globe className="size-4" />
               Visit Website
-            </Link>
+            </a>
           )}
-        </Box>
+        </div>
+
+        {expanded && haircut.hours && (
+          <div className="rounded-lg border bg-muted/40 p-3">
+            <p className="text-sm font-semibold">Hours of Operation</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">{haircut.hours}</p>
+          </div>
+        )}
       </CardContent>
 
-      {/* Expandable section */}
       {haircut.hours && (
-        <>
-          <CardActions
-            disableSpacing
-            sx={{
-              borderTop: '1px solid #F0F0F0',
-              px: 3,
-              py: 1.5
-            }}
+        <CardFooter className="border-t p-3">
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full justify-between"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
           >
-            <Typography
-              variant="body2"
-              sx={{
-                fontWeight: 500,
-                color: 'text.secondary',
-                flexGrow: 1
-              }}
-            >
-              Hours & Details
-            </Typography>
-            <ExpandMore
-              expand={expanded}
-              onClick={handleExpandClick}
-              aria-expanded={expanded}
-              aria-label="show more"
-              sx={{
-                color: 'text.secondary',
-                '&:hover': {
-                  bgcolor: 'rgba(0, 0, 0, 0.04)'
-                }
-              }}
-            >
-              <ExpandMoreIcon />
-            </ExpandMore>
-          </CardActions>
-
-          <Collapse in={expanded} timeout="auto" unmountOnExit>
-            <CardContent sx={{ pt: 0, borderTop: '1px solid #F0F0F0' }}>
-              <Typography
-                variant="subtitle2"
-                sx={{
-                  fontWeight: 600,
-                  color: 'text.primary',
-                  mb: 1
-                }}
-              >
-                Hours of Operation
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  color: 'text.secondary',
-                  lineHeight: 1.6
-                }}
-              >
-                {haircut.hours}
-              </Typography>
-            </CardContent>
-          </Collapse>
-        </>
+            Hours & Details
+            <ChevronDown data-icon="inline-end" className={cn("transition-transform", expanded && "rotate-180")} />
+          </Button>
+        </CardFooter>
       )}
     </Card>
   );

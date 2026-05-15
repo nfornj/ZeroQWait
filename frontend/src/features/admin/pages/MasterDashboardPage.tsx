@@ -1,492 +1,424 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from "react";
 import {
-    Box,
-    Container,
-    Grid,
-    Paper,
-    Typography,
-    Card,
-    CardContent,
-    Divider,
-    List,
-    ListItem,
-    ListItemText,
-    ListItemAvatar,
-    Avatar,
-    Chip,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
-    CircularProgress,
-    Alert,
-    Tabs,
-    Tab,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    Button,
-    TextField,
-    Select,
-    MenuItem,
-    FormControl,
-    InputLabel,
-    IconButton,
-    Tooltip,
-} from '@mui/material';
+  CheckCircle,
+  Store,
+  TrendingUp,
+  Users,
+  X,
+} from "lucide-react";
+import axios from "axios";
+
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-    Store as ShopIcon,
-    People as PeopleIcon,
-    CheckCircle as CheckIcon,
-    TrendingUp as TrendingIcon,
-    AccessTime as TimeIcon,
-    Feedback as FeedbackIcon,
-    Close as CloseIcon,
-    OpenInNew as OpenInNewIcon,
-} from '@mui/icons-material';
-import axios from 'axios';
-import { constructShopUrl } from '../../../utils/domainUtils';
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { constructShopUrl } from "../../../utils/domainUtils";
 
 interface DashboardStats {
-    total_shops: number;
-    active_shops: number;
-    total_users: number;
-    real_time: {
-        active_customers: number;
-        completed_today: number;
-    };
+  total_shops: number;
+  active_shops: number;
+  total_users: number;
+  real_time: {
+    active_customers: number;
+    completed_today: number;
+  };
 }
 
 interface ShopStatus {
-    id: number;
-    name: number;
-    slug: string;
-    is_active: boolean;
-    waiting_count: number;
-    last_activity: string | null;
+  id: number;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  waiting_count: number;
+  last_activity: string | null;
 }
 
 interface FeedbackItem {
-    id: number;
-    ticket_id: string;
-    session_id: string | null;
-    name: string | null;
-    email: string | null;
-    description: string;
-    page_context: string | null;
-    screenshot_filename: string | null;
-    status: 'open' | 'reviewed' | 'closed';
-    admin_notes: string | null;
-    submitted_at: string;
-    updated_at: string;
+  id: number;
+  ticket_id: string;
+  session_id: string | null;
+  name: string | null;
+  email: string | null;
+  description: string;
+  page_context: string | null;
+  screenshot_filename: string | null;
+  status: "open" | "reviewed" | "closed";
+  admin_notes: string | null;
+  submitted_at: string;
+  updated_at: string;
 }
 
-const STATUS_COLORS: Record<string, 'warning' | 'info' | 'default' | 'error'> = {
-    open: 'warning',
-    reviewed: 'info',
-    closed: 'default',
+const statusVariant = (status: FeedbackItem["status"]): React.ComponentProps<typeof Badge>["variant"] => {
+  if (status === "open") return "secondary";
+  if (status === "reviewed") return "default";
+  return "outline";
 };
 
 const MasterDashboardPage: React.FC = () => {
-    const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState(0);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [shops, setShops] = useState<ShopStatus[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [selectedFeedback, setSelectedFeedback] = useState<FeedbackItem | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [editStatus, setEditStatus] = useState<string>("open");
+  const [editNotes, setEditNotes] = useState<string>("");
+  const [saving, setSaving] = useState(false);
 
-    // ---- Overview state ----
-    const [stats, setStats] = useState<DashboardStats | null>(null);
-    const [shops, setShops] = useState<ShopStatus[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const authHeaders = () => ({
+    Authorization: `Bearer ${localStorage.getItem("token")}`,
+  });
 
-    // ---- Feedback state ----
-    const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([]);
-    const [feedbackLoading, setFeedbackLoading] = useState(false);
-    const [feedbackError, setFeedbackError] = useState<string | null>(null);
-    const [selectedFeedback, setSelectedFeedback] = useState<FeedbackItem | null>(null);
-    const [detailOpen, setDetailOpen] = useState(false);
-    const [editStatus, setEditStatus] = useState<string>('open');
-    const [editNotes, setEditNotes] = useState<string>('');
-    const [saving, setSaving] = useState(false);
+  const fetchData = async () => {
+    try {
+      const [statsRes, shopsRes] = await Promise.all([
+        axios.get("/admin/dashboard-stats", { headers: authHeaders() }),
+        axios.get("/admin/shops-status", { headers: authHeaders() }),
+      ]);
+      setStats(statsRes.data);
+      setShops(shopsRes.data);
+      setError(null);
+      setLastUpdated(new Date());
+    } catch (err: any) {
+      if (loading) {
+        setError(err.response?.data?.detail || "Failed to fetch dashboard data");
+      }
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const authHeaders = () => ({
-        Authorization: `Bearer ${localStorage.getItem('token')}`,
-    });
+  const fetchFeedbacks = useCallback(async () => {
+    setFeedbackLoading(true);
+    try {
+      const res = await axios.get("/api/chat-feedback/", { headers: authHeaders() });
+      setFeedbacks(res.data);
+      setFeedbackError(null);
+    } catch (err: any) {
+      setFeedbackError(err.response?.data?.detail || "Failed to load feedback");
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }, []);
 
-    const fetchData = async () => {
-        try {
-            const [statsRes, shopsRes] = await Promise.all([
-                axios.get('/admin/dashboard-stats', { headers: authHeaders() }),
-                axios.get('/admin/shops-status', { headers: authHeaders() }),
-            ]);
-            setStats(statsRes.data);
-            setShops(shopsRes.data);
-            setError(null);
-            setLastUpdated(new Date());
-        } catch (err: any) {
-            if (loading) {
-                setError(err.response?.data?.detail || 'Failed to fetch dashboard data');
-            }
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
+  useEffect(() => {
+    let isMounted = true;
+    const poll = async () => {
+      if (!isMounted) return;
+      await fetchData();
+      if (isMounted) setTimeout(poll, 2000);
     };
-
-    const fetchFeedbacks = useCallback(async () => {
-        setFeedbackLoading(true);
-        try {
-            const res = await axios.get('/api/chat-feedback/', { headers: authHeaders() });
-            setFeedbacks(res.data);
-            setFeedbackError(null);
-        } catch (err: any) {
-            setFeedbackError(err.response?.data?.detail || 'Failed to load feedback');
-        } finally {
-            setFeedbackLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        let isMounted = true;
-        const poll = async () => {
-            if (!isMounted) return;
-            await fetchData();
-            if (isMounted) setTimeout(poll, 2000);
-        };
-        poll();
-        return () => { isMounted = false; };
-    }, []);
-
-    useEffect(() => {
-        if (activeTab === 1) fetchFeedbacks();
-    }, [activeTab, fetchFeedbacks]);
-
-    const openDetail = (fb: FeedbackItem) => {
-        setSelectedFeedback(fb);
-        setEditStatus(fb.status);
-        setEditNotes(fb.admin_notes ?? '');
-        setDetailOpen(true);
+    poll();
+    return () => {
+      isMounted = false;
     };
+  }, []);
 
-    const saveDetail = async () => {
-        if (!selectedFeedback) return;
-        setSaving(true);
-        try {
-            await axios.patch(
-                `/api/chat-feedback/${selectedFeedback.ticket_id}`,
-                { status: editStatus, admin_notes: editNotes },
-                { headers: authHeaders() },
-            );
-            setDetailOpen(false);
-            fetchFeedbacks();
-        } catch (err: any) {
-            alert(err.response?.data?.detail || 'Save failed');
-        } finally {
-            setSaving(false);
-        }
-    };
+  useEffect(() => {
+    if (activeTab === "feedback") fetchFeedbacks();
+  }, [activeTab, fetchFeedbacks]);
 
-    if (loading && !stats) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 10 }}><CircularProgress /></Box>;
+  const openDetail = (feedback: FeedbackItem) => {
+    setSelectedFeedback(feedback);
+    setEditStatus(feedback.status);
+    setEditNotes(feedback.admin_notes ?? "");
+    setDetailOpen(true);
+  };
 
+  const saveDetail = async () => {
+    if (!selectedFeedback) return;
+    setSaving(true);
+    try {
+      await axios.patch(
+        `/api/chat-feedback/${selectedFeedback.ticket_id}`,
+        { status: editStatus, admin_notes: editNotes },
+        { headers: authHeaders() },
+      );
+      setDetailOpen(false);
+      fetchFeedbacks();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading && !stats) {
     return (
-        <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-            {/* Header */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Box>
-                    <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'primary.main', display: 'flex', alignItems: 'center', gap: 2 }}>
-                        Corporate Master Dashboard
-                        <Chip
-                            label="LIVE"
-                            color="success"
-                            size="small"
-                            sx={{
-                                fontWeight: 'bold',
-                                animation: 'pulse 1.5s infinite',
-                                '@keyframes pulse': { '0%': { opacity: 1 }, '50%': { opacity: 0.5 }, '100%': { opacity: 1 } },
-                            }}
-                        />
-                    </Typography>
-                    <Typography variant="subtitle1" color="text.secondary">
-                        Real-time platform overview and shop performance
-                    </Typography>
-                </Box>
-                {lastUpdated && (
-                    <Typography variant="caption" color="text.secondary">
-                        Last updated: {lastUpdated.toLocaleTimeString()}
-                    </Typography>
-                )}
-            </Box>
-
-            {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-            {/* Tabs */}
-            <Tabs
-                value={activeTab}
-                onChange={(_, v) => setActiveTab(v)}
-                sx={{ mb: 3, borderBottom: '1px solid', borderColor: 'divider' }}
-            >
-                <Tab label="Overview" />
-                <Tab label="Feedback" icon={feedbacks.filter(f => f.status === 'open').length > 0 ?
-                    <Chip label={feedbacks.filter(f => f.status === 'open').length} size="small" color="warning" sx={{ ml: 0.5 }} /> : undefined}
-                    iconPosition="end"
-                />
-            </Tabs>
-
-            {/* ====== TAB 0: OVERVIEW ====== */}
-            {activeTab === 0 && (
-                <>
-                    {/* Top Metrics */}
-                    <Grid container spacing={3} sx={{ mb: 4 }}>
-                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                            <MetricCard title="Total Shops" value={stats?.total_shops || 0} icon={<ShopIcon color="primary" />} />
-                        </Grid>
-                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                            <MetricCard title="Active Customers" value={stats?.real_time.active_customers || 0} icon={<PeopleIcon color="secondary" />} />
-                        </Grid>
-                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                            <MetricCard title="Completed Today" value={stats?.real_time.completed_today || 0} icon={<CheckIcon sx={{ color: '#4caf50' }} />} />
-                        </Grid>
-                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                            <MetricCard title="Platform Load" value={`${stats?.active_shops || 0} Active`} icon={<TrendingIcon color="info" />} />
-                        </Grid>
-                    </Grid>
-
-                    {/* Live Shop Status */}
-                    <Typography variant="h5" gutterBottom sx={{ mt: 4, mb: 2 }}>Live Shop Feed</Typography>
-                    <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 2 }}>
-                        <Table>
-                            <TableHead sx={{ bgcolor: 'grey.50' }}>
-                                <TableRow>
-                                    <TableCell sx={{ fontWeight: 'bold' }}>Shop Name</TableCell>
-                                    <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
-                                    <TableCell sx={{ fontWeight: 'bold' }}>Waiting</TableCell>
-                                    <TableCell sx={{ fontWeight: 'bold' }}>Last Activity</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {shops.map((shop) => (
-                                    <TableRow
-                                        key={shop.id}
-                                        hover
-                                        onClick={() => { window.location.href = constructShopUrl(shop.slug); }}
-                                        sx={{ cursor: 'pointer' }}
-                                    >
-                                        <TableCell>
-                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                <Typography variant="body1" sx={{ fontWeight: 500 }}>{shop.name}</Typography>
-                                                <Typography variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>@{shop.slug}</Typography>
-                                            </Box>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Chip label={shop.is_active ? 'Online' : 'Offline'} size="small" color={shop.is_active ? 'success' : 'default'} variant="outlined" />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                <Typography variant="body1" sx={{ mr: 1, fontWeight: 600 }}>{shop.waiting_count}</Typography>
-                                                <Typography variant="caption" color="text.secondary">customers</Typography>
-                                            </Box>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Typography variant="body2" color="text.secondary">
-                                                {shop.last_activity ? new Date(shop.last_activity).toLocaleTimeString() : 'No recent activity'}
-                                            </Typography>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
-                </>
-            )}
-
-            {/* ====== TAB 1: FEEDBACK ====== */}
-            {activeTab === 1 && (
-                <>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                        <Typography variant="h5">User Feedback</Typography>
-                        <Button size="small" variant="outlined" onClick={fetchFeedbacks} disabled={feedbackLoading}>
-                            Refresh
-                        </Button>
-                    </Box>
-
-                    {feedbackError && <Alert severity="error" sx={{ mb: 2 }}>{feedbackError}</Alert>}
-
-                    {feedbackLoading && feedbacks.length === 0 ? (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>
-                    ) : feedbacks.length === 0 ? (
-                        <Alert severity="info">No feedback submissions yet.</Alert>
-                    ) : (
-                        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 2 }}>
-                            <Table size="small">
-                                <TableHead sx={{ bgcolor: 'grey.50' }}>
-                                    <TableRow>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Ticket ID</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Name</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Description</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Date</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Screenshot</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {feedbacks.map((fb) => (
-                                        <TableRow
-                                            key={fb.id}
-                                            hover
-                                            onClick={() => openDetail(fb)}
-                                            sx={{ cursor: 'pointer' }}
-                                        >
-                                            <TableCell>
-                                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
-                                                    {fb.ticket_id}
-                                                </Typography>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Typography variant="body2">{fb.name || <em>anonymous</em>}</Typography>
-                                                {fb.email && <Typography variant="caption" color="text.secondary">{fb.email}</Typography>}
-                                            </TableCell>
-                                            <TableCell sx={{ maxWidth: 260 }}>
-                                                <Typography variant="body2" noWrap title={fb.description}>
-                                                    {fb.description}
-                                                </Typography>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Chip
-                                                    label={fb.status}
-                                                    size="small"
-                                                    color={STATUS_COLORS[fb.status] ?? 'default'}
-                                                    variant="outlined"
-                                                />
-                                            </TableCell>
-                                            <TableCell>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    {new Date(fb.submitted_at).toLocaleDateString()}
-                                                </Typography>
-                                            </TableCell>
-                                            <TableCell>
-                                                {fb.screenshot_filename ? (
-                                                    <Chip label="Yes" size="small" color="info" variant="outlined" />
-                                                ) : (
-                                                    <Typography variant="caption" color="text.disabled">—</Typography>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                    )}
-
-                    {/* Feedback detail dialog */}
-                    <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth="sm" fullWidth>
-                        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 0 }}>
-                            <Box>
-                                <Typography variant="h6">Feedback Detail</Typography>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
-                                    {selectedFeedback?.ticket_id}
-                                </Typography>
-                            </Box>
-                            <IconButton onClick={() => setDetailOpen(false)} size="small">
-                                <CloseIcon />
-                            </IconButton>
-                        </DialogTitle>
-                        <DialogContent dividers>
-                            {selectedFeedback && (
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                    <Box>
-                                        <Typography variant="overline" color="text.secondary">Submitted by</Typography>
-                                        <Typography variant="body2">
-                                            {selectedFeedback.name || 'Anonymous'}
-                                            {selectedFeedback.email ? ` · ${selectedFeedback.email}` : ''}
-                                        </Typography>
-                                        <Typography variant="caption" color="text.disabled">
-                                            {new Date(selectedFeedback.submitted_at).toLocaleString()}
-                                        </Typography>
-                                    </Box>
-                                    <Box>
-                                        <Typography variant="overline" color="text.secondary">Description</Typography>
-                                        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                                            {selectedFeedback.description}
-                                        </Typography>
-                                    </Box>
-                                    {selectedFeedback.screenshot_filename && (
-                                        <Box>
-                                            <Typography variant="overline" color="text.secondary">Screenshot</Typography>
-                                            <Box
-                                                component="img"
-                                                src={`/api/chat-feedback/screenshot/${selectedFeedback.screenshot_filename}`}
-                                                alt="Feedback screenshot"
-                                                sx={{
-                                                    display: 'block',
-                                                    maxWidth: '100%',
-                                                    maxHeight: 300,
-                                                    objectFit: 'contain',
-                                                    borderRadius: 1,
-                                                    border: '1px solid #e0e0e0',
-                                                    mt: 0.5,
-                                                }}
-                                            />
-                                        </Box>
-                                    )}
-                                    <FormControl size="small" fullWidth>
-                                        <InputLabel>Status</InputLabel>
-                                        <Select
-                                            value={editStatus}
-                                            label="Status"
-                                            onChange={(e) => setEditStatus(e.target.value)}
-                                        >
-                                            <MenuItem value="open">Open</MenuItem>
-                                            <MenuItem value="reviewed">Reviewed</MenuItem>
-                                            <MenuItem value="closed">Closed</MenuItem>
-                                        </Select>
-                                    </FormControl>
-                                    <TextField
-                                        label="Admin notes"
-                                        multiline
-                                        minRows={2}
-                                        maxRows={6}
-                                        fullWidth
-                                        size="small"
-                                        value={editNotes}
-                                        onChange={(e) => setEditNotes(e.target.value)}
-                                        placeholder="Internal notes (not visible to user)"
-                                    />
-                                </Box>
-                            )}
-                        </DialogContent>
-                        <DialogActions>
-                            <Button onClick={() => setDetailOpen(false)} color="inherit">Cancel</Button>
-                            <Button onClick={saveDetail} variant="contained" disabled={saving}>
-                                {saving ? <CircularProgress size={16} sx={{ mr: 1 }} /> : null}
-                                Save
-                            </Button>
-                        </DialogActions>
-                    </Dialog>
-                </>
-            )}
-        </Container>
+      <div className="mx-auto flex min-h-[60vh] w-full max-w-6xl flex-col justify-center gap-4 p-6">
+        <Skeleton className="h-12 w-96" />
+        <Skeleton className="h-60 w-full" />
+      </div>
     );
+  }
+
+  const openFeedbackCount = feedbacks.filter((feedback) => feedback.status === "open").length;
+
+  return (
+    <div className="mx-auto w-full max-w-6xl px-4 py-8">
+      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold tracking-tight text-primary">Corporate Master Dashboard</h1>
+            <Badge className="animate-pulse">LIVE</Badge>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">Real-time platform overview and shop performance</p>
+        </div>
+        {lastUpdated && (
+          <p className="text-xs text-muted-foreground">Last updated: {lastUpdated.toLocaleTimeString()}</p>
+        )}
+      </div>
+
+      {error && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col gap-4">
+        <TabsList className="w-fit">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="feedback">
+            Feedback
+            {openFeedbackCount > 0 && <Badge variant="secondary">{openFeedbackCount}</Badge>}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview">
+          <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard title="Total Shops" value={stats?.total_shops || 0} icon={<Store />} />
+            <MetricCard title="Active Customers" value={stats?.real_time.active_customers || 0} icon={<Users />} />
+            <MetricCard title="Completed Today" value={stats?.real_time.completed_today || 0} icon={<CheckCircle />} />
+            <MetricCard title="Platform Load" value={`${stats?.active_shops || 0} Active`} icon={<TrendingUp />} />
+          </div>
+
+          <h2 className="mb-3 text-xl font-semibold tracking-tight">Live Shop Feed</h2>
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Shop Name</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Waiting</TableHead>
+                    <TableHead>Last Activity</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {shops.map((shop) => (
+                    <TableRow
+                      key={shop.id}
+                      className="cursor-pointer"
+                      onClick={() => {
+                        window.location.href = constructShopUrl(shop.slug);
+                      }}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{shop.name}</span>
+                          <span className="text-xs text-muted-foreground">@{shop.slug}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={shop.is_active ? "default" : "secondary"}>
+                          {shop.is_active ? "Online" : "Offline"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-semibold">{shop.waiting_count}</span>{" "}
+                        <span className="text-xs text-muted-foreground">customers</span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {shop.last_activity ? new Date(shop.last_activity).toLocaleTimeString() : "No recent activity"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="feedback">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xl font-semibold tracking-tight">User Feedback</h2>
+            <Button size="sm" variant="outline" onClick={fetchFeedbacks} disabled={feedbackLoading}>
+              Refresh
+            </Button>
+          </div>
+
+          {feedbackError && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{feedbackError}</AlertDescription>
+            </Alert>
+          )}
+
+          {feedbackLoading && feedbacks.length === 0 ? (
+            <Skeleton className="h-60 w-full" />
+          ) : feedbacks.length === 0 ? (
+            <Alert>
+              <AlertDescription>No feedback submissions yet.</AlertDescription>
+            </Alert>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Ticket ID</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Screenshot</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {feedbacks.map((feedback) => (
+                      <TableRow key={feedback.id} className="cursor-pointer" onClick={() => openDetail(feedback)}>
+                        <TableCell className="font-mono text-xs font-bold">{feedback.ticket_id}</TableCell>
+                        <TableCell>
+                          <p className="text-sm">{feedback.name || <em>anonymous</em>}</p>
+                          {feedback.email && <p className="text-xs text-muted-foreground">{feedback.email}</p>}
+                        </TableCell>
+                        <TableCell className="max-w-[260px] truncate" title={feedback.description}>
+                          {feedback.description}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={statusVariant(feedback.status)}>{feedback.status}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {new Date(feedback.submitted_at).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>
+                          {feedback.screenshot_filename ? <Badge variant="outline">Yes</Badge> : <span className="text-muted-foreground">-</span>}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <DialogTitle>Feedback Detail</DialogTitle>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">{selectedFeedback?.ticket_id}</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setDetailOpen(false)} aria-label="Close">
+                <X />
+              </Button>
+            </div>
+          </DialogHeader>
+          {selectedFeedback && (
+            <div className="flex flex-col gap-4">
+              <section>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">Submitted by</p>
+                <p className="text-sm">
+                  {selectedFeedback.name || "Anonymous"}
+                  {selectedFeedback.email ? ` - ${selectedFeedback.email}` : ""}
+                </p>
+                <p className="text-xs text-muted-foreground">{new Date(selectedFeedback.submitted_at).toLocaleString()}</p>
+              </section>
+              <section>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">Description</p>
+                <p className="whitespace-pre-wrap text-sm">{selectedFeedback.description}</p>
+              </section>
+              {selectedFeedback.screenshot_filename && (
+                <section>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">Screenshot</p>
+                  <img
+                    src={`/api/chat-feedback/screenshot/${selectedFeedback.screenshot_filename}`}
+                    alt="Feedback screenshot"
+                    className="mt-2 max-h-[300px] max-w-full rounded-md border object-contain"
+                  />
+                </section>
+              )}
+              <Select value={editStatus} onValueChange={setEditStatus}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="reviewed">Reviewed</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Textarea
+                value={editNotes}
+                onChange={(event) => setEditNotes(event.target.value)}
+                placeholder="Internal notes (not visible to user)"
+                rows={4}
+              />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveDetail} disabled={saving}>
+              {saving ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 };
 
 const MetricCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode }> = ({ title, value, icon }) => (
-    <Card elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 2 }}>
-        <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Box>
-                <Typography color="text.secondary" variant="overline" display="block">
-                    {title}
-                </Typography>
-                <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                    {value}
-                </Typography>
-            </Box>
-            <Avatar sx={{ bgcolor: 'grey.100', width: 56, height: 56 }}>
-                {icon}
-            </Avatar>
-        </CardContent>
-    </Card>
+  <Card>
+    <CardContent className="flex items-center justify-between p-5">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+        <p className="mt-1 text-3xl font-bold tracking-tight">{value}</p>
+      </div>
+      <Avatar className="size-14">
+        <AvatarFallback>{icon}</AvatarFallback>
+      </Avatar>
+    </CardContent>
+  </Card>
 );
 
 export default MasterDashboardPage;

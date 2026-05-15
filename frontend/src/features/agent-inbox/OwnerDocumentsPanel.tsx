@@ -1,59 +1,28 @@
-import React, { useRef } from "react";
-import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
-import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
-import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
-import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
-import {
-  alpha,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Divider,
-  Stack,
-  Tooltip,
-  Typography,
-  useTheme,
-} from "@mui/material";
-
+import React from "react";
+import { Trash2, RefreshCw, FileText } from "lucide-react";
+import { Button } from "../../components/ui/button";
+import { useOwnerBrand } from "../../hooks/useOwnerBrand";
 import type { OwnerDocumentRecord } from "./types";
-
-const UPLOAD_ACCEPT = ".txt,.md,.pdf,.csv,.json,.yaml,.yml,.html,.htm,.rst,.doc,.docx";
-const UPLOAD_MAX_MB = 25;
 
 interface OwnerDocumentsPanelProps {
   documents: OwnerDocumentRecord[];
   isLoading?: boolean;
   actingDocumentId?: number | null;
   actingType?: "reindex" | "delete" | null;
-  isUploading?: boolean;
   onReindex: (document: OwnerDocumentRecord) => void;
   onDelete: (document: OwnerDocumentRecord) => void;
-  onUpload?: (files: File[]) => Promise<void>;
 }
 
 const formatBytes = (sizeBytes: number): string => {
-  if (sizeBytes < 1024) {
-    return `${sizeBytes} B`;
-  }
-  if (sizeBytes < 1024 * 1024) {
-    return `${(sizeBytes / 1024).toFixed(1)} KB`;
-  }
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
 const formatTimestamp = (value?: string | null): string => {
-  if (!value) {
-    return "Unknown";
-  }
-
+  if (!value) return "Unknown";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown";
-  }
-
+  if (Number.isNaN(date.getTime())) return "Unknown";
   return date.toLocaleString([], {
     month: "short",
     day: "numeric",
@@ -67,191 +36,149 @@ const OwnerDocumentsPanel: React.FC<OwnerDocumentsPanelProps> = ({
   isLoading = false,
   actingDocumentId = null,
   actingType = null,
-  isUploading = false,
   onReindex,
   onDelete,
-  onUpload,
 }) => {
-  const muiTheme = useTheme();
-  const primary = muiTheme.palette.primary.main;
-  const secondary = muiTheme.palette.secondary.main;
-  const cardBg =
-    muiTheme.palette.mode === "dark"
-      ? "rgba(255, 255, 255, 0.05)"
-      : alpha("#ffffff", 0.72);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleUploadClick = () => {
-    if (!isUploading && onUpload) fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(e.target.files || []);
-    e.target.value = "";
-    if (!selected.length || !onUpload) return;
-    const oversized = selected.filter((f) => f.size > UPLOAD_MAX_MB * 1024 * 1024);
-    if (oversized.length) {
-      // Just skip — AgentInbox will surface the error from the backend too
-      const ok = selected.filter((f) => f.size <= UPLOAD_MAX_MB * 1024 * 1024);
-      if (!ok.length) return;
-      await onUpload(ok);
-    } else {
-      await onUpload(selected);
-    }
-  };
+  const brand = useOwnerBrand();
 
   return (
-    <Card
-      variant="outlined"
-      sx={{
-        borderRadius: 3,
-        borderColor: alpha(primary, 0.16),
-        bgcolor: cardBg,
-        backdropFilter: "blur(20px)",
-        boxShadow: `0 18px 50px ${alpha(primary, 0.08)}`,
+    <div
+      className="rounded-2xl border backdrop-blur-xl"
+      style={{
+        borderColor: brand.glass.border,
+        backgroundColor: brand.glass.bg,
+        boxShadow: `0 18px 50px ${brand.primary}14`,
       }}
     >
-      <CardContent sx={{ py: 1.5 }}>
-        <Stack spacing={1.25}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-            <Box>
-              <Typography variant="h6">Knowledge documents</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Private owner files stored securely and indexed into shared shop context.
-              </Typography>
-            </Box>
-            <Stack direction="row" spacing={0.75} alignItems="center" flexShrink={0}>
-              <Chip
-                size="small"
-                icon={<DescriptionRoundedIcon />}
-                label={documents.length}
-                sx={{ bgcolor: alpha(primary, 0.12), color: primary, fontWeight: 700 }}
-              />
-              {onUpload && (
-                <Tooltip title={`Upload documents (${UPLOAD_ACCEPT.replaceAll(",", ", ")}, max ${UPLOAD_MAX_MB} MB each)`}>
-                  <span>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      disableElevation
-                      startIcon={isUploading ? <CircularProgress size={14} sx={{ color: "inherit" }} /> : <UploadFileRoundedIcon />}
-                      disabled={isUploading || Boolean(actingDocumentId)}
-                      onClick={handleUploadClick}
-                      sx={{ borderRadius: 999, textTransform: "none", fontWeight: 700, whiteSpace: "nowrap" }}
-                    >
-                      {isUploading ? "Uploading…" : "Upload"}
-                    </Button>
-                  </span>
-                </Tooltip>
-              )}
-            </Stack>
-          </Stack>
+      <div className="px-4 py-3">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div>
+            <p className="text-base font-semibold">Knowledge documents</p>
+            <p className="text-sm text-muted-foreground">
+              Private owner files stored securely and indexed into shared shop context.
+            </p>
+          </div>
+          <span
+            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold flex-shrink-0"
+            style={{
+              backgroundColor: `${brand.primary}1f`,
+              color: brand.primary,
+            }}
+          >
+            <FileText className="h-3 w-3" />
+            {documents.length}
+          </span>
+        </div>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            hidden
-            multiple
-            accept={UPLOAD_ACCEPT}
-            onChange={handleFileChange}
-          />
+        <hr className="mb-3" style={{ borderColor: `${brand.primary}1f` }} />
 
-          <Divider sx={{ borderColor: alpha(primary, 0.12) }} />
+        {isLoading ? (
+          <div className="flex items-center gap-2 py-2">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-border border-t-primary" />
+            <p className="text-sm text-muted-foreground">Loading uploaded documents...</p>
+          </div>
+        ) : documents.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Upload files from the chat composer to build a shop-specific knowledge base.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3 max-h-96 overflow-y-auto pr-1">
+            {documents.map((document, index) => {
+              const isReindexing = actingDocumentId === document.id && actingType === "reindex";
+              const isDeleting = actingDocumentId === document.id && actingType === "delete";
 
-          {isLoading ? (
-            <Stack direction="row" spacing={1} alignItems="center" py={1}>
-              <CircularProgress size={16} />
-              <Typography variant="body2" color="text.secondary">
-                Loading uploaded documents...
-              </Typography>
-            </Stack>
-          ) : documents.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              {onUpload
-                ? "No documents yet. Click Upload to add files to the shop knowledge base."
-                : "Upload files from the chat composer to build a shop-specific knowledge base."}
-            </Typography>
-          ) : (
-            <Stack spacing={1} sx={{ maxHeight: 360, overflowY: "auto", pr: 0.5 }}>
-              {documents.map((document, index) => {
-                const isReindexing = actingDocumentId === document.id && actingType === "reindex";
-                const isDeleting = actingDocumentId === document.id && actingType === "delete";
-
-                return (
-                  <React.Fragment key={document.id}>
-                    <Stack spacing={1}>
-                      <Stack direction="row" spacing={1.25} alignItems="flex-start">
-                        <Box
-                          sx={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 2,
-                            display: "grid",
-                            placeItems: "center",
-                            bgcolor: alpha(primary, 0.12),
-                            color: primary,
-                            flexShrink: 0,
-                          }}
+              return (
+                <React.Fragment key={document.id}>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-start gap-3">
+                      <div
+                        className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                        style={{
+                          backgroundColor: `${brand.primary}1f`,
+                          color: brand.primary,
+                        }}
+                      >
+                        <FileText className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className="text-sm font-semibold truncate"
+                          style={{ color: brand.secondary }}
                         >
-                          <DescriptionRoundedIcon fontSize="small" />
-                        </Box>
-                        <Box sx={{ minWidth: 0, flex: 1 }}>
-                          <Typography variant="subtitle2" sx={{ color: secondary }} noWrap>
-                            {document.relative_path || document.filename}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" display="block">
-                            {formatBytes(document.size_bytes)} • {document.chunk_count} chunk{document.chunk_count === 1 ? "" : "s"}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" display="block">
-                            Updated {formatTimestamp(document.updated_at || document.created_at)}
-                          </Typography>
-                        </Box>
-                        <Chip
-                          size="small"
-                          label={document.knowledge_status.replace(/_/g, " ")}
-                          sx={{
-                            textTransform: "capitalize",
-                            bgcolor: alpha(primary, 0.08),
-                            color: primary,
-                            border: `1px solid ${alpha(primary, 0.16)}`,
-                          }}
-                        />
-                      </Stack>
+                          {document.relative_path || document.filename}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatBytes(document.size_bytes)} · {document.chunk_count} chunk
+                          {document.chunk_count === 1 ? "" : "s"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Updated {formatTimestamp(document.updated_at || document.created_at)}
+                        </p>
+                      </div>
+                      <span
+                        className="inline-flex items-center rounded-full px-2 py-0.5 text-xs border capitalize flex-shrink-0"
+                        style={{
+                          backgroundColor: `${brand.primary}14`,
+                          color: brand.primary,
+                          borderColor: `${brand.primary}29`,
+                        }}
+                      >
+                        {document.knowledge_status.replace(/_/g, " ")}
+                      </span>
+                    </div>
 
-                      <Stack direction="row" spacing={1} justifyContent="flex-end">
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          startIcon={isReindexing ? <CircularProgress size={14} /> : <RefreshRoundedIcon />}
-                          disabled={Boolean(actingDocumentId)}
-                          onClick={() => onReindex(document)}
-                          sx={{ borderRadius: 999, textTransform: "none", fontWeight: 700 }}
-                        >
-                          {isReindexing ? "Re-indexing..." : "Re-index"}
-                        </Button>
-                        <Button
-                          size="small"
-                          color="error"
-                          variant="text"
-                          startIcon={isDeleting ? <CircularProgress size={14} /> : <DeleteOutlineRoundedIcon />}
-                          disabled={Boolean(actingDocumentId)}
-                          onClick={() => onDelete(document)}
-                          sx={{ borderRadius: 999, textTransform: "none", fontWeight: 700 }}
-                        >
-                          {isDeleting ? "Removing..." : "Delete"}
-                        </Button>
-                      </Stack>
-                    </Stack>
-                    {index < documents.length - 1 && <Divider sx={{ borderColor: alpha(primary, 0.08) }} />}
-                  </React.Fragment>
-                );
-              })}
-            </Stack>
-          )}
-        </Stack>
-      </CardContent>
-    </Card>
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={Boolean(actingDocumentId)}
+                        onClick={() => onReindex(document)}
+                        className="rounded-full h-7 text-xs font-bold"
+                      >
+                        {isReindexing ? (
+                          <>
+                            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-border border-t-primary mr-1" />
+                            Re-indexing...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="h-3 w-3 mr-1" />
+                            Re-index
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={Boolean(actingDocumentId)}
+                        onClick={() => onDelete(document)}
+                        className="rounded-full h-7 text-xs font-bold text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      >
+                        {isDeleting ? (
+                          <>
+                            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-red-500/30 border-t-red-400 mr-1" />
+                            Removing...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Delete
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                  {index < documents.length - 1 && (
+                    <hr style={{ borderColor: `${brand.primary}14` }} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 

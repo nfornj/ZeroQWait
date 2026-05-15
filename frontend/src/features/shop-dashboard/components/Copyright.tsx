@@ -1,25 +1,13 @@
-import Link from '@mui/material/Link';
-import Typography from '@mui/material/Typography';
+import { cn } from "@/lib/utils";
 
-export default function Copyright(props: any) {
+export default function Copyright({ className }: { className?: string }) {
   return (
-    <Typography
-      variant="body2"
-      align="center"
-      {...props}
-      sx={[
-        {
-          color: 'text.secondary',
-        },
-        ...(Array.isArray(props.sx) ? props.sx : [props.sx]),
-      ]}
-    >
-      {'Copyright © '}
-      <Link color="inherit" href="#">
+    <p className={cn("text-center text-sm text-muted-foreground", className)}>
+      Copyright ©{" "}
+      <a href="https://zeroqwait.com" className="underline-offset-4 hover:underline">
         ZeroQwait
-      </Link>{' '}
-      {new Date().getFullYear()}
-      {'.'}
-    </Typography>
+      </a>{" "}
+      {new Date().getFullYear()}.
+    </p>
   );
 }

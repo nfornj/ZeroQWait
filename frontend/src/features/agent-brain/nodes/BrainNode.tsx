@@ -1,13 +1,7 @@
 import React, { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { alpha, Box, Chip, Stack, Typography, useTheme } from "@mui/material";
-import { keyframes } from "@mui/material/styles";
 
-const pulse = keyframes`
-  0%   { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
-  70%  { box-shadow: 0 0 0 14px rgba(34, 197, 94, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
-`;
+import { Badge } from "@/components/ui/badge";
 
 export interface BrainNodeData {
   label: string;
@@ -22,27 +16,20 @@ export interface BrainNodeData {
 }
 
 const BrainNodeComponent: React.FC<NodeProps> = ({ data }) => {
-  const theme = useTheme();
   const d = data as unknown as BrainNodeData;
-  const isDark = theme.palette.mode === "dark";
 
   return (
-    <Box
-      sx={{
-        width: 188,
-        borderRadius: 2.5,
-        p: 1.25,
-        border: "1px solid",
-        borderColor: d.active ? alpha(d.color, 0.85) : alpha(d.color, 0.28),
-        bgcolor: isDark
-          ? alpha(d.color, d.active ? 0.22 : 0.1)
-          : alpha("#ffffff", 0.96),
+    <div
+      className={d.active ? "brain-node-pulse w-[188px] rounded-xl border p-3 backdrop-blur transition-all" : "w-[188px] rounded-xl border p-3 backdrop-blur transition-all"}
+      style={{
+        borderColor: d.active ? d.color : `color-mix(in srgb, ${d.color} 28%, transparent)`,
+        background: d.active
+          ? `color-mix(in srgb, ${d.color} 18%, hsl(var(--card)))`
+          : `color-mix(in srgb, ${d.color} 8%, hsl(var(--card)))`,
         boxShadow: d.active
-          ? `0 6px 24px ${alpha(d.color, 0.35)}`
-          : `0 2px 10px ${alpha("#000000", 0.06)}`,
-        transition: "all 200ms ease",
-        animation: d.active ? `${pulse} 1.8s ease-out infinite` : undefined,
-        backdropFilter: "blur(6px)",
+          ? `0 6px 24px color-mix(in srgb, ${d.color} 35%, transparent)`
+          : "0 2px 10px rgb(0 0 0 / 0.06)",
+        ["--brain-node-color" as string]: d.color,
       }}
     >
       {d.hasTarget !== false && (
@@ -53,49 +40,35 @@ const BrainNodeComponent: React.FC<NodeProps> = ({ data }) => {
             background: d.color,
             width: 8,
             height: 8,
-            border: `2px solid ${isDark ? "#0f172a" : "#ffffff"}`,
+            border: "2px solid hsl(var(--background))",
           }}
         />
       )}
 
-      <Stack direction="row" spacing={1} alignItems="center" mb={0.75}>
-        <Box
-          sx={{
-            width: 32,
-            height: 32,
-            borderRadius: 2,
-            display: "grid",
-            placeItems: "center",
-            color: d.color,
-            bgcolor: alpha(d.color, 0.16),
-            flexShrink: 0,
-          }}
+      <div className="mb-2 flex items-center gap-2">
+        <div
+          className="grid size-8 shrink-0 place-items-center rounded-lg"
+          style={{ color: d.color, background: `color-mix(in srgb, ${d.color} 16%, transparent)` }}
         >
           {d.icon}
-        </Box>
-        <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography variant="subtitle2" fontWeight={800} noWrap sx={{ lineHeight: 1.2 }}>
-            {d.label}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", lineHeight: 1.2 }}>
-            {d.subtitle}
-          </Typography>
-        </Box>
-      </Stack>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold leading-tight">{d.label}</p>
+          <p className="truncate text-xs leading-tight text-muted-foreground">{d.subtitle}</p>
+        </div>
+      </div>
 
-      <Chip
-        size="small"
-        label={d.status}
-        sx={{
-          height: 22,
-          maxWidth: "100%",
-          fontWeight: 600,
-          color: d.active ? d.color : theme.palette.text.secondary,
-          bgcolor: alpha(d.color, d.active ? 0.2 : 0.08),
-          border: `1px solid ${alpha(d.color, d.active ? 0.4 : 0.15)}`,
-          "& .MuiChip-label": { px: 1 },
+      <Badge
+        variant="outline"
+        className="max-w-full truncate"
+        style={{
+          color: d.active ? d.color : undefined,
+          background: `color-mix(in srgb, ${d.color} ${d.active ? 20 : 8}%, transparent)`,
+          borderColor: `color-mix(in srgb, ${d.color} ${d.active ? 40 : 15}%, transparent)`,
         }}
-      />
+      >
+        {d.status}
+      </Badge>
 
       {d.hasSource !== false && (
         <Handle
@@ -105,11 +78,11 @@ const BrainNodeComponent: React.FC<NodeProps> = ({ data }) => {
             background: d.color,
             width: 8,
             height: 8,
-            border: `2px solid ${isDark ? "#0f172a" : "#ffffff"}`,
+            border: "2px solid hsl(var(--background))",
           }}
         />
       )}
-    </Box>
+    </div>
   );
 };
 

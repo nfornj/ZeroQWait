@@ -3,16 +3,17 @@ name: zeroqwait
 services:
   # PostgreSQL
   db:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     restart: unless-stopped
     ports:
-      - "${DB_HOST_PORT:-5432}:5432"
+      - "${DB_HOST_PORT:-5433}:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: zeroqwait_dev
       POSTGRES_DB: zeroqwait
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backend/sql/000_extensions.sql:/docker-entrypoint-initdb.d/000_extensions.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -61,6 +62,7 @@ services:
       # ── App ────────────────────────────────────────────────────────────────────
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - DB_HOST=db
+      - DB_PORT=5432
       - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
       - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
       - LLM_PROVIDER=${LLM_PROVIDER:-nvidia}

@@ -1,23 +1,9 @@
 import React from "react";
-import {
-  Alert,
-  alpha,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  Grid,
-  Skeleton,
-  Stack,
-  Typography,
-  useTheme,
-} from "@mui/material";
-import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
-import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
-import PendingActionsRoundedIcon from "@mui/icons-material/PendingActionsRounded";
-import PointOfSaleRoundedIcon from "@mui/icons-material/PointOfSaleRounded";
+import { Clock, Users, DollarSign, AlertTriangle, CheckSquare } from "lucide-react";
+import { Skeleton } from "../../components/ui/skeleton";
+import { Button } from "../../components/ui/button";
+import { useOwnerBrand } from "../../hooks/useOwnerBrand";
 import type { BriefingAction, OwnerBriefing as OwnerBriefingData } from "./types";
-import { useShop } from "../../contexts/ShopContext";
 
 interface OwnerBriefingProps {
   briefing: OwnerBriefingData | null;
@@ -32,180 +18,167 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value || 0);
 
-const OwnerBriefingCard: React.FC<{ label: string; value: string; icon: React.ReactNode }> = ({
-  label,
-  value,
-  icon,
-}) => {
-  const muiTheme = useTheme();
-  const { shop } = useShop();
-  const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
-
-  return (
-    <Card
-      variant="outlined"
-      sx={{
-        borderRadius: 2.5,
-        borderColor: alpha(brandPrimary, 0.14),
-        bgcolor:
-          muiTheme.palette.mode === "dark"
-            ? "rgba(255,255,255,0.03)"
-            : alpha("#ffffff", 0.78),
-      }}
-    >
-      <CardContent sx={{ py: 1.5 }}>
-        <Stack direction="row" spacing={1} alignItems="center" mb={0.5}>
-          {icon}
-          <Typography variant="caption" color="text.secondary">
-            {label}
-          </Typography>
-        </Stack>
-        <Typography variant="h6">{value}</Typography>
-      </CardContent>
-    </Card>
-  );
+const severityClasses: Record<string, string> = {
+  error: "bg-red-500/10 border-red-500/20 text-red-400",
+  warning: "bg-amber-500/10 border-amber-500/20 text-amber-400",
+  info: "bg-blue-500/10 border-blue-500/20 text-blue-400",
+  success: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
 };
 
+const StatCard: React.FC<{
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  brand: ReturnType<typeof useOwnerBrand>;
+}> = ({ label, value, icon, brand }) => (
+  <div
+    className="rounded-xl border p-3"
+    style={{
+      borderColor: `${brand.primary}24`,
+      backgroundColor: `${brand.primary}08`,
+    }}
+  >
+    <div className="flex items-center gap-1.5 mb-1">
+      {icon}
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </div>
+    <p className="text-base font-semibold text-foreground">{value}</p>
+  </div>
+);
+
 const OwnerBriefingPanel: React.FC<OwnerBriefingProps> = ({ briefing, onAction, isLoading }) => {
-  const muiTheme = useTheme();
-  const { shop } = useShop();
-  const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
-  const brandSecondary = shop?.secondary_color || brandPrimary;
+  const brand = useOwnerBrand();
 
   if (!briefing) {
     if (isLoading) {
-      return <Skeleton variant="rounded" height={220} sx={{ borderRadius: 3 }} />;
+      return <Skeleton className="h-48 w-full rounded-2xl" />;
     }
     return null;
   }
 
   return (
-    <Card
-      variant="outlined"
-      sx={{
-        borderRadius: 3,
-        borderColor: alpha(brandPrimary, 0.16),
-        bgcolor:
-          muiTheme.palette.mode === "dark"
-            ? "rgba(255, 255, 255, 0.05)"
-            : alpha("#ffffff", 0.72),
-        backdropFilter: "blur(20px)",
+    <div
+      className="rounded-2xl border backdrop-blur-xl"
+      style={{
+        borderColor: brand.glass.border,
+        backgroundColor: brand.glass.bg,
       }}
     >
-      <CardContent>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-          <Typography variant="h6">Daily Briefing</Typography>
-          <Chip
-            size="small"
-            label={briefing.source === "scheduled" ? "Scheduled" : "Live"}
-            sx={{
-              bgcolor: alpha(brandSecondary, 0.18),
-              color: brandSecondary,
-              border: `1px solid ${alpha(brandSecondary, 0.24)}`,
-              fontWeight: 700,
+      <div className="px-4 py-4">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-base font-semibold">Daily Briefing</p>
+          <span
+            className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold border"
+            style={{
+              backgroundColor: `${brand.secondary}2e`,
+              color: brand.secondary,
+              borderColor: `${brand.secondary}3d`,
             }}
+          >
+            {briefing.source === "scheduled" ? "Scheduled" : "Live"}
+          </span>
+        </div>
+
+        <p className="text-sm text-muted-foreground mb-3 leading-relaxed">{briefing.summary}</p>
+
+        {/* Stat cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+          <StatCard
+            label="Queue"
+            value={`${briefing.metrics.queue_length} waiting`}
+            icon={<Clock className="h-3.5 w-3.5" style={{ color: brand.primary }} />}
+            brand={brand}
           />
-        </Stack>
+          <StatCard
+            label="Wait Time"
+            value={`${briefing.metrics.estimated_wait_minutes} min`}
+            icon={<Clock className="h-3.5 w-3.5" style={{ color: brand.secondary }} />}
+            brand={brand}
+          />
+          <StatCard
+            label="Active Staff"
+            value={String(briefing.metrics.active_employees)}
+            icon={<Users className="h-3.5 w-3.5" style={{ color: brand.primary }} />}
+            brand={brand}
+          />
+          <StatCard
+            label="Today Revenue"
+            value={formatCurrency(briefing.metrics.today_revenue)}
+            icon={<DollarSign className="h-3.5 w-3.5" style={{ color: brand.secondary }} />}
+            brand={brand}
+          />
+        </div>
 
-        <Typography variant="body2" color="text.secondary" mb={2}>
-          {briefing.summary}
-        </Typography>
+        {/* Alerts */}
+        {briefing.alerts.length > 0 && (
+          <div className="flex flex-col gap-1.5 mb-3">
+            {briefing.alerts.map((alert, index) => (
+              <div
+                key={`${alert.title}_${index}`}
+                className={`rounded-xl border px-3 py-2 ${severityClasses[alert.severity] || severityClasses.info}`}
+              >
+                <p className="text-xs font-semibold">{alert.title}</p>
+                <p className="text-xs opacity-80">{alert.body}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
-        <Grid container spacing={1.25} mb={2}>
-          <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-            <OwnerBriefingCard
-              label="Queue"
-              value={`${briefing.metrics.queue_length} waiting`}
-              icon={<AccessTimeRoundedIcon fontSize="small" sx={{ color: brandPrimary }} />}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-            <OwnerBriefingCard
-              label="Wait Time"
-              value={`${briefing.metrics.estimated_wait_minutes} min`}
-              icon={<AccessTimeRoundedIcon fontSize="small" sx={{ color: brandSecondary }} />}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-            <OwnerBriefingCard
-              label="Active Staff"
-              value={String(briefing.metrics.active_employees)}
-              icon={<GroupsRoundedIcon fontSize="small" sx={{ color: brandPrimary }} />}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-            <OwnerBriefingCard
-              label="Today Revenue"
-              value={formatCurrency(briefing.metrics.today_revenue)}
-              icon={<PointOfSaleRoundedIcon fontSize="small" sx={{ color: brandSecondary }} />}
-            />
-          </Grid>
-        </Grid>
-
-        <Stack spacing={1} mb={2}>
-          {briefing.alerts.map((alert, index) => (
-            <Alert key={`${alert.title}_${index}`} severity={alert.severity} sx={{ borderRadius: 2 }}>
-              <Typography variant="subtitle2">{alert.title}</Typography>
-              <Typography variant="body2">{alert.body}</Typography>
-            </Alert>
-          ))}
-        </Stack>
-
+        {/* Recommended actions */}
         {briefing.actions.length > 0 && (
-          <Stack spacing={1.25} mb={2}>
-            <Typography variant="subtitle2">Recommended actions</Typography>
-            <Stack direction="row" flexWrap="wrap" gap={1}>
+          <div className="mb-3">
+            <p className="text-xs font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+              Recommended actions
+            </p>
+            <div className="flex flex-wrap gap-1.5">
               {briefing.actions.map((action, index) => (
                 <Button
                   key={`${action.label}_${index}`}
-                  size="small"
-                  variant="outlined"
+                  size="sm"
+                  variant="outline"
                   onClick={() => onAction?.(action)}
-                  sx={{
-                    borderRadius: 999,
-                    borderColor: alpha(brandPrimary, 0.25),
-                    color: brandPrimary,
-                    textTransform: "none",
-                    fontWeight: 700,
-                    "&:hover": {
-                      borderColor: brandPrimary,
-                      bgcolor: alpha(brandPrimary, 0.06),
-                    },
+                  className="rounded-full h-7 text-xs font-semibold"
+                  style={{
+                    borderColor: `${brand.primary}40`,
+                    color: brand.primary,
                   }}
                 >
                   {action.label}
                 </Button>
               ))}
-            </Stack>
-          </Stack>
+            </div>
+          </div>
         )}
 
-        <Stack spacing={0.75}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <PendingActionsRoundedIcon fontSize="small" sx={{ color: brandPrimary }} />
-            <Typography variant="subtitle2">Recommended next steps</Typography>
-          </Stack>
+        {/* Recommendations */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5 mb-1">
+            <CheckSquare className="h-3.5 w-3.5" style={{ color: brand.primary }} />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Recommended next steps
+            </p>
+          </div>
           {briefing.recommendations.map((item, index) => (
-            <Typography key={`${item}_${index}`} variant="body2" color="text.secondary">
+            <p key={`${item}_${index}`} className="text-xs text-muted-foreground">
               {index + 1}. {item}
-            </Typography>
+            </p>
           ))}
-        </Stack>
+        </div>
 
+        {/* Alert history */}
         {briefing.alert_history && briefing.alert_history.length > 1 && (
-          <Stack spacing={0.5} mt={2}>
-            <Typography variant="caption" color="text.secondary">
-              Recent operational alerts
-            </Typography>
+          <div className="mt-3 flex flex-col gap-0.5">
+            <p className="text-xs text-muted-foreground/60">Recent operational alerts</p>
             {briefing.alert_history.slice(0, 2).map((alert, index) => (
-              <Typography key={`${alert.title}_${index}_history`} variant="caption" color="text.secondary">
+              <p key={`${alert.title}_${index}_history`} className="text-xs text-muted-foreground/60">
                 {alert.title}
-              </Typography>
+              </p>
             ))}
-          </Stack>
+          </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 };
 

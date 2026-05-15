@@ -1,32 +1,26 @@
-import Box from '@mui/material/Box';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import QueueIcon from '@mui/icons-material/Queue';
-import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import PhoneAndroidIcon from '@mui/icons-material/PhoneAndroid';
+import { Clock, BellRing, Smartphone, ListOrdered } from 'lucide-react';
 
 const items = [
   {
-    icon: <AccessTimeIcon sx={{ color: 'primary.main' }} />,
+    icon: Clock,
     title: 'AI Receptionist',
     description:
       'Your shop gets a browser-based AI receptionist for customer questions, queue joins, and appointment requests.',
   },
   {
-    icon: <NotificationsActiveIcon sx={{ color: 'primary.main' }} />,
+    icon: BellRing,
     title: 'Owner Agent Workspace',
     description:
       'Owners can monitor approvals, queue activity, team updates, and day-to-day operations from one workspace.',
   },
   {
-    icon: <PhoneAndroidIcon sx={{ color: 'primary.main' }} />,
+    icon: Smartphone,
     title: 'Mobile-First Experience',
     description:
       'Customers can join queues, view live progress, and book appointments directly from their phone browser.',
   },
   {
-    icon: <QueueIcon sx={{ color: 'primary.main' }} />,
+    icon: ListOrdered,
     title: 'Live Queue and Booking',
     description:
       'ZeroQwait supports live queue management, appointment booking flows, and service discovery across your shop pages.',
@@ -35,27 +29,25 @@ const items = [
 
 export default function Content() {
   return (
-    <Stack
-      sx={{ flexDirection: 'column', alignSelf: 'center', gap: 4, maxWidth: 450 }}
-    >
-      <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 1 }}>
-        <Typography variant="h3" component="div" sx={{ fontWeight: 'bold', color: 'primary.main', fontSize: '2.5rem' }}>
-          ZeroQwait
-        </Typography>
-      </Box>
-      {items.map((item, index) => (
-        <Stack key={index} direction="row" sx={{ gap: 2 }}>
-          {item.icon}
-          <div>
-            <Typography gutterBottom sx={{ fontWeight: 'medium' }}>
-              {item.title}
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              {item.description}
-            </Typography>
-          </div>
-        </Stack>
-      ))}
-    </Stack>
+    <div className="hidden md:flex flex-col gap-8 max-w-md self-center">
+      <div className="flex items-center gap-2">
+        <span className="text-4xl font-bold text-violet-400">ZeroQwait</span>
+      </div>
+
+      <div className="flex flex-col gap-6">
+        {items.map((item, index) => {
+          const Icon = item.icon;
+          return (
+            <div key={index} className="flex gap-3">
+              <Icon className="h-5 w-5 mt-0.5 flex-shrink-0 text-violet-400" />
+              <div>
+                <p className="text-sm font-semibold text-white mb-0.5">{item.title}</p>
+                <p className="text-sm text-white/60 leading-relaxed">{item.description}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

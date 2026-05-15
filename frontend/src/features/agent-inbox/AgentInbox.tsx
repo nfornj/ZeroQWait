@@ -1,28 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Collapse,
-  Grid,
-  IconButton,
-  Stack,
-  Tooltip,
-} from "@mui/material";
-import AddCommentOutlinedIcon from "@mui/icons-material/AddCommentOutlined";
-import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import { ChevronDown } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { cn } from "../../lib/utils";
 
 import { useShop } from "../../contexts/ShopContext";
 import api from "../../services/api";
 import AgentChat from "./AgentChat";
 import AgentFeed from "./AgentFeed";
 import AgentInsights from "./AgentInsights";
-import AgentTaskBoard, { type AgentTaskBoardExternalTask } from "./AgentTaskBoard";
 import InsightsPanel from "./InsightsPanel";
-import LiveOpsPanel from "./LiveOpsPanel";
 import OwnerBriefing from "./OwnerBriefing";
-import OwnerDocumentsPanel from "./OwnerDocumentsPanel";
 import PendingApprovalsPanel from "./PendingApprovalsPanel";
 import PoliciesPanel from "./PoliciesPanel";
 import { buildIntroMessage } from "./agentInboxShared";
@@ -32,9 +19,7 @@ import { useAgentWebSocket } from "./hooks/useAgentWebSocket";
 import {
   ownerDashboardKeys,
   useOwnerBriefingQuery,
-  useOwnerDocumentsQuery,
   useOwnerFeedQuery,
-  useOwnerOperationsSnapshot,
   useOwnerPoliciesQuery,
   usePendingApprovalsQuery,
 } from "./ownerDashboardQueries";
@@ -43,7 +28,6 @@ import type {
   BriefingAction,
   InsightItem,
   OwnerBriefing as OwnerBriefingData,
-  OwnerDocumentRecord,
   PendingApproval,
   ShopPolicy,
 } from "./types";
@@ -66,19 +50,12 @@ const AgentInbox: React.FC = () => {
   const [savingPolicyKey, setSavingPolicyKey] = useState<string | null>(null);
   const [markingNotificationId, setMarkingNotificationId] = useState<number | null>(null);
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
-  const [actingDocumentId, setActingDocumentId] = useState<number | null>(null);
-  const [actingDocumentType, setActingDocumentType] = useState<"reindex" | "delete" | null>(null);
-  const [isResetting, setIsResetting] = useState(false);
-  const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
   const previousShopIdRef = useRef<number | null>(null);
-  const pendingApprovalsPanelRef = useRef<HTMLDivElement>(null);
 
   const pendingApprovalsQuery = usePendingApprovalsQuery(shop?.id);
   const briefingQuery = useOwnerBriefingQuery(shop?.id);
   const feedQuery = useOwnerFeedQuery(shop?.id);
   const policiesQuery = useOwnerPoliciesQuery(shop?.id);
-  const documentsQuery = useOwnerDocumentsQuery(shop?.id);
-  const operationsSnapshot = useOwnerOperationsSnapshot(shop?.id);
 
   const addPendingApproval = useCallback((approval: PendingApproval) => {
     setPendingApprovals((prev) => {
@@ -122,7 +99,6 @@ const AgentInbox: React.FC = () => {
     setError,
     appendSystemMessage,
     handleSend,
-    resetConversation,
     isVoiceEnabled,
     isSpeaking,
     toggleVoice,
@@ -192,91 +168,6 @@ const AgentInbox: React.FC = () => {
 
     setMessages((prev) => (prev.length > 0 ? prev : [buildIntroMessage()]));
   }, [setError, setMessages, shop?.id]);
-
-  const handleResetConversation = useCallback(async () => {
-    if (isResetting || isStreaming) return;
-    setIsResetting(true);
-    try {
-      await resetConversation();
-      addFeedEvent({ type: "system", title: "Conversation reset", description: "Started a new conversation thread." });
-    } finally {
-      setIsResetting(false);
-    }
-  }, [addFeedEvent, isResetting, isStreaming, resetConversation]);
-
-  const handleDocumentReindex = useCallback(
-    async (document: OwnerDocumentRecord) => {
-      if (!shop?.id || actingDocumentId !== null) return;
-      setActingDocumentId(document.id);
-      setActingDocumentType("reindex");
-      try {
-        await api.post(`/v2/agent/documents/${document.id}/reindex`, { shop_id: shop.id });
-        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
-        addFeedEvent({ type: "system", title: "Document re-indexed", description: `${document.filename} was re-indexed into the knowledge base.` });
-      } catch (err: any) {
-        setError(err?.response?.data?.detail || "Failed to re-index document");
-      } finally {
-        setActingDocumentId(null);
-        setActingDocumentType(null);
-      }
-    },
-    [actingDocumentId, addFeedEvent, queryClient, setError, shop?.id],
-  );
-
-  const handleDocumentDelete = useCallback(
-    async (document: OwnerDocumentRecord) => {
-      if (!shop?.id || actingDocumentId !== null) return;
-      setActingDocumentId(document.id);
-      setActingDocumentType("delete");
-      try {
-        await api.delete(`/v2/agent/documents/${document.id}`, { params: { shop_id: shop.id } });
-        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
-        addFeedEvent({ type: "system", title: "Document removed", description: `${document.filename} was deleted from the knowledge base.` });
-      } catch (err: any) {
-        setError(err?.response?.data?.detail || "Failed to delete document");
-      } finally {
-        setActingDocumentId(null);
-        setActingDocumentType(null);
-      }
-    },
-    [actingDocumentId, addFeedEvent, queryClient, setError, shop?.id],
-  );
-
-  const handleDocumentUpload = useCallback(
-    async (files: File[]) => {
-      if (!shop?.id || !files.length || isUploadingDocuments) return;
-      setIsUploadingDocuments(true);
-      setError(null);
-      try {
-        const token = localStorage.getItem("token");
-        const formData = new FormData();
-        formData.append("shop_id", String(shop.id));
-        files.forEach((file) => formData.append("files", file));
-        const response = await fetch(`/api/v2/agent/documents/upload`, {
-          method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          body: formData,
-        });
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          throw new Error(errBody?.detail || `Upload failed (${response.status})`);
-        }
-        const result = await response.json();
-        const uploaded: number = result?.uploaded ?? files.length;
-        await queryClient.invalidateQueries({ queryKey: ownerDashboardKeys.documents(shop.id) });
-        addFeedEvent({
-          type: "system",
-          title: "Documents uploaded",
-          description: `${uploaded} file${uploaded === 1 ? "" : "s"} added to the knowledge base.`,
-        });
-      } catch (err: any) {
-        setError(err?.message || "Failed to upload documents");
-      } finally {
-        setIsUploadingDocuments(false);
-      }
-    },
-    [addFeedEvent, isUploadingDocuments, queryClient, setError, shop?.id],
-  );
 
   const handlePolicyModeChange = useCallback(
     async (policy: ShopPolicy, nextMode: string) => {
@@ -358,32 +249,6 @@ const AgentInbox: React.FC = () => {
   }, [setError, shop?.id]);
 
   const latestPending = useMemo(() => pendingApprovals.slice(0, 3), [pendingApprovals]);
-
-  const taskBoardApprovals = useMemo<AgentTaskBoardExternalTask[]>(
-    () =>
-      pendingApprovals.map((approval) => {
-        const detailLines: string[] = [];
-        if (approval.risk_level) detailLines.push(`Risk: ${approval.risk_level}`);
-        if (approval.urgency) detailLines.push(`Urgency: ${approval.urgency}`);
-        return {
-          id: approval.action_id ?? approval.action,
-          title: approval.title ?? approval.action,
-          description: approval.summary ?? approval.reason ?? "",
-          source: "approval" as const,
-          createdAt: approval.created_at ?? new Date().toISOString(),
-          actionId: approval.action_id,
-          detailLines: detailLines.length > 0 ? detailLines : undefined,
-        };
-      }),
-    [pendingApprovals],
-  );
-
-  const handleTaskBoardApprovalClick = useCallback(
-    (_actionId: string) => {
-      pendingApprovalsPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    },
-    [],
-  );
   const seededFeedEvents = useMemo(
     () => createWorkspaceFeedSeed(briefing, pendingApprovals),
     [briefing, pendingApprovals],
@@ -446,45 +311,29 @@ const AgentInbox: React.FC = () => {
   }, [briefing, pendingApprovals, shop?.name]);
 
   return (
-    <Box
-      sx={{
-        width: "100%",
-        maxWidth: { xs: "100%", md: "1800px" },
-        mx: "auto",
-        height: "calc(100dvh - var(--navbar-h, 57px))",
-        display: "flex",
-        flexDirection: "column",
-      }}
+    <div
+      className="w-full mx-auto flex flex-col"
+      style={{ maxWidth: "1800px", height: "calc(100dvh - var(--navbar-h, 57px))" }}
     >
-      <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 0 }}>
-        {error && <Alert severity="error">{error}</Alert>}
-
-        {!shop?.id && !shopLoading && (
-          <Alert severity="warning">
-            No active shop selected. Refresh the shop workspace or choose an active shop from the top bar if you manage more than one location.
-          </Alert>
+      <div className="flex flex-col flex-1 min-h-0">
+        {/* Error banner */}
+        {error && (
+          <div className="mx-3 mt-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400">
+            {error}
+          </div>
         )}
 
-        <Grid
-          container
-          spacing={1}
-          sx={{
-            flex: 1,
-            minHeight: 0,
-            height: "100%",
-            alignItems: { md: "stretch" },
-            overflow: { md: "hidden" },
-          }}
-        >
-          <Grid
-            size={{ xs: 12, md: 7 }}
-            sx={{
-              display: "flex",
-              flexDirection: "column",
-              minHeight: 0,
-              height: { md: "100%" },
-            }}
-          >
+        {/* No-shop warning */}
+        {!shop?.id && !shopLoading && (
+          <div className="mx-3 mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-400">
+            No active shop selected. Refresh the shop workspace or choose an active shop from the top bar if you manage more than one location.
+          </div>
+        )}
+
+        {/* Main layout */}
+        <div className="flex flex-col md:flex-row flex-1 min-h-0 gap-1 md:overflow-hidden">
+          {/* Left: chat (7/12) */}
+          <div className="flex flex-col min-h-0 flex-[7] md:h-full">
             {shop?.id && (
               <AgentChat
                 messages={messages}
@@ -495,109 +344,42 @@ const AgentInbox: React.FC = () => {
                 isVoiceEnabled={isVoiceEnabled}
                 isSpeaking={isSpeaking}
                 onToggleVoice={toggleVoice}
-                onApprovalDecision={handleApprovalDecision}
-                isApproving={isApproving}
-                isUploading={isUploadingDocuments}
-                header={
-                  <Stack direction="row" justifyContent="flex-end">
-                    <Tooltip title="Start a new conversation (clears this thread)">
-                      <span>
-                        <Button
-                          size="small"
-                          variant="text"
-                          startIcon={<AddCommentOutlinedIcon fontSize="small" />}
-                          disabled={isResetting || isStreaming}
-                          onClick={() => void handleResetConversation()}
-                          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 999 }}
-                        >
-                          {isResetting ? "Resetting…" : "New conversation"}
-                        </Button>
-                      </span>
-                    </Tooltip>
-                  </Stack>
-                }
               />
             )}
-            <Box sx={{ flexShrink: 0 }}>
-              <IconButton
-                size="small"
+            <div className="flex-shrink-0 px-3 pb-1">
+              <button
+                type="button"
                 onClick={() => setInsightsOpen((open) => !open)}
-                sx={{ color: "#0078d4", p: 0.25 }}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-blue-400 hover:bg-muted transition-colors"
               >
-                <ExpandMoreRoundedIcon
-                  sx={{
-                    fontSize: 18,
-                    transition: "transform 0.18s",
-                    transform: insightsOpen ? "rotate(180deg)" : "rotate(0deg)",
-                  }}
+                <ChevronDown
+                  className={cn("h-4 w-4 transition-transform duration-200", insightsOpen && "rotate-180")}
                 />
-              </IconButton>
-              <Collapse in={insightsOpen} unmountOnExit>
-                <Box mt={0.75}>
+              </button>
+              {insightsOpen && (
+                <div className="mt-2">
                   <AgentInsights
                     messages={messages}
                     events={displayedFeedEvents}
                     pendingApprovals={pendingApprovals}
                   />
-                </Box>
-              </Collapse>
-            </Box>
-          </Grid>
+                </div>
+              )}
+            </div>
+          </div>
 
-          <Grid
-            size={{ xs: 12, md: 5 }}
-            sx={{
-              display: "flex",
-              minHeight: 0,
-              height: { md: "100%" },
-            }}
-          >
-            <Stack spacing={1.25} sx={{ flex: 1, minHeight: 0, height: { md: "100%" } }}>
+          {/* Right: context panel (5/12) */}
+          <div className="flex min-h-0 flex-[5] md:h-full">
+            <div className="flex flex-col flex-1 min-h-0 gap-3 md:h-full">
               <OwnerBriefing briefing={briefing} onAction={handleBriefingAction} isLoading={briefingQuery.isLoading} />
-              <LiveOpsPanel
-                queueMetrics={operationsSnapshot.queueMetrics}
-                appointments={operationsSnapshot.appointments}
-                employeeAvailability={operationsSnapshot.employeeAvailability}
-                stats={operationsSnapshot.stats}
-                isLoading={operationsSnapshot.isLoading}
-                isFetching={operationsSnapshot.isFetching}
-                onRefresh={() => {
-                  void operationsSnapshot.queries.queueMetricsQuery.refetch();
-                  void operationsSnapshot.queries.appointmentsQuery.refetch();
-                  void operationsSnapshot.queries.employeeAvailabilityQuery.refetch();
-                }}
-                onQuickAction={(message) => void handleSend({ text: message })}
-              />
-              <Box
-                sx={{
-                  flex: 1,
-                  minHeight: 0,
-                  overflowY: { xs: "visible", md: "auto" },
-                  pr: { md: 0.5 },
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 1.25,
-                }}
-              >
-                <Box sx={{ height: 220, flexShrink: 0 }}>
-                  <AgentTaskBoard
-                    standalone
-                    interactableId={shop?.id ? `owner-task-board-${shop.id}` : "owner-task-board"}
-                    externalTasks={taskBoardApprovals}
-                    onApprovalTaskClick={handleTaskBoardApprovalClick}
-                  />
-                </Box>
-
+              <div className="flex-1 min-h-0 overflow-y-auto md:overflow-y-auto pr-0 md:pr-1 flex flex-col gap-3">
                 {latestPending.length > 0 && (
-                  <Box ref={pendingApprovalsPanelRef}>
-                    <PendingApprovalsPanel
-                      approvals={pendingApprovals}
-                      isApproving={isApproving}
-                      onDecision={handleApprovalDecision}
-                    />
-                  </Box>
+                  <PendingApprovalsPanel
+                    approvals={pendingApprovals}
+                    isApproving={isApproving}
+                    onDecision={handleApprovalDecision}
+                  />
                 )}
-
                 <AgentFeed
                   events={displayedFeedEvents}
                   unreadCount={unreadFeedCount}
@@ -608,9 +390,7 @@ const AgentInbox: React.FC = () => {
                   maxHeight={{ xs: 260, md: 360 }}
                   isLoading={feedQuery.isLoading}
                 />
-
                 <InsightsPanel items={insightItems} />
-
                 {shop?.id && (
                   <PoliciesPanel
                     policies={policies}
@@ -619,25 +399,12 @@ const AgentInbox: React.FC = () => {
                     onRetry={() => void refreshPolicies()}
                   />
                 )}
-
-                {shop?.id && (
-                  <OwnerDocumentsPanel
-                    documents={documentsQuery.data || []}
-                    isLoading={documentsQuery.isLoading}
-                    actingDocumentId={actingDocumentId}
-                    actingType={actingDocumentType}
-                    isUploading={isUploadingDocuments}
-                    onReindex={handleDocumentReindex}
-                    onDelete={handleDocumentDelete}
-                    onUpload={handleDocumentUpload}
-                  />
-                )}
-              </Box>
-            </Stack>
-          </Grid>
-        </Grid>
-      </Box>
-    </Box>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

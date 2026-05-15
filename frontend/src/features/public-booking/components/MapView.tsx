@@ -1,19 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
-import { Box, Typography, Button, Chip, CircularProgress } from "@mui/material";
-import LocationOnIcon from "@mui/icons-material/LocationOn";
-import PhoneIcon from "@mui/icons-material/Phone";
-import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import { Clock, Loader2, MapPin, Phone } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
-// Fix for default marker icons in Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
-  iconUrl: require('leaflet/dist/images/marker-icon.png'),
-  shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
+  iconRetinaUrl: require("leaflet/dist/images/marker-icon-2x.png"),
+  iconUrl: require("leaflet/dist/images/marker-icon.png"),
+  shadowUrl: require("leaflet/dist/images/marker-shadow.png"),
 });
 
 interface Shop {
@@ -35,19 +33,14 @@ interface MapViewProps {
   shops: Shop[];
 }
 
-// Component to adjust map bounds based on markers
 const MapBoundsController: React.FC<{ shops: Shop[] }> = ({ shops }) => {
   const map = useMap();
 
   useEffect(() => {
-    const shopsWithCoords = shops.filter(
-      (shop) => shop.latitude && shop.longitude
-    );
+    const shopsWithCoords = shops.filter((shop) => shop.latitude && shop.longitude);
 
     if (shopsWithCoords.length > 0) {
-      const bounds = L.latLngBounds(
-        shopsWithCoords.map((shop) => [shop.latitude!, shop.longitude!])
-      );
+      const bounds = L.latLngBounds(shopsWithCoords.map((shop) => [shop.latitude!, shop.longitude!]));
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
     }
   }, [shops, map]);
@@ -55,19 +48,16 @@ const MapBoundsController: React.FC<{ shops: Shop[] }> = ({ shops }) => {
   return null;
 };
 
-// Simple geocoding function using Nominatim (OpenStreetMap)
 const geocodeAddress = async (
   address: string,
   city: string,
   state: string,
-  country: string
+  country: string,
 ): Promise<{ lat: number; lng: number } | null> => {
   try {
     const query = `${address}, ${city}, ${state}, ${country}`;
     const response = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-        query
-      )}&limit=1`
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
     );
     const data = await response.json();
 
@@ -78,7 +68,7 @@ const geocodeAddress = async (
       };
     }
     return null;
-  } catch (error) {
+  } catch {
     return null;
   }
 };
@@ -95,22 +85,11 @@ const MapView: React.FC<MapViewProps> = ({ shops }) => {
 
       for (const shop of shops) {
         if (shop.latitude && shop.longitude) {
-          // Shop already has coordinates
           processed.push(shop);
         } else {
-          // Try to geocode the address
-          const coords = await geocodeAddress(
-            shop.address,
-            shop.city,
-            shop.state,
-            shop.country
-          );
+          const coords = await geocodeAddress(shop.address, shop.city, shop.state, shop.country);
           if (coords) {
-            processed.push({
-              ...shop,
-              latitude: coords.lat,
-              longitude: coords.lng,
-            });
+            processed.push({ ...shop, latitude: coords.lat, longitude: coords.lng });
           }
         }
       }
@@ -119,125 +98,68 @@ const MapView: React.FC<MapViewProps> = ({ shops }) => {
       setLoading(false);
     };
 
-    processShops();
+    void processShops();
   }, [shops]);
 
   if (loading) {
     return (
-      <Box
-        sx={{
-          height: "600px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          bgcolor: "background.paper",
-        }}
-      >
-        <Box sx={{ textAlign: "center" }}>
-          <CircularProgress sx={{ mb: 2 }} />
-          <Typography variant="body1" color="text.secondary">
-            Loading map...
-          </Typography>
-        </Box>
-      </Box>
+      <div className="flex h-[600px] items-center justify-center rounded-lg border bg-card">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <Loader2 className="size-8 animate-spin text-primary" />
+          <p>Loading map...</p>
+        </div>
+      </div>
     );
   }
 
   if (shopsWithCoords.length === 0) {
     return (
-      <Box
-        sx={{
-          height: "600px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          bgcolor: "background.paper",
-          border: "1px solid #EBEBEB",
-        }}
-      >
-        <Typography variant="h6" color="text.secondary">
-          No locations available to display on map
-        </Typography>
-      </Box>
+      <div className="flex h-[600px] items-center justify-center rounded-lg border bg-card text-center text-lg font-medium text-muted-foreground">
+        No locations available to display on map
+      </div>
     );
   }
 
   return (
-    <Box sx={{ height: "600px", overflow: "hidden" }}>
-      <MapContainer
-        center={[37.7749, -122.4194]} // Default to San Francisco
-        zoom={13}
-        style={{ height: "100%", width: "100%" }}
-      >
+    <div className="h-[600px] overflow-hidden rounded-lg border">
+      <MapContainer center={[37.7749, -122.4194]} zoom={13} style={{ height: "100%", width: "100%" }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <MapBoundsController shops={shopsWithCoords} />
         {shopsWithCoords.map((shop) => (
-          <Marker
-            key={shop.id}
-            position={[shop.latitude!, shop.longitude!]}
-          >
+          <Marker key={shop.id} position={[shop.latitude!, shop.longitude!]}>
             <Popup maxWidth={300}>
-              <Box sx={{ p: 1 }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "start",
-                    mb: 1,
-                  }}
-                >
-                  <Typography
-                    variant="h6"
-                    sx={{ fontWeight: 600, fontSize: "1rem" }}
-                  >
-                    {shop.name}
-                  </Typography>
-                  <Chip label={shop.shop_type} size="small" color="primary" />
-                </Box>
-                {shop.description && (
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mb: 1 }}
-                  >
-                    {shop.description}
-                  </Typography>
-                )}
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
-                  <LocationOnIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-                  <Typography variant="body2" color="text.secondary">
+              <div className="flex min-w-[240px] flex-col gap-3 p-1">
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="text-base font-semibold leading-tight">{shop.name}</h3>
+                  <Badge>{shop.shop_type}</Badge>
+                </div>
+                {shop.description && <p className="text-sm text-muted-foreground">{shop.description}</p>}
+                <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
+                  <span className="inline-flex items-center gap-2">
+                    <MapPin className="size-4" />
                     {shop.city}, {shop.state}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
-                  <PhoneIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-                  <Typography variant="body2" color="text.secondary">
+                  </span>
+                  <span className="inline-flex items-center gap-2">
+                    <Phone className="size-4" />
                     {shop.phone}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
-                  <AccessTimeIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-                  <Typography variant="body2" color="text.secondary">
+                  </span>
+                  <span className="inline-flex items-center gap-2">
+                    <Clock className="size-4" />
                     Avg. {shop.average_service_time} min service
-                  </Typography>
-                </Box>
-                <Button
-                  fullWidth
-                  variant="contained"
-                  size="small"
-                  onClick={() => navigate(`/queue/${shop.id}`)}
-                >
+                  </span>
+                </div>
+                <Button size="sm" className="w-full" onClick={() => navigate(`/queue/${shop.id}`)}>
                   Join Queue
                 </Button>
-              </Box>
+              </div>
             </Popup>
           </Marker>
         ))}
       </MapContainer>
-    </Box>
+    </div>
   );
 };
 

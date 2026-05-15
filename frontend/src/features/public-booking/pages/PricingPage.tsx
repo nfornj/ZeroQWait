@@ -1,204 +1,129 @@
 import React from "react";
-import {
-    Container,
-    Typography,
-    Box,
-    Card,
-    CardContent,
-    Button,
-    List,
-    ListItem,
-    ListItemIcon,
-    ListItemText,
-    Chip,
-} from "@mui/material";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { Link } from "react-router-dom";
+import { CheckCircle2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+const tiers = [
+  {
+    name: "Free",
+    price: "$0",
+    period: "forever",
+    features: [
+      "Up to 1 shop",
+      "AI Receptionist for customer chats",
+      "Live queue join page",
+      "Appointment booking flow",
+      "Shared tenant environment",
+      "Email support",
+      "Mobile-friendly customer pages",
+    ],
+    cta: "Get Started",
+    to: "/signup",
+    highlighted: false,
+  },
+  {
+    name: "Premium",
+    price: "$29",
+    period: "per month",
+    features: [
+      "Up to 5 shops",
+      "Full AI agent team (Receptionist, Finance, HR)",
+      "Human-in-the-Loop approvals",
+      "Advanced analytics and revenue reports",
+      "Custom branding & colors",
+      "Priority support",
+      "Owner agent inbox workspace",
+    ],
+    cta: "Start Free Trial",
+    to: "/signup",
+    highlighted: true,
+  },
+  {
+    name: "Enterprise",
+    price: "Custom",
+    period: "contact us",
+    features: [
+      "Unlimited shops",
+      "Dedicated onboarding",
+      "Custom support SLA",
+      "Private deployment planning",
+      "Dedicated account manager",
+      "Multi-location rollout support",
+    ],
+    cta: "Contact Us",
+    to: "/signup",
+    highlighted: false,
+  },
+];
 
 const PricingPage: React.FC = () => {
-    const tiers = [
-        {
-            name: "Free",
-            price: "$0",
-            period: "forever",
-            features: [
-                "Up to 1 shop",
-                "AI Receptionist for customer chats",
-                "Live queue join page",
-                "Appointment booking flow",
-                "Shared tenant environment",
-                "Email support",
-                "Mobile-friendly customer pages",
-            ],
-            cta: "Get Started",
-            to: "/signup",
-            highlighted: false,
-            color: "primary",
-        },
-        {
-            name: "Premium",
-            price: "$29",
-            period: "per month",
-            features: [
-                "Up to 5 shops",
-                "Full AI agent team (Receptionist, Finance, HR)",
-                "Human-in-the-Loop approvals",
-                "Advanced analytics and revenue reports",
-                "Custom branding & colors",
-                "Priority support",
-                "Owner agent inbox workspace",
-            ],
-            cta: "Start Free Trial",
-            to: "/signup",
-            highlighted: true,
-            color: "secondary",
-        },
-        {
-            name: "Enterprise",
-            price: "Custom",
-            period: "contact us",
-            features: [
-                "Unlimited shops",
-                "Dedicated onboarding",
-                "Custom support SLA",
-                "Private deployment planning",
-                "Dedicated account manager",
-                "Multi-location rollout support",
-            ],
-            cta: "Contact Us",
-            to: "/signup",
-            highlighted: false,
-            color: "primary",
-        },
-    ];
+  return (
+    <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-12 md:px-6 md:py-16">
+      <section className="mx-auto max-w-3xl text-center">
+        <h1 className="text-4xl font-bold tracking-tight md:text-5xl">Choose Your Plan</h1>
+        <p className="mt-4 text-lg text-muted-foreground">
+          Start with an AI receptionist, then expand into a full AI operating team for your shop.
+        </p>
+      </section>
 
-    return (
-        <Container maxWidth="lg" sx={{ py: 8 }}>
-            <Box sx={{ textAlign: "center", mb: 6 }}>
-                <Typography variant="h2" component="h1" gutterBottom fontWeight="bold">
-                    Choose Your Plan
-                </Typography>
-                <Typography variant="h6" color="text.secondary" paragraph>
-                    Start with an AI receptionist, then expand into a full AI operating team for your shop.
-                </Typography>
-            </Box>
-
-            <Box display="flex" flexWrap="wrap" gap={4} alignItems="stretch">
-                {tiers.map((tier) => (
-                    <Box sx={{ flex: 1, minWidth: '250px' }} key={tier.name}>
-                        <Card
-                            raised={tier.highlighted}
-                            sx={{
-                                height: "100%",
-                                display: "flex",
-                                flexDirection: "column",
-                                position: "relative",
-                                border: tier.highlighted ? "2px solid" : "1px solid",
-                                borderColor: tier.highlighted ? "secondary.main" : "divider",
-                                transition: "transform 0.2s",
-                                "&:hover": {
-                                    transform: "translateY(-8px)",
-                                },
-                            }}
-                        >
-                            {tier.highlighted && (
-                                <Chip
-                                    label="Most Popular"
-                                    color="secondary"
-                                    sx={{
-                                        position: "absolute",
-                                        top: 16,
-                                        right: 16,
-                                        fontWeight: "bold",
-                                    }}
-                                />
-                            )}
-
-                            <CardContent sx={{ flexGrow: 1, pt: tier.highlighted ? 4 : 3 }}>
-                                <Typography variant="h4" component="h2" gutterBottom fontWeight="bold">
-                                    {tier.name}
-                                </Typography>
-
-                                <Box sx={{ my: 3 }}>
-                                    <Typography
-                                        variant="h3"
-                                        component="span"
-                                        color={tier.highlighted ? "secondary" : "primary"}
-                                        fontWeight="bold"
-                                    >
-                                        {tier.price}
-                                    </Typography>
-                                    <Typography variant="body1" component="span" color="text.secondary">
-                                        {" "}
-                                        / {tier.period}
-                                    </Typography>
-                                </Box>
-
-                                <List sx={{ mt: 2 }}>
-                                    {tier.features.map((feature, index) => (
-                                        <ListItem key={index} disablePadding sx={{ mb: 1 }}>
-                                            <ListItemIcon sx={{ minWidth: 36 }}>
-                                                <CheckCircleIcon color="success" fontSize="small" />
-                                            </ListItemIcon>
-                                            <ListItemText
-                                                primary={feature}
-                                                primaryTypographyProps={{ variant: "body2" }}
-                                            />
-                                        </ListItem>
-                                    ))}
-                                </List>
-
-                                <Button
-                                    component={Link}
-                                    to={tier.to}
-                                    variant={tier.highlighted ? "contained" : "outlined"}
-                                    color={tier.color as any}
-                                    fullWidth
-                                    size="large"
-                                    sx={{
-                                        mt: 3,
-                                        py: 1.5,
-                                        fontWeight: "bold",
-                                    }}
-                                >
-                                    {tier.cta}
-                                </Button>
-                            </CardContent>
-                        </Card>
-                    </Box>
+      <section className="grid gap-6 md:grid-cols-3">
+        {tiers.map((tier) => (
+          <Card
+            key={tier.name}
+            className={cn("relative flex flex-col transition hover:-translate-y-1", tier.highlighted && "border-primary shadow-lg")}
+          >
+            {tier.highlighted && <Badge className="absolute right-4 top-4">Most Popular</Badge>}
+            <CardHeader>
+              <CardTitle className="text-2xl">{tier.name}</CardTitle>
+              <div className="pt-3">
+                <span className="text-4xl font-bold">{tier.price}</span>
+                <span className="text-muted-foreground"> / {tier.period}</span>
+              </div>
+            </CardHeader>
+            <CardContent className="flex flex-1 flex-col gap-6">
+              <ul className="flex flex-1 flex-col gap-3">
+                {tier.features.map((feature) => (
+                  <li key={feature} className="flex gap-3 text-sm">
+                    <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+                    <span>{feature}</span>
+                  </li>
                 ))}
-            </Box>
+              </ul>
+              <Button asChild variant={tier.highlighted ? "default" : "outline"} size="lg">
+                <Link to={tier.to}>{tier.cta}</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
 
-            <Box sx={{ mt: 8, textAlign: "center" }}>
-                <Typography variant="h5" gutterBottom>
-                    All plans include:
-                </Typography>
-                <Box display="flex" flexWrap="wrap" gap={2} sx={{ mt: 2, justifyContent: "center" }}>
-                    {[
-                        "Public shop page",
-                        "Live queue status",
-                        "Appointment booking flow",
-                        "Mobile-friendly customer experience",
-                        "No setup fees",
-                        "Cancel anytime",
-                    ].map((feature) => (
-                        <Box sx={{ flex: 1, minWidth: '250px' }} key={feature}>
-                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                <CheckCircleIcon color="primary" sx={{ mr: 1 }} fontSize="small" />
-                                <Typography variant="body1">{feature}</Typography>
-                            </Box>
-                        </Box>
-                    ))}
-                </Box>
-            </Box>
+      <section className="flex flex-col items-center gap-4 text-center">
+        <h2 className="text-2xl font-semibold">All plans include:</h2>
+        <div className="grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            "Public shop page",
+            "Live queue status",
+            "Appointment booking flow",
+            "Mobile-friendly customer experience",
+            "No setup fees",
+            "Cancel anytime",
+          ].map((feature) => (
+            <div key={feature} className="flex items-center justify-center gap-2 rounded-lg border bg-card p-3">
+              <CheckCircle2 className="size-4 text-primary" />
+              <span className="text-sm font-medium">{feature}</span>
+            </div>
+          ))}
+        </div>
+      </section>
 
-            <Box sx={{ mt: 6, textAlign: "center" }}>
-                <Typography variant="body2" color="text.secondary">
-                    Need a custom plan? <Link to="/signup">Contact us</Link> for enterprise pricing
-                </Typography>
-            </Box>
-        </Container>
-    );
+      <p className="text-center text-sm text-muted-foreground">
+        Need a custom plan? <Link className="font-medium text-primary hover:underline" to="/signup">Contact us</Link> for enterprise pricing
+      </p>
+    </main>
+  );
 };
 
 export default PricingPage;

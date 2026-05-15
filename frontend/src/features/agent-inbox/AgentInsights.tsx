@@ -1,21 +1,18 @@
 import React, { useMemo } from "react";
+import { Brain, Zap, ShieldAlert } from "lucide-react";
 import {
-  alpha,
-  Card,
-  CardContent,
-  Chip,
-  Grid,
-  Stack,
-  Typography,
-  useTheme,
-} from "@mui/material";
-import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
-import BoltRoundedIcon from "@mui/icons-material/BoltRounded";
-import GppMaybeRoundedIcon from "@mui/icons-material/GppMaybeRounded";
-import { BarChart } from "@mui/x-charts/BarChart";
-import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  LineChart,
+  Line,
+  ReferenceLine,
+} from "recharts";
+import { useOwnerBrand } from "../../hooks/useOwnerBrand";
 import type { AgentFeedEvent, ChatMessage, PendingApproval } from "./types";
-import { useShop } from "../../contexts/ShopContext";
 
 interface AgentInsightsProps {
   messages: ChatMessage[];
@@ -24,27 +21,17 @@ interface AgentInsightsProps {
 }
 
 const AgentInsights: React.FC<AgentInsightsProps> = ({ messages, events, pendingApprovals }) => {
-  const muiTheme = useTheme();
-  const { shop } = useShop();
-  const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
-  const brandSecondary = shop?.secondary_color || brandPrimary;
-  const cardBg =
-    muiTheme.palette.mode === "dark"
-      ? "rgba(255, 255, 255, 0.05)"
-      : alpha("#ffffff", 0.68);
-  const cardBorder =
-    muiTheme.palette.mode === "dark"
-      ? alpha(brandPrimary, 0.24)
-      : alpha(brandPrimary, 0.16);
+  const brand = useOwnerBrand();
 
   const assistantMessages = useMemo(
     () => messages.filter((m) => m.role === "assistant" && m.content.trim().length > 0),
-    [messages]
+    [messages],
   );
 
   const responseLengths = useMemo(
-    () => assistantMessages.slice(-12).map((m) => m.content.length),
-    [assistantMessages]
+    () =>
+      assistantMessages.slice(-12).map((m, i) => ({ index: i, value: m.content.length })),
+    [assistantMessages],
   );
 
   const eventBuckets = useMemo(() => {
@@ -60,136 +47,136 @@ const AgentInsights: React.FC<AgentInsightsProps> = ({ messages, events, pending
 
     const counts = new Map<AgentFeedEvent["type"], number>();
     tracked.forEach((t) => counts.set(t, 0));
-
     events.slice(0, 40).forEach((event) => {
       if (counts.has(event.type)) {
         counts.set(event.type, (counts.get(event.type) || 0) + 1);
       }
     });
 
-    return {
-      labels: tracked.map((t) => t.replace(/_/g, " ")),
-      values: tracked.map((t) => counts.get(t) || 0),
-    };
+    return tracked.map((t) => ({
+      name: t.replace(/_/g, " "),
+      events: counts.get(t) || 0,
+    }));
   }, [events]);
 
   return (
-    <Card
-      variant="outlined"
-      sx={{
-        borderRadius: 3,
-        borderColor: cardBorder,
-        bgcolor: cardBg,
-        backdropFilter: "blur(20px)",
-        boxShadow: `0 18px 50px ${alpha(brandPrimary, 0.08)}`,
+    <div
+      className="rounded-2xl border backdrop-blur-xl"
+      style={{
+        borderColor: brand.glass.border,
+        backgroundColor: brand.glass.bg,
+        boxShadow: `0 18px 50px ${brand.primary}14`,
       }}
     >
-      <CardContent>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-          <Typography variant="h6">Context Snapshot</Typography>
-          <Chip
-            size="small"
-            label="Live"
-            sx={{
-              bgcolor: brandPrimary,
-              color: muiTheme.palette.getContrastText(brandPrimary),
-              fontWeight: 700,
+      <div className="px-4 py-4">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-base font-semibold">Context Snapshot</p>
+          <span
+            className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold"
+            style={{
+              backgroundColor: brand.primary,
+              color: "#fff",
             }}
-          />
-        </Stack>
+          >
+            Live
+          </span>
+        </div>
 
-        <Typography variant="body2" color="text.secondary" mb={2}>
+        <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
           A lightweight view of activity, approvals, and response patterns around the current chat context.
-        </Typography>
+        </p>
 
-        <Grid container spacing={1.25} mb={2}>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <Card
-              variant="outlined"
-              sx={{
-                borderRadius: 2,
-                borderColor: alpha(brandPrimary, 0.16),
-                bgcolor: alpha(brandPrimary, 0.05),
+        {/* Stat cards */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          {[
+            {
+              icon: <Brain className="h-3.5 w-3.5" style={{ color: brand.primary }} />,
+              label: "Assistant Replies",
+              value: assistantMessages.length,
+            },
+            {
+              icon: <Zap className="h-3.5 w-3.5" style={{ color: brand.secondary }} />,
+              label: "Tool Events",
+              value: events.filter((e) => e.type === "tool_call" || e.type === "tool_result").length,
+            },
+            {
+              icon: <ShieldAlert className="h-3.5 w-3.5" style={{ color: brand.secondary }} />,
+              label: "Pending Approvals",
+              value: pendingApprovals.length,
+            },
+          ].map(({ icon, label, value }) => (
+            <div
+              key={label}
+              className="rounded-xl border p-2.5"
+              style={{
+                borderColor: `${brand.primary}29`,
+                backgroundColor: `${brand.primary}0d`,
               }}
             >
-              <CardContent sx={{ py: 1.5 }}>
-                <Stack direction="row" spacing={1} alignItems="center" mb={0.5}>
-                  <PsychologyRoundedIcon fontSize="small" sx={{ color: brandPrimary }} />
-                  <Typography variant="caption" color="text.secondary">
-                    Assistant Replies
-                  </Typography>
-                </Stack>
-                <Typography variant="h6">{assistantMessages.length}</Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <Card
-              variant="outlined"
-              sx={{
-                borderRadius: 2,
-                borderColor: alpha(brandPrimary, 0.16),
-                bgcolor: alpha(brandPrimary, 0.05),
-              }}
-            >
-              <CardContent sx={{ py: 1.5 }}>
-                <Stack direction="row" spacing={1} alignItems="center" mb={0.5}>
-                  <BoltRoundedIcon fontSize="small" sx={{ color: brandSecondary }} />
-                  <Typography variant="caption" color="text.secondary">
-                    Tool Events
-                  </Typography>
-                </Stack>
-                <Typography variant="h6">
-                  {events.filter((e) => e.type === "tool_call" || e.type === "tool_result").length}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <Card
-              variant="outlined"
-              sx={{
-                borderRadius: 2,
-                borderColor: alpha(brandPrimary, 0.16),
-                bgcolor: alpha(brandPrimary, 0.05),
-              }}
-            >
-              <CardContent sx={{ py: 1.5 }}>
-                <Stack direction="row" spacing={1} alignItems="center" mb={0.5}>
-                  <GppMaybeRoundedIcon fontSize="small" sx={{ color: brandSecondary }} />
-                  <Typography variant="caption" color="text.secondary">
-                    Pending Approvals
-                  </Typography>
-                </Stack>
-                <Typography variant="h6">{pendingApprovals.length}</Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
+              <div className="flex items-center gap-1.5 mb-1">
+                {icon}
+                <span className="text-xs text-muted-foreground">{label}</span>
+              </div>
+              <p className="text-base font-semibold">{value}</p>
+            </div>
+          ))}
+        </div>
 
-        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+        {/* Event mix chart */}
+        <p className="text-xs font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
           Event Mix (latest 40)
-        </Typography>
-        <BarChart
-          height={170}
-          xAxis={[{ scaleType: "band", data: eventBuckets.labels }]}
-          series={[{ data: eventBuckets.values, color: brandPrimary, label: "events" }]}
-          margin={{ left: 30, right: 10, top: 10, bottom: 50 }}
-        />
+        </p>
+        <ResponsiveContainer width="100%" height={170}>
+          <BarChart data={eventBuckets} margin={{ left: 16, right: 8, top: 8, bottom: 44 }}>
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+              angle={-30}
+              textAnchor="end"
+              interval={0}
+            />
+            <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+            <Tooltip
+              contentStyle={{
+                background: "hsl(var(--background))",
+                border: "1px solid hsl(var(--border))",
+                borderRadius: 8,
+                fontSize: 12,
+              }}
+            />
+            <Bar dataKey="events" fill={brand.primary} radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
 
-        <Typography variant="subtitle2" sx={{ mt: 1.5, mb: 0.75 }}>
+        {/* Response length trend */}
+        <p className="text-xs font-semibold mt-3 mb-1.5 text-muted-foreground uppercase tracking-wide">
           Response Length Trend
-        </Typography>
-        <SparkLineChart
-          data={responseLengths.length > 1 ? responseLengths : [0, ...(responseLengths || [])]}
-          height={70}
-          area
-          color={brandSecondary}
-          showHighlight
-          showTooltip
-        />
-      </CardContent>
-    </Card>
+        </p>
+        <ResponsiveContainer width="100%" height={70}>
+          <LineChart
+            data={responseLengths.length > 1 ? responseLengths : [{ index: 0, value: 0 }, ...responseLengths]}
+          >
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke={brand.secondary}
+              dot={false}
+              strokeWidth={2}
+            />
+            <Tooltip
+              contentStyle={{
+                background: "hsl(var(--background))",
+                border: "1px solid hsl(var(--border))",
+                borderRadius: 8,
+                fontSize: 12,
+              }}
+              formatter={(v) => [`${v} chars`, "Length"]}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
   );
 };
 

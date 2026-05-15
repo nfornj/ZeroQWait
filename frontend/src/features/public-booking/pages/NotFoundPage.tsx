@@ -1,40 +1,19 @@
 import React from "react";
 import { Link as RouterLink } from "react-router-dom";
-import { Container, Typography, Button, Box } from "@mui/material";
-import ContentCutIcon from "@mui/icons-material/ContentCut";
+import { Scissors } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const NotFoundPage: React.FC = () => {
   return (
-    <Container maxWidth="sm">
-      <Box
-        sx={{
-          mt: 8,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          textAlign: "center",
-        }}
-      >
-        <ContentCutIcon sx={{ fontSize: 60, color: "text.secondary", mb: 2 }} />
-        <Typography variant="h2" component="h1" gutterBottom>
-          404
-        </Typography>
-        <Typography variant="h5" component="h2" gutterBottom>
-          Page Not Found
-        </Typography>
-        <Typography variant="body1" color="text.secondary" paragraph>
-          The page you're looking for doesn't exist or has been moved.
-        </Typography>
-        <Button
-          variant="contained"
-          component={RouterLink}
-          to="/"
-          sx={{ mt: 2 }}
-        >
-          Go to Homepage
-        </Button>
-      </Box>
-    </Container>
+    <main className="mx-auto flex min-h-[70vh] max-w-xl flex-col items-center justify-center px-4 text-center">
+      <Scissors className="mb-4 size-14 text-muted-foreground" />
+      <h1 className="text-5xl font-bold tracking-tight">404</h1>
+      <h2 className="mt-3 text-2xl font-semibold">Page Not Found</h2>
+      <p className="mt-2 text-muted-foreground">The page you're looking for doesn't exist or has been moved.</p>
+      <Button asChild className="mt-6">
+        <RouterLink to="/">Go to Homepage</RouterLink>
+      </Button>
+    </main>
   );
 };
 

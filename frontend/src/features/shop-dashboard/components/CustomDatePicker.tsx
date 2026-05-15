@@ -1,60 +1,34 @@
-import * as React from 'react';
-import dayjs, { Dayjs } from 'dayjs';
-import { useForkRef } from '@mui/material/utils';
-import Button from '@mui/material/Button';
-import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { DatePicker, DatePickerFieldProps } from '@mui/x-date-pickers/DatePicker';
-import {
-  useParsedFormat,
-  usePickerContext,
-  useSplitFieldProps,
-} from '@mui/x-date-pickers';
+import * as React from "react";
+import { format } from "date-fns";
+import { CalendarIcon } from "lucide-react";
 
-interface ButtonFieldProps extends DatePickerFieldProps { }
-
-function ButtonField(props: ButtonFieldProps) {
-  const { forwardedProps } = useSplitFieldProps(props, 'date');
-  const pickerContext = usePickerContext();
-  const handleRef = useForkRef(pickerContext.triggerRef, pickerContext.rootRef);
-  const parsedFormat = useParsedFormat();
-  const valueStr =
-    pickerContext.value == null
-      ? parsedFormat
-      : pickerContext.value.format(pickerContext.fieldFormat);
-
-  return (
-    <Button
-      {...forwardedProps}
-      variant="outlined"
-      ref={handleRef}
-      size="small"
-      startIcon={<CalendarTodayRoundedIcon fontSize="small" />}
-      sx={{ minWidth: 'fit-content' }}
-      onClick={() => pickerContext.setOpen((prev) => !prev)}
-    >
-      {pickerContext.label ?? valueStr}
-    </Button>
-  );
-}
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export default function CustomDatePicker() {
-  const [value, setValue] = React.useState<Dayjs | null>(dayjs());
+  const [date, setDate] = React.useState<Date | undefined>(new Date());
+  const [open, setOpen] = React.useState(false);
 
   return (
-    <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <DatePicker
-        value={value}
-        label={value == null ? null : value.format('MMM DD, YYYY')}
-        onChange={(newValue) => setValue(newValue)}
-        slots={{ field: ButtonField }}
-        slotProps={{
-          nextIconButton: { size: 'small' },
-          previousIconButton: { size: 'small' },
-        }}
-        views={['day', 'month', 'year']}
-      />
-    </LocalizationProvider>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm">
+          <CalendarIcon data-icon="inline-start" />
+          {date ? format(date, "MMM dd, yyyy") : "Pick a date"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={date}
+          onSelect={(nextDate) => {
+            setDate(nextDate);
+            setOpen(false);
+          }}
+          captionLayout="dropdown"
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
