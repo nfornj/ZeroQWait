@@ -30,7 +30,9 @@ class Shop(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     is_active = Column(Boolean, default=True, index=True)
-    tenant_schema = Column(String, nullable=True, index=True)  # NULL = shared/free, 'tenant_<id>' = premium
+    tenant_schema = Column(String, nullable=True, index=True)  # Shop-specific schema name when data is isolated at schema level
+    data_isolation_mode = Column(String(32), nullable=False, default="shared_public", index=True)
+    compute_mode = Column(String(32), nullable=False, default="shared_instance", index=True)
     odoo_company_id = Column(Integer, nullable=True, index=True)  # Odoo res.company ID for multi-tenant ERP isolation
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -49,6 +51,26 @@ class Shop(Base):
     close_days = relationship("ShopCloseDay", back_populates="shop", cascade="all, delete-orphan")
     customers = relationship("ShopCustomer", back_populates="shop", cascade="all, delete-orphan")
     operating_hours = relationship("ShopOperatingHours", back_populates="shop", uselist=False, cascade="all, delete-orphan")
+    runtime_assignment = relationship("ShopRuntimeAssignment", back_populates="shop", uselist=False, cascade="all, delete-orphan")
+
+
+class ShopRuntimeAssignment(Base):
+    __tablename__ = "shop_runtime_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    runtime_mode = Column(String(32), nullable=False, default="shared_instance", index=True)
+    instance_key = Column(String(128), nullable=True, index=True)
+    namespace = Column(String(64), nullable=True)
+    backend_service = Column(String(128), nullable=True)
+    worker_service = Column(String(128), nullable=True)
+    route_host = Column(String(255), nullable=True, index=True)
+    runtime_status = Column(String(32), nullable=False, default="pending", index=True)
+    assigned_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    shop = relationship("Shop", back_populates="runtime_assignment")
 
 class ShopService(Base):
     __tablename__ = "shop_services"

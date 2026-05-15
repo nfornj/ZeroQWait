@@ -28,6 +28,10 @@ def init_db():
         "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_notifications_enabled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_connect_token VARCHAR",
         "ALTER TABLE shops ADD COLUMN IF NOT EXISTS telegram_connect_token_expires_at TIMESTAMPTZ",
+        # Explicit shop isolation/runtime metadata (added 2026-05)
+        "ALTER TABLE shops ADD COLUMN IF NOT EXISTS data_isolation_mode VARCHAR(32) NOT NULL DEFAULT 'shared_public'",
+        "ALTER TABLE shops ADD COLUMN IF NOT EXISTS compute_mode VARCHAR(32) NOT NULL DEFAULT 'shared_instance'",
+        "UPDATE shops SET data_isolation_mode = CASE WHEN tenant_schema IS NOT NULL THEN 'shop_schema' ELSE 'shared_public' END",
         # notification_log table
         """CREATE TABLE IF NOT EXISTS notification_log (
             id          BIGSERIAL PRIMARY KEY,
@@ -38,6 +42,27 @@ def init_db():
             status      VARCHAR(32) NOT NULL DEFAULT 'pending',
             created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""",
+        # premium runtime-assignment metadata
+        """CREATE TABLE IF NOT EXISTS shop_runtime_assignments (
+            id              BIGSERIAL PRIMARY KEY,
+            shop_id         INTEGER NOT NULL UNIQUE REFERENCES shops(id) ON DELETE CASCADE,
+            runtime_mode    VARCHAR(32) NOT NULL DEFAULT 'shared_instance',
+            instance_key    VARCHAR(128),
+            namespace       VARCHAR(64),
+            backend_service VARCHAR(128),
+            worker_service  VARCHAR(128),
+            route_host      VARCHAR(255),
+            runtime_status  VARCHAR(32) NOT NULL DEFAULT 'pending',
+            assigned_at     TIMESTAMPTZ,
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_shops_data_isolation_mode ON shops(data_isolation_mode)",
+        "CREATE INDEX IF NOT EXISTS ix_shops_compute_mode ON shops(compute_mode)",
+        "CREATE INDEX IF NOT EXISTS ix_shop_runtime_assignments_runtime_mode ON shop_runtime_assignments(runtime_mode)",
+        "CREATE INDEX IF NOT EXISTS ix_shop_runtime_assignments_instance_key ON shop_runtime_assignments(instance_key)",
+        "CREATE INDEX IF NOT EXISTS ix_shop_runtime_assignments_route_host ON shop_runtime_assignments(route_host)",
+        "CREATE INDEX IF NOT EXISTS ix_shop_runtime_assignments_runtime_status ON shop_runtime_assignments(runtime_status)",
     ]
     try:
         with engine.connect() as conn:

@@ -242,9 +242,9 @@ app.add_middleware(DocsNoCacheMiddleware)
 
 
 # ── Tenant middleware ───────────────────────────────────────────────
-# Extracts shop_id from the request path, looks up the shop's tenant
-# schema, and sets a ContextVar so every SessionLocal() created during
-# the request automatically gets the correct search_path.
+# Extracts shop_id from the request path, resolves the shop's tenant schema,
+# and sets a ContextVar so every SessionLocal() created during the request
+# automatically gets the correct search_path.
 
 class TenantMiddleware(BaseHTTPMiddleware):
     _SHOP_ID_PATTERNS = [
@@ -263,11 +263,15 @@ class TenantMiddleware(BaseHTTPMiddleware):
             try:
                 from sqlalchemy import text
                 row = db.execute(
-                    text("SELECT tenant_schema FROM shops WHERE id = :sid"),
+                    text("SELECT tenant_schema, data_isolation_mode FROM shops WHERE id = :sid"),
                     {"sid": shop_id}
                 ).fetchone()
-                if row and row[0]:
-                    set_tenant_for_request(row[0])
+                if row:
+                    schema = row[0]
+                    if not schema and row[1] == "shop_schema":
+                        schema = f"tenant_{shop_id}"
+                    if schema and _re.match(r"^tenant_\d+$", schema):
+                        set_tenant_for_request(schema)
             finally:
                 db.close()
         try:
