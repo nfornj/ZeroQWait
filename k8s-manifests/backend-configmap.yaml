@@ -41,9 +41,10 @@ data:
   # Dev/test: auto-link any unknown Telegram user to this shop (shop id=501 = "Test" shop).
   # Remove or set to "" to disable in production.
   TELEGRAM_DEV_SHOP_ID: "501"
-  # Odoo CRM/ERP integration — points to the Docker Odoo instance on the host.
+  # Odoo CRM/ERP integration — running as a Deployment in the zeroqwait namespace.
+  # All shops share one Odoo instance; per-shop isolation is via res.company (shops.odoo_company_id).
   ODOO_ENABLED: "true"
-  ODOO_URL: "http://192.168.2.134:8069"
+  ODOO_URL: "http://odoo.zeroqwait.svc.cluster.local:8069"
   ODOO_DB: "odoo"
   ODOO_USER: "admin"
   ODOO_PASSWORD: "admin"

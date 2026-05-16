@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: odoo-db-init
+  namespace: zeroqwait
+  annotations:
+    # Re-run this job manually if the odoo postgres role is ever lost:
+    # kubectl delete job odoo-db-init -n zeroqwait && kubectl apply -f odoo-db-init-job.yaml
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: odoo
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: odoo-db-init
+        image: postgres:16-alpine
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          PG_HOST="postgres.zeroqwait.svc.cluster.local"
+          export PGPASSWORD="$SUPERPASSWORD"
+          echo "Waiting for postgres to be ready..."
+          until pg_isready -U "$SUPERUSER" -h "$PG_HOST" -d postgres; do
+            sleep 2
+          done
+          echo "Creating/updating odoo postgres role..."
+          ROLE_EXISTS=$(psql -U "$SUPERUSER" -h "$PG_HOST" -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='odoo'")
+          if [ "$ROLE_EXISTS" = "1" ]; then
+            psql -U "$SUPERUSER" -h "$PG_HOST" -d postgres \
+              -c "ALTER ROLE odoo WITH LOGIN CREATEDB PASSWORD '$ODOO_DB_PASSWORD';"
+            echo "Updated existing odoo role."
+          else
+            psql -U "$SUPERUSER" -h "$PG_HOST" -d postgres \
+              -c "CREATE ROLE odoo WITH LOGIN CREATEDB PASSWORD '$ODOO_DB_PASSWORD';"
+            echo "Created odoo role."
+          fi
+          echo "Odoo DB role ready."
+        env:
+        - name: SUPERUSER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: SUPERPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: ODOO_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: odoo-secret
+              key: ODOO_DB_PASSWORD
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"

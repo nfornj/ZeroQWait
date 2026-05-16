@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odoo
+  namespace: zeroqwait
+  labels:
+    app: odoo
+    component: crm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: odoo
+  strategy:
+    # Recreate to avoid two pods sharing the /var/lib/odoo RWO PVC simultaneously
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: odoo
+        component: crm
+    spec:
+      containers:
+      - name: odoo
+        image: odoo:17.0
+        ports:
+        - containerPort: 8069
+          name: http
+        env:
+        # Postgres connection — Odoo's env var convention (HOST/PORT/USER/PASSWORD)
+        - name: HOST
+          value: "postgres.zeroqwait.svc.cluster.local"
+        - name: PORT
+          value: "5432"
+        - name: USER
+          value: "odoo"
+        - name: PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: odoo-secret
+              key: ODOO_DB_PASSWORD
+        volumeMounts:
+        - name: odoo-data
+          mountPath: /var/lib/odoo
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1.5Gi"
+            cpu: "1000m"
+        # Odoo first-boot installs modules and creates the DB — allow up to 10 min
+        startupProbe:
+          httpGet:
+            path: /web/health
+            port: 8069
+          failureThreshold: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /web/health
+            port: 8069
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /web/health
+            port: 8069
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: odoo-data
+        persistentVolumeClaim:
+          claimName: odoo-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: odoo
+  namespace: zeroqwait
+  labels:
+    app: odoo
+spec:
+  type: ClusterIP
+  selector:
+    app: odoo
+  ports:
+  - name: http
+    port: 8069
+    targetPort: 8069
+    protocol: TCP

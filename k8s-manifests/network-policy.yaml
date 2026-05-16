@@ -35,6 +35,9 @@ spec:
         - podSelector:
             matchLabels:
               app: temporal-worker
+        - podSelector:
+            matchLabels:
+              app: odoo
       ports:
         - protocol: TCP
           port: 5432
