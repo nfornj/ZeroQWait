@@ -30,4 +30,5 @@ class AuditLog(Base):
     __table_args__ = (
         # Fast queries: latest events for a shop, filtered by action
         Index("ix_audit_logs_shop_action_created", "shop_id", "action", "created_at"),
+        {"schema": "platform"},
     )

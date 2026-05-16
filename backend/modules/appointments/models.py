@@ -26,10 +26,10 @@ class Appointment(Base):
     __tablename__ = "appointments"
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     customer_id = Column(Integer, ForeignKey("shop_customers.id"), nullable=True, index=True)
     service_id = Column(Integer, ForeignKey("shop_services.id"), nullable=True, index=True)
-    employee_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    employee_id = Column(Integer, ForeignKey("platform.users.id"), nullable=True, index=True)
 
     # Customer info (denormalised for walk-in appointments without a customer record)
     customer_name = Column(String, nullable=False)

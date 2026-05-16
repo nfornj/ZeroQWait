@@ -250,9 +250,9 @@ async def health():
     except Exception as exc:
         status["asr"] = {"status": "unreachable", "error": str(exc)}
 
-    # Derive overall status
-    tts_ok = isinstance(status.get("tts"), dict) and status["tts"].get("status") == "healthy"
-    asr_ok = isinstance(status.get("asr"), dict) and status["asr"].get("status") == "ok"
+    # Derive overall status — accept "ok" or "healthy" from upstream services
+    tts_ok = isinstance(status.get("tts"), dict) and status["tts"].get("status") in ("ok", "healthy")
+    asr_ok = isinstance(status.get("asr"), dict) and status["asr"].get("status") in ("ok", "healthy")
     status["overall"] = "healthy" if (tts_ok and asr_ok) else "degraded"
     return status
 

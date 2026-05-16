@@ -73,7 +73,20 @@ def create_shop(
         db_shop = shop_service.create_shop(shop_data)
         if not db_shop:
             raise HTTPException(status_code=500, detail="Failed to create shop")
-        
+
+        # Auto-provision tenant schema for data isolation
+        try:
+            from database import SessionLocal
+            from tenant_manager import ensure_shop_schema
+            _schema_db = SessionLocal()
+            try:
+                ensure_shop_schema(_schema_db, db_shop.id)
+                logger.info("Tenant schema provisioned for shop %s", db_shop.id)
+            finally:
+                _schema_db.close()
+        except Exception as _schema_err:
+            logger.warning("Tenant schema provisioning failed for shop %s (non-blocking): %s", db_shop.id, _schema_err)
+
         # Auto-provision an Odoo company for tenant isolation
         try:
             from integrations.odoo_client import odoo_client

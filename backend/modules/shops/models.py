@@ -7,7 +7,7 @@ class Shop(Base):
     __tablename__ = "shops"
     
     id = Column(Integer, primary_key=True, index=True)
-    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("platform.users.id"), nullable=False, index=True)
     name = Column(String, nullable=False, index=True)
     description = Column(Text)
     shop_type = Column(String, nullable=False)
@@ -42,7 +42,9 @@ class Shop(Base):
     telegram_notifications_enabled = Column(Boolean, default=False)         # Whether notifications are active
     telegram_connect_token = Column(String, nullable=True)                  # One-time onboarding token (cleared after handshake)
     telegram_connect_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # Token expiry (10 min)
-    
+
+    __table_args__ = {"schema": "platform"}
+
     # Relationships
     owner = relationship("User", back_populates="owned_shops", foreign_keys=[owner_id])
     queues = relationship("Queue", back_populates="shop", cascade="all, delete-orphan")
@@ -56,9 +58,10 @@ class Shop(Base):
 
 class ShopRuntimeAssignment(Base):
     __tablename__ = "shop_runtime_assignments"
+    __table_args__ = {"schema": "platform"}
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     runtime_mode = Column(String(32), nullable=False, default="shared_instance", index=True)
     instance_key = Column(String(128), nullable=True, index=True)
     namespace = Column(String(64), nullable=True)
@@ -76,7 +79,7 @@ class ShopService(Base):
     __tablename__ = "shop_services"
     
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String, nullable=False)
     description = Column(Text)
     duration_minutes = Column(Integer, default=30)
@@ -93,7 +96,7 @@ class DailyAnalytics(Base):
     __tablename__ = "daily_analytics"
     
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     date = Column(DateTime, nullable=False, index=True)
     total_customers = Column(Integer, default=0)
     completed_services = Column(Integer, default=0)
@@ -111,7 +114,7 @@ class ShopCloseDay(Base):
     __tablename__ = "shop_close_days"
     
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     date = Column(DateTime, nullable=False)
     reason = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -125,7 +128,7 @@ class ShopOperatingHours(Base):
     __tablename__ = "shop_operating_hours"
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
 
     open_time = Column(Time, nullable=False, default="09:00:00")
     close_time = Column(Time, nullable=False, default="17:00:00")
@@ -147,7 +150,7 @@ class ShopCustomer(Base):
     __tablename__ = "shop_customers"
     
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     phone = Column(String, nullable=False, index=True)
     name = Column(String, nullable=False)
     email = Column(String)

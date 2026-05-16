@@ -7,10 +7,10 @@ class ShopEmployee(Base):
     __tablename__ = "shop_employees"
     
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("platform.users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    created_by = Column(Integer, ForeignKey("users.id"))
+    created_by = Column(Integer, ForeignKey("platform.users.id"))
     is_active = Column(Boolean, default=True, index=True)
     employee_code = Column(String, nullable=True) # Visible ID for shop use
     
@@ -30,7 +30,7 @@ class EmployeePayrollProfile(Base):
 
     id               = Column(Integer, primary_key=True, index=True)
     shop_employee_id = Column(Integer, ForeignKey("shop_employees.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
-    shop_id          = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id          = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # compensation
     pay_type         = Column(String(10), nullable=False, default="hourly")   # 'hourly' | 'salary'
@@ -69,8 +69,8 @@ class EmployeeShift(Base):
     __tablename__ = "employee_shifts"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("platform.users.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     clock_in = Column(DateTime, default=datetime.utcnow, nullable=False)
     clock_out = Column(DateTime)
     

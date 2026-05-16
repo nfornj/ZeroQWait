@@ -18,7 +18,8 @@ class SubscriptionTier(str, enum.Enum):
 
 class User(Base):
     __tablename__ = "users"
-    
+    __table_args__ = {"schema": "platform"}
+
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     username = Column(String, unique=True, index=True, nullable=False)

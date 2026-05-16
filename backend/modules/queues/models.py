@@ -14,7 +14,7 @@ class Queue(Base):
     __tablename__ = "queues"
     
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String, default="Main Queue")
     date = Column(DateTime, default=datetime.utcnow, index=True)
     is_active = Column(Boolean, default=True, index=True)
@@ -31,7 +31,7 @@ class QueueItem(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     queue_id = Column(Integer, ForeignKey("queues.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("platform.users.id"))
     customer_name = Column(String, nullable=False)
     customer_phone = Column(String)
     customer_email = Column(String)
@@ -41,7 +41,7 @@ class QueueItem(Base):
     checked_in_at = Column(DateTime, default=datetime.utcnow, index=True)
     service_started_at = Column(DateTime)
     completed_at = Column(DateTime, index=True)
-    assigned_employee_id = Column(Integer, ForeignKey("users.id"))
+    assigned_employee_id = Column(Integer, ForeignKey("platform.users.id"))
     
     # Service Link
     service_id = Column(Integer, ForeignKey("shop_services.id"), nullable=True, index=True)

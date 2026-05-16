@@ -86,9 +86,9 @@ def _on_session_begin(session, transaction, connection):
     """Set search_path + RLS user when a session begins a transaction."""
     schema = _tenant_schema.get()
     if schema and _TENANT_RE.match(schema):
-        connection.execute(text(f"SET search_path TO {schema}, public"))
+        connection.execute(text(f"SET search_path TO {schema}, platform, public"))
     else:
-        connection.execute(text("SET search_path TO public"))
+        connection.execute(text("SET search_path TO platform, public"))
     # Propagate current user_id into PostgreSQL session for RLS policies.
     uid = _current_user_id.get()
     if uid is not None:

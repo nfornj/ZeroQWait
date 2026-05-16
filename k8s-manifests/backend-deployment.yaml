@@ -42,7 +42,7 @@ spec:
       - name: backend
         # Image built by CI and pushed to GHCR.
         # The run-local-pipeline.sh sed step replaces the tag on every prod deploy.
-        image: ghcr.io/nfornj/backend:v20260505231038-fd470b1
+        image: ghcr.io/nfornj/backend:v20260516005346-5794ab9
         ports:
         - containerPort: 8000
         envFrom:

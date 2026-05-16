@@ -100,7 +100,7 @@ def _get_shop_metadata(db: Session, shop_id: int) -> Optional[dict]:
     row = db.execute(text(
         """
         SELECT id, owner_id, name, slug, tenant_schema, data_isolation_mode, compute_mode
-        FROM shops
+        FROM platform.shops
         WHERE id = :sid
         """
     ), {"sid": shop_id}).mappings().first()
@@ -170,7 +170,7 @@ def ensure_shop_schema(db: Session, shop_id: int, *, mark_isolated: bool = True)
     if mark_isolated:
         db.execute(text(
             """
-            UPDATE shops
+            UPDATE platform.shops
             SET tenant_schema = :schema, data_isolation_mode = 'shop_schema'
             WHERE id = :sid
             """
@@ -276,7 +276,7 @@ def migrate_shop_to_schema(db: Session, shop_id: int, *, delete_public: bool = F
 
     db.execute(text(
         """
-        UPDATE shops
+        UPDATE platform.shops
         SET tenant_schema = :schema, data_isolation_mode = 'shop_schema'
         WHERE id = :sid
         """
@@ -316,7 +316,7 @@ def assign_dedicated_runtime(
     assigned_at = datetime.utcnow()
     db.execute(text(
         """
-        INSERT INTO shop_runtime_assignments (
+        INSERT INTO platform.shop_runtime_assignments (
             shop_id, runtime_mode, instance_key, namespace, backend_service,
             worker_service, route_host, runtime_status, assigned_at, created_at, updated_at
         ) VALUES (
@@ -346,7 +346,7 @@ def assign_dedicated_runtime(
         "assigned_at": assigned_at,
     })
     db.execute(text(
-        "UPDATE shops SET compute_mode = 'dedicated_instance' WHERE id = :sid"
+        "UPDATE platform.shops SET compute_mode = 'dedicated_instance' WHERE id = :sid"
     ), {"sid": shop_id})
     db.commit()
 
@@ -375,9 +375,9 @@ def assign_shared_runtime(db: Session, shop_id: int, *, runtime_status: str = "s
         raise ValueError(f"Shop {shop_id} not found")
 
     schema = resolve_shop_schema_from_metadata(shop)
-    db.execute(text("DELETE FROM shop_runtime_assignments WHERE shop_id = :sid"), {"sid": shop_id})
+    db.execute(text("DELETE FROM platform.shop_runtime_assignments WHERE shop_id = :sid"), {"sid": shop_id})
     db.execute(text(
-        "UPDATE shops SET compute_mode = 'shared_instance' WHERE id = :sid"
+        "UPDATE platform.shops SET compute_mode = 'shared_instance' WHERE id = :sid"
     ), {"sid": shop_id})
     db.commit()
 
@@ -454,14 +454,14 @@ def migrate_to_free(db: Session, shop_id: int) -> None:
 
     db.execute(text(
         """
-        UPDATE shops
+        UPDATE platform.shops
         SET tenant_schema = NULL,
             data_isolation_mode = 'shared_public',
             compute_mode = 'shared_instance'
         WHERE id = :sid
         """
     ), {"sid": shop_id})
-    db.execute(text("DELETE FROM shop_runtime_assignments WHERE shop_id = :sid"), {"sid": shop_id})
+    db.execute(text("DELETE FROM platform.shop_runtime_assignments WHERE shop_id = :sid"), {"sid": shop_id})
     db.commit()
     logger.info("Shop %d migrated back to free tier (shared)", shop_id)
 
@@ -491,9 +491,9 @@ def tenant_session(shop_id: Optional[int] = None, db: Optional[Session] = None):
                 schema = resolve_shop_schema_from_metadata(shop)
 
         if schema:
-            session.execute(text(f"SET search_path TO {schema}, public"))
+            session.execute(text(f"SET search_path TO {schema}, platform, public"))
         else:
-            session.execute(text("SET search_path TO public"))
+            session.execute(text("SET search_path TO platform, public"))
 
         yield session
 
@@ -505,7 +505,7 @@ def tenant_session(shop_id: Optional[int] = None, db: Optional[Session] = None):
         raise
     finally:
         # Always reset search_path to avoid leaking tenant context
-        session.execute(text("SET search_path TO public"))
+        session.execute(text("SET search_path TO platform, public"))
         if own_session:
             session.close()
 
@@ -580,7 +580,7 @@ def list_tenant_schemas(db: Session) -> list[dict]:
     rows = db.execute(text(
         """
         SELECT id, name, slug, tenant_schema, data_isolation_mode, compute_mode
-        FROM shops
+        FROM platform.shops
         ORDER BY id
         """
     )).mappings().all()
@@ -619,8 +619,8 @@ def list_shop_runtimes(db: Session) -> list[dict]:
             r.route_host,
             r.runtime_status,
             r.assigned_at
-        FROM shops s
-        LEFT JOIN shop_runtime_assignments r ON r.shop_id = s.id
+        FROM platform.shops s
+        LEFT JOIN platform.shop_runtime_assignments r ON r.shop_id = s.id
         ORDER BY s.id
         """
     )).mappings().all()
