@@ -23,8 +23,8 @@ spec:
       priorityClassName: voice-critical
       containers:
         - name: tts-service
-          image: ghcr.io/nfornj/tts-service:v20260516013502-5794ab9
-          imagePullPolicy: Always
+          image: ghcr.io/nfornj/tts-service:v20260516090919-3f86f98
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8880
               protocol: TCP
