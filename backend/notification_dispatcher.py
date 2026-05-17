@@ -123,9 +123,82 @@ async def dispatch(
         result["reason"] = None if ok else "telegram_api_error"
         return result
 
-    # Future channels (SMS, email, push) — stubs
+    if channel == "email":
+        from modules.shops.models import Shop
+        import services.aws_client as aws
+
+        shop = db.query(Shop).filter(Shop.id == shop_id).first()
+        if not shop:
+            result["reason"] = "shop_not_found"
+            return result
+
+        to_email = getattr(shop, "email", None)
+        if not to_email:
+            result["reason"] = "shop_email_not_set"
+            _log(shop_id, channel, event_type, "", "no_address", db)
+            return result
+
+        if not aws.is_ses_configured():
+            result["reason"] = "ses_not_configured"
+            return result
+
+        text, _ = template_fn(data)
+        subject = _EMAIL_SUBJECTS.get(event_type, "ZeroQwait notification")
+        ok = await aws.send_email(to_email, subject, text)
+        status = "sent" if ok else "failed"
+        _log(shop_id, channel, event_type, text, status, db)
+        result["sent"] = ok
+        result["reason"] = None if ok else "ses_send_error"
+        return result
+
+    if channel == "sms":
+        from modules.shops.models import Shop
+        import services.aws_client as aws
+
+        shop = db.query(Shop).filter(Shop.id == shop_id).first()
+        if not shop:
+            result["reason"] = "shop_not_found"
+            return result
+
+        phone = getattr(shop, "phone", None)
+        if not phone:
+            result["reason"] = "shop_phone_not_set"
+            _log(shop_id, channel, event_type, "", "no_address", db)
+            return result
+
+        if not aws.is_sns_configured():
+            result["reason"] = "sns_not_configured"
+            return result
+
+        text, _ = template_fn(data)
+        ok = await aws.send_sms(phone, text)
+        status = "sent" if ok else "failed"
+        _log(shop_id, channel, event_type, text, status, db)
+        result["sent"] = ok
+        result["reason"] = None if ok else "sns_send_error"
+        return result
+
     result["reason"] = f"channel_not_implemented:{channel}"
     return result
+
+
+# ── Email subject lines ───────────────────────────────────────────────────────
+
+_EMAIL_SUBJECTS: dict[str, str] = {
+    "morning_briefing":         "☀️ Your ZeroQwait morning briefing",
+    "commitment_reminder":      "📌 Commitment reminder from ZeroQwait",
+    "appointment_confirmation":  "✅ New appointment booked",
+    "revenue_alert":             "💰 Revenue alert from ZeroQwait",
+    "staff_absence":             "⚠️ Staff absence alert",
+    "agent_escalation":          "🔔 Action required — ZeroQwait",
+    "sentiment_alert":           "😟 Customer sentiment alert",
+    "booking_confirmed":         "✅ Booking confirmed",
+    "reminder_24h":              "⏰ Appointment reminder — tomorrow",
+    "reminder_1h":               "⏰ Appointment reminder — 1 hour away",
+    "youre_next":                "🎉 You're next in queue!",
+    "receipt":                   "🧾 Your ZeroQwait receipt",
+    "low_stock_alert":           "⚠️ Low stock alert",
+}
 
 
 # ── Internal ──────────────────────────────────────────────────────────────────

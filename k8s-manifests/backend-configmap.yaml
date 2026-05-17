@@ -20,7 +20,7 @@ data:
   BOOKING_MCP_URL: "http://booking-mcp.zeroqwait.svc.cluster.local:8890"
   FINANCE_MCP_URL: "http://finance-mcp.zeroqwait.svc.cluster.local:8891"
   HR_MCP_URL: "http://hr-mcp.zeroqwait.svc.cluster.local:8892"
-  TEMPORAL_ENABLED: "false"
+  TEMPORAL_ENABLED: "true"
   TEMPORAL_ADDRESS: "temporal.zeroqwait.svc.cluster.local:7233"
   TEMPORAL_NAMESPACE: "default"
   TEMPORAL_TASK_QUEUE: "zeroqwait-agent-brain"
@@ -41,6 +41,12 @@ data:
   # Dev/test: auto-link any unknown Telegram user to this shop (shop id=501 = "Test" shop).
   # Remove or set to "" to disable in production.
   TELEGRAM_DEV_SHOP_ID: "501"
+  # AWS SES (email) + SNS (SMS) — credentials stored in backend-secret
+  AWS_REGION: "us-east-1"
+  # Verified sender address in SES (must match what you verify in the AWS console)
+  AWS_SES_FROM_EMAIL: "notifications@zeroqwait.com"
+  # Alphanumeric sender ID shown on SMS (max 11 chars; not supported in US/CA)
+  AWS_SNS_SMS_SENDER_ID: "ZeroQwait"
   # Odoo CRM/ERP integration — running as a Deployment in the zeroqwait namespace.
   # All shops share one Odoo instance; per-shop isolation is via res.company (shops.odoo_company_id).
   ODOO_ENABLED: "true"
