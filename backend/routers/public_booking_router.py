@@ -339,12 +339,14 @@ def create_booking(
     except Exception as exc:
         logger.warning("public_booking: owner notification failed (non-fatal): %s", exc)
 
-    # Fire-and-forget: send confirmation email to customer (best-effort)
+    # Fire-and-forget: send confirmation email + SMS to customer (best-effort)
+    _frontend_url = os.getenv("FRONTEND_URL", "https://zeroqwait.com").rstrip("/")
+    _appt_status_url = f"{_frontend_url}/appointment-status/{public_token}"
+    _appt_date = body.scheduled_start.strftime("%A, %B %-d %Y")
+    _appt_time = body.scheduled_start.strftime("%-I:%M %p")
     if body.customer_email:
         try:
             from services.queue_email import send_appointment_confirmation_email
-            frontend_url = os.getenv("FRONTEND_URL", "https://zeroqwait.com").rstrip("/")
-            status_url = f"{frontend_url}/appointment-status/{public_token}"
             asyncio.get_event_loop().run_until_complete(
                 send_appointment_confirmation_email(
                     customer_email=body.customer_email,
@@ -352,13 +354,29 @@ def create_booking(
                     shop_name=page["shop_name"],
                     service_name=svc[1],
                     scheduled_start=body.scheduled_start.isoformat(),
-                    scheduled_date=body.scheduled_start.strftime("%A, %B %-d %Y"),
-                    scheduled_time=body.scheduled_start.strftime("%-I:%M %p"),
-                    status_url=status_url,
+                    scheduled_date=_appt_date,
+                    scheduled_time=_appt_time,
+                    status_url=_appt_status_url,
                 )
             )
         except Exception as exc:
             logger.warning("public_booking: customer email failed (non-fatal): %s", exc)
+    if body.customer_phone:
+        try:
+            from services.queue_sms import send_appointment_confirmation_sms
+            asyncio.get_event_loop().run_until_complete(
+                send_appointment_confirmation_sms(
+                    customer_phone=body.customer_phone,
+                    customer_name=body.customer_name,
+                    shop_name=page["shop_name"],
+                    service_name=svc[1],
+                    scheduled_date=_appt_date,
+                    scheduled_time=_appt_time,
+                    status_url=_appt_status_url,
+                )
+            )
+        except Exception as exc:
+            logger.warning("public_booking: customer SMS failed (non-fatal): %s", exc)
 
     return {
         "appointment_id": appt_id,

@@ -17,6 +17,7 @@ import os
 import random
 import secrets
 from services.queue_email import send_queue_join_email, send_youre_next_email
+from services.queue_sms import send_queue_join_sms, send_youre_next_sms
 
 router = APIRouter()
 
@@ -317,19 +318,25 @@ async def join_queue(
             status_token = secrets.token_urlsafe(32)
             queue_service.update_queue_item(new_item.id, {"status_token": status_token})
             new_item.status_token = status_token
-            # Fire join confirmation email (non-blocking — never delays the HTTP response)
+            # Fire join confirmation email + SMS (non-blocking — never delays the HTTP response)
+            frontend_url = os.getenv("FRONTEND_URL", "https://zeroqwait.com")
+            _join_status_url = f"{frontend_url}/queue-status/{status_token}"
+            metrics = db_interface.get_shop_live_wait_metrics(shop_id)
+            _estimated_wait = metrics.get("avg_wait_minutes") if isinstance(metrics, dict) else None
+            _join_kwargs = dict(
+                customer_name=queue_item.customer_name,
+                shop_name=shop.name,
+                position=new_item.position,
+                estimated_wait_min=int(_estimated_wait) if _estimated_wait is not None else None,
+                status_url=_join_status_url,
+            )
             if queue_item.customer_email:
-                frontend_url = os.getenv("FRONTEND_URL", "https://zeroqwait.com")
-                status_url = f"{frontend_url}/queue-status/{status_token}"
-                metrics = db_interface.get_shop_live_wait_metrics(shop_id)
-                estimated_wait = metrics.get("avg_wait_minutes") if isinstance(metrics, dict) else None
                 asyncio.create_task(send_queue_join_email(
-                    customer_email=queue_item.customer_email,
-                    customer_name=queue_item.customer_name,
-                    shop_name=shop.name,
-                    position=new_item.position,
-                    estimated_wait_min=int(estimated_wait) if estimated_wait is not None else None,
-                    status_url=status_url,
+                    customer_email=queue_item.customer_email, **_join_kwargs
+                ))
+            if queue_item.customer_phone:
+                asyncio.create_task(send_queue_join_sms(
+                    customer_phone=queue_item.customer_phone, **_join_kwargs
                 ))
             await _broadcast_shop_live_snapshot(shop_id)
             await audit(
@@ -370,20 +377,27 @@ async def update_queue_item_status(
             update_data["completed_at"] = datetime.utcnow().isoformat()
             
         updated = queue_service.update_queue_item(item_id, update_data)
-        # Fire "you're next" email on manual BEING_SERVED transition
-        if new_status == QUEUE_STATUS_BEING_SERVED and item.customer_email and item.status_token:
+        # Fire "you're next" email + SMS on manual BEING_SERVED transition
+        if new_status == QUEUE_STATUS_BEING_SERVED and item.status_token:
             shop = shop_service.get_shop(queue.shop_id)
             shop_name = shop.name if shop else "the shop"
             service_name = item.service.name if item.service else None
             frontend_url = os.getenv("FRONTEND_URL", "https://zeroqwait.com")
             status_url = f"{frontend_url}/queue-status/{item.status_token}"
-            asyncio.create_task(send_youre_next_email(
-                customer_email=item.customer_email,
+            _next_kwargs = dict(
                 customer_name=item.customer_name,
                 shop_name=shop_name,
                 service_name=service_name,
                 status_url=status_url,
-            ))
+            )
+            if item.customer_email:
+                asyncio.create_task(send_youre_next_email(
+                    customer_email=item.customer_email, **_next_kwargs
+                ))
+            if item.customer_phone:
+                asyncio.create_task(send_youre_next_sms(
+                    customer_phone=item.customer_phone, **_next_kwargs
+                ))
         # Invalidate queue cache for this shop
         redis_client.invalidate_queue_cache(queue.shop_id)
         await _broadcast_shop_live_snapshot(queue.shop_id)
@@ -476,20 +490,27 @@ async def call_next_customer(
         }
         
         result = queue_service.update_queue_item(next_item.id, update_data)
-        # Fire "you're next" email when calling the next customer
-        if next_item.customer_email and next_item.status_token:
+        # Fire "you're next" email + SMS when calling the next customer
+        if next_item.status_token:
             shop = shop_service.get_shop(queue.shop_id)
             shop_name = shop.name if shop else "the shop"
             service_name = next_item.service.name if next_item.service else None
             frontend_url = os.getenv("FRONTEND_URL", "https://zeroqwait.com")
             status_url = f"{frontend_url}/queue-status/{next_item.status_token}"
-            asyncio.create_task(send_youre_next_email(
-                customer_email=next_item.customer_email,
+            _call_kwargs = dict(
                 customer_name=next_item.customer_name,
                 shop_name=shop_name,
                 service_name=service_name,
                 status_url=status_url,
-            ))
+            )
+            if next_item.customer_email:
+                asyncio.create_task(send_youre_next_email(
+                    customer_email=next_item.customer_email, **_call_kwargs
+                ))
+            if next_item.customer_phone:
+                asyncio.create_task(send_youre_next_sms(
+                    customer_phone=next_item.customer_phone, **_call_kwargs
+                ))
         # Invalidate queue cache for this shop
         redis_client.invalidate_queue_cache(queue.shop_id)
         await _broadcast_shop_live_snapshot(queue.shop_id)
