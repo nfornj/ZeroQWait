@@ -41,6 +41,7 @@ import SubdomainHandler from "./components/SubdomainHandler";
 import AIShopPublicPage from "./features/public-booking/pages/AIShopPublicPage";
 import QueueViewPage from "./features/public-booking/pages/QueueViewPage";
 import QueueStatusPage from "./features/public-booking/pages/QueueStatusPage";
+import AppointmentStatusPage from "./features/public-booking/pages/AppointmentStatusPage";
 
 function App() {
   const { user } = useAuth();
@@ -77,6 +78,8 @@ function App() {
           <Route path="/queue/:shopId" element={<QueueViewPage />} />
           {/* Public queue status page — no auth, accessed via unique link in email */}
           <Route path="/queue-status/:token" element={<QueueStatusPage />} />
+          {/* Public appointment status page — no auth, accessed via unique link in email */}
+          <Route path="/appointment-status/:token" element={<AppointmentStatusPage />} />
 
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>

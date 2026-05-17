@@ -5,7 +5,9 @@ Rate limited via Redis. All writes use public_token for cancel/confirm.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 import secrets
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -319,7 +321,6 @@ def create_booking(
 
     # Fire-and-forget: notify shop owner on Telegram (best-effort)
     try:
-        import asyncio
         from notification_dispatcher import dispatch
         with SessionLocal() as db:
             asyncio.get_event_loop().run_until_complete(
@@ -337,6 +338,27 @@ def create_booking(
             )
     except Exception as exc:
         logger.warning("public_booking: owner notification failed (non-fatal): %s", exc)
+
+    # Fire-and-forget: send confirmation email to customer (best-effort)
+    if body.customer_email:
+        try:
+            from services.queue_email import send_appointment_confirmation_email
+            frontend_url = os.getenv("FRONTEND_URL", "https://zeroqwait.com").rstrip("/")
+            status_url = f"{frontend_url}/appointment-status/{public_token}"
+            asyncio.get_event_loop().run_until_complete(
+                send_appointment_confirmation_email(
+                    customer_email=body.customer_email,
+                    customer_name=body.customer_name,
+                    shop_name=page["shop_name"],
+                    service_name=svc[1],
+                    scheduled_start=body.scheduled_start.isoformat(),
+                    scheduled_date=body.scheduled_start.strftime("%A, %B %-d %Y"),
+                    scheduled_time=body.scheduled_start.strftime("%-I:%M %p"),
+                    status_url=status_url,
+                )
+            )
+        except Exception as exc:
+            logger.warning("public_booking: customer email failed (non-fatal): %s", exc)
 
     return {
         "appointment_id": appt_id,
@@ -382,4 +404,44 @@ def cancel_booking(public_token: str, request: Request, _=Depends(_rate_limit)):
         "message": "Your booking has been cancelled.",
         "appointment_id": appt[0],
         "customer_name": appt[3],
+    }
+
+
+@router.get("/status/{public_token}")
+def get_appointment_status(public_token: str, request: Request, _=Depends(_rate_limit)):
+    """Return public-facing appointment status by public_token (no auth required)."""
+    with SessionLocal() as session:
+        row = session.execute(
+            text("""
+                SELECT
+                    a.id,
+                    a.status,
+                    a.customer_name,
+                    a.scheduled_start,
+                    a.scheduled_end,
+                    ss.name  AS service_name,
+                    s.name   AS shop_name,
+                    s.slug   AS shop_slug
+                FROM appointments a
+                JOIN shops s ON s.id = a.shop_id
+                LEFT JOIN shop_services ss ON ss.id = a.service_id
+                WHERE a.public_token = :token
+                LIMIT 1
+            """),
+            {"token": public_token},
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    appt_id, status, customer_name, scheduled_start, scheduled_end, service_name, shop_name, shop_slug = row
+    return {
+        "appointment_id": appt_id,
+        "status": status,
+        "customer_name": customer_name,
+        "scheduled_start": scheduled_start.isoformat() if scheduled_start else None,
+        "scheduled_end": scheduled_end.isoformat() if scheduled_end else None,
+        "service_name": service_name,
+        "shop_name": shop_name,
+        "shop_slug": shop_slug,
     }

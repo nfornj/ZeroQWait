@@ -121,3 +121,64 @@ You're **now being served** at **{shop_name}**. Please head to the counter now.
         logger.info("You're-next email sent to %s (shop=%s)", customer_email, shop_name)
     except Exception as exc:
         logger.error("Failed to send you're-next email to %s: %s", customer_email, exc)
+
+
+async def send_appointment_confirmation_email(
+    customer_email: str,
+    customer_name: str,
+    shop_name: str,
+    service_name: str,
+    scheduled_start: str,
+    scheduled_date: str,
+    scheduled_time: str,
+    status_url: str,
+) -> None:
+    """Send an appointment confirmation email to the customer.
+
+    Args:
+        customer_email:   Recipient address.
+        customer_name:    Full name as entered by the customer.
+        shop_name:        Display name of the shop.
+        service_name:     Name of the booked service.
+        scheduled_start:  ISO datetime string for the appointment (used in subject).
+        scheduled_date:   Human-readable date, e.g. "Saturday, May 18 2026".
+        scheduled_time:   Human-readable time, e.g. "2:30 PM".
+        status_url:       Public URL to view / manage the appointment.
+    """
+    if not is_ses_configured():
+        logger.debug("SES not configured — skipping appointment confirmation email to %s", customer_email)
+        return
+
+    first_name = customer_name.split()[0] if customer_name else "there"
+
+    subject = f"Appointment Confirmed ✓ — {shop_name}"
+    body = f"""
+## Appointment Confirmed ✓
+
+Hi {first_name},
+
+Your appointment at **{shop_name}** has been confirmed.
+
+| | |
+|---|---|
+| **Service** | {service_name} |
+| **Date** | {scheduled_date} |
+| **Time** | {scheduled_time} |
+
+---
+
+You will receive a reminder when it is almost your turn.
+
+[**View or manage your appointment →**]({status_url})
+
+*— ZeroQwait*
+""".strip()
+
+    try:
+        await send_email(to_address=customer_email, subject=subject, markdown_text=body)
+        logger.info(
+            "Appointment confirmation email sent to %s (service=%s, shop=%s)",
+            customer_email, service_name, shop_name,
+        )
+    except Exception as exc:
+        logger.error("Failed to send appointment confirmation email to %s: %s", customer_email, exc)

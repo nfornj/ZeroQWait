@@ -75,10 +75,16 @@ def _to_html(markdown_text: str) -> str:
     """Convert Telegram markdown text to a simple responsive HTML email body."""
     body = markdown_text
     body = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # Markdown links [text](url) — must run before bold so nested bold inside links works
+    body = re.sub(r"\[(.+?)\]\((https?://[^\s)]+)\)", r'<a href="\2">\1</a>', body)
     body = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", body)
     body = re.sub(r"\*(.+?)\*", r"<strong>\1</strong>", body)
     body = re.sub(r"_(.+?)_", r"<em>\1</em>", body)
     body = re.sub(r"`(.+?)`", r"<code>\1</code>", body)
+    # Markdown headers
+    body = re.sub(r"^#{1,2}\s+(.+)$", r"<h3 style='margin:16px 0 8px;font-size:17px'>\1</h3>", body, flags=re.MULTILINE)
+    # Horizontal rules
+    body = re.sub(r"^---+$", r"<hr style='border:none;border-top:1px solid #e0e0e0;margin:16px 0'>", body, flags=re.MULTILINE)
     body = body.replace("\n", "<br>")
 
     return f"""<!DOCTYPE html>
