@@ -41,6 +41,17 @@ from .memory_context import get_conversation_history, save_conversation_turn
 from .state import AgentState
 from .tools import booking_tools, finance_tools, hr_tools
 
+try:
+    from observability.metrics import (
+        agent_route_total,
+        agent_unhandled_intent_total,
+        agent_execute_total,
+        agent_execute_duration,
+    )
+    _OBS_AVAILABLE = True
+except Exception:
+    _OBS_AVAILABLE = False
+
 
 logger = logging.getLogger(__name__)
 
@@ -521,6 +532,11 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route", "pla
             intent = "general"
             source = "error_fallback"
 
+    if _OBS_AVAILABLE:
+        agent_route_total.labels(to_agent=intent, source=source).inc()
+        if intent in ("general",) and source not in ("greeting", "fastpath"):
+            agent_unhandled_intent_total.inc()
+
     return Command(
         goto="plan_and_route",
         update={
@@ -606,23 +622,34 @@ def execute_plan(state: AgentState) -> dict:
     target = metadata.get("execution_target", "general")
     logger.info("execute_plan shop_id=%s target=%s", state.get("tenant_id", 0), target)
 
+    _exec_start = time.perf_counter() if _OBS_AVAILABLE else None
+
+    def _record_execute(status: str) -> None:
+        if not _OBS_AVAILABLE or _exec_start is None:
+            return
+        agent_execute_total.labels(target=target, status=status).inc()
+        agent_execute_duration.labels(target=target).observe(time.perf_counter() - _exec_start)
+
     if target == "receptionist":
         result = placeholder_receptionist(state)
         merged_metadata = dict(metadata)
         merged_metadata.update(result.get("metadata") or {})
         merged_metadata["last_specialist_target"] = "receptionist"
+        _record_execute("success")
         return {**result, "metadata": merged_metadata}
     if target == "finance":
         result = placeholder_finance(state)
         merged_metadata = dict(metadata)
         merged_metadata.update(result.get("metadata") or {})
         merged_metadata["last_specialist_target"] = "finance"
+        _record_execute("success")
         return {**result, "metadata": merged_metadata}
     if target == "hr":
         result = placeholder_hr(state)
         merged_metadata = dict(metadata)
         merged_metadata.update(result.get("metadata") or {})
         merged_metadata["last_specialist_target"] = "hr"
+        _record_execute("success")
         return {**result, "metadata": merged_metadata}
     if target == "crm":
         from .crm import run_crm_agent
@@ -630,6 +657,7 @@ def execute_plan(state: AgentState) -> dict:
         merged_metadata = dict(metadata)
         merged_metadata.update(result.get("metadata") or {})
         merged_metadata["last_specialist_target"] = "crm"
+        _record_execute("success")
         return {**result, "metadata": merged_metadata}
 
     if target == "inventory":
@@ -653,6 +681,7 @@ def execute_plan(state: AgentState) -> dict:
         merged_metadata = dict(metadata)
         merged_metadata["last_specialist_target"] = "inventory"
         inv_tool_results = dict(inv_result.get("tool_results") or {}) if isinstance(inv_result, dict) else {}
+        _record_execute("success")
         return {
             "messages": list(state.get("messages") or []) + [AIMessage(content=answer)],
             "current_agent": "inventory",
@@ -678,6 +707,7 @@ def execute_plan(state: AgentState) -> dict:
             answer = f"I had trouble with the POS operation: {exc}"
         merged_metadata = dict(metadata)
         merged_metadata["last_specialist_target"] = "pos"
+        _record_execute("success")
         return {
             "messages": list(state.get("messages") or []) + [AIMessage(content=answer)],
             "current_agent": "pos",
@@ -711,12 +741,14 @@ def execute_plan(state: AgentState) -> dict:
         merged_metadata = dict(metadata)
         merged_metadata["multi_specialist_summaries"] = combined_summaries
         merged_metadata["last_specialist_target"] = "multi"
+        _record_execute("success")
         return {
             "tool_results": combined_tool_results,
             "current_agent": "multi",
             "metadata": merged_metadata,
         }
 
+    _record_execute("success")
     return {
         "current_agent": "supervisor",
     }

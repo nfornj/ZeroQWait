@@ -27,6 +27,7 @@ The dispatcher:
 """
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -35,6 +36,15 @@ from sqlalchemy.orm import Session
 import telegram_client as tgc
 import notification_templates as tmpl
 from notification_preferences import get_telegram_prefs
+
+try:
+    from observability.metrics import (
+        notification_dispatch_total,
+        notification_dispatch_duration,
+    )
+    _OBS_AVAILABLE = True
+except Exception:
+    _OBS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +96,40 @@ async def dispatch(
         result["reason"] = f"unknown_event_type:{event_type}"
         logger.warning("notification_dispatcher: unknown event_type '%s'", event_type)
         return result
+
+    _dispatch_start = time.perf_counter() if _OBS_AVAILABLE else None
+
+    try:
+        return await _dispatch_inner(result, channel, event_type, data, shop_id, template_fn, db)
+    finally:
+        if _OBS_AVAILABLE and _dispatch_start is not None:
+            status = "sent" if result.get("sent") else (result.get("reason") or "failed")
+            # Normalise long reason strings to a bounded label
+            _KNOWN_STATUSES = {
+                "sent", "failed", "not_connected", "disabled", "bot_not_configured",
+                "no_address", "ses_not_configured", "sns_not_configured",
+                "shop_not_found", "channel_not_implemented",
+            }
+            norm_status = status if status in _KNOWN_STATUSES else "failed"
+            notification_dispatch_total.labels(
+                channel=channel,
+                event_type=event_type,
+                status=norm_status,
+            ).inc()
+            notification_dispatch_duration.labels(channel=channel).observe(
+                time.perf_counter() - _dispatch_start
+            )
+
+
+async def _dispatch_inner(
+    result: dict[str, Any],
+    channel: str,
+    event_type: str,
+    data: dict[str, Any],
+    shop_id: int,
+    template_fn: Any,
+    db: Session,
+) -> dict[str, Any]:
 
     if channel == "telegram":
         prefs = get_telegram_prefs(shop_id, db)

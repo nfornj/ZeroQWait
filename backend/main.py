@@ -29,6 +29,7 @@ import models # Force model registration
 from websocket_manager import manager
 import agent_logic  # Force eager loading of sentence-transformer model at startup  # noqa: F401
 from database import set_tenant_for_request, SessionLocal
+from observability.middleware import AgentMetricsMiddleware
 
 # Setup logging
 logging.basicConfig(
@@ -289,6 +290,8 @@ class TenantMiddleware(BaseHTTPMiddleware):
         return None
 
 app.add_middleware(TenantMiddleware)
+# HTTP metrics middleware — records latency + status for every request
+app.add_middleware(AgentMetricsMiddleware)
 
 from fastapi.staticfiles import StaticFiles
 import os
@@ -371,6 +374,14 @@ async def api_websocket_endpoint(websocket: WebSocket, shop_id: str):
 @app.get("/")
 async def root():
     return {"message": "Welcome to Universal Queue System API"}
+
+
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics():
+    """Prometheus scrape endpoint — returns all registered metrics in text format."""
+    from fastapi.responses import PlainTextResponse
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) 
