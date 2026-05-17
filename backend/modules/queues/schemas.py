@@ -33,6 +33,7 @@ class QueueItem(QueueItemBase):
     user_id: Optional[int] = None
     position: int
     status: QueueStatus
+    status_token: Optional[str] = None
     checked_in_at: datetime
     service_started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

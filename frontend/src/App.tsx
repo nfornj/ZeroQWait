@@ -1,7 +1,6 @@
 import React from "react";
 import { Routes, Route } from "react-router-dom";
 import { Navigate } from "react-router-dom";
-import { Toaster } from "./components/ui/sonner";
 // ThemeProvider is now imported from our context which handles dynamic theming
 import { ThemeProvider } from "./contexts/ThemeContext";
 
@@ -41,6 +40,7 @@ import ShopOwnerSignUp from "./features/auth/components/auth-sign-up/ShopOwnerSi
 import SubdomainHandler from "./components/SubdomainHandler";
 import AIShopPublicPage from "./features/public-booking/pages/AIShopPublicPage";
 import QueueViewPage from "./features/public-booking/pages/QueueViewPage";
+import QueueStatusPage from "./features/public-booking/pages/QueueStatusPage";
 
 function App() {
   const { user } = useAuth();
@@ -62,7 +62,6 @@ function App() {
   return (
     <ShopProvider>
       <ThemeProvider>
-        <Toaster richColors position="bottom-right" />
         <Routes>
           {/* Auth Pages (No Navbar) */}
           <Route path="/login" element={<SignInSide />} />
@@ -76,6 +75,8 @@ function App() {
           {/* AI Shop page (localhost dev mode) */}
           <Route path="/shop-ai/:shopId" element={<AIShopPublicPage />} />
           <Route path="/queue/:shopId" element={<QueueViewPage />} />
+          {/* Public queue status page — no auth, accessed via unique link in email */}
+          <Route path="/queue-status/:token" element={<QueueStatusPage />} />
 
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>
@@ -106,7 +107,6 @@ function App() {
             <Route path="/employee-dashboard" element={<EmployeeQueuePage />} />
             <Route path="/overview" element={<OwnerOnly><ShopDashboardPage /></OwnerOnly>} />
             <Route path="/employees" element={<OwnerOnly><EmployeeManagementPage /></OwnerOnly>} />
-            <Route path="/team" element={<Navigate to="/employees" replace />} />
             <Route path="/settings" element={<OwnerOnly><ShopSettingsPage /></OwnerOnly>} />
             <Route path="/queues" element={<OwnerOnly><QueueManagementPage /></OwnerOnly>} />
             <Route path="/queues/:queueId" element={<OwnerOnly><QueueDetailPage /></OwnerOnly>} />

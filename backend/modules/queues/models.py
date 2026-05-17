@@ -43,6 +43,8 @@ class QueueItem(Base):
     completed_at = Column(DateTime, index=True)
     assigned_employee_id = Column(Integer, ForeignKey("platform.users.id"))
     
+    status_token = Column(String(64), unique=True, nullable=True, index=True)
+
     # Service Link
     service_id = Column(Integer, ForeignKey("shop_services.id"), nullable=True, index=True)
     service_cost = Column(Float, default=0.0)  # Snapshot of cost at time of service
