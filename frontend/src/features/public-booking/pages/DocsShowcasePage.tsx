@@ -119,9 +119,9 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: LockKeyhole,
     screenTitle: "Owner authentication",
     screenSubtitle: "Secure entry into the operations workspace",
-    imageSrc: "/showcase/login-live.png",
-    imageAlt: "Live ZeroQwait owner sign-in screen with the premium login form.",
-    previewLabel: "Real login capture",
+    imageSrc: "/showcase/login-live.gif",
+    imageAlt: "Animated ZeroQwait owner sign-in flow showing the premium login form being completed.",
+    previewLabel: "Recorded login GIF",
     primaryMetric: "2 demo accounts",
     secondaryMetric: "Username or email accepted",
     timeline: ["Open /login", "Enter demo credentials", "Protected owner session starts"],
@@ -143,9 +143,9 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: LayoutDashboard,
     screenTitle: "Operational dashboard",
     screenSubtitle: "Queues, revenue posture, staff readiness, and shop context",
-    imageSrc: "/showcase/overview-live.png",
-    imageAlt: "Live ZeroQwait operations overview showing analytics, revenue, visits, and team context.",
-    previewLabel: "Real analytics capture",
+    imageSrc: "/showcase/overview-live.gif",
+    imageAlt: "Animated ZeroQwait operations overview showing analytics, revenue, visits, and team context.",
+    previewLabel: "Recorded overview GIF",
     primaryMetric: "Daily overview",
     secondaryMetric: "One operational surface",
     timeline: ["Queue pressure", "Revenue snapshot", "Team readiness"],
@@ -167,9 +167,9 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: MessageSquareText,
     screenTitle: "Agent Inbox",
     screenSubtitle: "Supervisor-led orchestration with specialist routing",
-    imageSrc: "/showcase/inbox-live.png",
-    imageAlt: "Live ZeroQwait supervisor inbox with daily briefing, activity feed, and recommended actions.",
-    previewLabel: "Real supervisor inbox",
+    imageSrc: "/showcase/inbox-live.gif",
+    imageAlt: "Animated ZeroQwait supervisor inbox with daily briefing, activity feed, and recommended actions.",
+    previewLabel: "Recorded inbox GIF",
     primaryMetric: "4 specialist domains",
     secondaryMetric: "Streaming + actions",
     timeline: ["Owner prompt", "Intent classification", "Specialist execution"],
@@ -191,9 +191,9 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: ShieldCheck,
     screenTitle: "Approval checkpoint",
     screenSubtitle: "Execution pauses, saves state, and resumes safely",
-    imageSrc: "/showcase/workspace-live.png",
-    imageAlt: "Live ZeroQwait agent workspace showing owner actions and approval-aware task handling.",
-    previewLabel: "Real workspace capture",
+    imageSrc: "/showcase/workspace-live.gif",
+    imageAlt: "Animated ZeroQwait agent workspace showing owner actions and approval-aware task handling.",
+    previewLabel: "Recorded workspace GIF",
     primaryMetric: "Checkpoint saved",
     secondaryMetric: "Approval required",
     timeline: ["Action proposed", "Checkpoint persisted", "Approve or reject"],
@@ -215,9 +215,9 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: Bot,
     screenTitle: "Agent Brain",
     screenSubtitle: "Persistent business context beyond one-shot chat",
-    imageSrc: "/showcase/brain-live.png",
-    imageAlt: "Live ZeroQwait agent brain showing the runtime graph, live signals, commitments, and tools.",
-    previewLabel: "Real runtime graph",
+    imageSrc: "/showcase/brain-live.gif",
+    imageAlt: "Animated ZeroQwait agent brain showing the runtime graph, live signals, commitments, and tools.",
+    previewLabel: "Recorded brain GIF",
     primaryMetric: "SOUL + commitments",
     secondaryMetric: "Recurring schedules",
     timeline: ["Pattern learned", "Commitment tracked", "Schedule registered"],
@@ -237,11 +237,11 @@ const walkthroughSteps: WalkthroughStep[] = [
     statLabel: "System view",
     statValue: "End-to-end product architecture",
     icon: Rocket,
-    screenTitle: "Connected runtime map",
-    screenSubtitle: "The live brain graph makes integrations, memory, tools, and approvals visible",
-    imageSrc: "/showcase/brain-live.png",
-    imageAlt: "Live ZeroQwait brain graph used to explain the connected platform runtime.",
-    previewLabel: "Real platform capture",
+    screenTitle: "Architecture walkthrough",
+    screenSubtitle: "The architecture story connects product flow, agents, memory, tools, and deployment",
+    imageSrc: "/showcase/architecture-live.gif",
+    imageAlt: "Animated ZeroQwait architecture walkthrough showing the platform system view.",
+    previewLabel: "Recorded architecture GIF",
     primaryMetric: "Integrated runtime",
     secondaryMetric: "Product + platform",
     timeline: ["Voice path", "External integrations", "Production deployment"],
@@ -592,7 +592,7 @@ export default function DocsShowcasePage() {
 
                 <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-[#091321] p-4 shadow-inner">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Live screen preview</p>
+                    <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Live GIF preview</p>
                     <div className="flex items-center gap-2 text-xs text-slate-400">
                       <Waves className="h-4 w-4 text-cyan-300" />
                       {currentStep.previewLabel}
@@ -651,7 +651,7 @@ export default function DocsShowcasePage() {
                         <div className="rounded-[1.25rem] border border-white/10 bg-slate-950/72 p-4 backdrop-blur">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-300">GIF-style demo reel</p>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-300">Recorded GIF walkthrough</p>
                               <p className="mt-2 text-base font-semibold text-white">{currentStep.title}</p>
                             </div>
                             <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
