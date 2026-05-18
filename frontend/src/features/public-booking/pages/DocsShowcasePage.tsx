@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -43,6 +43,8 @@ type WalkthroughStep = {
   screenSubtitle: string;
   imageSrc: string;
   imageAlt: string;
+  mediaType: "image" | "video";
+  posterSrc?: string;
   previewLabel: string;
   primaryMetric: string;
   secondaryMetric: string;
@@ -119,9 +121,11 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: LockKeyhole,
     screenTitle: "Owner authentication",
     screenSubtitle: "Secure entry into the operations workspace",
-    imageSrc: "/showcase/login-live.gif",
-    imageAlt: "Animated ZeroQwait owner sign-in flow showing the premium login form being completed.",
-    previewLabel: "Recorded login GIF",
+    imageSrc: "/showcase/login-live.webm",
+    imageAlt: "Recorded ZeroQwait owner sign-in flow showing the premium login form being completed and the owner workspace opening.",
+    mediaType: "video",
+    posterSrc: "/showcase/login-live.png",
+    previewLabel: "Recorded login video",
     primaryMetric: "2 demo accounts",
     secondaryMetric: "Username or email accepted",
     timeline: ["Open /login", "Enter demo credentials", "Protected owner session starts"],
@@ -143,9 +147,11 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: LayoutDashboard,
     screenTitle: "Operational dashboard",
     screenSubtitle: "Queues, revenue posture, staff readiness, and shop context",
-    imageSrc: "/showcase/overview-live.gif",
-    imageAlt: "Animated ZeroQwait operations overview showing analytics, revenue, visits, and team context.",
-    previewLabel: "Recorded overview GIF",
+    imageSrc: "/showcase/overview-live.webm",
+    imageAlt: "Recorded ZeroQwait operations overview showing analytics, revenue, visits, and team context.",
+    mediaType: "video",
+    posterSrc: "/showcase/overview-live.png",
+    previewLabel: "Recorded overview video",
     primaryMetric: "Daily overview",
     secondaryMetric: "One operational surface",
     timeline: ["Queue pressure", "Revenue snapshot", "Team readiness"],
@@ -167,9 +173,11 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: MessageSquareText,
     screenTitle: "Agent Inbox",
     screenSubtitle: "Supervisor-led orchestration with specialist routing",
-    imageSrc: "/showcase/inbox-live.gif",
-    imageAlt: "Animated ZeroQwait supervisor inbox with daily briefing, activity feed, and recommended actions.",
-    previewLabel: "Recorded inbox GIF",
+    imageSrc: "/showcase/inbox-live.webm",
+    imageAlt: "Recorded ZeroQwait supervisor inbox with daily briefing, activity feed, and recommended actions.",
+    mediaType: "video",
+    posterSrc: "/showcase/inbox-live.png",
+    previewLabel: "Recorded inbox video",
     primaryMetric: "4 specialist domains",
     secondaryMetric: "Streaming + actions",
     timeline: ["Owner prompt", "Intent classification", "Specialist execution"],
@@ -191,9 +199,11 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: ShieldCheck,
     screenTitle: "Approval checkpoint",
     screenSubtitle: "Execution pauses, saves state, and resumes safely",
-    imageSrc: "/showcase/workspace-live.gif",
-    imageAlt: "Animated ZeroQwait agent workspace showing owner actions and approval-aware task handling.",
-    previewLabel: "Recorded workspace GIF",
+    imageSrc: "/showcase/workspace-live.webm",
+    imageAlt: "Recorded ZeroQwait agent workspace showing owner actions and approval-aware task handling.",
+    mediaType: "video",
+    posterSrc: "/showcase/workspace-live.png",
+    previewLabel: "Recorded workspace video",
     primaryMetric: "Checkpoint saved",
     secondaryMetric: "Approval required",
     timeline: ["Action proposed", "Checkpoint persisted", "Approve or reject"],
@@ -215,9 +225,11 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: Bot,
     screenTitle: "Agent Brain",
     screenSubtitle: "Persistent business context beyond one-shot chat",
-    imageSrc: "/showcase/brain-live.gif",
-    imageAlt: "Animated ZeroQwait agent brain showing the runtime graph, live signals, commitments, and tools.",
-    previewLabel: "Recorded brain GIF",
+    imageSrc: "/showcase/brain-live.webm",
+    imageAlt: "Recorded ZeroQwait agent brain showing the runtime graph, live signals, commitments, and tools.",
+    mediaType: "video",
+    posterSrc: "/showcase/brain-live.png",
+    previewLabel: "Recorded brain video",
     primaryMetric: "SOUL + commitments",
     secondaryMetric: "Recurring schedules",
     timeline: ["Pattern learned", "Commitment tracked", "Schedule registered"],
@@ -239,9 +251,11 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: Rocket,
     screenTitle: "Architecture walkthrough",
     screenSubtitle: "The architecture story connects product flow, agents, memory, tools, and deployment",
-    imageSrc: "/showcase/architecture-live.gif",
-    imageAlt: "Animated ZeroQwait architecture walkthrough showing the platform system view.",
-    previewLabel: "Recorded architecture GIF",
+    imageSrc: "/showcase/architecture-live.webm",
+    imageAlt: "Recorded ZeroQwait architecture walkthrough showing the platform system view.",
+    mediaType: "video",
+    posterSrc: "/showcase/brain-live.png",
+    previewLabel: "Recorded architecture video",
     primaryMetric: "Integrated runtime",
     secondaryMetric: "Product + platform",
     timeline: ["Voice path", "External integrations", "Production deployment"],
@@ -324,6 +338,7 @@ const quickStart = [
 
 export default function DocsShowcasePage() {
   const [activeStep, setActiveStep] = useState(0);
+  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -332,6 +347,24 @@ export default function DocsShowcasePage() {
 
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    walkthroughSteps.forEach((step, index) => {
+      const video = videoRefs.current[step.title];
+
+      if (!video || step.mediaType !== "video") {
+        return;
+      }
+
+      if (index === activeStep) {
+        video.currentTime = 0;
+        void video.play().catch(() => undefined);
+      } else {
+        video.pause();
+        video.currentTime = 0;
+      }
+    });
+  }, [activeStep]);
 
   const currentStep = walkthroughSteps[activeStep];
   const nextStep = walkthroughSteps[(activeStep + 1) % walkthroughSteps.length];
@@ -592,7 +625,7 @@ export default function DocsShowcasePage() {
 
                 <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-[#091321] p-4 shadow-inner">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Live GIF preview</p>
+                    <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Live walkthrough preview</p>
                     <div className="flex items-center gap-2 text-xs text-slate-400">
                       <Waves className="h-4 w-4 text-cyan-300" />
                       {currentStep.previewLabel}
@@ -634,14 +667,32 @@ export default function DocsShowcasePage() {
                                   : "translate-x-8 scale-[1.02] opacity-0"
                             }`}
                           >
-                            <img
-                              src={step.imageSrc}
-                              alt={step.imageAlt}
-                              className={`block h-full w-full object-cover object-top transition-transform duration-[4200ms] ${
-                                isActive ? "scale-[1.015]" : "scale-100"
-                              }`}
-                              loading="lazy"
-                            />
+                            {step.mediaType === "video" ? (
+                              <video
+                                src={step.imageSrc}
+                                aria-label={step.imageAlt}
+                                ref={(element) => {
+                                  videoRefs.current[step.title] = element;
+                                }}
+                                className={`block h-full w-full object-cover object-top transition-transform [transition-duration:4200ms] ${
+                                  isActive ? "scale-[1.015]" : "scale-100"
+                                }`}
+                                poster={step.posterSrc}
+                                loop
+                                muted
+                                playsInline
+                                preload="metadata"
+                              />
+                            ) : (
+                              <img
+                                src={step.imageSrc}
+                                alt={step.imageAlt}
+                                className={`block h-full w-full object-cover object-top transition-transform [transition-duration:4200ms] ${
+                                  isActive ? "scale-[1.015]" : "scale-100"
+                                }`}
+                                loading="lazy"
+                              />
+                            )}
                             <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(7,16,29,0.08)_0%,rgba(7,16,29,0.04)_45%,rgba(7,16,29,0.72)_100%)]" />
                           </div>
                         );
@@ -651,7 +702,7 @@ export default function DocsShowcasePage() {
                         <div className="rounded-[1.25rem] border border-white/10 bg-slate-950/72 p-4 backdrop-blur">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-300">Recorded GIF walkthrough</p>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-300">Recorded product walkthrough</p>
                               <p className="mt-2 text-base font-semibold text-white">{currentStep.title}</p>
                             </div>
                             <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
