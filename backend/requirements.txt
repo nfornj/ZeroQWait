@@ -136,7 +136,7 @@ websockets==15.0.1
 zipp==3.23.0
 langchain
 langchain-community
-langchain-anthropic==1.4.1
+langchain-anthropic==1.4.3
 langchain-google-genai==4.2.2
 langchain-groq==1.1.2
 langchain-nvidia-ai-endpoints
