@@ -4,7 +4,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
   Bot,
-  Building2,
   CheckCircle2,
   ChevronDown,
   Cpu,
@@ -42,6 +41,9 @@ type WalkthroughStep = {
   icon: LucideIcon;
   screenTitle: string;
   screenSubtitle: string;
+  imageSrc: string;
+  imageAlt: string;
+  previewLabel: string;
   primaryMetric: string;
   secondaryMetric: string;
   timeline: string[];
@@ -117,6 +119,9 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: LockKeyhole,
     screenTitle: "Owner authentication",
     screenSubtitle: "Secure entry into the operations workspace",
+    imageSrc: "/showcase/login-live.png",
+    imageAlt: "Live ZeroQwait owner sign-in screen with the premium login form.",
+    previewLabel: "Real login capture",
     primaryMetric: "2 demo accounts",
     secondaryMetric: "Username or email accepted",
     timeline: ["Open /login", "Enter demo credentials", "Protected owner session starts"],
@@ -138,6 +143,9 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: LayoutDashboard,
     screenTitle: "Operational dashboard",
     screenSubtitle: "Queues, revenue posture, staff readiness, and shop context",
+    imageSrc: "/showcase/overview-live.png",
+    imageAlt: "Live ZeroQwait operations overview showing analytics, revenue, visits, and team context.",
+    previewLabel: "Real analytics capture",
     primaryMetric: "Daily overview",
     secondaryMetric: "One operational surface",
     timeline: ["Queue pressure", "Revenue snapshot", "Team readiness"],
@@ -159,6 +167,9 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: MessageSquareText,
     screenTitle: "Agent Inbox",
     screenSubtitle: "Supervisor-led orchestration with specialist routing",
+    imageSrc: "/showcase/inbox-live.png",
+    imageAlt: "Live ZeroQwait supervisor inbox with daily briefing, activity feed, and recommended actions.",
+    previewLabel: "Real supervisor inbox",
     primaryMetric: "4 specialist domains",
     secondaryMetric: "Streaming + actions",
     timeline: ["Owner prompt", "Intent classification", "Specialist execution"],
@@ -180,6 +191,9 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: ShieldCheck,
     screenTitle: "Approval checkpoint",
     screenSubtitle: "Execution pauses, saves state, and resumes safely",
+    imageSrc: "/showcase/workspace-live.png",
+    imageAlt: "Live ZeroQwait agent workspace showing owner actions and approval-aware task handling.",
+    previewLabel: "Real workspace capture",
     primaryMetric: "Checkpoint saved",
     secondaryMetric: "Approval required",
     timeline: ["Action proposed", "Checkpoint persisted", "Approve or reject"],
@@ -201,6 +215,9 @@ const walkthroughSteps: WalkthroughStep[] = [
     icon: Bot,
     screenTitle: "Agent Brain",
     screenSubtitle: "Persistent business context beyond one-shot chat",
+    imageSrc: "/showcase/brain-live.png",
+    imageAlt: "Live ZeroQwait agent brain showing the runtime graph, live signals, commitments, and tools.",
+    previewLabel: "Real runtime graph",
     primaryMetric: "SOUL + commitments",
     secondaryMetric: "Recurring schedules",
     timeline: ["Pattern learned", "Commitment tracked", "Schedule registered"],
@@ -220,8 +237,11 @@ const walkthroughSteps: WalkthroughStep[] = [
     statLabel: "System view",
     statValue: "End-to-end product architecture",
     icon: Rocket,
-    screenTitle: "Connected platform",
-    screenSubtitle: "Voice, notifications, MCP services, CRM, and infra all converge",
+    screenTitle: "Connected runtime map",
+    screenSubtitle: "The live brain graph makes integrations, memory, tools, and approvals visible",
+    imageSrc: "/showcase/brain-live.png",
+    imageAlt: "Live ZeroQwait brain graph used to explain the connected platform runtime.",
+    previewLabel: "Real platform capture",
     primaryMetric: "Integrated runtime",
     secondaryMetric: "Product + platform",
     timeline: ["Voice path", "External integrations", "Production deployment"],
@@ -496,7 +516,7 @@ export default function DocsShowcasePage() {
             </p>
           </div>
 
-          <div className="mt-10 grid gap-8 2xl:grid-cols-[0.9fr_1.1fr] 2xl:items-start">
+          <div className="mt-10 grid gap-8 xl:grid-cols-[0.82fr_1.18fr] xl:items-start">
             <div className="space-y-4">
               {walkthroughSteps.map((step, index) => {
                 const StepIcon = step.icon;
@@ -550,54 +570,39 @@ export default function DocsShowcasePage() {
                 </div>
               </div>
 
-              <div className="mt-8 grid gap-6 2xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
-                <div className="rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 transition-all duration-500">
-                  <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`rounded-2xl bg-gradient-to-r ${currentStep.accent} p-3 text-slate-950`}>
-                        <CurrentStepIcon className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Current scene</p>
-                        <p className="mt-1 text-lg font-semibold text-white">{currentStep.eyebrow}</p>
-                      </div>
+              <div className="mt-8 rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08)_0%,rgba(255,255,255,0.02)_100%)] p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4 rounded-[1.5rem] border border-white/10 bg-slate-950/45 p-5">
+                  <div className="flex min-w-0 items-start gap-4">
+                    <div className={`rounded-2xl bg-gradient-to-r ${currentStep.accent} p-3 text-slate-950`}>
+                      <CurrentStepIcon className="h-5 w-5" />
                     </div>
-                    <div className="rounded-2xl border border-white/10 px-4 py-3 text-right">
-                      <p className="text-xs uppercase tracking-[0.24em] text-slate-400">{currentStep.statLabel}</p>
-                      <p className="mt-1 text-base font-semibold text-white">{currentStep.statValue}</p>
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Current scene</p>
+                      <p className="mt-1 text-lg font-semibold text-white">{currentStep.eyebrow}</p>
+                      <h3 className="mt-2 text-2xl font-semibold text-white">{currentStep.title}</h3>
+                      <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-300">{currentStep.description}</p>
                     </div>
                   </div>
-
-                  <div className="mt-5 space-y-4">
-                    {currentStep.bullets.map((bullet, index) => (
-                      <div
-                        key={bullet}
-                        className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition-all duration-500"
-                        style={{ transform: `translateX(${index === 0 ? 0 : 0}px)` }}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-300" />
-                          <p className="text-sm leading-7 text-slate-200">{bullet}</p>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="min-w-[14rem] rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.24em] text-slate-400">{currentStep.statLabel}</p>
+                    <p className="mt-2 text-base font-semibold text-white">{currentStep.statValue}</p>
                   </div>
                 </div>
 
-                <div className="rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08)_0%,rgba(255,255,255,0.02)_100%)] p-5">
+                <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-[#091321] p-4 shadow-inner">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Screen preview</p>
+                    <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Live screen preview</p>
                     <div className="flex items-center gap-2 text-xs text-slate-400">
                       <Waves className="h-4 w-4 text-cyan-300" />
-                      animated state
+                      {currentStep.previewLabel}
                     </div>
                   </div>
 
-                  <div className="mt-5 rounded-[1.5rem] border border-white/10 bg-[#0a1220] p-4 shadow-inner">
-                    <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                  <div className="mt-5 overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#0a1220] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+                    <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                       <div>
-                        <p className="text-sm font-semibold text-white">ZeroQwait Workspace</p>
-                        <p className="text-xs uppercase tracking-[0.24em] text-slate-400">{currentStep.title}</p>
+                        <p className="text-sm font-semibold text-white">{currentStep.screenTitle}</p>
+                        <p className="text-xs uppercase tracking-[0.24em] text-slate-400">{currentStep.screenSubtitle}</p>
                       </div>
                       <div className="flex gap-2">
                         <div className="h-2.5 w-2.5 rounded-full bg-rose-400" />
@@ -605,83 +610,53 @@ export default function DocsShowcasePage() {
                         <div className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
                       </div>
                     </div>
+                    <img
+                      src={currentStep.imageSrc}
+                      alt={currentStep.imageAlt}
+                      className="block w-full object-cover object-top"
+                      loading="lazy"
+                    />
+                  </div>
 
-                    <div className="mt-4 grid gap-4 2xl:grid-cols-[minmax(240px,0.34fr)_minmax(0,0.66fr)] 2xl:items-start">
-                      <div className="rounded-[1.4rem] border border-white/10 bg-slate-950/65 p-4">
-                        <div className="flex items-center gap-3 border-b border-white/10 pb-3">
-                          <Building2 className="h-5 w-5 text-cyan-300" />
-                          <div>
-                            <p className="text-sm font-semibold text-white">ZeroQ Demo Cuts</p>
-                            <p className="text-xs text-slate-400">Live demo shop profile</p>
+                  <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+                    <div className="rounded-[1.5rem] border border-white/10 bg-slate-950/45 p-5">
+                      <p className="text-xs uppercase tracking-[0.24em] text-slate-400">What this screen proves</p>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        {currentStep.bullets.map((bullet) => (
+                          <div key={bullet} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                            <div className="flex items-start gap-3">
+                              <div className="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-300" />
+                              <p className="text-sm leading-7 text-slate-200">{bullet}</p>
+                            </div>
                           </div>
-                        </div>
-                        <div className="mt-4 space-y-2">
-                          {currentStep.sidebar.map((item, index) => (
-                            <div
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-5">
+                        <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Talk track</p>
+                        <p className="mt-3 text-sm leading-7 text-slate-200">{currentStep.description}</p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {currentStep.timeline.map((item) => (
+                            <span
                               key={item}
-                              className={`rounded-xl px-3 py-2 text-sm transition-all duration-500 ${
-                                index === activeStep % currentStep.sidebar.length
-                                  ? "bg-cyan-300/15 text-cyan-100 shadow-[0_0_0_1px_rgba(103,232,249,0.22)]"
-                                  : "bg-white/[0.03] text-slate-300"
-                              }`}
+                              className="rounded-full border border-white/10 bg-slate-950/65 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-slate-300"
                             >
                               {item}
-                            </div>
+                            </span>
                           ))}
                         </div>
                       </div>
 
-                      <div className="relative min-w-0 overflow-hidden rounded-[1.4rem] border border-white/10 bg-[linear-gradient(180deg,rgba(10,18,32,0.96)_0%,rgba(6,12,24,0.98)_100%)] p-4">
-                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.12),_transparent_30%),radial-gradient(circle_at_bottom_left,_rgba(249,115,22,0.12),_transparent_25%)]" />
-                        <div className="relative min-h-[28rem]">
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                              <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Mock screen</p>
-                              <p className="mt-2 text-base font-semibold text-white">{currentStep.screenTitle}</p>
-                              <p className="mt-2 text-sm leading-6 text-slate-300">{currentStep.screenSubtitle}</p>
-                            </div>
-                            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                              <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Narrative</p>
-                              <p className="mt-2 text-base font-semibold text-white">What to say live</p>
-                              <p className="mt-2 text-sm leading-6 text-slate-300">Explain how the product moves from interface to controlled execution.</p>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-2xl border border-cyan-300/15 bg-cyan-300/10 p-4 transition-all duration-700 docs-float-soft">
-                              <p className="text-xs uppercase tracking-[0.24em] text-cyan-100/80">Primary metric</p>
-                              <p className="mt-2 text-lg font-semibold text-white">{currentStep.primaryMetric}</p>
-                            </div>
-                            <div className="rounded-2xl border border-orange-300/15 bg-orange-300/10 p-4 transition-all duration-700 docs-float-soft docs-float-soft-delayed">
-                              <p className="text-xs uppercase tracking-[0.24em] text-orange-100/80">Secondary metric</p>
-                              <p className="mt-2 text-lg font-semibold text-white">{currentStep.secondaryMetric}</p>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-                            <div className="flex items-center justify-between">
-                              <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Animated activity rail</p>
-                              <p className="text-xs text-slate-500">Step {activeStep + 1} / {walkthroughSteps.length}</p>
-                            </div>
-                            <div className="mt-4 space-y-3">
-                              {currentStep.timeline.map((item, index) => (
-                                <div key={item} className="flex items-center gap-3">
-                                  <div className="relative flex h-6 w-6 items-center justify-center">
-                                    <div className={`absolute h-6 w-6 rounded-full ${index === 1 ? "bg-cyan-300/18 docs-ping-ring" : "bg-white/5"}`} />
-                                    <div className={`relative h-2.5 w-2.5 rounded-full ${index <= activeStep % 3 ? "bg-cyan-300" : "bg-slate-500"}`} />
-                                  </div>
-                                  <div className={`rounded-xl px-3 py-2 text-sm transition-all duration-500 ${index === 1 ? "bg-white/[0.06] text-white" : "bg-white/[0.03] text-slate-300"}`}>
-                                    {item}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="mt-4 rounded-2xl border border-white/10 bg-gradient-to-r from-white/[0.06] to-white/[0.02] p-4 transition-all duration-500">
-                            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Talk track</p>
-                            <p className="mt-3 text-sm leading-7 text-slate-200">{currentStep.description}</p>
-                          </div>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                        <div className="rounded-[1.5rem] border border-cyan-300/15 bg-cyan-300/10 p-4">
+                          <p className="text-xs uppercase tracking-[0.24em] text-cyan-100/80">Primary metric</p>
+                          <p className="mt-2 text-lg font-semibold text-white">{currentStep.primaryMetric}</p>
+                        </div>
+                        <div className="rounded-[1.5rem] border border-orange-300/15 bg-orange-300/10 p-4">
+                          <p className="text-xs uppercase tracking-[0.24em] text-orange-100/80">Secondary metric</p>
+                          <p className="mt-2 text-lg font-semibold text-white">{currentStep.secondaryMetric}</p>
                         </div>
                       </div>
                     </div>
@@ -837,7 +812,7 @@ export default function DocsShowcasePage() {
                   },
                   {
                     title: "It is built for growth.",
-                    icon: Building2,
+                    icon: ServerCog,
                     body: "The platform supports shared free-tier runtime today and a stronger premium isolation model without rewriting the product.",
                   },
                 ].map((item) => {
