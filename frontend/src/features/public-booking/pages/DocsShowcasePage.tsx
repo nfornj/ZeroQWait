@@ -334,6 +334,7 @@ export default function DocsShowcasePage() {
   }, []);
 
   const currentStep = walkthroughSteps[activeStep];
+  const nextStep = walkthroughSteps[(activeStep + 1) % walkthroughSteps.length];
   const CurrentStepIcon = currentStep.icon;
 
   return (
@@ -610,12 +611,73 @@ export default function DocsShowcasePage() {
                         <div className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
                       </div>
                     </div>
-                    <img
-                      src={currentStep.imageSrc}
-                      alt={currentStep.imageAlt}
-                      className="block w-full object-cover object-top"
-                      loading="lazy"
-                    />
+
+                    <div className="relative aspect-[16/10] overflow-hidden bg-[#07101d]">
+                      <div className="absolute inset-x-0 top-0 z-20 h-1 bg-white/5">
+                        <div
+                          className={`h-full bg-gradient-to-r ${currentStep.accent} transition-all duration-700`}
+                          style={{ width: `${((activeStep + 1) / walkthroughSteps.length) * 100}%` }}
+                        />
+                      </div>
+
+                      {walkthroughSteps.map((step, index) => {
+                        const isActive = index === activeStep;
+
+                        return (
+                          <div
+                            key={step.title}
+                            className={`absolute inset-0 transition-all duration-700 ease-out ${
+                              isActive
+                                ? "translate-x-0 scale-100 opacity-100"
+                                : index < activeStep
+                                  ? "-translate-x-8 scale-[1.02] opacity-0"
+                                  : "translate-x-8 scale-[1.02] opacity-0"
+                            }`}
+                          >
+                            <img
+                              src={step.imageSrc}
+                              alt={step.imageAlt}
+                              className={`block h-full w-full object-cover object-top transition-transform duration-[4200ms] ${
+                                isActive ? "scale-[1.015]" : "scale-100"
+                              }`}
+                              loading="lazy"
+                            />
+                            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(7,16,29,0.08)_0%,rgba(7,16,29,0.04)_45%,rgba(7,16,29,0.72)_100%)]" />
+                          </div>
+                        );
+                      })}
+
+                      <div className="absolute inset-x-0 bottom-0 z-20 p-4 sm:p-5">
+                        <div className="rounded-[1.25rem] border border-white/10 bg-slate-950/72 p-4 backdrop-blur">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-300">GIF-style demo reel</p>
+                              <p className="mt-2 text-base font-semibold text-white">{currentStep.title}</p>
+                            </div>
+                            <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+                              Up next: {nextStep.eyebrow}
+                            </div>
+                          </div>
+
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {walkthroughSteps.map((step, index) => (
+                              <button
+                                key={`${step.title}-dot`}
+                                type="button"
+                                onClick={() => setActiveStep(index)}
+                                className={`rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-all ${
+                                  index === activeStep
+                                    ? "bg-cyan-300 text-slate-950"
+                                    : "border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
+                                }`}
+                              >
+                                {step.eyebrow}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
