@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
-import { Scissors, Search, Menu, X, User } from "lucide-react";
+import { Scissors, Search, Menu, X, User, BookOpen } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import {
   DropdownMenu,
@@ -55,6 +55,13 @@ const Navbar = () => {
                 className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               >
                 Pricing
+              </RouterLink>
+              <RouterLink
+                to="/docs"
+                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <BookOpen className="h-4 w-4" />
+                Docs
               </RouterLink>
             </>
           )}
@@ -133,6 +140,14 @@ const Navbar = () => {
                   className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 >
                   Pricing
+                </RouterLink>
+                <RouterLink
+                  to="/docs"
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <BookOpen className="h-4 w-4" />
+                  Docs
                 </RouterLink>
               </>
             )}

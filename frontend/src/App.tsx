@@ -13,6 +13,8 @@ import AppErrorBoundary from "./components/AppErrorBoundary";
 import PricingPage from "./features/public-booking/pages/PricingPage";
 import SearchPage from "./features/public-booking/pages/SearchPage";
 import NotFoundPage from "./features/public-booking/pages/NotFoundPage";
+import DocsShowcasePage from "./features/public-booking/pages/DocsShowcasePage";
+import DocsArchitecturePage from "./features/public-booking/pages/DocsArchitecturePage";
 import ShopDashboardPage from "./features/shop-dashboard/pages/ShopDashboardPage";
 import ShopSettingsPage from "./features/shop-dashboard/pages/ShopSettingsPage";
 import EmployeeManagementPage from "./features/shop-dashboard/pages/EmployeeManagementPage";
@@ -86,6 +88,8 @@ function App() {
             <Route path="/home" element={<Navigate to="/" replace />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/search" element={<SearchPage />} />
+            <Route path="/docs" element={<DocsShowcasePage />} />
+            <Route path="/docs/architecture" element={<DocsArchitecturePage />} />
           </Route>
 
           {/* In-Shop Display (No Layout - Fullscreen) */}
