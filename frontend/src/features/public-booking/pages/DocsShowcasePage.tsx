@@ -496,7 +496,7 @@ export default function DocsShowcasePage() {
             </p>
           </div>
 
-          <div className="mt-10 grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+          <div className="mt-10 grid gap-8 2xl:grid-cols-[0.9fr_1.1fr] 2xl:items-start">
             <div className="space-y-4">
               {walkthroughSteps.map((step, index) => {
                 const StepIcon = step.icon;
@@ -550,7 +550,7 @@ export default function DocsShowcasePage() {
                 </div>
               </div>
 
-              <div className="mt-8 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="mt-8 grid gap-6 2xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
                 <div className="rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 transition-all duration-500">
                   <div className="flex items-center justify-between border-b border-white/10 pb-4">
                     <div className="flex items-center gap-3">
@@ -606,7 +606,7 @@ export default function DocsShowcasePage() {
                       </div>
                     </div>
 
-                    <div className="mt-4 grid gap-4 xl:grid-cols-[0.34fr_0.66fr]">
+                    <div className="mt-4 grid gap-4 2xl:grid-cols-[minmax(240px,0.34fr)_minmax(0,0.66fr)] 2xl:items-start">
                       <div className="rounded-[1.4rem] border border-white/10 bg-slate-950/65 p-4">
                         <div className="flex items-center gap-3 border-b border-white/10 pb-3">
                           <Building2 className="h-5 w-5 text-cyan-300" />
@@ -631,9 +631,9 @@ export default function DocsShowcasePage() {
                         </div>
                       </div>
 
-                      <div className="relative overflow-hidden rounded-[1.4rem] border border-white/10 bg-[linear-gradient(180deg,rgba(10,18,32,0.96)_0%,rgba(6,12,24,0.98)_100%)] p-4">
+                      <div className="relative min-w-0 overflow-hidden rounded-[1.4rem] border border-white/10 bg-[linear-gradient(180deg,rgba(10,18,32,0.96)_0%,rgba(6,12,24,0.98)_100%)] p-4">
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.12),_transparent_30%),radial-gradient(circle_at_bottom_left,_rgba(249,115,22,0.12),_transparent_25%)]" />
-                        <div className="relative">
+                        <div className="relative min-h-[28rem]">
                           <div className="grid gap-3 sm:grid-cols-2">
                             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                               <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Mock screen</p>
