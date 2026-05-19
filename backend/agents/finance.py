@@ -764,10 +764,18 @@ def _format_finance_response(operation: str, result: Dict[str, Any]) -> str:
     if operation == "daily_revenue":
         completed_services = int(result.get('completed_services', 0) or 0)
         total_revenue = float(result.get('total_revenue', 0.0) or 0.0)
+        payment_transactions = int(result.get('payment_transactions', 0) or 0)
         if completed_services == 0 and total_revenue <= 0:
             return (
                 f"I don't see any completed services or recorded revenue for {result.get('date')} yet. "
                 "That usually means no services were closed out that day, or the shop data has not been backfilled yet."
+            )
+        if completed_services == 0 and payment_transactions > 0 and total_revenue > 0:
+            return (
+                f"Recorded revenue for {result.get('date')} was ${total_revenue:.2f} "
+                f"across {payment_transactions} completed payment transaction"
+                f"{'s' if payment_transactions != 1 else ''}. "
+                "I don't see any services formally closed out for that day yet."
             )
         return (
             f"Revenue for {result.get('date')} was ${total_revenue:.2f} "

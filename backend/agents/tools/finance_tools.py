@@ -332,21 +332,22 @@ def _local_daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, 
         
         day_start_utc, day_end_utc = _shop_local_day_bounds_utc(target_date, tz_name)
 
-        # Real-time fallback: query queue_items directly
+        # Real-time fallback: count completed services by completion time inside the
+        # shop-local day, not by check-in time.
         completed_items = (
             session.query(QueueItem)
             .join(Queue)
             .filter(
                 Queue.shop_id == shop_id,
-                QueueItem.checked_in_at >= day_start_utc,
-                QueueItem.checked_in_at <= day_end_utc,
+                QueueItem.completed_at.isnot(None),
+                QueueItem.completed_at >= day_start_utc,
+                QueueItem.completed_at <= day_end_utc,
                 QueueItem.status == QueueStatus.COMPLETED,
             )
             .all()
         )
         total_completed = len(completed_items)
-        total_revenue = sum(float(item.service_cost or 0.0) for item in completed_items)
-        average_transaction = total_revenue / total_completed if total_completed > 0 else 0.0
+        queue_revenue = sum(float(item.service_cost or 0.0) for item in completed_items)
 
         # Also count all customers (any status) for "total customers"
         all_count = (
@@ -360,6 +361,19 @@ def _local_daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, 
             .scalar() or 0
         )
 
+        pos_summary = _summarize_local_payments(
+            session=session,
+            shop_id=shop_id,
+            target_date=target_date,
+            tz_name=tz_name,
+        )
+        payment_transactions = int(pos_summary.get("total_transactions", 0) or 0)
+        payment_revenue = float(pos_summary.get("total_amount", 0.0) or 0.0)
+
+        total_revenue = payment_revenue if payment_revenue > 0 else queue_revenue
+        average_denominator = total_completed if total_completed > 0 else payment_transactions
+        average_transaction = total_revenue / average_denominator if average_denominator > 0 else 0.0
+
         session.close()
         return {
             "total_revenue": total_revenue,
@@ -367,11 +381,58 @@ def _local_daily_revenue(shop_id: int, date: Optional[str] = None) -> Dict[str, 
             "completed_services": total_completed,
             "total_customers": all_count,
             "average_transaction": average_transaction,
+            "payment_transactions": payment_transactions,
+            "queue_revenue": queue_revenue,
+            "revenue_source": "payments" if payment_revenue > 0 else "queue_items",
             "shop_id": shop_id,
             "date": date
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+def _summarize_local_payments(
+    session,
+    shop_id: int,
+    target_date,
+    tz_name: str,
+) -> Dict[str, Any]:
+    try:
+        from modules.payments.models import Payment, PaymentStatus
+        from sqlalchemy import func
+
+        day_start_utc, day_end_utc = _shop_local_day_bounds_utc(target_date, tz_name)
+        rows = session.query(
+            func.count(Payment.id).label("count"),
+            func.coalesce(func.sum(Payment.amount), 0.0).label("total"),
+            Payment.method,
+        ).filter(
+            Payment.shop_id == shop_id,
+            Payment.status == PaymentStatus.COMPLETED,
+            Payment.processed_at >= day_start_utc,
+            Payment.processed_at <= day_end_utc,
+        ).group_by(Payment.method).all()
+
+        methods = {}
+        total_count = 0
+        total_amount = 0.0
+        for row in rows:
+            method_name = str(row.method.value) if hasattr(row.method, "value") else str(row.method)
+            methods[method_name] = {"count": int(row.count), "total": float(row.total)}
+            total_count += int(row.count)
+            total_amount += float(row.total)
+
+        return {
+            "total_transactions": total_count,
+            "total_amount": total_amount,
+            "by_method": methods,
+        }
+    except Exception:
+        return {
+            "total_transactions": 0,
+            "total_amount": 0.0,
+            "by_method": {},
+        }
 
 
 def _parse_time_window(query: str, now: Optional[datetime] = None) -> Tuple[datetime, datetime, str, str]:
@@ -1246,38 +1307,25 @@ def _local_list_invoices(
 def _local_get_pos_summary(shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
     """Get POS (point of sale) summary for a given day."""
     try:
-        from modules.payments.models import Payment, PaymentStatus
-        from sqlalchemy import func
-
-        target_date = date or datetime.now().strftime("%Y-%m-%d")
         session = db_interface.get_session()
         try:
-            from sqlalchemy import cast, Date
-            rows = session.query(
-                func.count(Payment.id).label("count"),
-                func.coalesce(func.sum(Payment.amount), 0.0).label("total"),
-                Payment.method,
-            ).filter(
-                Payment.shop_id == shop_id,
-                Payment.status == PaymentStatus.COMPLETED,
-                cast(Payment.processed_at, Date) == target_date,
-            ).group_by(Payment.method).all()
-
-            methods = {}
-            total_count = 0
-            total_amount = 0.0
-            for row in rows:
-                m = str(row.method.value) if hasattr(row.method, 'value') else str(row.method)
-                methods[m] = {"count": int(row.count), "total": float(row.total)}
-                total_count += int(row.count)
-                total_amount += float(row.total)
+            tz_name = _resolve_shop_timezone_name(shop_id, session)
+            shop_now = _now_for_shop(shop_id, session)
+            target_date_str = date or shop_now.strftime("%Y-%m-%d")
+            target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+            summary = _summarize_local_payments(
+                session=session,
+                shop_id=shop_id,
+                target_date=target_date,
+                tz_name=tz_name,
+            )
 
             return {
                 "shop_id": shop_id,
-                "date": target_date,
-                "total_transactions": total_count,
-                "total_amount": total_amount,
-                "by_method": methods,
+                "date": target_date_str,
+                "total_transactions": int(summary.get("total_transactions", 0) or 0),
+                "total_amount": float(summary.get("total_amount", 0.0) or 0.0),
+                "by_method": dict(summary.get("by_method") or {}),
             }
         finally:
             session.close()

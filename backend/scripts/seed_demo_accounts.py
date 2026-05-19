@@ -45,17 +45,17 @@ EMPLOYEE_NAMES = [
 ]
 
 CITIES = [
-    ("New York", "NY", "10001"),
-    ("Los Angeles", "CA", "90001"),
-    ("Chicago", "IL", "60601"),
-    ("Houston", "TX", "77001"),
-    ("Phoenix", "AZ", "85001"),
-    ("Philadelphia", "PA", "19101"),
-    ("San Antonio", "TX", "78201"),
-    ("San Diego", "CA", "92101"),
-    ("Dallas", "TX", "75201"),
-    ("Austin", "TX", "73301"),
-    ("Seattle", "WA", "98101"),
+    ("New York", "NY", "10001", "America/New_York"),
+    ("Los Angeles", "CA", "90001", "America/Los_Angeles"),
+    ("Chicago", "IL", "60601", "America/Chicago"),
+    ("Houston", "TX", "77001", "America/Chicago"),
+    ("Phoenix", "AZ", "85001", "America/Phoenix"),
+    ("Philadelphia", "PA", "19101", "America/New_York"),
+    ("San Antonio", "TX", "78201", "America/Chicago"),
+    ("San Diego", "CA", "92101", "America/Los_Angeles"),
+    ("Dallas", "TX", "75201", "America/Chicago"),
+    ("Austin", "TX", "73301", "America/Chicago"),
+    ("Seattle", "WA", "98101", "America/Los_Angeles"),
 ]
 
 DEMO_ACCOUNTS = [
@@ -129,7 +129,7 @@ def run():
         for i, acct in enumerate(DEMO_ACCOUNTS):
             uid = user_ids[acct["email"]]
             tmpl = SHOP_TEMPLATES[i]
-            city, state, zip_code = CITIES[i]
+            city, state, zip_code, timezone_name = CITIES[i]
             shop_name = f"Demo {tmpl['type']} ({acct['username']})"
             slug = acct["username"].replace("_", "-")
 
@@ -168,6 +168,24 @@ def run():
                 print(f"  ✓ CREATED shop '{shop_name}' (id={sid})")
 
             shop_ids[acct["email"]] = sid
+
+            db.execute(
+                text(
+                    """
+                    INSERT INTO shop_operating_hours
+                        (shop_id, open_time, close_time, timezone, auto_open_queue, auto_close_queue,
+                         pre_close_buffer_minutes, auto_lock_joins, operating_days, created_at, updated_at)
+                    VALUES
+                        (:shop_id, '09:00:00', '17:00:00', :timezone, true, true,
+                         15, true, ARRAY[1,2,3,4,5,6], NOW(), NOW())
+                    ON CONFLICT (shop_id) DO UPDATE SET
+                        timezone = EXCLUDED.timezone,
+                        updated_at = NOW()
+                    """
+                ),
+                {"shop_id": sid, "timezone": timezone_name},
+            )
+
             created_shops.append({"shop_id": sid, "template": tmpl, "user_email": acct["email"]})
 
         db.commit()
@@ -314,15 +332,20 @@ def run():
                         emp_id = random.choice(emps) if emps else None
                         cost = round(random.uniform(20, 120), 2)
 
-                        if is_today and pos <= 3:
-                            status = "WAITING"
-                            checked_in = datetime.now() - timedelta(minutes=random.randint(5, 30))
-                            started = None
+                        if is_today and pos <= 2:
+                            status = "COMPLETED"
+                            checked_in = datetime.now() - timedelta(minutes=random.randint(90, 180))
+                            started = checked_in + timedelta(minutes=random.randint(5, 15))
+                            completed = started + timedelta(minutes=info["template"]["avg_time"] + random.randint(-5, 15))
+                        elif is_today and pos == 3:
+                            status = "BEING_SERVED"
+                            checked_in = datetime.now() - timedelta(minutes=random.randint(30, 75))
+                            started = checked_in + timedelta(minutes=random.randint(5, 15))
                             completed = None
                         elif is_today and pos > 3:
-                            status = random.choice(["WAITING", "BEING_SERVED"])
-                            checked_in = datetime.now() - timedelta(minutes=random.randint(5, 60))
-                            started = checked_in + timedelta(minutes=random.randint(5, 15)) if status == "BEING_SERVED" else None
+                            status = "WAITING"
+                            checked_in = datetime.now() - timedelta(minutes=random.randint(5, 45))
+                            started = None
                             completed = None
                         else:
                             status = random.choices(["COMPLETED", "CANCELLED", "CANCELLED"], weights=[70, 20, 10])[0]

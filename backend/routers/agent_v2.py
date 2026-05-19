@@ -366,10 +366,17 @@ def _format_daily_revenue(result: Dict[str, Any]) -> str:
     total_revenue = float(result.get("total_revenue", 0.0) or 0.0)
     completed_services = int(result.get("completed_services", 0) or 0)
     total_customers = int(result.get("total_customers", 0) or 0)
+    payment_transactions = int(result.get("payment_transactions", 0) or 0)
     average_transaction = float(result.get("average_transaction", 0.0) or 0.0)
     date = result.get("date") or "today"
     if completed_services == 0 and total_revenue <= 0:
         return f"I don't see any completed services or recorded revenue for {date} yet."
+    if completed_services == 0 and payment_transactions > 0 and total_revenue > 0:
+        return (
+            f"Recorded revenue for {date} is ${total_revenue:.2f} across {payment_transactions} completed payment transaction"
+            f"{'s' if payment_transactions != 1 else ''}. "
+            "I don't see any services formally closed out for that day yet."
+        )
     return (
         f"Revenue for {date} is ${total_revenue:.2f} across {completed_services} completed service"
         f"{'s' if completed_services != 1 else ''}"
