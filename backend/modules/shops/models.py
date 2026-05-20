@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, ForeignKey, Time, ARRAY
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, ForeignKey, Time, ARRAY, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
@@ -19,12 +19,18 @@ class Shop(Base):
     phone = Column(String, nullable=False)
     email = Column(String)
     website = Column(String)
+    tagline = Column(String)
+    tax_id = Column(String)
+    timezone = Column(String(64), nullable=True)
+    instagram = Column(String)
+    whatsapp = Column(String)
     average_service_time = Column(Integer, default=30)
     logo_url = Column(String)
     primary_color = Column(String, default="#1976d2")
     secondary_color = Column(String)
     accent_color = Column(String)
     background_color = Column(String)
+    dashboard_gradient = Column(String(32), nullable=False, default="violet")
     ai_agent_name = Column(String, nullable=True)
     slug = Column(String, unique=True, index=True)
     latitude = Column(Float)
@@ -53,6 +59,8 @@ class Shop(Base):
     close_days = relationship("ShopCloseDay", back_populates="shop", cascade="all, delete-orphan")
     customers = relationship("ShopCustomer", back_populates="shop", cascade="all, delete-orphan")
     operating_hours = relationship("ShopOperatingHours", back_populates="shop", uselist=False, cascade="all, delete-orphan")
+    business_hours = relationship("ShopBusinessHour", back_populates="shop", cascade="all, delete-orphan")
+    booking_settings = relationship("ShopBookingSettings", back_populates="shop", uselist=False, cascade="all, delete-orphan")
     runtime_assignment = relationship("ShopRuntimeAssignment", back_populates="shop", uselist=False, cascade="all, delete-orphan")
 
 
@@ -116,11 +124,55 @@ class ShopCloseDay(Base):
     id = Column(Integer, primary_key=True, index=True)
     shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     date = Column(DateTime, nullable=False)
+    name = Column(String)
     reason = Column(String)
+    notes = Column(Text)
+    repeat_yearly = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
     shop = relationship("Shop", back_populates="close_days")
+
+
+class ShopBusinessHour(Base):
+    __tablename__ = "shop_business_hours"
+    __table_args__ = (
+        UniqueConstraint("shop_id", "day_of_week", name="uq_shop_business_hours_shop_day"),
+        {"schema": "public"},
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    day_of_week = Column(Integer, nullable=False)
+    is_open = Column(Boolean, nullable=False, default=True)
+    open_time = Column(Time, nullable=False, default="09:00:00")
+    close_time = Column(Time, nullable=False, default="18:00:00")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    shop = relationship("Shop", back_populates="business_hours")
+
+
+class ShopBookingSettings(Base):
+    __tablename__ = "shop_booking_settings"
+    __table_args__ = {"schema": "public"}
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    booking_enabled = Column(Boolean, nullable=False, default=True)
+    require_confirmation = Column(Boolean, nullable=False, default=False)
+    allow_rescheduling = Column(Boolean, nullable=False, default=True)
+    allow_cancellations = Column(Boolean, nullable=False, default=True)
+    booking_notice_hours = Column(Integer, nullable=False, default=24)
+    reminder_channel = Column(String(16), nullable=False, default="email")
+    reminder_time_hours = Column(Integer, nullable=False, default=24)
+    follow_up_enabled = Column(Boolean, nullable=False, default=False)
+    waiting_list_enabled = Column(Boolean, nullable=False, default=False)
+    auto_confirm = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    shop = relationship("Shop", back_populates="booking_settings")
 
 
 class ShopOperatingHours(Base):

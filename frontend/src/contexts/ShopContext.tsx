@@ -9,9 +9,14 @@ interface Shop {
   logo_url?: string;
   primary_color?: string;
   secondary_color?: string;
+  dashboard_gradient?: string;
+  tagline?: string;
   city?: string;
   state?: string;
   shop_type?: string;
+  timezone?: string;
+  instagram?: string;
+  whatsapp?: string;
 }
 
 interface ShopContextType {

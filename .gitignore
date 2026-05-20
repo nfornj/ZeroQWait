@@ -37,6 +37,8 @@ coverage/
 htmlcov/
 .pytest_cache/
 .hypothesis/
+frontend/test-results/
+frontend/playwright-report/
 
 # System files
 .DS_Store
@@ -72,4 +74,4 @@ actions-runner/
 backend/test_accounts.txt
 backend/scripts/shop_login_info_prod.txt
 backend/scripts/shop_login_info_test.txt
-postgres_data/ 
+postgres_data/

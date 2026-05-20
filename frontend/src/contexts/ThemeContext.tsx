@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { themePalettes, themePresetFromColors, ThemePreset } from "../theme/presets";
+import { useShop } from "./ShopContext";
 
-export type ThemePreset = "default" | "ocean" | "forest" | "sunset" | "midnight" | "corporate";
+export type { ThemePreset } from "../theme/presets";
 export type ColorMode = "light" | "dark";
 export type GradientPreset = "minimal" | "violet" | "ocean" | "sunset";
 
@@ -25,15 +27,6 @@ export const useThemeContext = () => {
   return context;
 };
 
-const themePalettes: Record<ThemePreset, { primary: string; secondary: string }> = {
-  default: { primary: "#7c3aed", secondary: "#9c27b0" },
-  ocean: { primary: "#0288d1", secondary: "#26c6da" },
-  forest: { primary: "#2e7d32", secondary: "#66bb6a" },
-  sunset: { primary: "#ed6c02", secondary: "#ff9800" },
-  midnight: { primary: "#311b92", secondary: "#673ab7" },
-  corporate: { primary: "#1565c0", secondary: "#42a5f5" },
-};
-
 export const gradientPresets: Record<GradientPreset, { light: string; dark: string }> = {
   minimal: { light: "none", dark: "none" },
   violet: {
@@ -49,6 +42,10 @@ export const gradientPresets: Record<GradientPreset, { light: string; dark: stri
     dark: "linear-gradient(135deg, #78350F 0%, #7C2D12 100%)",
   },
 };
+
+function isGradientPreset(value: unknown): value is GradientPreset {
+  return typeof value === "string" && value in gradientPresets;
+}
 
 function hexToHslComponents(hex: string): string {
   const normalized = hex.replace("#", "");
@@ -87,6 +84,11 @@ function hexToHslComponents(hex: string): string {
 }
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { shop } = useShop();
+  const shopPrimaryColor = shop?.primary_color;
+  const shopSecondaryColor = shop?.secondary_color;
+  const shopDashboardGradient = shop?.dashboard_gradient;
+  const shopTimeZone = shop?.timezone;
   const [mode, setMode] = useState<ColorMode>(() => {
     const savedMode = localStorage.getItem("themeMode");
     return (savedMode as ColorMode) || "light";
@@ -128,6 +130,28 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     localStorage.setItem("appTimeZone", timeZone);
   }, [timeZone]);
+
+  useEffect(() => {
+    if (!shopPrimaryColor && !shopSecondaryColor && !shopDashboardGradient && !shopTimeZone) return;
+
+    const persistedPreset = themePresetFromColors(shopPrimaryColor, shopSecondaryColor);
+    if (persistedPreset) {
+      setThemePresetState(persistedPreset);
+    }
+
+    if (isGradientPreset(shopDashboardGradient)) {
+      setDashboardGradientState(shopDashboardGradient);
+    }
+
+    if (shopTimeZone) {
+      setTimeZone(shopTimeZone);
+    }
+  }, [
+    shopDashboardGradient,
+    shopPrimaryColor,
+    shopSecondaryColor,
+    shopTimeZone,
+  ]);
 
   const value = useMemo<ThemeContextType>(
     () => ({
