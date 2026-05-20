@@ -314,6 +314,8 @@ services:
       context: ./frontend
       args:
         REACT_APP_API_URL: /api
+        API_PROXY_TARGET: http://backend:8000
+        API_DNS_RESOLVER: 127.0.0.11
     ports:
       - "${FRONTEND_HOST_PORT:-3000}:80"
     depends_on:
