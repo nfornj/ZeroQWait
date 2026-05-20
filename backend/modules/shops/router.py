@@ -164,6 +164,14 @@ def get_my_shops(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/{shop_id}/operating-hours", response_model=schemas.ShopOperatingHours)
+def get_operating_hours(shop_id: int):
+    hours = shop_service.get_operating_hours(shop_id)
+    if not hours:
+        raise HTTPException(status_code=404, detail="Operating hours not found")
+    return hours
+
 @router.get("/{shop_id}", response_model=queue_schemas.ShopWithQueue)
 def get_shop(shop_id: int, current_user: Optional[dict] = Depends(get_current_user_optional)):
     """Get shop details with active queue"""

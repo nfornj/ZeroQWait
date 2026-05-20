@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func, desc
 from database import SessionLocal
-from modules.shops.models import Shop, ShopService, ShopCloseDay
+from modules.shops.models import Shop, ShopService, ShopCloseDay, ShopOperatingHours
 from modules.shops import schemas
 from typing import List, Optional, Dict, Union, Any
 from datetime import date, datetime
@@ -142,6 +142,16 @@ class ShopService:
             # We don't have schema for CloseDay yet in modules.shops.schemas? 
             # I defined DictModel. Let's return dict for now or add schema.
             return [{"id": d.id, "date": d.date, "reason": d.reason} for d in days]
+        finally:
+            db.close()
+
+    def get_operating_hours(self, shop_id: int) -> Optional[schemas.ShopOperatingHours]:
+        db = self.get_db()
+        try:
+            hours = db.query(ShopOperatingHours).filter(ShopOperatingHours.shop_id == shop_id).first()
+            if hours:
+                return schemas.ShopOperatingHours.model_validate(hours)
+            return None
         finally:
             db.close()
 

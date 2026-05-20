@@ -1,5 +1,5 @@
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, time
 from pydantic import BaseModel, ConfigDict
 from shared.schemas import DictModel
 
@@ -61,6 +61,18 @@ class Shop(ShopBase):
     odoo_company_id: Optional[int] = None
     telegram_chat_id: Optional[str] = None
     telegram_notifications_enabled: bool = False
+
+
+class ShopOperatingHours(DictModel):
+    shop_id: int
+    open_time: time
+    close_time: time
+    timezone: str
+    auto_open_queue: bool
+    auto_close_queue: bool
+    pre_close_buffer_minutes: int
+    auto_lock_joins: bool
+    operating_days: List[int]
 
 # Service schemas
 class ShopServiceBase(DictModel):
