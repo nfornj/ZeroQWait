@@ -1,6 +1,5 @@
 import SelectContent from './SelectContent';
 import MenuContent from './MenuContent';
-import CardAlert from './CardAlert';
 import OwnerAccountPanel from './OwnerAccountPanel';
 
 export const SIDEBAR_WIDTH = 240;
@@ -20,9 +19,6 @@ export default function SideMenu() {
       <div className="flex flex-1 flex-col overflow-hidden">
         <MenuContent />
       </div>
-
-      {/* Tip card */}
-      <CardAlert />
 
       {/* Account panel */}
       <div className="border-t border-border p-3">

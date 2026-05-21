@@ -308,9 +308,8 @@ class SimState:
         self.events.append((ts, msg, style))
         if len(self.events) > 60:
             self.events.pop(0)
-        # Strip Rich markup tags and print to stdout so docker compose logs captures every event
-        plain = re.sub(r"\[/?[^\]]+\]", "", msg)
-        print(f"[{ts}] {plain}", flush=True)
+        # Keep stdout logging free of event content to avoid leaking sensitive data.
+        print(f"[{ts}] event recorded", flush=True)
 
 
 STATE = SimState()

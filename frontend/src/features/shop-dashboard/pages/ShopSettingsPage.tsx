@@ -6,7 +6,9 @@ import {
     MessageCircle, MapPin, ChevronLeft,
 } from 'lucide-react';
 import api from '../../../services/api';
-import { useThemeContext, ThemePreset } from '../../../contexts/ThemeContext';
+import { GradientPreset, gradientPresets, useThemeContext } from '../../../contexts/ThemeContext';
+import { useShop } from '../../../contexts/ShopContext';
+import { THEME_PRESETS, themePresetFromColors } from '../../../theme/presets';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Textarea } from '../../../components/ui/textarea';
@@ -22,13 +24,13 @@ import { cn } from '../../../lib/utils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const THEMES: { id: ThemePreset; name: string; primary: string; secondary: string }[] = [
-    { id: 'default', name: 'Coral', primary: '#FF5A5F', secondary: '#00A699' },
-    { id: 'ocean', name: 'Ocean', primary: '#0077B6', secondary: '#48CAE4' },
-    { id: 'forest', name: 'Forest', primary: '#2D6A4F', secondary: '#D8F3DC' },
-    { id: 'sunset', name: 'Sunset', primary: '#E07A5F', secondary: '#F2CC8F' },
-    { id: 'midnight', name: 'Midnight', primary: '#7209B7', secondary: '#4361EE' },
-    { id: 'corporate', name: 'Corporate', primary: '#2B2D42', secondary: '#8D99AE' },
+const THEMES = THEME_PRESETS;
+
+const GRADIENT_OPTIONS: { id: GradientPreset; name: string }[] = [
+    { id: 'violet', name: 'Violet' },
+    { id: 'ocean', name: 'Ocean' },
+    { id: 'sunset', name: 'Sunset' },
+    { id: 'minimal', name: 'Minimal' },
 ];
 
 const STEPS = [
@@ -54,6 +56,9 @@ const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'S
 
 const DESCRIPTION_MAX = 200;
 
+const isGradientPreset = (value: unknown): value is GradientPreset =>
+    GRADIENT_OPTIONS.some((option) => option.id === value);
+
 interface ShopAIEnvironmentResponse {
     shop_id: number; subscription_tier: string; environment_name: string;
     environment_summary: string; operating_mode: string; status_label: string;
@@ -62,6 +67,19 @@ interface ShopAIEnvironmentResponse {
 }
 
 interface BusinessHour { day: string; isOpen: boolean; openTime: string; closeTime: string; }
+
+type BookingPrefs = {
+    bookingEnabled: boolean;
+    requireConfirmation: boolean;
+    allowRescheduling: boolean;
+    allowCancellations: boolean;
+    bookingNotice: string;
+    reminderPreferences: string;
+    reminderTime: string;
+    followUp: boolean;
+    waitingList: boolean;
+    autoConfirm: boolean;
+};
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -72,7 +90,8 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const ShopSettingsPage: React.FC = () => {
-    const { themePreset, setThemePreset } = useThemeContext();
+    const { themePreset, setThemePreset, dashboardGradient, setDashboardGradient } = useThemeContext();
+    const { refreshOwnedShops } = useShop();
     const presetTheme = THEMES.find((t) => t.id === themePreset) || THEMES[0];
 
     const [shop, setShop] = useState<any>(null);
@@ -90,7 +109,7 @@ const ShopSettingsPage: React.FC = () => {
         primary_color: presetTheme.primary, secondary_color: presetTheme.secondary,
         accent_color: '', background_color: '', logo_url: '', slug: '',
         dashboard_gradient: 'violet' as string,
-        tagline: '', business_type: '', tax_id: '',
+        tagline: '', shop_type: '', tax_id: '',
         address: '', timezone: 'America/New_York',
         email: '', instagram: '', whatsapp: '',
     });
@@ -109,7 +128,7 @@ const ShopSettingsPage: React.FC = () => {
     const [aiEnvironment, setAiEnvironment] = useState<ShopAIEnvironmentResponse | null>(null);
 
     // Booking preferences (Step 3)
-    const [bookingPrefs, setBookingPrefs] = useState({
+    const [bookingPrefs, setBookingPrefs] = useState<BookingPrefs>({
         bookingEnabled: true,
         requireConfirmation: false,
         allowRescheduling: true,
@@ -140,33 +159,61 @@ const ShopSettingsPage: React.FC = () => {
 
     // ── Data fetching ────────────────────────────────────────────────────────
 
+    const applyShopPayload = useCallback((s: any) => {
+        setShop(s);
+        setFormData({
+            name: s.name ?? '', description: s.description ?? '',
+            phone: s.phone ?? '', website: s.website ?? '',
+            primary_color: s.primary_color || presetTheme.primary,
+            secondary_color: s.secondary_color || presetTheme.secondary,
+            accent_color: s.accent_color ?? '', background_color: s.background_color ?? '',
+            logo_url: s.logo_url ?? '', slug: s.slug ?? '',
+            dashboard_gradient: isGradientPreset(s.dashboard_gradient) ? s.dashboard_gradient : 'violet',
+            tagline: s.tagline ?? '', shop_type: s.shop_type ?? '',
+            tax_id: s.tax_id ?? '', address: s.address ?? '',
+            timezone: s.timezone ?? 'America/New_York',
+            email: s.email ?? '', instagram: s.instagram ?? '', whatsapp: s.whatsapp ?? '',
+        });
+
+        const persistedPreset = themePresetFromColors(s.primary_color, s.secondary_color);
+        if (persistedPreset) setThemePreset(persistedPreset);
+        setDashboardGradient(isGradientPreset(s.dashboard_gradient) ? s.dashboard_gradient : 'violet');
+        if (s.logo_url) setLogoPreview(s.logo_url);
+    }, [presetTheme.primary, presetTheme.secondary, setDashboardGradient, setThemePreset]);
+
+    const fetchBusinessHours = async (shopId: number) => {
+        try {
+            const r = await api.get<BusinessHour[]>(`/shops/${shopId}/business-hours`);
+            setBusinessHours(r.data);
+        } catch {
+            setError('Failed to load business hours');
+        }
+    };
+
+    const fetchBookingSettings = async (shopId: number) => {
+        try {
+            const r = await api.get<BookingPrefs>(`/shops/${shopId}/booking-settings`);
+            setBookingPrefs(r.data);
+        } catch {
+            setError('Failed to load booking preferences');
+        }
+    };
+
     const fetchShop = useCallback(async () => {
         try {
             const res = await api.get('/shops/my-shops');
             if (res.data.length > 0) {
                 const s = res.data[0];
-                setShop(s);
-                setFormData({
-                    name: s.name ?? '', description: s.description ?? '',
-                    phone: s.phone ?? '', website: s.website ?? '',
-                    primary_color: s.primary_color || presetTheme.primary,
-                    secondary_color: s.secondary_color || presetTheme.secondary,
-                    accent_color: s.accent_color ?? '', background_color: s.background_color ?? '',
-                    logo_url: s.logo_url ?? '', slug: s.slug ?? '',
-                    dashboard_gradient: s.dashboard_gradient ?? 'violet',
-                    tagline: s.tagline ?? '', business_type: s.business_type ?? '',
-                    tax_id: s.tax_id ?? '', address: s.address ?? '',
-                    timezone: s.timezone ?? 'America/New_York',
-                    email: s.email ?? '', instagram: s.instagram ?? '', whatsapp: s.whatsapp ?? '',
-                });
-                if (s.logo_url) setLogoPreview(s.logo_url);
+                applyShopPayload(s);
                 fetchServices(s.id);
                 fetchCloseDays(s.id);
                 fetchLLMSettings(s.id);
+                fetchBusinessHours(s.id);
+                fetchBookingSettings(s.id);
             }
             setLoading(false);
         } catch { setError('Failed to load shop settings'); setLoading(false); }
-    }, [presetTheme.primary, presetTheme.secondary]);
+    }, [applyShopPayload]);
 
     useEffect(() => { fetchShop(); }, [fetchShop]);
 
@@ -195,19 +242,36 @@ const ShopSettingsPage: React.FC = () => {
         markUnsaved();
     };
 
+    const updateBookingPref = (key: keyof BookingPrefs, val: boolean | string) => {
+        setBookingPrefs((p) => ({ ...p, [key]: val }));
+        markUnsaved();
+    };
+
     const handleSave = async (skipReload = false) => {
         if (!shop) return;
         setSaving(true);
         setError(null);
         try {
             await api.put(`/shops/${shop.id}`, formData);
+            await api.put(`/shops/${shop.id}/booking-settings`, bookingPrefs);
+            await api.put(`/shops/${shop.id}/business-hours`, businessHours);
             if (logoFile) {
                 const fd = new FormData();
                 fd.append('file', logoFile);
                 await api.put(`/shops/${shop.id}/logo`, fd);
             }
+            const shopsRes = await api.get('/shops/my-shops');
+            const refreshed = Array.isArray(shopsRes.data)
+                ? shopsRes.data.find((item: any) => item.id === shop.id) || shopsRes.data[0]
+                : null;
+            if (refreshed) applyShopPayload(refreshed);
+            await Promise.all([
+                fetchBusinessHours(shop.id),
+                fetchBookingSettings(shop.id),
+                fetchCloseDays(shop.id),
+                refreshOwnedShops(),
+            ]);
             setSaved(true);
-            if (!skipReload) setTimeout(() => window.location.reload(), 800);
         } catch { setError('Failed to save settings'); }
         finally { setSaving(false); }
     };
@@ -245,8 +309,12 @@ const ShopSettingsPage: React.FC = () => {
     const addClosedDayFromForm = async () => {
         if (!closedDayDate) return;
         try {
-            await api.post(`/shops/${shop.id}/close-days`, null, {
-                params: { date_str: closedDayDate, reason: closedDayName || closedDayNotes || undefined },
+            await api.post(`/shops/${shop.id}/close-days`, {
+                date: closedDayDate,
+                name: closedDayName || undefined,
+                reason: closedDayName || closedDayNotes || undefined,
+                notes: closedDayNotes || undefined,
+                repeatYearly: closedDayRepeat,
             });
             setClosedDayDate('');
             setClosedDayName('');
@@ -478,6 +546,55 @@ const ShopSettingsPage: React.FC = () => {
                                 </div>
                             </div>
 
+                            <div className="mt-6">
+                                <FieldLabel>Dashboard Background</FieldLabel>
+                                <p className="mb-3 text-xs text-muted-foreground">Choose the background your workspace and display pages use.</p>
+                                <div className="flex flex-wrap gap-3">
+                                    {GRADIENT_OPTIONS.map((preset) => {
+                                        const selectedGradient = isGradientPreset(formData.dashboard_gradient)
+                                            ? formData.dashboard_gradient
+                                            : dashboardGradient;
+                                        const isSelected = selectedGradient === preset.id;
+                                        const preview = gradientPresets[preset.id].light === 'none'
+                                            ? '#f9fafb'
+                                            : gradientPresets[preset.id].light;
+
+                                        return (
+                                            <button
+                                                key={preset.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setDashboardGradient(preset.id);
+                                                    setFormData((p) => ({ ...p, dashboard_gradient: preset.id }));
+                                                    markUnsaved();
+                                                }}
+                                                className="flex flex-col items-center gap-1.5"
+                                            >
+                                                <div
+                                                    className={cn(
+                                                        'relative h-12 w-20 rounded-xl border border-border transition-all',
+                                                        isSelected ? 'ring-2 ring-offset-2 ring-foreground scale-105' : 'hover:scale-105',
+                                                    )}
+                                                    style={{ background: preview }}
+                                                >
+                                                    {isSelected && (
+                                                        <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/15">
+                                                            <Check className="h-5 w-5 text-white drop-shadow" />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <span className={cn(
+                                                    'text-[11px]',
+                                                    isSelected ? 'font-semibold text-foreground' : 'text-muted-foreground',
+                                                )}>
+                                                    {preset.name}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
                             {/* Live Preview */}
                             <div className="mt-6">
                                 <FieldLabel>Live Preview</FieldLabel>
@@ -507,8 +624,8 @@ const ShopSettingsPage: React.FC = () => {
                                                     {formData.tagline || formData.description}
                                                 </p>
                                             )}
-                                            {formData.business_type && (
-                                                <Badge variant="outline" className="mt-1.5 text-xs">{formData.business_type}</Badge>
+                                            {formData.shop_type && (
+                                                <Badge variant="outline" className="mt-1.5 text-xs">{formData.shop_type}</Badge>
                                             )}
                                         </div>
                                         <div
@@ -624,7 +741,7 @@ const ShopSettingsPage: React.FC = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <FieldLabel>Business Type</FieldLabel>
-                                    <Select value={formData.business_type || ''} onValueChange={(v) => updateField('business_type', v)}>
+                                    <Select value={formData.shop_type || ''} onValueChange={(v) => updateField('shop_type', v)}>
                                         <SelectTrigger className="border-border bg-background">
                                             <SelectValue placeholder="Select type..." />
                                         </SelectTrigger>
@@ -726,8 +843,8 @@ const ShopSettingsPage: React.FC = () => {
                                         {formData.tagline && (
                                             <p className="text-xs text-muted-foreground mt-0.5">{formData.tagline}</p>
                                         )}
-                                        {formData.business_type && (
-                                            <Badge variant="outline" className="mt-2 text-xs">{formData.business_type}</Badge>
+                                        {formData.shop_type && (
+                                            <Badge variant="outline" className="mt-2 text-xs">{formData.shop_type}</Badge>
                                         )}
                                     </div>
                                     <div className="mt-4 flex flex-col gap-2">
@@ -789,8 +906,9 @@ const ShopSettingsPage: React.FC = () => {
                                         <p className="text-xs text-muted-foreground">{desc}</p>
                                     </div>
                                     <Switch
+                                        aria-label={label}
                                         checked={bookingPrefs[key as keyof typeof bookingPrefs] as boolean}
-                                        onCheckedChange={(checked) => setBookingPrefs((p) => ({ ...p, [key]: checked }))}
+                                        onCheckedChange={(checked) => updateBookingPref(key as keyof BookingPrefs, checked)}
                                     />
                                 </div>
                             ))}
@@ -799,7 +917,7 @@ const ShopSettingsPage: React.FC = () => {
                         {/* Booking Notice */}
                         <div className="mt-5">
                             <FieldLabel>Booking Notice</FieldLabel>
-                            <Select value={bookingPrefs.bookingNotice} onValueChange={(v) => setBookingPrefs((p) => ({ ...p, bookingNotice: v }))}>
+                            <Select value={bookingPrefs.bookingNotice} onValueChange={(v) => updateBookingPref('bookingNotice', v)}>
                                 <SelectTrigger className="border-border bg-background">
                                     <SelectValue />
                                 </SelectTrigger>
@@ -818,7 +936,7 @@ const ShopSettingsPage: React.FC = () => {
                             <div className="flex flex-col gap-4">
                                 <div>
                                     <FieldLabel>Reminder Preferences</FieldLabel>
-                                    <Select value={bookingPrefs.reminderPreferences} onValueChange={(v) => setBookingPrefs((p) => ({ ...p, reminderPreferences: v }))}>
+                                    <Select value={bookingPrefs.reminderPreferences} onValueChange={(v) => updateBookingPref('reminderPreferences', v)}>
                                         <SelectTrigger className="border-border bg-background">
                                             <SelectValue />
                                         </SelectTrigger>
@@ -832,7 +950,7 @@ const ShopSettingsPage: React.FC = () => {
                                 </div>
                                 <div>
                                     <FieldLabel>Reminder Time</FieldLabel>
-                                    <Select value={bookingPrefs.reminderTime} onValueChange={(v) => setBookingPrefs((p) => ({ ...p, reminderTime: v }))}>
+                                    <Select value={bookingPrefs.reminderTime} onValueChange={(v) => updateBookingPref('reminderTime', v)}>
                                         <SelectTrigger className="border-border bg-background">
                                             <SelectValue />
                                         </SelectTrigger>
@@ -850,7 +968,7 @@ const ShopSettingsPage: React.FC = () => {
                                     </div>
                                     <Switch
                                         checked={bookingPrefs.followUp}
-                                        onCheckedChange={(checked) => setBookingPrefs((p) => ({ ...p, followUp: checked }))}
+                                        onCheckedChange={(checked) => updateBookingPref('followUp', checked)}
                                     />
                                 </div>
                             </div>
@@ -871,7 +989,7 @@ const ShopSettingsPage: React.FC = () => {
                                         </div>
                                         <Switch
                                             checked={bookingPrefs[key as keyof typeof bookingPrefs] as boolean}
-                                            onCheckedChange={(checked) => setBookingPrefs((p) => ({ ...p, [key]: checked }))}
+                                            onCheckedChange={(checked) => updateBookingPref(key as keyof BookingPrefs, checked)}
                                         />
                                     </div>
                                 ))}
@@ -1089,11 +1207,18 @@ const ShopSettingsPage: React.FC = () => {
                                             <CalendarOff className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                                             <div>
                                                 <p className="text-sm font-medium text-foreground">
+                                                    {day.name || day.reason || new Date(day.date).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
                                                     {new Date(day.date).toLocaleDateString(undefined, {
                                                         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
                                                     })}
                                                 </p>
-                                                <p className="text-xs text-muted-foreground">{day.reason || 'No reason provided'}</p>
+                                                {(day.notes || day.repeatYearly) && (
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {day.notes || 'Repeats every year'}{day.notes && day.repeatYearly ? ' · Repeats every year' : ''}
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
                                         <button
@@ -1159,7 +1284,11 @@ const ShopSettingsPage: React.FC = () => {
                                     <p className="text-sm font-medium text-foreground">Repeat Yearly</p>
                                     <p className="text-xs text-muted-foreground">Auto-mark this day closed every year</p>
                                 </div>
-                                <Switch checked={closedDayRepeat} onCheckedChange={setClosedDayRepeat} />
+                                <Switch
+                                    aria-label="Repeat Yearly"
+                                    checked={closedDayRepeat}
+                                    onCheckedChange={setClosedDayRepeat}
+                                />
                             </div>
                             <div>
                                 <FieldLabel>Notes (Optional)</FieldLabel>
@@ -1197,11 +1326,14 @@ const ShopSettingsPage: React.FC = () => {
                                     {closeDays.slice(0, 6).map((day) => (
                                         <div key={day.id} className="rounded-xl border border-border px-3 py-2.5">
                                             <p className="text-xs font-medium text-foreground">
+                                                {day.name || day.reason || 'Closed Day'}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
                                                 {new Date(day.date).toLocaleDateString(undefined, {
                                                     month: 'short', day: 'numeric', year: 'numeric',
                                                 })}
                                             </p>
-                                            <p className="text-xs text-muted-foreground">{day.reason || '—'}</p>
+                                            {day.repeatYearly && <p className="text-xs text-muted-foreground">Repeats yearly</p>}
                                         </div>
                                     ))}
                                 </div>

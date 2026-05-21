@@ -1,7 +1,6 @@
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
 import MenuContent from './MenuContent';
-import CardAlert from './CardAlert';
 import OwnerAccountPanel from './OwnerAccountPanel';
 import SelectContent from './SelectContent';
 
@@ -21,7 +20,6 @@ export default function SideMenuMobile({ open, toggleDrawer }: SideMenuMobilePro
           <MenuContent />
         </div>
         <Separator />
-        <CardAlert />
         <div className="p-3">
           <OwnerAccountPanel />
         </div>
