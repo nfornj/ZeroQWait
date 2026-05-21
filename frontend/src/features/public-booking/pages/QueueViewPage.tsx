@@ -45,6 +45,9 @@ interface QueueItem {
 interface Queue {
   id: number;
   shop_id: number;
+  is_active?: boolean;
+  accepting_joins?: boolean;
+  lock_reason?: string | null;
   queue_items: QueueItem[];
 }
 
@@ -73,6 +76,7 @@ const QueueViewPage: React.FC = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [leaveQueueDialogOpen, setLeaveQueueDialogOpen] = useState(false);
+  const [queueClosedMessage, setQueueClosedMessage] = useState("");
 
   const fetchShop = useCallback(async () => {
     try {
@@ -92,6 +96,7 @@ const QueueViewPage: React.FC = () => {
     try {
       const response = await axios.get(`/queues/shop/${shop.id}/active`);
       setQueue(response.data);
+      setQueueClosedMessage("");
 
       const savedItemId = localStorage.getItem(`queue_item_${shop.id}`) || localStorage.getItem(`queue_item_${shopId}`);
 
@@ -123,7 +128,12 @@ const QueueViewPage: React.FC = () => {
           }
         }
       }
-    } catch {
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        setQueue(null);
+        setQueueClosedMessage(err.response?.data?.detail || "Queue is currently closed.");
+        return;
+      }
       // retry on next interval
     }
   }, [shop, shopId]);
@@ -207,6 +217,7 @@ const QueueViewPage: React.FC = () => {
   const averageServiceTime = Math.max(shop.average_service_time || 0, 15);
   const fallbackEtaMinutes = myQueueItem ? Math.max((myQueueItem.position - 1) * averageServiceTime, 0) : queueCount * averageServiceTime;
   const liveEtaMinutes = waitEstimate?.estimated_wait_minutes ?? fallbackEtaMinutes;
+  const queueOpen = Boolean(queue?.is_active && queue?.accepting_joins !== false);
   const canReturnToShop =
     isAuthenticated && (user?.role === "shop_owner" || user?.role === "employee" || user?.role === "manager");
 
@@ -245,12 +256,19 @@ const QueueViewPage: React.FC = () => {
               </p>
             </div>
           </div>
-          <span className="text-sm font-semibold text-primary">Open</span>
+          <span className={`text-sm font-semibold ${queueOpen ? "text-primary" : "text-muted-foreground"}`}>
+            {queueOpen ? "Open for joins" : "Closed now"}
+          </span>
         </button>
 
         {error && (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        {queueClosedMessage && (
+          <Alert>
+            <AlertDescription>{queueClosedMessage}</AlertDescription>
           </Alert>
         )}
         {success && (

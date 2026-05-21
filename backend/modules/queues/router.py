@@ -16,6 +16,7 @@ import asyncio
 import os
 import random
 import secrets
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from services.queue_email import send_queue_join_email, send_youre_next_email
 from services.queue_sms import send_queue_join_sms, send_youre_next_sms
 
@@ -109,6 +110,40 @@ def get_least_busy_employee(shop_id: int) -> Optional[int]:
                     load[item.assigned_employee_id] += 1
 
     return min(load, key=load.get)
+
+
+def _shop_is_within_operating_hours(shop_id: int) -> bool:
+    hours = shop_service.get_operating_hours(shop_id)
+    if not hours:
+        return True
+
+    try:
+        tz = ZoneInfo(hours.timezone)
+    except (ZoneInfoNotFoundError, Exception):
+        tz = ZoneInfo("UTC")
+
+    now_local = datetime.now(tz)
+    operating_days = hours.operating_days or list(range(7))
+    if now_local.weekday() not in operating_days:
+        return False
+
+    now_minutes = now_local.hour * 60 + now_local.minute
+    open_minutes = hours.open_time.hour * 60 + hours.open_time.minute
+    close_minutes = hours.close_time.hour * 60 + hours.close_time.minute
+
+    if close_minutes == 0:
+        return now_minutes >= open_minutes
+    return open_minutes <= now_minutes < close_minutes
+
+
+def _queue_closed_detail(shop_id: int) -> str:
+    hours = shop_service.get_operating_hours(shop_id)
+    if not hours:
+        return "Queue is currently closed."
+    return (
+        f"Queue is currently closed. Operating hours are "
+        f"{hours.open_time.strftime('%H:%M')}–{hours.close_time.strftime('%H:%M')} {hours.timezone}."
+    )
 
 
 def _build_shop_live_snapshot(shop_id: int) -> Dict:
@@ -239,8 +274,10 @@ def get_active_queue(
         
         queues = queue_service.get_active_queues(shop_id)
         if not queues:
-             q_create = schemas.QueueCreate(name="Main Queue", is_active=True)
-             queue = queue_service.create_queue(q_create, shop_id)
+               if not _shop_is_within_operating_hours(shop_id):
+                  raise HTTPException(status_code=404, detail=_queue_closed_detail(shop_id))
+               q_create = schemas.QueueCreate(name="Main Queue", is_active=True)
+               queue = queue_service.create_queue(q_create, shop_id)
         else:
              queue = queues[0]
              
@@ -294,10 +331,15 @@ async def join_queue(
             
         queues = queue_service.get_active_queues(shop_id)
         if not queues:
+            if not _shop_is_within_operating_hours(shop_id):
+                raise HTTPException(status_code=409, detail=_queue_closed_detail(shop_id))
             q_create = schemas.QueueCreate(name="Main Queue", is_active=True)
             queue = queue_service.create_queue(q_create, shop_id)
         else:
             queue = queues[0]
+
+        if not queue.accepting_joins:
+            raise HTTPException(status_code=409, detail=queue.lock_reason or "Queue is not accepting new joins right now")
             
         # Tier checks omitted for brevity (should implement)
         

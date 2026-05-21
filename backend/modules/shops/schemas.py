@@ -1,5 +1,5 @@
 from typing import List, Optional
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pydantic import BaseModel, ConfigDict
 from shared.schemas import DictModel
 
@@ -130,6 +130,17 @@ class ShopCloseDayCreate(DictModel):
     reason: Optional[str] = None
     notes: Optional[str] = None
     repeatYearly: bool = False
+
+class ShopOperatingHours(DictModel):
+    shop_id: int
+    open_time: time
+    close_time: time
+    timezone: str
+    auto_open_queue: bool
+    auto_close_queue: bool
+    pre_close_buffer_minutes: int
+    auto_lock_joins: bool
+    operating_days: List[int]
 
 # Service schemas
 class ShopServiceBase(DictModel):

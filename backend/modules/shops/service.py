@@ -196,6 +196,16 @@ class ShopService:
         finally:
             db.close()
 
+    def get_operating_hours(self, shop_id: int) -> Optional[schemas.ShopOperatingHours]:
+        db = self.get_db()
+        try:
+            hours = db.query(ShopOperatingHours).filter(ShopOperatingHours.shop_id == shop_id).first()
+            if hours:
+                return schemas.ShopOperatingHours.model_validate(hours)
+            return None
+        finally:
+            db.close()
+
     def add_close_day(
         self,
         shop_id: int,

@@ -16,6 +16,14 @@ Watch UI at:  http://localhost:3000   (or https://zeroqwait.com)
 Environment variables:
   BASE_URL                 HTTP base (default: http://backend:8000)
   SHOP_NAME                Demo shop name (default: ZeroQ Demo Cuts)
+    SIM_OWNER_EMAIL          Existing owner email to log in as
+    SIM_OWNER_PASSWORD       Existing owner password
+    SIM_OWNER_DISPLAY_NAME   Owner display name for logs
+    SIM_EMPLOYEE_SPECS       JSON list of employee actors for this shop
+    SIM_SHOP_SLUG            Existing shop slug to match
+    SIM_ALLOW_USER_CREATE    Create missing users if needed (default: false)
+    SIM_ALLOW_SHOP_CREATE    Create missing shop if needed (default: false)
+    SIM_LOG_ONLY             Disable the Rich dashboard and emit plain logs only
   CUSTOMER_ARRIVAL_MIN/MAX Seconds between customer arrivals (default: 20/45)
   EMPLOYEE_CALL_MIN/MAX    Seconds between employee call-next attempts (default: 25/55)
   OWNER_QUERY_MIN/MAX      Seconds between owner AI queries (default: 60/120)
@@ -26,13 +34,15 @@ Environment variables:
 """
 
 import asyncio
+import json
 import logging
 import os
 import random
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from rich import box
@@ -47,6 +57,14 @@ from rich.text import Text
 
 BASE_URL = os.getenv("BASE_URL", "http://backend:8000").rstrip("/")
 SHOP_NAME = os.getenv("SHOP_NAME", "ZeroQ Demo Cuts")
+SIM_OWNER_EMAIL = os.getenv("SIM_OWNER_EMAIL", "demo.owner@zeroqwait.demo")
+SIM_OWNER_PASSWORD = os.getenv("SIM_OWNER_PASSWORD", "ZeroQDemo2025!")
+SIM_OWNER_DISPLAY_NAME = os.getenv("SIM_OWNER_DISPLAY_NAME", "demo_owner")
+SIM_EMPLOYEE_SPECS = os.getenv("SIM_EMPLOYEE_SPECS", "")
+SIM_SHOP_SLUG = os.getenv("SIM_SHOP_SLUG", "").strip()
+SIM_ALLOW_USER_CREATE = os.getenv("SIM_ALLOW_USER_CREATE", "false").strip().lower() in {"1", "true", "yes", "on"}
+SIM_ALLOW_SHOP_CREATE = os.getenv("SIM_ALLOW_SHOP_CREATE", "false").strip().lower() in {"1", "true", "yes", "on"}
+SIM_LOG_ONLY = os.getenv("SIM_LOG_ONLY", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 CUSTOMER_ARRIVAL_MIN = float(os.getenv("CUSTOMER_ARRIVAL_MIN", "20"))
 CUSTOMER_ARRIVAL_MAX = float(os.getenv("CUSTOMER_ARRIVAL_MAX", "45"))
@@ -111,6 +129,66 @@ OWNER_QUERIES = [
 ]
 
 PAYMENT_METHODS = ["cash", "card", "contactless", "cash", "card"]  # weighted toward card/cash
+
+PROFILE_CONFIGS = {
+    "barber": {
+        "keywords": ("barber", "fade", "beard", "cut"),
+        "tip_range": (0.08, 0.22),
+        "inventory": [
+            {"key": "disinfectant", "name": "Clipper Disinfectant", "unit": "spray", "category": "sanitation", "initial_stock": 140, "reorder_threshold": 35, "cost_per_unit": 0.18},
+            {"key": "neck_strip", "name": "Neck Strip", "unit": "piece", "category": "consumable", "initial_stock": 360, "reorder_threshold": 90, "cost_per_unit": 0.04},
+            {"key": "styling_product", "name": "Styling Product", "unit": "portion", "category": "retail", "initial_stock": 120, "reorder_threshold": 24, "cost_per_unit": 0.35},
+            {"key": "beard_oil", "name": "Beard Oil", "unit": "portion", "category": "retail", "initial_stock": 80, "reorder_threshold": 16, "cost_per_unit": 0.42},
+        ],
+    },
+    "salon": {
+        "keywords": ("salon", "hair", "blowout", "color"),
+        "tip_range": (0.1, 0.24),
+        "inventory": [
+            {"key": "shampoo", "name": "Salon Shampoo", "unit": "portion", "category": "haircare", "initial_stock": 180, "reorder_threshold": 48, "cost_per_unit": 0.28},
+            {"key": "conditioner", "name": "Salon Conditioner", "unit": "portion", "category": "haircare", "initial_stock": 170, "reorder_threshold": 42, "cost_per_unit": 0.3},
+            {"key": "color_cream", "name": "Color Cream", "unit": "portion", "category": "color", "initial_stock": 110, "reorder_threshold": 24, "cost_per_unit": 0.75},
+            {"key": "styling_serum", "name": "Styling Serum", "unit": "portion", "category": "styling", "initial_stock": 130, "reorder_threshold": 30, "cost_per_unit": 0.34},
+        ],
+    },
+    "nail": {
+        "keywords": ("nail", "manicure", "pedicure"),
+        "tip_range": (0.1, 0.2),
+        "inventory": [
+            {"key": "base_coat", "name": "Base Coat", "unit": "portion", "category": "polish", "initial_stock": 120, "reorder_threshold": 26, "cost_per_unit": 0.18},
+            {"key": "top_coat", "name": "Top Coat", "unit": "portion", "category": "polish", "initial_stock": 120, "reorder_threshold": 26, "cost_per_unit": 0.2},
+            {"key": "polish_remover", "name": "Polish Remover", "unit": "portion", "category": "prep", "initial_stock": 150, "reorder_threshold": 40, "cost_per_unit": 0.12},
+            {"key": "nail_file", "name": "Nail File", "unit": "piece", "category": "tooling", "initial_stock": 260, "reorder_threshold": 80, "cost_per_unit": 0.09},
+        ],
+    },
+    "spa": {
+        "keywords": ("spa", "massage", "facial", "wellness"),
+        "tip_range": (0.12, 0.28),
+        "inventory": [
+            {"key": "massage_oil", "name": "Massage Oil", "unit": "portion", "category": "treatment", "initial_stock": 170, "reorder_threshold": 36, "cost_per_unit": 0.48},
+            {"key": "facial_mask", "name": "Facial Mask", "unit": "portion", "category": "treatment", "initial_stock": 100, "reorder_threshold": 20, "cost_per_unit": 0.66},
+            {"key": "aroma_oil", "name": "Aromatherapy Oil", "unit": "portion", "category": "treatment", "initial_stock": 110, "reorder_threshold": 20, "cost_per_unit": 0.31},
+            {"key": "spa_towel", "name": "Fresh Towel Service", "unit": "piece", "category": "linen", "initial_stock": 240, "reorder_threshold": 60, "cost_per_unit": 0.14},
+        ],
+    },
+    "dental": {
+        "keywords": ("dent", "oral", "cleaning", "whitening"),
+        "tip_range": (0.0, 0.06),
+        "inventory": [
+            {"key": "gloves", "name": "Disposable Gloves", "unit": "pair", "category": "ppe", "initial_stock": 520, "reorder_threshold": 160, "cost_per_unit": 0.22},
+            {"key": "bib", "name": "Dental Bib", "unit": "piece", "category": "ppe", "initial_stock": 320, "reorder_threshold": 90, "cost_per_unit": 0.08},
+            {"key": "fluoride_gel", "name": "Fluoride Gel", "unit": "portion", "category": "treatment", "initial_stock": 140, "reorder_threshold": 28, "cost_per_unit": 0.4},
+            {"key": "sterilization_pouch", "name": "Sterilization Pouch", "unit": "piece", "category": "sanitation", "initial_stock": 260, "reorder_threshold": 70, "cost_per_unit": 0.16},
+        ],
+    },
+    "generic": {
+        "keywords": (),
+        "tip_range": (0.08, 0.18),
+        "inventory": [
+            {"key": "service_supply", "name": "Service Supply Pack", "unit": "portion", "category": "consumable", "initial_stock": 180, "reorder_threshold": 40, "cost_per_unit": 0.25},
+        ],
+    },
+}
 
 # ─── Approval scenarios ────────────────────────────────────────────────────────
 # Scenarios that ask the AI agent to perform actions requiring owner approval.
@@ -195,6 +273,13 @@ class Actor:
 @dataclass
 class SimState:
     shop_id: Optional[int] = None
+    shop_name: Optional[str] = None
+    operating_timezone: str = "UTC"
+    operating_days: list[int] = field(default_factory=lambda: list(range(7)))
+    open_hour: int = SHOP_OPEN_HOUR
+    open_minute: int = 0
+    close_hour: int = SHOP_CLOSE_HOUR
+    close_minute: int = 0
     queue_id: Optional[int] = None
     services: list = field(default_factory=list)
     queue_items: list = field(default_factory=list)
@@ -202,7 +287,9 @@ class SimState:
     shop_closed_today: bool = False  # True if today is a registered close day
     walkins_open: bool = True        # False during a queue surge
     in_surge: bool = False           # True when waiting >= SURGE_THRESHOLD
+    business_profile: str = "generic"
     stats: dict = field(default_factory=lambda: {
+        "appointments_booked": 0,
         "customers_served": 0,
         "customers_waiting": 0,
         "customers_today": 0,
@@ -227,6 +314,409 @@ class SimState:
 
 
 STATE = SimState()
+
+
+def _infer_business_profile() -> str:
+    profile_text = " ".join(
+        filter(
+            None,
+            [STATE.shop_name or "", *(str(service.get("name") or "") for service in STATE.services)],
+        )
+    ).lower()
+    for profile, config in PROFILE_CONFIGS.items():
+        if profile == "generic":
+            continue
+        if any(keyword in profile_text for keyword in config["keywords"]):
+            return profile
+    return "generic"
+
+
+def _service_duration_minutes(service: Optional[dict]) -> int:
+    if not service:
+        return 30
+    return int(service.get("duration_minutes") or 30)
+
+
+def _service_price(service: Optional[dict]) -> float:
+    if not service:
+        return 0.0
+    if service.get("cost") is not None:
+        return float(service.get("cost") or 0.0)
+    return round(float(service.get("price_cents") or 0) / 100.0, 2)
+
+
+def _service_price_cents(service: Optional[dict]) -> int:
+    if not service:
+        return 0
+    if service.get("price_cents") is not None:
+        return int(service.get("price_cents") or 0)
+    return int(round(_service_price(service) * 100))
+
+
+def _service_lookup(service_id: Optional[int]) -> Optional[dict]:
+    if service_id is None:
+        return None
+    return next((service for service in STATE.services if service.get("id") == service_id), None)
+
+
+def _tip_amount(service_cost: float) -> float:
+    low, high = PROFILE_CONFIGS.get(STATE.business_profile, PROFILE_CONFIGS["generic"])["tip_range"]
+    if service_cost <= 0 or high <= 0:
+        return 0.0
+    return round(service_cost * random.uniform(low, high), 2)
+
+
+def _appointment_delay_seconds(service: Optional[dict]) -> float:
+    duration = _service_duration_minutes(service)
+    base = max(45.0, duration * TIME_COMPRESSION * 0.9)
+    ceiling = max(base + 45.0, duration * TIME_COMPRESSION * 3.2)
+    return random.uniform(base, ceiling)
+
+
+def _service_supplies_for_profile(profile: str, service: dict) -> list[tuple[str, float]]:
+    name = str(service.get("name") or "").lower()
+    if profile == "barber":
+        supplies = [("disinfectant", 0.08), ("neck_strip", 1.0)]
+        if "beard" in name:
+            supplies.append(("beard_oil", 0.04))
+        if any(keyword in name for keyword in ("fade", "style", "full")):
+            supplies.append(("styling_product", 0.06))
+        return supplies
+    if profile == "salon":
+        supplies = [("shampoo", 0.12), ("conditioner", 0.08)]
+        if any(keyword in name for keyword in ("color", "highlight", "balayage")):
+            supplies.append(("color_cream", 0.18))
+        if any(keyword in name for keyword in ("style", "blow", "finish")):
+            supplies.append(("styling_serum", 0.05))
+        return supplies
+    if profile == "nail":
+        supplies = [("nail_file", 0.15), ("top_coat", 0.03)]
+        if any(keyword in name for keyword in ("manicure", "pedicure", "gel")):
+            supplies.append(("base_coat", 0.03))
+            supplies.append(("polish_remover", 0.05))
+        return supplies
+    if profile == "spa":
+        supplies = [("spa_towel", 1.0)]
+        if "massage" in name:
+            supplies.append(("massage_oil", 0.15))
+        if "facial" in name:
+            supplies.append(("facial_mask", 0.08))
+        if any(keyword in name for keyword in ("aroma", "wellness", "relax")):
+            supplies.append(("aroma_oil", 0.03))
+        return supplies
+    if profile == "dental":
+        supplies = [("gloves", 2.0), ("bib", 1.0), ("sterilization_pouch", 1.0)]
+        if any(keyword in name for keyword in ("clean", "white", "exam", "fill")):
+            supplies.append(("fluoride_gel", 0.05))
+        return supplies
+    return [("service_supply", 0.08)]
+
+
+async def _owner_request(
+    client: httpx.AsyncClient,
+    owner: Actor,
+    method: str,
+    path: str,
+    **kwargs: Any,
+) -> dict:
+    try:
+        return await _request(client, method, path, token=owner.token, **kwargs)
+    except APIError as exc:
+        if exc.status == 401 and await login(client, owner):
+            return await _request(client, method, path, token=owner.token, **kwargs)
+        raise
+
+
+async def _ensure_inventory_and_service_supplies(client: httpx.AsyncClient, owner: Actor) -> None:
+    STATE.business_profile = _infer_business_profile()
+    profile_config = PROFILE_CONFIGS.get(STATE.business_profile, PROFILE_CONFIGS["generic"])
+
+    inventory_payload = await _owner_request(client, owner, "GET", f"/api/v1/inventory/shop/{STATE.shop_id}")
+    existing_items = inventory_payload.get("items", [])
+    inventory_by_name = {str(item.get("name") or "").lower(): item for item in existing_items}
+    inventory_by_key: dict[str, dict] = {}
+
+    for spec in profile_config["inventory"]:
+        item = inventory_by_name.get(spec["name"].lower())
+        if item is None:
+            item = await _owner_request(
+                client,
+                owner,
+                "POST",
+                f"/api/v1/inventory/shop/{STATE.shop_id}",
+                json={
+                    "name": spec["name"],
+                    "unit": spec["unit"],
+                    "category": spec["category"],
+                    "initial_stock": spec["initial_stock"],
+                    "reorder_threshold": spec["reorder_threshold"],
+                    "cost_per_unit": spec["cost_per_unit"],
+                },
+            )
+        inventory_by_key[spec["key"]] = item
+
+    owner_services = (
+        await _owner_request(client, owner, "GET", f"/api/v1/services/shop/{STATE.shop_id}")
+    ).get("services", [])
+    for service in owner_services:
+        current_supplies = service.get("supplies_used") or []
+        if current_supplies:
+            continue
+        desired_supplies = []
+        for item_key, quantity in _service_supplies_for_profile(STATE.business_profile, service):
+            item = inventory_by_key.get(item_key)
+            if item is None:
+                continue
+            desired_supplies.append({"item_id": item["id"], "quantity": quantity})
+        if not desired_supplies:
+            continue
+        updated = await _owner_request(
+            client,
+            owner,
+            "PATCH",
+            f"/api/v1/services/shop/{STATE.shop_id}/{service['id']}",
+            json={"supplies_used": desired_supplies},
+        )
+        service["supplies_used"] = updated.get("supplies_used") or desired_supplies
+
+    if owner_services:
+        STATE.services = owner_services
+    STATE.log(
+        f"📦 Inventory + supplies synced for {STATE.business_profile} profile",
+        "cyan",
+    )
+
+
+async def _record_service_inventory_usage(
+    client: httpx.AsyncClient,
+    owner: Actor,
+    *,
+    service_id: Optional[int],
+    service_name: str,
+    appointment_id: Optional[int] = None,
+) -> None:
+    if service_id is None:
+        return
+    service = await _owner_request(client, owner, "GET", f"/api/v1/services/shop/{STATE.shop_id}/{service_id}")
+    supplies = service.get("supplies_used") or []
+    if not supplies:
+        return
+
+    for supply in supplies:
+        await _owner_request(
+            client,
+            owner,
+            "POST",
+            f"/api/v1/inventory/shop/{STATE.shop_id}/{supply['item_id']}/usage",
+            json={
+                "quantity": float(supply.get("quantity") or 0.0),
+                "notes": f"Simulation completion for {service_name}",
+                "appointment_id": appointment_id,
+            },
+        )
+
+    alerts = await _owner_request(client, owner, "GET", f"/api/v1/inventory/shop/{STATE.shop_id}/alerts")
+    if alerts.get("count"):
+        alert = alerts.get("alerts", [])[0]
+        if alert:
+            STATE.log(
+                f"📉 Low stock: {alert.get('name')} at {alert.get('current_stock')} {alert.get('unit')}",
+                "yellow",
+            )
+
+
+async def _process_sale(
+    client: httpx.AsyncClient,
+    owner: Actor,
+    emp: Actor,
+    *,
+    service: Optional[dict],
+    customer_name: str,
+    queue_item_id: Optional[int] = None,
+    appointment_id: Optional[int] = None,
+) -> tuple[float, float, str]:
+    service_name = str(service.get("name") if service else "Service")
+    service_cost = _service_price(service)
+    tip = _tip_amount(service_cost)
+    payment_method = random.choice(PAYMENT_METHODS)
+
+    session = await _owner_request(
+        client,
+        owner,
+        "POST",
+        f"/api/v1/pos/shop/{STATE.shop_id}/session",
+        json={"customer_name": customer_name, "employee_id": emp.user_id},
+    )
+    session_id = session["session_id"]
+    await _owner_request(
+        client,
+        owner,
+        "POST",
+        f"/api/v1/pos/shop/{STATE.shop_id}/session/line",
+        json={
+            "session_id": session_id,
+            "service_id": service.get("id") if service else None,
+            "description": service_name,
+            "quantity": 1,
+            "unit_price_cents": _service_price_cents(service),
+        },
+    )
+    if tip > 0:
+        await _owner_request(
+            client,
+            owner,
+            "PATCH",
+            f"/api/v1/pos/shop/{STATE.shop_id}/session/tip",
+            json={"session_id": session_id, "tip_cents": int(round(tip * 100))},
+        )
+    await _owner_request(
+        client,
+        owner,
+        "POST",
+        f"/api/v1/pos/shop/{STATE.shop_id}/session/complete",
+        json={"session_id": session_id, "payment_method": payment_method},
+    )
+
+    if queue_item_id is not None:
+        await _request(client, "POST", f"/api/queues/items/{queue_item_id}/checkout")
+
+    await _record_service_inventory_usage(
+        client,
+        owner,
+        service_id=service.get("id") if service else None,
+        service_name=service_name,
+        appointment_id=appointment_id,
+    )
+
+    total = service_cost + tip
+    STATE.stats["payments_processed"] += 1
+    STATE.stats["revenue_today"] += total
+    return total, tip, payment_method
+
+
+async def _next_due_appointment(client: httpx.AsyncClient, emp: Actor) -> Optional[dict]:
+    appointments = await _request(
+        client,
+        "GET",
+        f"/api/appointments/shop/{STATE.shop_id}/upcoming",
+        token=emp.token,
+        params={"hours": 6},
+    )
+    now = datetime.utcnow()
+    ready_by = now + timedelta(seconds=max(90.0, 35.0 * TIME_COMPRESSION))
+    due: list[tuple[datetime, dict]] = []
+    for appointment in appointments:
+        status = str(appointment.get("status") or "").lower()
+        if status not in {"scheduled", "confirmed", "checked_in", "in_progress"}:
+            continue
+        if appointment.get("employee_id") != emp.user_id:
+            continue
+        try:
+            scheduled_start = datetime.fromisoformat(str(appointment.get("scheduled_start")).replace("Z", "+00:00").replace("+00:00", ""))
+        except ValueError:
+            continue
+        if scheduled_start <= ready_by:
+            due.append((scheduled_start, appointment))
+    if not due:
+        return None
+    due.sort(key=lambda item: item[0])
+    return due[0][1]
+
+
+async def _process_appointment(client: httpx.AsyncClient, owner: Actor, emp: Actor, appointment: dict) -> None:
+    appointment_id = int(appointment["id"])
+    current_status = str(appointment.get("status") or "scheduled").lower()
+    if current_status in {"scheduled", "confirmed"}:
+        await _request(
+            client,
+            "PATCH",
+            f"/api/appointments/{appointment_id}/status",
+            token=emp.token,
+            params={"shop_id": STATE.shop_id, "new_status": "checked_in"},
+        )
+        current_status = "checked_in"
+    if current_status == "checked_in":
+        await _request(
+            client,
+            "PATCH",
+            f"/api/appointments/{appointment_id}/status",
+            token=emp.token,
+            params={"shop_id": STATE.shop_id, "new_status": "in_progress"},
+        )
+
+    service = _service_lookup(appointment.get("service_id")) or {
+        "id": appointment.get("service_id"),
+        "name": appointment.get("service_name") or (appointment.get("service") or {}).get("name") or "Appointment",
+        "duration_minutes": appointment.get("duration_minutes") or 30,
+        "cost": float(appointment.get("service_cost") or 0.0),
+        "price_cents": int(round(float(appointment.get("service_cost") or 0.0) * 100)),
+    }
+    customer_name = str(appointment.get("customer_name") or "Appointment Customer")
+    service_name = str(service.get("name") or "Appointment")
+    STATE.log(
+        f"📅 {emp.display_name} → appointment for {customer_name} [{service_name}]",
+        "bright_blue",
+    )
+
+    await asyncio.sleep(min(_service_duration_minutes(service) * TIME_COMPRESSION, 120))
+
+    await _request(
+        client,
+        "PATCH",
+        f"/api/appointments/{appointment_id}/status",
+        token=emp.token,
+        params={"shop_id": STATE.shop_id, "new_status": "completed"},
+    )
+
+    total, tip, payment_method = await _process_sale(
+        client,
+        owner,
+        emp,
+        service=service,
+        customer_name=customer_name,
+        appointment_id=appointment_id,
+    )
+    STATE.log(
+        f"💳 {customer_name} paid ${total:.2f} ({payment_method})"
+        + (f" + ${tip:.2f} tip" if tip > 0 else ""),
+        "bright_white",
+    )
+    STATE.log(
+        f"✅ {emp.display_name} ✓ {customer_name} — {service_name} (${total:.2f}) [appointment]",
+        "bright_green",
+    )
+    STATE.stats["customers_served"] += 1
+
+
+def _load_employee_specs() -> list[Actor]:
+    if not SIM_EMPLOYEE_SPECS.strip():
+        return [
+            Actor("Marcus", "marcus.barber@zeroqwait.demo", SIM_OWNER_PASSWORD, "employee",
+                  svc_time_min=24.0, svc_time_max=26.0),
+            Actor("Elena", "elena.barber@zeroqwait.demo", SIM_OWNER_PASSWORD, "employee",
+                  svc_time_min=16.0, svc_time_max=18.0),
+        ]
+
+    try:
+        raw_specs = json.loads(SIM_EMPLOYEE_SPECS)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Invalid SIM_EMPLOYEE_SPECS JSON: {exc}") from exc
+
+    employees: list[Actor] = []
+    for index, spec in enumerate(raw_specs):
+        if not isinstance(spec, dict):
+            raise RuntimeError(f"Employee spec at index {index} must be an object")
+        employees.append(
+            Actor(
+                display_name=spec.get("display_name") or spec.get("username") or f"employee_{index + 1}",
+                email=spec["email"],
+                password=spec.get("password", SIM_OWNER_PASSWORD),
+                role=spec.get("role", "employee"),
+                svc_time_min=float(spec.get("svc_time_min", 20.0)),
+                svc_time_max=float(spec.get("svc_time_max", 30.0)),
+            )
+        )
+    return employees
 
 # ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
@@ -315,19 +805,34 @@ async def setup(
 ) -> bool:
     STATE.log("⚙️  Starting setup...", "bold yellow")
 
-    if not await ensure_user(client, owner):
+    owner_ready = await ensure_user(client, owner) if SIM_ALLOW_USER_CREATE else await login(client, owner)
+    if not owner_ready:
         STATE.log("❌ Owner setup failed — aborting", "bold red")
         return False
     STATE.log(f"✅ Owner '{owner.display_name}' ready (id={owner.user_id})", "green")
 
-    # Find or create shop
+    # Find existing shop (creation is opt-in)
     try:
         shops: list = await _request(client, "GET", "/api/shops/my-shops", token=owner.token)
-        existing = next((s for s in shops if s["name"] == SHOP_NAME), None)
+        existing = None
+        if SIM_SHOP_SLUG:
+            existing = next((s for s in shops if s.get("slug") == SIM_SHOP_SLUG), None)
+        if existing is None and SHOP_NAME:
+            existing = next((s for s in shops if s.get("name") == SHOP_NAME), None)
+        if existing is None and len(shops) == 1:
+            existing = shops[0]
         if existing:
             STATE.shop_id = existing["id"]
-            STATE.log(f"🏪 Shop '{SHOP_NAME}' found (id={STATE.shop_id})", "cyan")
+            STATE.shop_name = existing.get("name", SHOP_NAME)
+            STATE.log(f"🏪 Shop '{existing.get('name', SHOP_NAME)}' found (id={STATE.shop_id})", "cyan")
         else:
+            if not SIM_ALLOW_SHOP_CREATE:
+                available = ", ".join(s.get("name", "unnamed") for s in shops) or "none"
+                STATE.log(
+                    f"❌ Existing shop not found for owner {owner.email}. Wanted name='{SHOP_NAME}' slug='{SIM_SHOP_SLUG or '-'}'; available: {available}",
+                    "bold red",
+                )
+                return False
             shop = await _request(
                 client, "POST", "/api/shops/",
                 token=owner.token,
@@ -345,6 +850,7 @@ async def setup(
                 },
             )
             STATE.shop_id = shop["id"]
+            STATE.shop_name = shop.get("name", SHOP_NAME)
             STATE.log(f"🏪 Shop '{SHOP_NAME}' created (id={STATE.shop_id})", "bold green")
     except Exception as exc:
         STATE.log(f"❌ Shop setup failed: {exc}", "bold red")
@@ -368,6 +874,11 @@ async def setup(
         STATE.log(f"✂️  Services: {', '.join(s['name'] for s in services)}", "cyan")
     except Exception as exc:
         STATE.log(f"⚠️  Service setup issue: {exc}", "yellow")
+
+    try:
+        await _ensure_inventory_and_service_supplies(client, owner)
+    except Exception as exc:
+        STATE.log(f"⚠️  Inventory sync issue: {exc}", "yellow")
 
     # Get queue
     try:
@@ -508,7 +1019,7 @@ async def _check_today_closed(client: httpx.AsyncClient) -> None:
         close_days: list = await _request(
             client, "GET", f"/api/shops/{STATE.shop_id}/close-days",
         )
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = _shop_now().strftime("%Y-%m-%d")
         for cd in close_days:
             if str(cd.get("date", "")).startswith(today_str):
                 STATE.shop_closed_today = True
@@ -523,25 +1034,92 @@ async def _check_today_closed(client: httpx.AsyncClient) -> None:
 
 # ─── Shop-hours helpers ───────────────────────────────────────────────────────
 
+def _shop_tzinfo():
+    try:
+        return ZoneInfo(STATE.operating_timezone or "UTC")
+    except (ZoneInfoNotFoundError, Exception):
+        return timezone.utc
+
+
+def _shop_now() -> datetime:
+    return datetime.now(_shop_tzinfo())
+
+
+def _parse_hour_minute(value: str, fallback_hour: int, fallback_minute: int = 0) -> tuple[int, int]:
+    try:
+        parts = str(value).split(":")
+        return int(parts[0]), int(parts[1])
+    except Exception:
+        return fallback_hour, fallback_minute
+
+
+async def _load_operating_hours(client: httpx.AsyncClient, owner: Actor) -> None:
+    try:
+        hours = await _owner_request(client, owner, "GET", f"/api/shops/{STATE.shop_id}/operating-hours")
+    except Exception as exc:
+        STATE.log(f"⚠️  Operating-hours fetch failed, using env defaults: {exc}", "yellow")
+        return
+
+    STATE.operating_timezone = str(hours.get("timezone") or STATE.operating_timezone or "UTC")
+    days = hours.get("operating_days") or []
+    if isinstance(days, list) and days:
+        STATE.operating_days = [int(day) for day in days]
+    STATE.open_hour, STATE.open_minute = _parse_hour_minute(
+        str(hours.get("open_time") or f"{SHOP_OPEN_HOUR:02d}:00:00"),
+        SHOP_OPEN_HOUR,
+    )
+    default_close_hour = 0 if SHOP_CLOSE_HOUR == 0 else SHOP_CLOSE_HOUR
+    STATE.close_hour, STATE.close_minute = _parse_hour_minute(
+        str(hours.get("close_time") or f"{default_close_hour:02d}:00:00"),
+        default_close_hour,
+    )
+    STATE.log(
+        f"🕒 Operating hours loaded: {STATE.open_hour:02d}:{STATE.open_minute:02d}–{STATE.close_hour:02d}:{STATE.close_minute:02d} {STATE.operating_timezone}",
+        "cyan",
+    )
+
+
+def _is_operating_day(now: datetime) -> bool:
+    return now.weekday() in (STATE.operating_days or list(range(7)))
+
 def _shop_is_open() -> bool:
-    """Return True if the shop is within operating hours (real wall clock)."""
-    h = datetime.now().hour
-    if SHOP_CLOSE_HOUR == 0:  # 0 = midnight — open until end of day
-        return SHOP_OPEN_HOUR <= h
-    return SHOP_OPEN_HOUR <= h < SHOP_CLOSE_HOUR
+    """Return True if the shop is within operating hours in the shop timezone."""
+    now = _shop_now()
+    if not _is_operating_day(now):
+        return False
+    now_minutes = (now.hour * 60) + now.minute
+    open_minutes = (STATE.open_hour * 60) + STATE.open_minute
+    close_minutes = (STATE.close_hour * 60) + STATE.close_minute
+    if close_minutes == 0:
+        return now_minutes >= open_minutes
+    return open_minutes <= now_minutes < close_minutes
+
+
+def _next_open_datetime(now: datetime) -> datetime:
+    for offset in range(0, 8):
+        candidate_date = (now + timedelta(days=offset)).date()
+        candidate = datetime(
+            candidate_date.year,
+            candidate_date.month,
+            candidate_date.day,
+            STATE.open_hour,
+            STATE.open_minute,
+            tzinfo=_shop_tzinfo(),
+        )
+        if candidate.weekday() not in (STATE.operating_days or list(range(7))):
+            continue
+        if offset == 0 and candidate <= now:
+            continue
+        return candidate
+    return now + timedelta(hours=12)
 
 
 def _seconds_until_open() -> float:
     """Seconds from now until the shop next opens. Returns 0.0 if already open."""
-    import datetime as dt_mod
     if _shop_is_open():
         return 0.0
-    now = datetime.now()
-    if now.hour < SHOP_OPEN_HOUR:
-        next_open = now.replace(hour=SHOP_OPEN_HOUR, minute=0, second=0, microsecond=0)
-    else:
-        tomorrow = now.date() + dt_mod.timedelta(days=1)
-        next_open = dt_mod.datetime(tomorrow.year, tomorrow.month, tomorrow.day, SHOP_OPEN_HOUR)
+    now = _shop_now()
+    next_open = _next_open_datetime(now)
     return max((next_open - now).total_seconds(), 0.0)
 
 
@@ -552,9 +1130,9 @@ async def customer_loop(client: httpx.AsyncClient) -> None:
     """Continuously spawn new customers joining the queue."""
     await asyncio.sleep(3)
     while STATE.running:
-        # Shop closed today (holiday / close day) — no customers arrive
-        if STATE.shop_closed_today:
-            await asyncio.sleep(30)
+        # No new customer traffic outside shop hours or on registered close days.
+        if STATE.shop_closed_today or not _shop_is_open():
+            await asyncio.sleep(max(_seconds_until_open(), 30.0))
             continue
 
         active = [i for i in STATE.queue_items if i["status"] in ("waiting", "being_served")]
@@ -566,22 +1144,46 @@ async def customer_loop(client: httpx.AsyncClient) -> None:
         service = random.choice(STATE.services) if STATE.services else None
 
         try:
-            item = await _request(
-                client, "POST", f"/api/queues/shop/{STATE.shop_id}/join",
-                json={
-                    "customer_name": name,
-                    "service_id": service["id"] if service else None,
-                    "customer_phone": f"+1-416-555-{random.randint(1000, 9999)}",
-                    "notes": random.choice([None, None, None, "First time here", "Referred by a friend"]),
-                },
-            )
-            pos = item.get("position", "?")
-            svc_name = service["name"] if service else "walk-in"
-            cost = f"${service['cost']:.0f}" if service else ""
-            STATE.log(
-                f"🚶 {name} joined queue — {svc_name} {cost}  (#{pos})",
-                "bright_cyan",
-            )
+            if not STATE.walkins_open or random.random() > WALKIN_RATIO:
+                scheduled_start = datetime.utcnow() + timedelta(seconds=_appointment_delay_seconds(service))
+                appointment = await _request(
+                    client,
+                    "POST",
+                    f"/api/appointments/shop/{STATE.shop_id}/book",
+                    json={
+                        "customer_name": name,
+                        "service_id": service["id"] if service else None,
+                        "customer_phone": f"+1-416-555-{random.randint(1000, 9999)}",
+                        "customer_email": f"{name.lower().replace(' ', '.')}@demo.zeroqwait.local",
+                        "scheduled_start": scheduled_start.isoformat(),
+                        "duration_minutes": _service_duration_minutes(service),
+                        "notes": random.choice([None, None, "Booked online", "Returning client"]),
+                    },
+                )
+                svc_name = service["name"] if service else "appointment"
+                STATE.log(
+                    f"📅 {name} booked {svc_name} at {scheduled_start.strftime('%H:%M:%S')}"
+                    + (f" with employee #{appointment.get('employee_id')}" if appointment.get("employee_id") else ""),
+                    "bright_blue",
+                )
+                STATE.stats["appointments_booked"] += 1
+            else:
+                item = await _request(
+                    client, "POST", f"/api/queues/shop/{STATE.shop_id}/join",
+                    json={
+                        "customer_name": name,
+                        "service_id": service["id"] if service else None,
+                        "customer_phone": f"+1-416-555-{random.randint(1000, 9999)}",
+                        "notes": random.choice([None, None, None, "First time here", "Referred by a friend"]),
+                    },
+                )
+                pos = item.get("position", "?")
+                svc_name = service["name"] if service else "walk-in"
+                cost = f"${_service_price(service):.0f}" if service else ""
+                STATE.log(
+                    f"🚶 {name} joined queue — {svc_name} {cost}  (#{pos})",
+                    "bright_cyan",
+                )
             STATE.stats["customers_today"] += 1
         except APIError as e:
             if e.status == 429:
@@ -593,6 +1195,8 @@ async def customer_loop(client: httpx.AsyncClient) -> None:
             STATE.log(f"⚠️  Customer loop error: {type(e).__name__}: {str(e)[:80]}", "dim yellow")
             await asyncio.sleep(10)
 
+        await _load_operating_hours(client, owner)
+
         delay = random.uniform(CUSTOMER_ARRIVAL_MIN, CUSTOMER_ARRIVAL_MAX)
         await asyncio.sleep(delay)
 
@@ -600,7 +1204,7 @@ async def customer_loop(client: httpx.AsyncClient) -> None:
 # ─── Actor: Employee ──────────────────────────────────────────────────────────
 
 
-async def employee_loop(client: httpx.AsyncClient, emp: Actor) -> None:
+async def employee_loop(client: httpx.AsyncClient, owner: Actor, emp: Actor) -> None:
     """Employee shift: clock in → serve customers → checkout+pay → clock out."""
     await asyncio.sleep(6 + random.uniform(0, 5))
 
@@ -612,6 +1216,16 @@ async def employee_loop(client: httpx.AsyncClient, emp: Actor) -> None:
     shift_end = asyncio.get_event_loop().time() + shift_seconds
 
     while STATE.running:
+        if STATE.shop_closed_today or not _shop_is_open():
+            if emp.clocked_in:
+                try:
+                    await _request(client, "POST", "/api/clock-out", token=emp.token)
+                except Exception:
+                    pass
+                emp.clocked_in = False
+            await asyncio.sleep(max(_seconds_until_open(), 30.0))
+            continue
+
         # Clock-out time reached
         if asyncio.get_event_loop().time() >= shift_end:
             if emp.clocked_in:
@@ -643,14 +1257,33 @@ async def employee_loop(client: httpx.AsyncClient, emp: Actor) -> None:
                     await asyncio.sleep(15)
                     continue
 
-        if not emp.token or not emp.clocked_in:
+        if not emp.token:
             await asyncio.sleep(5)
             continue
+
+        if not emp.clocked_in:
+            try:
+                await _request(
+                    client, "POST", f"/api/clock-in/{STATE.shop_id}",
+                    token=emp.token,
+                )
+                emp.clocked_in = True
+            except APIError as e:
+                if e.status != 400:
+                    await asyncio.sleep(5)
+                    continue
+                emp.clocked_in = True
 
         # Jitter between employees so they don't call in sync
         delay = random.uniform(EMPLOYEE_CALL_MIN, EMPLOYEE_CALL_MAX)
 
         try:
+            due_appointment = await _next_due_appointment(client, emp)
+            if due_appointment is not None:
+                await _process_appointment(client, owner, emp, due_appointment)
+                await asyncio.sleep(delay)
+                continue
+
             item = await _request(
                 client, "POST", f"/api/queues/{STATE.queue_id}/call-next",
                 token=emp.token,
@@ -679,32 +1312,29 @@ async def employee_loop(client: httpx.AsyncClient, emp: Actor) -> None:
                 params={"new_status": "completed"},
             )
 
-            # Checkout + payment
-            payment_method = random.choice(PAYMENT_METHODS)
-            tip = round(random.uniform(0, svc_cost * 0.25), 2) if svc_cost > 0 else 0.0
-            total = svc_cost + tip
             try:
-                await _request(
-                    client, "POST", f"/api/queues/items/{item_id}/checkout",
+                total, tip, payment_method = await _process_sale(
+                    client,
+                    owner,
+                    emp,
+                    service=svc,
+                    customer_name=cust_name,
+                    queue_item_id=item_id,
                 )
                 STATE.log(
                     f"💳 {cust_name} paid ${total:.2f} ({payment_method})"
                     + (f" + ${tip:.2f} tip" if tip > 0.5 else ""),
                     "bright_white",
                 )
-                STATE.stats["payments_processed"] += 1
-            except APIError:
-                STATE.log(
-                    f"💵 {cust_name} paid ${svc_cost:.2f} ({payment_method}) [no checkout endpoint]",
-                    "white",
-                )
+            except APIError as exc:
+                STATE.log(f"⚠️  Checkout flow failed for {cust_name}: {exc}", "dim yellow")
+                total = svc_cost
 
             STATE.log(
                 f"✅ {emp.display_name} ✓ {cust_name} — {svc_name} (${total:.2f})",
                 "bright_green",
             )
             STATE.stats["customers_served"] += 1
-            STATE.stats["revenue_today"] += total
 
         except APIError as e:
             if e.status in (400, 404):
@@ -866,6 +1496,9 @@ async def owner_loop(client: httpx.AsyncClient, owner: Actor) -> None:
     while STATE.running:
         if not owner.token or not STATE.shop_id:
             await asyncio.sleep(10)
+            continue
+        if STATE.shop_closed_today or not _shop_is_open():
+            await asyncio.sleep(max(_seconds_until_open(), 30.0))
             continue
 
         query = OWNER_QUERIES[query_idx % len(OWNER_QUERIES)]
@@ -1157,9 +1790,6 @@ async def employee_leave_loop(
         if not STATE.shop_id:
             await asyncio.sleep(10)
             continue
-        if not _shop_is_open() or STATE.shop_closed_today:
-            await asyncio.sleep(30)
-            continue
 
         req = _EMPLOYEE_LEAVE_REQUESTS[request_idx % len(_EMPLOYEE_LEAVE_REQUESTS)]
         request_idx += 1
@@ -1350,7 +1980,7 @@ def _build_dashboard() -> Layout:
             f"Cancelled: {STATE.stats['cancellations_today']}  │  "
             f"Served: {STATE.stats['customers_served']}  │  "
             f"Revenue: ${STATE.stats['revenue_today']:.2f}  │  "
-            f"Hours: {SHOP_OPEN_HOUR:02d}:00–00:00  │  "
+            f"Hours: {STATE.open_hour:02d}:{STATE.open_minute:02d}–{STATE.close_hour:02d}:{STATE.close_minute:02d} {STATE.operating_timezone}  │  "
             f"Compression={TIME_COMPRESSION}x  │  "
             f"http://localhost:3000",
             justify="center",
@@ -1399,17 +2029,16 @@ async def main() -> None:
     console.print(f"  Watch:  [cyan]http://localhost:3000[/cyan]\n")
 
     owner = Actor(
-        display_name="demo_owner",
-        email="demo.owner@zeroqwait.demo",
-        password="ZeroQDemo2025!",
+        display_name=SIM_OWNER_DISPLAY_NAME,
+        email=SIM_OWNER_EMAIL,
+        password=SIM_OWNER_PASSWORD,
         role="shop_owner",
     )
-    employees = [
-        Actor("Marcus", "marcus.barber@zeroqwait.demo", "ZeroQDemo2025!", "employee",
-              svc_time_min=24.0, svc_time_max=26.0),   # methodical — 24–26 sim-min per cut
-        Actor("Elena",  "elena.barber@zeroqwait.demo",  "ZeroQDemo2025!", "employee",
-              svc_time_min=16.0, svc_time_max=18.0),   # quick hands — 16–18 sim-min per cut
-    ]
+    try:
+        employees = _load_employee_specs()
+    except RuntimeError as exc:
+        console.print(f"[bold red]{exc}[/bold red]")
+        return
 
     async with httpx.AsyncClient() as client:
         if not await wait_for_backend(client, console):
@@ -1422,8 +2051,7 @@ async def main() -> None:
 
         tasks = [
             asyncio.create_task(customer_loop(client)),
-            asyncio.create_task(employee_loop(client, employees[0])),
-            asyncio.create_task(employee_loop(client, employees[1])),
+            *(asyncio.create_task(employee_loop(client, owner, employee)) for employee in employees),
             asyncio.create_task(owner_loop(client, owner)),
             asyncio.create_task(owner_approval_loop(client, owner)),
             asyncio.create_task(employee_leave_loop(client, employees)),
@@ -1434,16 +2062,20 @@ async def main() -> None:
         ]
 
         try:
-            with Live(
-                _build_dashboard(),
-                refresh_per_second=1,
-                console=console,
-                screen=False,
-                vertical_overflow="visible",
-            ) as live:
+            if SIM_LOG_ONLY:
                 while STATE.running:
                     await asyncio.sleep(1)
-                    live.update(_build_dashboard())
+            else:
+                with Live(
+                    _build_dashboard(),
+                    refresh_per_second=1,
+                    console=console,
+                    screen=False,
+                    vertical_overflow="visible",
+                ) as live:
+                    while STATE.running:
+                        await asyncio.sleep(1)
+                        live.update(_build_dashboard())
         except (KeyboardInterrupt, asyncio.CancelledError):
             STATE.running = False
         finally:

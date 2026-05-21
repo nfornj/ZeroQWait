@@ -28,6 +28,14 @@ interface QueueItem {
   checked_in_at?: string;
 }
 
+interface QueueSummary {
+  id: number;
+  is_active?: boolean;
+  accepting_joins?: boolean;
+  lock_reason?: string | null;
+  queue_items?: QueueItem[];
+}
+
 interface WaitEstimate {
   position: number;
   people_ahead: number;
@@ -70,6 +78,8 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
   const [secondsSinceUpdate, setSecondsSinceUpdate] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [queueOpen, setQueueOpen] = useState(true);
+  const [queueStatusMessage, setQueueStatusMessage] = useState("");
 
   const applyLiveMetrics = useCallback((incoming: LiveMetrics) => {
     let trend: "up" | "down" | "flat" = "flat";
@@ -163,6 +173,14 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
         const endpoint = isSlug ? `/shops/s/${effectiveId}` : `/shops/${effectiveId}`;
         const response = await axios.get(endpoint);
         setShop(response.data);
+        const activeQueue = (response.data?.queues || []).find((entry: QueueSummary) => entry.is_active);
+        if (activeQueue) {
+          setQueueOpen(activeQueue.accepting_joins !== false);
+          setQueueStatusMessage(activeQueue.lock_reason || "");
+        } else {
+          setQueueOpen(false);
+          setQueueStatusMessage("Queue is currently closed. Please check back during operating hours.");
+        }
       } catch {
         setError("Could not load shop details");
       } finally {
@@ -188,6 +206,8 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
     const fetchQueue = async () => {
       try {
         const response = await axios.get(`/queues/shop/${shop.id}/active`);
+        setQueueOpen(response.data?.is_active && response.data?.accepting_joins !== false);
+        setQueueStatusMessage(response.data?.lock_reason || "");
         const items: QueueItem[] = response.data?.queue_items || [];
         setQueueItems(items);
 
@@ -199,7 +219,15 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
         }
 
         await reconcileMyQueueItem(items, shop.id);
-      } catch {
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          setQueueOpen(false);
+          setQueueStatusMessage(err.response?.data?.detail || "Queue is currently closed. Please check back during operating hours.");
+          setQueueItems([]);
+          setLiveMetrics(null);
+          await reconcileMyQueueItem([], shop.id);
+          return;
+        }
         // keep previous state; polling will retry
       }
     };
@@ -330,6 +358,9 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
           <span className="hidden h-5 w-px bg-border sm:block" />
           <span className="font-bold">{shop.name}</span>
           <span className="text-sm text-muted-foreground">{[shop.city, shop.shop_type].filter(Boolean).join(" • ")}</span>
+          <Badge className="w-fit sm:ml-auto" variant={queueOpen ? "default" : "secondary"}>
+            {queueOpen ? "Open now" : "Closed now"}
+          </Badge>
         </header>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(320px,0.72fr)_minmax(0,1fr)]">
@@ -339,6 +370,14 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
                 <CardTitle className="text-sm uppercase tracking-widest text-muted-foreground">Live Queue Status</CardTitle>
               </CardHeader>
               <CardContent>
+                {!queueOpen && (
+                  <Alert className="mb-4">
+                    <AlertDescription>
+                      {queueStatusMessage || "Queue is currently closed. Please check back during operating hours."}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
                 {myQueueItem ? (
                   <div className="flex flex-col gap-4">
                     <div>
@@ -364,9 +403,13 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
                       <div className="text-5xl font-black leading-none">
                         {liveMetrics?.people_waiting ?? waitingCustomers.length ?? 0}
                       </div>
-                      <p className="mt-2 font-bold">People currently waiting</p>
+                      <p className="mt-2 font-bold">{queueOpen ? "People currently waiting" : "Queue currently closed"}</p>
                     </div>
-                    <p className="text-sm text-muted-foreground">Use the AI panel to the right to join the queue instantly.</p>
+                    <p className="text-sm text-muted-foreground">
+                      {queueOpen
+                        ? "Use the AI panel to the right to join the queue instantly."
+                        : "The AI panel can still answer questions, but new queue joins are currently unavailable."}
+                    </p>
                     <div className="flex flex-wrap gap-2">
                       <Badge>ETA: {liveMetrics?.estimated_wait_minutes ?? 0} min</Badge>
                       <Badge variant="outline">Waiting: {liveMetrics?.people_waiting ?? waitingCustomers.length ?? 0}</Badge>
@@ -385,7 +428,11 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
                 <CardTitle>Reception Desk</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
-                <p className="text-sm text-muted-foreground">Start with the AI receptionist for discovery, booking, or queue help.</p>
+                <p className="text-sm text-muted-foreground">
+                  {queueOpen
+                    ? "Start with the AI receptionist for discovery, booking, or queue help."
+                    : "The AI receptionist can explain hours, services, and when the queue will reopen."}
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {receptionActions.map((action) => (
                     <Button key={action.label} type="button" size="sm" variant="outline" onClick={() => triggerReceptionAction(action.payload)}>
@@ -417,7 +464,9 @@ const AIShopPublicPage: React.FC<AIShopPublicPageProps> = ({ shopSlug }) => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {waitingCustomers.length === 0 ? (
+                {!queueOpen ? (
+                  <p className="text-muted-foreground">Queue is currently closed.</p>
+                ) : waitingCustomers.length === 0 ? (
                   <p className="text-muted-foreground">Queue is currently empty.</p>
                 ) : (
                   <div className="flex flex-col gap-2">
