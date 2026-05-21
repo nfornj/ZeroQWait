@@ -193,6 +193,12 @@ class TestFinanceQueryParsing(unittest.TestCase):
         self.assertEqual(granularity, "day")
         self.assertEqual(label, "last_18_days")
 
+    def test_parse_time_window_handles_bare_days_followup(self):
+        _, _, granularity, label = finance_tools._parse_time_window("90 days")
+
+        self.assertEqual(granularity, "day")
+        self.assertEqual(label, "last_90_days")
+
     def test_describe_time_window_humanizes_last_two_years(self):
         description = finance_tools._describe_time_window(
             "last_2_years",

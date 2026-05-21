@@ -60,6 +60,12 @@ class BookingMCPClient:
     def close_queue(self, shop_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
         return self._post("/queue/close", {"shop_id": shop_id, "reason": reason})
 
+    def open_queue(self, shop_id: int, name: str = "Main Queue") -> Dict[str, Any]:
+        return self._post("/queue/open", {"shop_id": shop_id, "name": name})
+
+    def lock_queue_joins(self, shop_id: int, lock: bool = True, reason: Optional[str] = None) -> Dict[str, Any]:
+        return self._post("/queue/lock-joins", {"shop_id": shop_id, "lock": lock, "reason": reason})
+
     def search_services(self, shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
         return self._post("/services/search", {"shop_id": shop_id, "query": query})
 

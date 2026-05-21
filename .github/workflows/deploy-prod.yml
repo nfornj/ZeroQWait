@@ -9,6 +9,7 @@ on:
 jobs:
   deploy-prod:
     runs-on: self-hosted
+    environment: prod
     permissions:
       contents: read
       packages: write
@@ -37,17 +38,99 @@ jobs:
           fi
           sudo sh -c 'command -v kubectl || command -v k3s'
 
-      - name: Ensure local Docker registry is running
+      - name: Log in to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
-          if ! curl -fs http://localhost:5000/v2/ >/dev/null 2>&1; then
-            echo "Local registry not running — starting it"
-            sudo docker run -d --restart=always --name local-registry -p 5000:5000 registry:2
-            sleep 2
-            curl -fs http://localhost:5000/v2/ >/dev/null || { echo "ERROR: registry failed to start"; exit 1; }
-            echo "Local registry started"
+          # Prefer GHCR_TOKEN (PAT with write:packages) over GITHUB_TOKEN for private package push
+          if [[ -n "${GHCR_TOKEN:-}" ]]; then
+            echo "${GHCR_TOKEN}" | sudo docker login ghcr.io -u "nfornj" --password-stdin
+            echo "Logged in to ghcr.io using GHCR_TOKEN"
           else
-            echo "Local registry already running"
+            echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            echo "Logged in to ghcr.io as ${{ github.actor }} (GITHUB_TOKEN)"
           fi
+
+      - name: Configure K3s to pull from ghcr.io
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          REGISTRY_CONFIG="/etc/rancher/k3s/registries.yaml"
+          if [[ -z "${GHCR_TOKEN:-}" ]]; then
+            echo "GHCR_TOKEN secret not set — skipping K3s auth config."
+            echo "Ensure ghcr.io packages are set to Public visibility in GitHub."
+            exit 0
+          fi
+          sudo mkdir -p /etc/rancher/k3s
+          printf 'configs:\n  "ghcr.io":\n    auth:\n      username: nfornj\n      password: "%s"\n' "${GHCR_TOKEN}" | sudo tee "${REGISTRY_CONFIG}" > /dev/null
+          echo "K3s registries.yaml written — restarting K3s to apply"
+          sudo systemctl restart k3s
+          sleep 15
+          sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes
+          echo "K3s registry config applied successfully"
+
+      # ─── Apply k8s backend-secret from GitHub Secrets ─────────────────────
+      # This is the authoritative source for all credentials.
+      # Values are sourced exclusively from GitHub Secrets — never from committed files.
+      - name: Apply backend-secret to Kubernetes
+        env:
+          SECRET_KEY:                ${{ secrets.SECRET_KEY }}
+          DB_USER:                   ${{ secrets.DB_USER }}
+          DB_PASSWORD:               ${{ secrets.DB_PASSWORD }}
+          REDIS_PASSWORD:            ${{ secrets.REDIS_PASSWORD }}
+          NVIDIA_API_KEY:            ${{ secrets.NVIDIA_API_KEY }}
+          LLM_CONFIG_ENCRYPTION_KEY: ${{ secrets.LLM_CONFIG_ENCRYPTION_KEY }}
+          TELEGRAM_BOT_TOKEN:        ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "🔐 Applying backend-secret to Kubernetes from GitHub Secrets..."
+
+          # Fail fast if critical secrets are missing
+          if [[ -z "${NVIDIA_API_KEY:-}" ]]; then
+            echo "❌ GitHub Secret NVIDIA_API_KEY is not set. Add it in:"
+            echo "   Repo → Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          if [[ -z "${SECRET_KEY:-}" ]]; then
+            echo "❌ GitHub Secret SECRET_KEY is not set."
+            exit 1
+          fi
+
+          KUBECONFIG_PATH=""
+          if [[ -f "/etc/rancher/k3s/k3s.yaml" ]]; then
+            KUBECONFIG_PATH="/etc/rancher/k3s/k3s.yaml"
+          elif [[ -f "${HOME}/.kube/config" ]]; then
+            KUBECONFIG_PATH="${HOME}/.kube/config"
+          fi
+
+          KCTL="kubectl"
+          if [[ -n "${KUBECONFIG_PATH}" ]]; then
+            KCTL="sudo env KUBECONFIG=${KUBECONFIG_PATH} kubectl"
+          fi
+
+          # Ensure the namespace exists
+          ${KCTL} get namespace zeroqwait >/dev/null 2>&1 || \
+            ${KCTL} create namespace zeroqwait
+
+          # Apply/upsert the secret using --dry-run + apply (idempotent)
+          ${KCTL} create secret generic backend-secret \
+            --namespace=zeroqwait \
+            --from-literal=SECRET_KEY="${SECRET_KEY}" \
+            --from-literal=DB_USER="${DB_USER:-postgres}" \
+            --from-literal=DB_PASSWORD="${DB_PASSWORD}" \
+            --from-literal=REDIS_PASSWORD="${REDIS_PASSWORD:-}" \
+            --from-literal=NVIDIA_API_KEY="${NVIDIA_API_KEY}" \
+            --from-literal=NVIDIA_MODEL="meta/llama-3.1-8b-instruct" \
+            --from-literal=LLM_PROVIDER="nvidia" \
+            --from-literal=LLM_CONFIG_ENCRYPTION_KEY="${LLM_CONFIG_ENCRYPTION_KEY:-${SECRET_KEY}}" \
+            --from-literal=TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}" \
+            --dry-run=client -o yaml | ${KCTL} apply -f -
+
+          echo "✅ backend-secret applied"
+
+          # Verify it's there (show key count, not values)
+          KEY_COUNT=$(${KCTL} get secret backend-secret -n zeroqwait -o jsonpath='{.data}' | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d))")
+          echo "✅ backend-secret contains ${KEY_COUNT} keys"
 
       - name: Deploy to production (zeroqwait.com)
         run: |

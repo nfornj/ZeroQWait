@@ -129,6 +129,7 @@ main() {
   should_build "hr-mcp"      && build_push "hr-mcp"      "." "mcps/hr/Dockerfile"
 
   should_build "backend"     && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/backend-deployment.yaml"     "backend" "$(repo_for backend)"
+  should_build "backend"     && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/temporal-worker-deployment.yaml" "backend" "$(repo_for backend)"
   should_build "frontend"    && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/frontend-deployment.yaml"    "frontend" "$(repo_for frontend)"
   should_build "asr-service" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/asr-deployment.yaml"         "asr-service" "$(repo_for asr-service)"
   should_build "tts-service" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/tts-deployment.yaml"         "tts-service" "$(repo_for tts-service)"
@@ -141,6 +142,7 @@ main() {
     # Only stage manifests for services that were built
     local staged=()
     should_build "backend"     && staged+=("k8s-manifests/backend-deployment.yaml")
+    should_build "backend"     && staged+=("k8s-manifests/temporal-worker-deployment.yaml")
     should_build "frontend"    && staged+=("k8s-manifests/frontend-deployment.yaml")
     should_build "asr-service" && staged+=("k8s-manifests/asr-deployment.yaml")
     should_build "tts-service" && staged+=("k8s-manifests/tts-deployment.yaml")

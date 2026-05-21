@@ -190,6 +190,168 @@ def test_owner_cannot_update_other_owners_shop(test_users, test_shops):
     assert response.status_code in [403, 404]
 
 
+def test_non_owners_cannot_update_dashboard_settings_surfaces(test_users, test_shops):
+    """Other owners and employees should not mutate dashboard settings endpoints."""
+    booking_payload = {"requireConfirmation": True}
+    hours_payload = [
+        {"day": "Monday", "isOpen": True, "openTime": "09:00", "closeTime": "19:00"}
+    ]
+    close_day_payload = {
+        "date": "2026-12-25",
+        "name": "Unauthorized Holiday",
+        "repeatYearly": True,
+    }
+    attempts = [
+        (test_users["owner_a_token"], test_shops["shop_b"]["id"]),
+        (test_users["employee_a_token"], test_shops["shop_a"]["id"]),
+    ]
+
+    for token, shop_id in attempts:
+        headers = {"Authorization": f"Bearer {token}"}
+
+        profile_response = client.put(
+            f"/api/shops/{shop_id}",
+            json={"dashboard_gradient": "ocean"},
+            headers=headers,
+        )
+        assert profile_response.status_code in [403, 404]
+
+        booking_response = client.put(
+            f"/api/shops/{shop_id}/booking-settings",
+            json=booking_payload,
+            headers=headers,
+        )
+        assert booking_response.status_code in [403, 404]
+
+        hours_response = client.put(
+            f"/api/shops/{shop_id}/business-hours",
+            json=hours_payload,
+            headers=headers,
+        )
+        assert hours_response.status_code in [403, 404]
+
+        close_day_response = client.post(
+            f"/api/shops/{shop_id}/close-days",
+            json=close_day_payload,
+            headers=headers,
+        )
+        assert close_day_response.status_code in [403, 404]
+
+
+def test_owner_can_persist_dashboard_shop_settings(test_users, test_shops):
+    """Owner settings should persist to the shop record and read back from my-shops."""
+    headers = {"Authorization": f"Bearer {test_users['owner_a_token']}"}
+    shop_id = test_shops["shop_a"]["id"]
+    update_data = {
+        "name": "Persisted Settings Shop",
+        "description": "Persisted dashboard description",
+        "shop_type": "Spa & Wellness",
+        "phone": "647-879-2555",
+        "email": "hello@persisted.example",
+        "website": "https://persisted.example",
+        "tagline": "Relax. Restore. Rebalance.",
+        "tax_id": "BN-123",
+        "timezone": "America/Toronto",
+        "instagram": "@persistedshop",
+        "whatsapp": "+16478792555",
+        "primary_color": "#2D6A4F",
+        "secondary_color": "#D8F3DC",
+        "dashboard_gradient": "ocean",
+    }
+
+    response = client.put(f"/api/shops/{shop_id}", json=update_data, headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    for key, value in update_data.items():
+        assert body[key] == value
+
+    readback = client.get("/api/shops/my-shops", headers=headers)
+    assert readback.status_code == 200
+    persisted = next(shop for shop in readback.json() if shop["id"] == shop_id)
+    for key, value in update_data.items():
+        assert persisted[key] == value
+
+
+def test_owner_can_persist_booking_and_business_hours(test_users, test_shops):
+    """Booking preferences and per-day business hours should round-trip through typed endpoints."""
+    headers = {"Authorization": f"Bearer {test_users['owner_a_token']}"}
+    shop_id = test_shops["shop_a"]["id"]
+
+    booking_payload = {
+        "bookingEnabled": True,
+        "requireConfirmation": True,
+        "allowRescheduling": False,
+        "allowCancellations": True,
+        "bookingNotice": "48",
+        "reminderPreferences": "both",
+        "reminderTime": "24",
+        "followUp": True,
+        "waitingList": True,
+        "autoConfirm": False,
+    }
+    booking_response = client.put(
+        f"/api/shops/{shop_id}/booking-settings",
+        json=booking_payload,
+        headers=headers,
+    )
+    assert booking_response.status_code == 200
+    assert booking_response.json() == booking_payload
+    booking_readback = client.get(f"/api/shops/{shop_id}/booking-settings", headers=headers)
+    assert booking_readback.status_code == 200
+    assert booking_readback.json() == booking_payload
+
+    hours_payload = [
+        {"day": "Monday", "isOpen": True, "openTime": "09:00", "closeTime": "19:00"},
+        {"day": "Tuesday", "isOpen": True, "openTime": "09:00", "closeTime": "19:00"},
+        {"day": "Wednesday", "isOpen": True, "openTime": "09:30", "closeTime": "18:00"},
+        {"day": "Thursday", "isOpen": True, "openTime": "09:00", "closeTime": "20:00"},
+        {"day": "Friday", "isOpen": True, "openTime": "09:00", "closeTime": "20:00"},
+        {"day": "Saturday", "isOpen": True, "openTime": "10:00", "closeTime": "16:00"},
+        {"day": "Sunday", "isOpen": False, "openTime": "09:00", "closeTime": "18:00"},
+    ]
+    hours_response = client.put(
+        f"/api/shops/{shop_id}/business-hours",
+        json=hours_payload,
+        headers=headers,
+    )
+    assert hours_response.status_code == 200
+    assert hours_response.json() == hours_payload
+    hours_readback = client.get(f"/api/shops/{shop_id}/business-hours", headers=headers)
+    assert hours_readback.status_code == 200
+    assert hours_readback.json() == hours_payload
+
+
+def test_close_days_persist_extended_fields(test_users, test_shops):
+    """Closed days should save the new name, notes, and yearly repeat fields."""
+    headers = {"Authorization": f"Bearer {test_users['owner_a_token']}"}
+    shop_id = test_shops["shop_a"]["id"]
+    payload = {
+        "date": "2026-12-25",
+        "name": "Christmas Day",
+        "reason": "Christmas Day",
+        "notes": "We wish you a wonderful holiday.",
+        "repeatYearly": True,
+    }
+
+    response = client.post(f"/api/shops/{shop_id}/close-days", json=payload, headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["date"] == payload["date"]
+    assert body["name"] == payload["name"]
+    assert body["reason"] == payload["reason"]
+    assert body["notes"] == payload["notes"]
+    assert body["repeatYearly"] is True
+
+    readback = client.get(f"/api/shops/{shop_id}/close-days", headers=headers)
+    assert readback.status_code == 200
+    persisted = next(day for day in readback.json() if day["id"] == body["id"])
+    assert persisted["name"] == payload["name"]
+    assert persisted["notes"] == payload["notes"]
+    assert persisted["repeatYearly"] is True
+
+
 def test_owner_cannot_delete_other_owners_shop(test_users, test_shops):
     """Owner A should not be able to delete Owner B's shop"""
     headers = {"Authorization": f"Bearer {test_users['owner_a_token']}"}

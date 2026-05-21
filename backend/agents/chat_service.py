@@ -363,14 +363,22 @@ def _finalize_chat_work_context(
     tool_results: Optional[Dict[str, Any]],
     approval_required: bool,
     pending_action: Optional[Dict[str, Any]],
+    conversation_messages: Optional[list] = None,
 ) -> Optional[Dict[str, Any]]:
+    def _json_safe(obj: Any) -> Any:
+        """Round-trip through JSON to strip datetime/enum/non-serializable values."""
+        try:
+            return json.loads(json.dumps(obj, default=str))
+        except Exception:
+            return {}
+
     db = SessionLocal()
     try:
         repo = AgentWorkRepository(db)
         output_payload = {
             "response": response_text,
             "agent": routed_agent,
-            "tool_results": tool_results or {},
+            "tool_results": _json_safe(tool_results or {}),
         }
         if approval_required:
             repo.update_goal_status(goal_id, GoalStatus.WAITING_APPROVAL, summary=response_text or "Waiting for owner approval")
@@ -398,6 +406,33 @@ def _finalize_chat_work_context(
             output_payload=output_payload,
             current_agent=routed_agent or "supervisor",
         )
+
+        # Fire-and-forget commitment scan on the conversation tail.
+        if conversation_messages:
+            try:
+                from .commitment_scanner import schedule_commitment_scan
+                import asyncio
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(
+                        schedule_commitment_scan(
+                            shop_id=shop_id,
+                            run_id=run_id,
+                            messages=conversation_messages,
+                        )
+                    )
+                except RuntimeError:
+                    # No running loop — invoke the sync fallback directly
+                    from .commitment_scanner import scan_and_persist_commitments_sync
+                    scan_and_persist_commitments_sync(
+                        shop_id=shop_id,
+                        run_id=run_id,
+                        messages=conversation_messages,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("commitment scan dispatch failed: %s", exc)
+
         return pending_action
     finally:
         db.close()
@@ -458,10 +493,17 @@ def _record_approval_decision(
                 output_payload={
                     "message": _state_last_text(resumed),
                     "agent": resumed.get("current_agent", "supervisor"),
-                    "tool_results": resumed.get("tool_results"),
+                    "tool_results": json.loads(json.dumps(resumed.get("tool_results") or {}, default=str)),
                 },
                 current_agent=resumed.get("current_agent", "supervisor"),
             )
+        logger.info(
+            "approval_decision shop_id=%s user_id=%s action_id=%s approved=%s",
+            shop_id,
+            user_id,
+            action_id or getattr(approval, "external_action_id", None),
+            approved,
+        )
     finally:
         db.close()
 

@@ -3,8 +3,13 @@ kind: Deployment
 metadata:
   name: backend
   namespace: zeroqwait
+  labels:
+    app: backend
+    zeroqwait.io/tier: free
+    zeroqwait.io/component: backend
 spec:
   replicas: 1
+  progressDeadlineSeconds: 1800
   selector:
     matchLabels:
       app: backend
@@ -12,6 +17,11 @@ spec:
     metadata:
       labels:
         app: backend
+        zeroqwait.io/tier: free
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
       priorityClassName: app-critical
       tolerations:
@@ -41,7 +51,7 @@ spec:
       - name: backend
         # Image built by CI and pushed to GHCR.
         # The run-local-pipeline.sh sed step replaces the tag on every prod deploy.
-        image: localhost:5000/prod/backend:v20260429092027-30a8ac4
+        image: ghcr.io/nfornj/backend:v20260516111053-6dc07b2
         ports:
         - containerPort: 8000
         envFrom:

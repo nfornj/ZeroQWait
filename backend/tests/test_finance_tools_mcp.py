@@ -68,3 +68,50 @@ def test_top_clients_delegates_to_finance_mcp():
 
     assert result["clients"][0]["visit_count"] == 12
     client.get_top_clients.assert_called_once_with(41, limit=5)
+
+
+def test_answer_finance_question_delegates_to_finance_mcp():
+    client = Mock()
+    client.answer_finance_question.return_value = {
+        "answer": "Revenue today was $120.00.",
+        "source": "dynamic_sql",
+        "shop_id": 41,
+    }
+
+    with patch("agents.tools.finance_tools._get_finance_client", return_value=client):
+        result = finance_tools.answer_finance_question(
+            41,
+            "how much revenue today?",
+            operation="daily_revenue",
+            mode="enabled",
+        )
+
+    assert result["answer"] == "Revenue today was $120.00."
+    client.answer_finance_question.assert_called_once_with(
+        41,
+        "how much revenue today?",
+        operation="daily_revenue",
+        mode="enabled",
+    )
+
+
+def test_service_customer_counts_delegates_to_finance_mcp():
+    client = Mock()
+    client.service_customer_counts.return_value = {
+        "services": [{"service_name": "Haircut", "customer_count": 5}],
+        "shop_id": 41,
+    }
+
+    with patch("agents.tools.finance_tools._get_finance_client", return_value=client):
+        result = finance_tools.service_customer_counts(
+            41,
+            query="customers attended for each service",
+            limit=10,
+        )
+
+    assert result["services"][0]["customer_count"] == 5
+    client.service_customer_counts.assert_called_once_with(
+        41,
+        query="customers attended for each service",
+        limit=10,
+    )

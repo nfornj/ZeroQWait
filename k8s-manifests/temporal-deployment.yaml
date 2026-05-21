@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal
+  namespace: zeroqwait
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal
+  template:
+    metadata:
+      labels:
+        app: temporal
+    spec:
+      priorityClassName: app-critical
+      tolerations:
+      - key: "workload-pool"
+        operator: "Equal"
+        value: "core-cpu"
+        effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: zeroqwait.io/node-pool
+                operator: In
+                values: ["core-cpu"]
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox:1.28
+        command: ['sh', '-c', 'until nc -z postgres.zeroqwait.svc.cluster.local 5432; do echo waiting for postgres; sleep 2; done;']
+      containers:
+      - name: temporal
+        image: temporalio/auto-setup:1.25.2
+        ports:
+        - containerPort: 7233
+          name: grpc
+        env:
+        - name: DB
+          value: "postgres12"
+        - name: DB_PORT
+          value: "5432"
+        - name: POSTGRES_SEEDS
+          value: "postgres.zeroqwait.svc.cluster.local"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PWD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: DBNAME
+          value: "temporal"
+        - name: VISIBILITY_DBNAME
+          value: "temporal_visibility"
+        - name: DYNAMIC_CONFIG_FILE_PATH
+          value: "/etc/temporal/config/dynamicconfig/development-sql.yaml"
+        volumeMounts:
+        - name: temporal-dynamic-config
+          mountPath: /etc/temporal/config/dynamicconfig
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        readinessProbe:
+          tcpSocket:
+            port: 7233
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
+        livenessProbe:
+          tcpSocket:
+            port: 7233
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: temporal-dynamic-config
+        configMap:
+          name: temporal-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal
+  namespace: zeroqwait
+spec:
+  selector:
+    app: temporal
+  ports:
+  - name: grpc
+    port: 7233
+    targetPort: 7233

@@ -9,24 +9,17 @@ spec:
   ingressClassName: traefik
   tls:
   - hosts:
-    - "192.168.2.88.nip.io"
-    - "*.192.168.2.88.nip.io"
+    - "192.168.2.134.nip.io"
+    - "*.192.168.2.134.nip.io"
     - "zeroqwait.com"
     - "*.zeroqwait.com"
     secretName: zeroqwait-wildcard-tls
   rules:
   # Local testing (nip.io)
-  - host: "192.168.2.88.nip.io"
+  - host: "192.168.2.134.nip.io"
     http:
       paths:
       - path: /api
-        pathType: Prefix
-        backend:
-          service:
-            name: backend
-            port:
-              number: 8000
-      - path: /docs
         pathType: Prefix
         backend:
           service:
@@ -40,17 +33,10 @@ spec:
             name: frontend
             port:
               number: 3000
-  - host: "*.192.168.2.88.nip.io"
+  - host: "*.192.168.2.134.nip.io"
     http:
       paths:
       - path: /api
-        pathType: Prefix
-        backend:
-          service:
-            name: backend
-            port:
-              number: 8000
-      - path: /docs
         pathType: Prefix
         backend:
           service:
@@ -75,13 +61,6 @@ spec:
             name: backend
             port:
               number: 8000
-      - path: /docs
-        pathType: Prefix
-        backend:
-          service:
-            name: backend
-            port:
-              number: 8000
       - path: /
         pathType: Prefix
         backend:
@@ -93,13 +72,6 @@ spec:
     http:
       paths:
       - path: /api
-        pathType: Prefix
-        backend:
-          service:
-            name: backend
-            port:
-              number: 8000
-      - path: /docs
         pathType: Prefix
         backend:
           service:

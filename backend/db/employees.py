@@ -229,7 +229,14 @@ class EmployeesMixin:
                 query = query.filter(EmployeeShift.user_id == user_id)
             
             shifts = query.order_by(desc(EmployeeShift.clock_in)).all()
-            return [self._model_to_dict(shift) for shift in shifts]
+            result = []
+            for shift in shifts:
+                shift_dict = self._model_to_dict(shift)
+                if shift.user:
+                    shift_dict['username'] = shift.user.username
+                    shift_dict['email'] = shift.user.email
+                result.append(shift_dict)
+            return result
         finally:
             db.close()
     

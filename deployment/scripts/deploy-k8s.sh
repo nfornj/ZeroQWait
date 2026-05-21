@@ -9,8 +9,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 K8S_MANIFESTS="$PROJECT_ROOT/k8s-manifests"
 APPS_DIR="/home/neekrishrichu/apps"
-REGISTRY="localhost:5000"
-REGISTRY_DATA_PATH="${REGISTRY_DATA_PATH:-/mnt/ssd/zeroqwait-registry}"
+REGISTRY="ghcr.io/nfornj"
 REGISTRY_CONFIG_PATH="${PROJECT_ROOT}/deployment/registry/config.yml"
 
 # K3s kubeconfig — readable by current user after bootstrap (--write-kubeconfig-mode=644)
@@ -32,7 +31,7 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${YELLOW}  Project : $PROJECT_ROOT${NC}"
 echo -e "${YELLOW}  Apps dir: $APPS_DIR${NC}"
 echo -e "${YELLOW}  Domain  : $DOMAIN${NC}"
-echo -e "${YELLOW}  Registry: $REGISTRY${NC}"
+echo -e "${YELLOW}  Registry: $REGISTRY (ghcr.io)${NC}"
 echo ""
 
 # ── Sanity checks ─────────────────────────────────────────────────────────
@@ -46,16 +45,18 @@ if ! sudo kubectl get nodes &>/dev/null; then
     exit 1
 fi
 
-if ! docker ps --format '{{.Names}}' | grep -q "^local-registry$"; then
-    echo -e "${YELLOW}⚠  Local registry not running — starting it...${NC}"
-    mkdir -p "$REGISTRY_DATA_PATH"
-    docker start local-registry 2>/dev/null || \
-    docker run -d --name local-registry --restart=always \
-        -p 5000:5000 \
-        -v "$REGISTRY_DATA_PATH:/var/lib/registry" \
-        -v "$REGISTRY_CONFIG_PATH:/etc/docker/registry/config.yml:ro" \
-        registry:2
+if ! docker info >/dev/null 2>&1; then
+    echo -e "${RED}✗ Docker daemon not running. Start it with: sudo systemctl start docker${NC}"
+    exit 1
 fi
+
+# Log in to ghcr.io (requires GITHUB_TOKEN or GHCR_TOKEN env var)
+if [[ -z "${GITHUB_TOKEN:-}${GHCR_TOKEN:-}" ]]; then
+    echo -e "${YELLOW}⚠  Neither GITHUB_TOKEN nor GHCR_TOKEN is set."
+    echo -e "   Run: export GHCR_TOKEN=<your_ghcr_pat> before this script${NC}"
+    exit 1
+fi
+echo "${GHCR_TOKEN:-$GITHUB_TOKEN}" | docker login ghcr.io -u nfornj --password-stdin
 
 # Ensure runtime directories exist
 mkdir -p "$APPS_DIR/zeroqwait/uploads" "$APPS_DIR/mcps/voice"
@@ -121,6 +122,9 @@ echo ""
 # ── Core services ─────────────────────────────────────────────────────────
 echo -e "${BLUE}[7/9] Deploying backend, frontend, ASR, TTS...${NC}"
 sudo kubectl apply -f "$K8S_MANIFESTS/backend-deployment.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/temporal-configmap.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/temporal-deployment.yaml"
+sudo kubectl apply -f "$K8S_MANIFESTS/temporal-worker-deployment.yaml"
 sudo kubectl apply -f "$K8S_MANIFESTS/frontend-deployment.yaml"
 sudo kubectl apply -f "$K8S_MANIFESTS/asr-deployment.yaml"
 sudo kubectl apply -f "$K8S_MANIFESTS/asr-service.yaml"
@@ -142,6 +146,10 @@ echo ""
 echo -e "${BLUE}Waiting for deployments to become available...${NC}"
 sudo kubectl wait --for=condition=available --timeout=300s deployment/backend  -n $NAMESPACE 2>/dev/null \
     || echo -e "${YELLOW}  ⚠  backend still starting (startup probe takes ~2min)${NC}"
+sudo kubectl wait --for=condition=available --timeout=300s deployment/temporal -n $NAMESPACE 2>/dev/null \
+    || echo -e "${YELLOW}  ⚠  temporal still starting${NC}"
+sudo kubectl wait --for=condition=available --timeout=300s deployment/temporal-worker -n $NAMESPACE 2>/dev/null \
+    || echo -e "${YELLOW}  ⚠  temporal-worker still starting${NC}"
 sudo kubectl wait --for=condition=available --timeout=120s  deployment/frontend -n $NAMESPACE 2>/dev/null \
     || echo -e "${YELLOW}  ⚠  frontend still starting${NC}"
 

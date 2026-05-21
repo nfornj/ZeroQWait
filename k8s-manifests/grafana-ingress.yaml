@@ -1,0 +1,27 @@
+# Grafana ingress — monitoring.zeroqwait.com
+# Ingress lives in monitoring namespace; Traefik picks it up automatically.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-ingress
+  namespace: monitoring
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.priority: "200"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - "monitoring.zeroqwait.com"
+      secretName: monitoring-wildcard-tls
+  rules:
+    - host: "monitoring.zeroqwait.com"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000

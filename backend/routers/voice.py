@@ -41,7 +41,7 @@ def detect_audio_format(audio_bytes: bytes) -> tuple[str, str]:
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = "female"
+    voice: str = "Vivian"
     speed: float = 1.0
 
 @router.post("/transcribe")

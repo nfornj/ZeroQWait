@@ -1,10 +1,5 @@
 import React from "react";
-import {
-  alpha,
-  Box,
-  Stack,
-  Typography,
-} from "@mui/material";
+import { cn } from "../../lib/utils";
 
 export interface ThinkingStep {
   id: string;
@@ -22,17 +17,13 @@ interface ThinkingStepsProps {
   embedded?: boolean;
 }
 
-const COMPLETE_COLOR = "#22c55e";
-const ERROR_COLOR = "#ef4444";
-
 const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
   steps,
   isComplete,
-  accentColor,
+  accentColor = "#2563EB",
   showWhenEmpty = false,
   embedded = false,
 }) => {
-  const accent = accentColor || "#2563EB";
   if (isComplete) return null;
   if (steps.length === 0 && !showWhenEmpty) return null;
 
@@ -40,43 +31,41 @@ const ThinkingSteps: React.FC<ThinkingStepsProps> = ({
   const label = activeStep?.label?.trim() || "Thinking";
 
   return (
-    <Box
-      sx={{
-        mb: embedded ? 0 : 1,
-        px: embedded ? 1 : 1.25,
-        py: embedded ? 0.85 : 1,
-        borderRadius: 3,
-        border: `1px solid ${alpha(accent, 0.14)}`,
-        bgcolor: alpha(accent, 0.04),
-      }}
-    >
-      <Stack direction="row" spacing={0.8} alignItems="center">
-        <Stack direction="row" spacing={0.45} alignItems="center">
-          {[0, 1, 2].map((index) => (
-            <Box
-              key={index}
-              sx={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                bgcolor: accent,
-                animation: "thinkingDot 0.9s ease-in-out infinite",
-                animationDelay: `${index * 160}ms`,
-              }}
-            />
-          ))}
-        </Stack>
-        <Typography variant="body2" sx={{ fontWeight: 600, color: "text.primary" }}>
-          {label}
-        </Typography>
-      </Stack>
+    <>
       <style>{`
         @keyframes thinkingDot {
           0%, 100% { opacity: 0.35; transform: translateY(0); }
           50% { opacity: 1; transform: translateY(-2px); }
         }
       `}</style>
-    </Box>
+      <div
+        className={cn(
+          "rounded-xl border",
+          embedded ? "px-3 py-2 mb-0" : "px-4 py-3 mb-2",
+        )}
+        style={{
+          borderColor: `${accentColor}24`,
+          backgroundColor: `${accentColor}0a`,
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            {[0, 1, 2].map((index) => (
+              <span
+                key={index}
+                className="inline-block rounded-full w-1.5 h-1.5"
+                style={{
+                  backgroundColor: accentColor,
+                  animation: "thinkingDot 0.9s ease-in-out infinite",
+                  animationDelay: `${index * 160}ms`,
+                }}
+              />
+            ))}
+          </div>
+          <span className="text-sm font-semibold text-foreground">{label}</span>
+        </div>
+      </div>
+    </>
   );
 };
 

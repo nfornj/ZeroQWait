@@ -54,6 +54,17 @@ class FinanceMCPClient:
     def customer_metrics(self, shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
         return self._post("/customers/metrics", {"shop_id": shop_id, "query": query})
 
+    def service_customer_counts(
+        self,
+        shop_id: int,
+        query: Optional[str] = None,
+        limit: int = 20,
+    ) -> Dict[str, Any]:
+        return self._post(
+            "/services/customer-counts",
+            {"shop_id": shop_id, "query": query, "limit": limit},
+        )
+
     def export_report(self, shop_id: int, format: str = "csv") -> Dict[str, Any]:
         return self._post("/reports/export", {"shop_id": shop_id, "format": format})
 
@@ -121,6 +132,23 @@ class FinanceMCPClient:
 
     def get_pos_summary(self, shop_id: int, date: Optional[str] = None) -> Dict[str, Any]:
         return self._post("/pos/summary", {"shop_id": shop_id, "date": date})
+
+    def answer_finance_question(
+        self,
+        shop_id: int,
+        question: str,
+        operation: Optional[str] = None,
+        mode: str = "enabled",
+    ) -> Dict[str, Any]:
+        return self._post(
+            "/query/answer",
+            {
+                "shop_id": shop_id,
+                "question": question,
+                "operation": operation,
+                "mode": mode,
+            },
+        )
 
     def get_inactive_clients(self, shop_id: int, days_threshold: int = 45) -> Dict[str, Any]:
         return self._post("/clients/inactive", {"shop_id": shop_id, "days_threshold": days_threshold})

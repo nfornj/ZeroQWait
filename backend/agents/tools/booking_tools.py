@@ -84,6 +84,39 @@ def close_queue(shop_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
+def open_queue(shop_id: int, name: str = "Main Queue") -> Dict[str, Any]:
+    """Open or re-activate today's queue for a shop (creates a new queue if none exists today)."""
+    result = _get_booking_client().open_queue(shop_id, name)
+    if result.get("error"):
+        return result
+    action = result.get("action", "opened")
+    return {
+        "message": f"Queue {action} successfully",
+        "shop_id": result.get("shop_id", shop_id),
+        "queue_id": result.get("queue_id"),
+        "status": "open",
+        "action": action,
+    }
+
+
+def lock_queue_joins(shop_id: int, lock: bool = True, reason: Optional[str] = None) -> Dict[str, Any]:
+    """Lock or unlock new customer joins without closing the queue.
+    
+    When locked=True: existing customers are still served, but no new joins accepted.
+    When locked=False: queue re-opens to new joins.
+    """
+    result = _get_booking_client().lock_queue_joins(shop_id, lock, reason)
+    if result.get("error"):
+        return result
+    accepting = result.get("accepting_joins", not lock)
+    return {
+        "message": f"Queue {'locked from new joins' if lock else 're-opened to new joins'}",
+        "shop_id": result.get("shop_id", shop_id),
+        "accepting_joins": accepting,
+        "reason": reason,
+    }
+
+
 def search_services(shop_id: int, query: Optional[str] = None) -> Dict[str, Any]:
     """Search available services through the booking MCP service."""
     result = _get_booking_client().search_services(shop_id, query)
@@ -212,3 +245,37 @@ def get_available_slots(
     result.setdefault("date", date)
     result.setdefault("available_slots", [])
     return result
+
+
+def get_served_today(shop_id: int) -> Dict[str, Any]:
+    """Return count of customers served (completed queue items) today."""
+    try:
+        from datetime import datetime, timezone
+        from database import SessionLocal
+        from modules.queues.models import Queue, QueueItem, QueueStatus
+        from sqlalchemy import func
+
+        session = SessionLocal()
+        try:
+            today = datetime.now(timezone.utc).date()
+            today_start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
+            count = (
+                session.query(func.count(QueueItem.id))
+                .join(Queue, QueueItem.queue_id == Queue.id)
+                .filter(
+                    Queue.shop_id == shop_id,
+                    QueueItem.status == QueueStatus.COMPLETED,
+                    func.coalesce(QueueItem.completed_at, QueueItem.checked_in_at) >= today_start,
+                )
+                .scalar()
+                or 0
+            )
+            return {
+                "served_today": int(count),
+                "date": str(today),
+                "shop_id": shop_id,
+            }
+        finally:
+            session.close()
+    except Exception as exc:
+        return {"error": str(exc), "served_today": 0}

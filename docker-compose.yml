@@ -3,16 +3,17 @@ name: zeroqwait
 services:
   # PostgreSQL
   db:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     restart: unless-stopped
     ports:
-      - "${DB_HOST_PORT:-5432}:5432"
+      - "${DB_HOST_PORT:-5433}:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: zeroqwait_dev
       POSTGRES_DB: zeroqwait
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backend/sql/000_extensions.sql:/docker-entrypoint-initdb.d/000_extensions.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -40,25 +41,58 @@ services:
       - ./backend/static:/app/static
     ports:
       - "${BACKEND_HOST_PORT:-8000}:8000"
-    env_file:
-      - ./backend/.env
     environment:
       - PYTHONUNBUFFERED=1
+      # ── Secrets — sourced from shell env (CI) or project-root .env (local dev) ──
+      - SECRET_KEY=${SECRET_KEY:-change-me-to-a-long-random-string-at-least-32-chars}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - LLM_CONFIG_ENCRYPTION_KEY=${LLM_CONFIG_ENCRYPTION_KEY:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY:-pk_test_placeholder}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
+      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
+      # ── Database ───────────────────────────────────────────────────────────────
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
+      - DB_PORT=${DB_PORT:-5432}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # ── App ────────────────────────────────────────────────────────────────────
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - DB_HOST=db
+      - DB_PORT=5432
       - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
       - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
       - LLM_PROVIDER=${LLM_PROVIDER:-nvidia}
-      - NVIDIA_MODEL=${NVIDIA_MODEL:-z-ai/glm4.7}
-      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - NVIDIA_MODEL=${NVIDIA_MODEL:-meta/llama-3.1-8b-instruct}
       - TTS_SERVICE_URL=${TTS_SERVICE_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30880}
       - BOOKING_MCP_URL=${BOOKING_MCP_URL:-http://booking-mcp:8890}
       - FINANCE_MCP_URL=${FINANCE_MCP_URL:-http://finance-mcp:8891}
       - HR_MCP_URL=${HR_MCP_URL:-http://hr-mcp:8892}
+      - ODOO_MCP_URL=${ODOO_MCP_URL:-http://odoo-mcp:8893}
+      - POSTGRES_MCP_URL=${POSTGRES_MCP_URL:-http://postgres-mcp:8894}
+      - TEMPORAL_ENABLED=${TEMPORAL_ENABLED:-false}
+      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-temporal:7233}
+      - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
+      - TEMPORAL_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-zeroqwait-agent-brain}
       - ODOO_URL=${ODOO_URL:-http://odoo:8069}
       - ODOO_DB=${ODOO_DB:-odoo}
       - ODOO_USER=${ODOO_USER:-admin}
       - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET:-}
+      - TELEGRAM_MODE=${TELEGRAM_MODE:-webhook}
+      - TELEGRAM_POLL_TIMEOUT=${TELEGRAM_POLL_TIMEOUT:-30}
+      - TELEGRAM_DEV_SHOP_ID=${TELEGRAM_DEV_SHOP_ID:-}
+      - DEFAULT_BUSINESS_TIMEZONE=${DEFAULT_BUSINESS_TIMEZONE:-America/Toronto}
+      - FINANCE_DYNAMIC_READS_MODE=${FINANCE_DYNAMIC_READS_MODE:-enabled}
+      - FINANCE_QUERY_MAX_ROWS=${FINANCE_QUERY_MAX_ROWS:-100}
+      - FINANCE_QUERY_STATEMENT_TIMEOUT_MS=${FINANCE_QUERY_STATEMENT_TIMEOUT_MS:-5000}
+      - FINANCE_QUERY_MAX_RETRIES=${FINANCE_QUERY_MAX_RETRIES:-2}
+      - FINANCE_QUERY_LLM_TIMEOUT_SECONDS=${FINANCE_QUERY_LLM_TIMEOUT_SECONDS:-20}
+      - AI_DATABASE_URL=${AI_DATABASE_URL:-}
       - UV_CACHE_DIR=/tmp/uv-cache
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -73,16 +107,21 @@ services:
         condition: service_healthy
       hr-mcp:
         condition: service_healthy
+      odoo-mcp:
+        condition: service_started
+      postgres-mcp:
+        condition: service_healthy
     restart: unless-stopped
 
   booking-mcp:
     build:
       context: .
       dockerfile: ./mcps/booking/Dockerfile
-    env_file:
-      - ./backend/.env
     environment:
       - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
       - HOST=0.0.0.0
       - PORT=8890
     depends_on:
@@ -94,12 +133,29 @@ services:
     build:
       context: .
       dockerfile: ./mcps/finance/Dockerfile
-    env_file:
-      - ./backend/.env
+    volumes:
+      - ./backend:/app/backend
+      - ./mcps/finance:/app/mcps/finance
     environment:
       - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
       - HOST=0.0.0.0
       - PORT=8891
+      - DEFAULT_BUSINESS_TIMEZONE=${DEFAULT_BUSINESS_TIMEZONE:-America/Toronto}
+      - FINANCE_DYNAMIC_READS_MODE=${FINANCE_DYNAMIC_READS_MODE:-enabled}
+      - FINANCE_QUERY_MAX_ROWS=${FINANCE_QUERY_MAX_ROWS:-100}
+      - FINANCE_QUERY_STATEMENT_TIMEOUT_MS=${FINANCE_QUERY_STATEMENT_TIMEOUT_MS:-5000}
+      - FINANCE_QUERY_MAX_RETRIES=${FINANCE_QUERY_MAX_RETRIES:-2}
+      - FINANCE_QUERY_LLM_TIMEOUT_SECONDS=${FINANCE_QUERY_LLM_TIMEOUT_SECONDS:-20}
+      - AI_DATABASE_URL=${AI_DATABASE_URL:-}
+      - LLM_CONFIG_ENCRYPTION_KEY=${LLM_CONFIG_ENCRYPTION_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-nvidia}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - NVIDIA_MODEL=${NVIDIA_MODEL:-meta/llama-3.1-8b-instruct}
+      - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
+      - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
     depends_on:
       db:
         condition: service_healthy
@@ -109,15 +165,147 @@ services:
     build:
       context: .
       dockerfile: ./mcps/hr/Dockerfile
-    env_file:
-      - ./backend/.env
     environment:
       - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
       - HOST=0.0.0.0
       - PORT=8892
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+  odoo-mcp:
+    build:
+      context: .
+      dockerfile: ./mcps/odoo/Dockerfile
+    environment:
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
+      - HOST=0.0.0.0
+      - PORT=8893
+      - ODOO_URL=${ODOO_URL:-http://odoo:8069}
+      - ODOO_DB=${ODOO_DB:-odoo}
+      - ODOO_USER=${ODOO_USER:-admin}
+      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
+      - ODOO_ENABLED=${ODOO_ENABLED:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres-mcp:
+    build:
+      context: .
+      dockerfile: ./mcps/postgres/Dockerfile
+    environment:
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
+      - HOST=0.0.0.0
+      - PORT=8894
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_SEEDS=db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PWD=zeroqwait_dev
+      - DBNAME=temporal
+      - VISIBILITY_DBNAME=temporal_visibility
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+    ports:
+      - "${TEMPORAL_HOST_PORT:-7233}:7233"
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - temporal
+    restart: unless-stopped
+
+  temporal-worker:
+    build: ./backend
+    command: ["python", "temporal_worker.py"]
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SECRET_KEY=${SECRET_KEY:-change-me-to-a-long-random-string-at-least-32-chars}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - LLM_CONFIG_ENCRYPTION_KEY=${LLM_CONFIG_ENCRYPTION_KEY:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
+      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME:-zeroqwait}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
+      - DB_PORT=${DB_PORT:-5432}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-temporal:7233}
+      - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
+      - TEMPORAL_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-zeroqwait-agent-brain}
+      - TEMPORAL_BOOTSTRAP_SCHEDULES=${TEMPORAL_BOOTSTRAP_SCHEDULES:-true}
+      - TEMPORAL_MORNING_BRIEFING_CRON=${TEMPORAL_MORNING_BRIEFING_CRON:-0 8 * * *}
+      - TEMPORAL_EVENING_WRAP_UP_CRON=${TEMPORAL_EVENING_WRAP_UP_CRON:-0 20 * * *}
+      - TEMPORAL_BRIEFING_TIMEZONE=${TEMPORAL_BRIEFING_TIMEZONE:-UTC}
+      - OLLAMA_URL=${OLLAMA_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30002}
+      - MODEL_NAME=${MODEL_NAME:-qwen3:14b-q4_K_M}
+      - LLM_PROVIDER=${LLM_PROVIDER:-nvidia}
+      - NVIDIA_MODEL=${NVIDIA_MODEL:-meta/llama-3.1-8b-instruct}
+      - TTS_SERVICE_URL=${TTS_SERVICE_URL:-http://${K8S_NODE_IP:-192.168.2.134}:30880}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    profiles:
+      - temporal
+    restart: unless-stopped
+
+  # ─── Live shop simulation ────────────────────────────────────────────────────
+  # Simulates owner, 2 barbers, and a stream of customers against the real API.
+  # Watch the live queue in the browser:  http://localhost:3000
+  # Watch the terminal dashboard:         docker compose logs -f simulation
+  simulation:
+    build:
+      context: ./simulation
+    environment:
+      - BASE_URL=http://backend:8000
+      - SHOP_NAME=ZeroQ Demo Cuts
+      - CUSTOMER_ARRIVAL_MIN=20
+      - CUSTOMER_ARRIVAL_MAX=45
+      - EMPLOYEE_CALL_MIN=5
+      - EMPLOYEE_CALL_MAX=12
+      - OWNER_QUERY_MIN=120
+      - OWNER_QUERY_MAX=240
+      - TIME_COMPRESSION=1
+      - MAX_QUEUE_SIZE=12
+      - SHIFT_DURATION_MINUTES=480
+      - SICK_DAY_CHANCE=0.15
+      - SHOP_OPEN_HOUR=9
+      - SHOP_CLOSE_HOUR=0
+      - SURGE_THRESHOLD=7
+      - SURGE_RESUME=4
+      - WALKIN_RATIO=0.6
+      - CANCEL_CHECK_INTERVAL=45
+      - CANCEL_CHANCE=0.12
+    depends_on:
+      backend:
+        condition: service_started
     restart: unless-stopped
 
   # React Frontend
@@ -126,6 +314,8 @@ services:
       context: ./frontend
       args:
         REACT_APP_API_URL: /api
+        API_PROXY_TARGET: http://backend:8000
+        API_DNS_RESOLVER: 127.0.0.11
     ports:
       - "${FRONTEND_HOST_PORT:-3000}:80"
     depends_on:

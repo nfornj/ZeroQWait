@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import hmac
 import os
 from functools import lru_cache
 from typing import Optional
@@ -49,3 +50,16 @@ def mask_secret(value: Optional[str]) -> Optional[str]:
     if len(secret) <= 6:
         return "*" * len(secret)
     return f"{secret[:3]}...{secret[-3:]}"
+
+
+def hmac_text(value: Optional[str]) -> Optional[str]:
+    """Return a deterministic HMAC-SHA256 hex digest of value.
+
+    Used to index encrypted fields so we can do DB lookups without decrypting.
+    The digest is keyed with SECRET_KEY (or fallback) so it cannot be brute-forced
+    from outside the system.
+    """
+    if value in (None, ""):
+        return None
+    key = _secret_material().encode("utf-8")
+    return hmac.new(key, value.encode("utf-8"), hashlib.sha256).hexdigest()

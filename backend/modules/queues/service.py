@@ -75,6 +75,16 @@ class QueueService:
         finally:
             db.close()
 
+    def get_queue_item_by_token(self, status_token: str) -> Optional[schemas.QueueItem]:
+        db = self.get_db()
+        try:
+            item = db.query(QueueItem).filter(QueueItem.status_token == status_token).first()
+            if item:
+                return schemas.QueueItem.model_validate(item)
+            return None
+        finally:
+            db.close()
+
     def update_queue_item(self, item_id: int, updates: Dict) -> Optional[schemas.QueueItem]:
         db = self.get_db()
         try:

@@ -3,7 +3,6 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.yml"
-BACKEND_ENV_FILE="${PROJECT_ROOT}/backend/.env"
 CI_OVERRIDE_FILE="$(mktemp)"
 
 echo "==> Single-stack deploy (non-prod branch)"
@@ -42,7 +41,7 @@ LOCAL_GID="$(id -g)"
 # Limit compose parallelism on heavy hosts to reduce peak RAM during build/start.
 COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}"
 export COMPOSE_PARALLEL_LIMIT
-DB_HOST_PORT="5432"
+DB_HOST_PORT="5433"
 BACKEND_HOST_PORT="8000"
 FRONTEND_HOST_PORT="3000"
 FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
@@ -56,25 +55,9 @@ SHARED_TTS_URL="${SHARED_TTS_URL:-http://${K8S_NODE_IP}:30880}"
 COMPOSE_PROJECT_NAME="zeroqwait"
 export COMPOSE_PROJECT_NAME
 
-# Actions checkout on self-hosted runners may not include backend/.env
-# because it is typically gitignored. Create a local CI-safe file when absent.
-if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
-	echo "==> backend/.env missing, generating CI-safe local defaults"
-	cat > "${BACKEND_ENV_FILE}" << 'EOF'
-SECRET_KEY=ci_test_secret_key_change_in_prod
-DB_HOST=db
-DB_PORT=5432
-DB_NAME=zeroqwait
-DB_USER=postgres
-DB_PASSWORD=zeroqwait_dev
-REDIS_HOST=redis
-REDIS_PORT=6379
-OLLAMA_URL=http://192.168.2.134:30002/v1
-MODEL_NAME=qwen3:14b-q4_K_M
-TTS_SERVICE_URL=http://192.168.2.134:30880
-FRONTEND_URL=http://localhost:3000
-EOF
-fi
+# Secrets from GitHub Actions are available in the shell environment already.
+# docker compose reads ${VAR} from the shell, so no .env file on disk is needed.
+# This avoids writing secrets to the filesystem on the runner node.
 
 # Remove stale runner workspace virtualenv if previous runs left root-owned files.
 if [[ -d "${PROJECT_ROOT}/backend/.venv" ]]; then
@@ -123,7 +106,7 @@ for legacy_project in zeroqwait; do
 done
 
 # Build and run a single fixed stack on localhost ports.
-sudo --preserve-env=LOCAL_UID,LOCAL_GID,DB_HOST_PORT,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,FRONTEND_URL,SHARED_OLLAMA_URL,SHARED_MODEL_NAME,SHARED_TTS_URL,COMPOSE_PROJECT_NAME,COMPOSE_PARALLEL_LIMIT env \
+sudo --preserve-env=LOCAL_UID,LOCAL_GID,DB_HOST_PORT,BACKEND_HOST_PORT,FRONTEND_HOST_PORT,FRONTEND_URL,SHARED_OLLAMA_URL,SHARED_MODEL_NAME,SHARED_TTS_URL,COMPOSE_PROJECT_NAME,COMPOSE_PARALLEL_LIMIT,SECRET_KEY,DB_NAME,DB_USER,DB_PASSWORD,NVIDIA_API_KEY,LLM_CONFIG_ENCRYPTION_KEY,TELEGRAM_BOT_TOKEN,STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,ODOO_PASSWORD env \
 	LOCAL_UID="${LOCAL_UID}" \
 	LOCAL_GID="${LOCAL_GID}" \
 	DB_HOST_PORT="${DB_HOST_PORT}" \
@@ -135,6 +118,16 @@ sudo --preserve-env=LOCAL_UID,LOCAL_GID,DB_HOST_PORT,BACKEND_HOST_PORT,FRONTEND_
 	SHARED_TTS_URL="${SHARED_TTS_URL}" \
 	COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT}" \
 	COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" \
+	SECRET_KEY="${SECRET_KEY:-ci_test_secret_key_change_in_prod}" \
+	DB_NAME="${DB_NAME:-zeroqwait}" \
+	DB_USER="${DB_USER:-postgres}" \
+	DB_PASSWORD="${DB_PASSWORD:-zeroqwait_dev}" \
+	NVIDIA_API_KEY="${NVIDIA_API_KEY:-}" \
+	LLM_CONFIG_ENCRYPTION_KEY="${LLM_CONFIG_ENCRYPTION_KEY:-}" \
+	TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}" \
+	STRIPE_SECRET_KEY="${STRIPE_SECRET_KEY:-sk_test_placeholder}" \
+	STRIPE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}" \
+	ODOO_PASSWORD="${ODOO_PASSWORD:-admin}" \
 	docker compose "${COMPOSE_ARGS[@]}" up -d --build
 
 echo "==> Initializing database schema and seed data"

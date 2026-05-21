@@ -1,39 +1,39 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import axios from "axios";
 import {
-  Box,
-  Typography,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  MenuItem,
-  Alert,
-  CircularProgress,
-  IconButton,
-  Tooltip,
-  Stack,
-  Divider,
+  CheckCircle,
+  CircleOff,
+  Clock,
+  Play,
+  RefreshCw,
+  UserX,
+  XCircle,
+} from "lucide-react";
+
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
   Select,
-  FormControl,
-  InputLabel,
-  Paper,
-} from '@mui/material';
-import { DataGrid, GridColDef, GridActionsCellItem } from '@mui/x-data-grid';
-import EventIcon from '@mui/icons-material/Event';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import CancelIcon from '@mui/icons-material/Cancel';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import PersonOffIcon from '@mui/icons-material/PersonOff';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import ScheduleIcon from '@mui/icons-material/Schedule';
-import Header from '../components/Header';
-import { useShop } from '../../../contexts/ShopContext';
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import Header from "../components/Header";
+import { useShop } from "../../../contexts/ShopContext";
 
 interface AppointmentRow {
   id: number;
@@ -58,32 +58,27 @@ interface EmployeeAvailability {
   next_available_slot: string | null;
 }
 
-const STATUS_COLORS: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
-  scheduled: 'info',
-  confirmed: 'primary',
-  checked_in: 'warning',
-  in_progress: 'secondary',
-  completed: 'success',
-  cancelled: 'error',
-  no_show: 'default',
+const statusVariant = (status: string): React.ComponentProps<typeof Badge>["variant"] => {
+  if (status === "cancelled" || status === "no_show") return "destructive";
+  if (status === "completed" || status === "confirmed") return "default";
+  return "secondary";
 };
+
+const formatStatus = (status: string) => status.replace("_", " ");
 
 const AppointmentsPage: React.FC = () => {
   const { shop } = useShop();
   const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const d = new Date();
-    return d.toISOString().split('T')[0];
-  });
-  const [statusFilter, setStatusFilter] = useState('');
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [statusFilter, setStatusFilter] = useState("all");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [employeeAvailability, setEmployeeAvailability] = useState<EmployeeAvailability[]>([]);
   const [unavailableEmployees, setUnavailableEmployees] = useState<{ employee_id: number; username: string }[]>([]);
 
-  const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
+  const token = localStorage.getItem("token");
+  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
   const fetchAppointments = useCallback(async () => {
     if (!shop) return;
@@ -91,16 +86,16 @@ const AppointmentsPage: React.FC = () => {
     try {
       const params: Record<string, string> = {};
       if (selectedDate) params.date = selectedDate;
-      if (statusFilter) params.status = statusFilter;
+      if (statusFilter !== "all") params.status = statusFilter;
 
       const res = await axios.get(`/appointments/shop/${shop.id}`, { headers, params });
       setAppointments(res.data);
     } catch {
-      setError('Failed to load appointments');
+      setError("Failed to load appointments");
     } finally {
       setLoading(false);
     }
-  }, [shop, selectedDate, statusFilter]);
+  }, [headers, shop, selectedDate, statusFilter]);
 
   const fetchAvailability = useCallback(async () => {
     if (!shop) return;
@@ -115,9 +110,9 @@ const AppointmentsPage: React.FC = () => {
       setEmployeeAvailability(avail.data);
       setUnavailableEmployees(unavail.data);
     } catch {
-      // non-critical
+      // Availability is advisory; appointment list remains the primary surface.
     }
-  }, [shop, selectedDate]);
+  }, [headers, shop, selectedDate]);
 
   useEffect(() => {
     fetchAppointments();
@@ -127,239 +122,191 @@ const AppointmentsPage: React.FC = () => {
   const handleStatusChange = async (appointmentId: number, newStatus: string) => {
     if (!shop) return;
     try {
-      await axios.patch(
-        `/appointments/${appointmentId}/status`,
-        null,
-        { headers, params: { shop_id: shop.id, new_status: newStatus } }
-      );
+      await axios.patch(`/appointments/${appointmentId}/status`, null, {
+        headers,
+        params: { shop_id: shop.id, new_status: newStatus },
+      });
       setSuccess(`Appointment updated to ${newStatus}`);
       fetchAppointments();
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to update status');
+      setError(err?.response?.data?.detail || "Failed to update status");
     }
   };
 
-  const columns: GridColDef[] = [
-    { field: 'id', headerName: 'ID', width: 60 },
-    { field: 'customer_name', headerName: 'Customer', flex: 1, minWidth: 130 },
-    { field: 'customer_phone', headerName: 'Phone', width: 130 },
-    {
-      field: 'scheduled_start',
-      headerName: 'Time',
-      width: 160,
-      valueFormatter: (value: string) => {
-        if (!value) return '';
-        const d = new Date(value);
-        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) +
-          ' ' + d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-      },
-    },
-    {
-      field: 'status',
-      headerName: 'Status',
-      width: 130,
-      renderCell: (params) => (
-        <Chip
-          label={params.value?.replace('_', ' ')}
-          color={STATUS_COLORS[params.value as string] || 'default'}
-          size="small"
-          sx={{ textTransform: 'capitalize' }}
-        />
-      ),
-    },
-    {
-      field: 'service_cost',
-      headerName: 'Cost',
-      width: 90,
-      valueFormatter: (value: number) => value ? `$${value.toFixed(2)}` : '$0.00',
-    },
-    {
-      field: 'actions',
-      type: 'actions',
-      headerName: 'Actions',
-      width: 160,
-      getActions: (params) => {
-        const status = params.row.status;
-        const actions = [];
+  const statusActions = (appointment: AppointmentRow) => {
+    const status = appointment.status;
+    const actions: Array<{ label: string; icon: React.ElementType; status: string; variant?: "default" | "outline" | "destructive" }> = [];
 
-        if (status === 'scheduled') {
-          actions.push(
-            <GridActionsCellItem
-              key="confirm"
-              icon={<Tooltip title="Confirm"><CheckCircleIcon color="primary" /></Tooltip>}
-              label="Confirm"
-              onClick={() => handleStatusChange(params.row.id, 'confirmed')}
-            />,
-            <GridActionsCellItem
-              key="cancel"
-              icon={<Tooltip title="Cancel"><CancelIcon color="error" /></Tooltip>}
-              label="Cancel"
-              onClick={() => handleStatusChange(params.row.id, 'cancelled')}
-            />
-          );
-        }
-        if (status === 'confirmed') {
-          actions.push(
-            <GridActionsCellItem
-              key="checkin"
-              icon={<Tooltip title="Check In"><EventIcon color="warning" /></Tooltip>}
-              label="Check In"
-              onClick={() => handleStatusChange(params.row.id, 'checked_in')}
-            />,
-            <GridActionsCellItem
-              key="noshow"
-              icon={<Tooltip title="No Show"><PersonOffIcon /></Tooltip>}
-              label="No Show"
-              onClick={() => handleStatusChange(params.row.id, 'no_show')}
-            />
-          );
-        }
-        if (status === 'checked_in') {
-          actions.push(
-            <GridActionsCellItem
-              key="start"
-              icon={<Tooltip title="Start Service"><PlayArrowIcon color="secondary" /></Tooltip>}
-              label="Start"
-              onClick={() => handleStatusChange(params.row.id, 'in_progress')}
-            />
-          );
-        }
-        if (status === 'in_progress') {
-          actions.push(
-            <GridActionsCellItem
-              key="complete"
-              icon={<Tooltip title="Complete"><CheckCircleIcon color="success" /></Tooltip>}
-              label="Complete"
-              onClick={() => handleStatusChange(params.row.id, 'completed')}
-            />
-          );
-        }
+    if (status === "scheduled") {
+      actions.push({ label: "Confirm", icon: CheckCircle, status: "confirmed" });
+      actions.push({ label: "Cancel", icon: XCircle, status: "cancelled", variant: "destructive" });
+    }
+    if (status === "confirmed") {
+      actions.push({ label: "Check In", icon: Clock, status: "checked_in", variant: "outline" });
+      actions.push({ label: "No Show", icon: UserX, status: "no_show", variant: "outline" });
+    }
+    if (status === "checked_in") {
+      actions.push({ label: "Start", icon: Play, status: "in_progress" });
+    }
+    if (status === "in_progress") {
+      actions.push({ label: "Complete", icon: CheckCircle, status: "completed" });
+    }
 
-        return actions;
-      },
-    },
-  ];
+    return actions;
+  };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+    <div className="flex flex-col gap-4">
       <Header />
-      <Box>
-        <Typography variant="h4" gutterBottom>
-          Appointments
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Manage scheduled bookings and employee availability
-        </Typography>
-      </Box>
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">Appointments</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Manage scheduled bookings and employee availability</p>
+      </div>
 
-      {/* Unavailable employees alert */}
       {unavailableEmployees.length > 0 && (
-        <Alert severity="warning" icon={<PersonOffIcon />}>
-          <strong>Not clocked in today:</strong>{' '}
-          {unavailableEmployees.map((e) => e.username).join(', ')}
+        <Alert>
+          <UserX className="size-4" />
+          <AlertDescription>
+            <strong>Not clocked in today:</strong> {unavailableEmployees.map((employee) => employee.username).join(", ")}
+          </AlertDescription>
         </Alert>
       )}
 
-      {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
-      {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {success && (
+        <Alert>
+          <AlertDescription>{success}</AlertDescription>
+        </Alert>
+      )}
 
-      {/* Filters */}
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-        <TextField
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
           type="date"
-          label="Date"
+          aria-label="Date"
           value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
-          size="small"
-          InputLabelProps={{ shrink: true }}
+          onChange={(event) => setSelectedDate(event.target.value)}
+          className="w-[170px]"
         />
-        <FormControl size="small" sx={{ minWidth: 140 }}>
-          <InputLabel>Status</InputLabel>
-          <Select
-            value={statusFilter}
-            label="Status"
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <MenuItem value="">All</MenuItem>
-            <MenuItem value="scheduled">Scheduled</MenuItem>
-            <MenuItem value="confirmed">Confirmed</MenuItem>
-            <MenuItem value="checked_in">Checked In</MenuItem>
-            <MenuItem value="in_progress">In Progress</MenuItem>
-            <MenuItem value="completed">Completed</MenuItem>
-            <MenuItem value="cancelled">Cancelled</MenuItem>
-            <MenuItem value="no_show">No Show</MenuItem>
-          </Select>
-        </FormControl>
-        <IconButton onClick={() => { fetchAppointments(); fetchAvailability(); }}>
-          <RefreshIcon />
-        </IconButton>
-      </Stack>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="scheduled">Scheduled</SelectItem>
+              <SelectItem value="confirmed">Confirmed</SelectItem>
+              <SelectItem value="checked_in">Checked In</SelectItem>
+              <SelectItem value="in_progress">In Progress</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+              <SelectItem value="no_show">No Show</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="icon" onClick={() => { fetchAppointments(); fetchAvailability(); }}>
+          <RefreshCw />
+        </Button>
+      </div>
 
-      {/* Employee availability cards */}
       {employeeAvailability.length > 0 && (
-        <Box>
-          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-            Employee Load Today
-          </Typography>
-          <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
-            {employeeAvailability.map((emp) => (
-              <Card
-                key={emp.employee_id}
-                variant="outlined"
-                sx={{
-                  minWidth: 160,
-                  borderColor: emp.is_clocked_in ? 'success.main' : 'text.disabled',
-                  opacity: emp.is_clocked_in ? 1 : 0.6,
-                }}
-              >
-                <CardContent sx={{ py: 1, px: 1.5, '&:last-child': { pb: 1 } }}>
-                  <Stack direction="row" alignItems="center" spacing={0.5}>
-                    <Box
-                      sx={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: '50%',
-                        bgcolor: emp.is_clocked_in ? 'success.main' : 'text.disabled',
-                      }}
-                    />
-                    <Typography variant="body2" fontWeight={600}>
-                      {emp.username}
-                    </Typography>
-                  </Stack>
-                  <Typography variant="caption" color="text.secondary">
-                    {emp.appointments_today} appts today
-                  </Typography>
+        <section>
+          <p className="mb-2 text-sm font-medium text-muted-foreground">Employee Load Today</p>
+          <div className="flex flex-wrap gap-2">
+            {employeeAvailability.map((employee) => (
+              <Card key={employee.employee_id} className={employee.is_clocked_in ? "border-success" : "opacity-60"}>
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2">
+                    <span className={employee.is_clocked_in ? "size-2 rounded-full bg-success" : "size-2 rounded-full bg-muted-foreground"} />
+                    <p className="text-sm font-semibold">{employee.username}</p>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{employee.appointments_today} appts today</p>
                 </CardContent>
               </Card>
             ))}
-          </Stack>
-        </Box>
+          </div>
+        </section>
       )}
 
-      {/* Appointments grid */}
-      <Paper
-        sx={{
-          height: 500,
-          bgcolor: 'var(--owner-glass-bg)',
-          border: '1px solid var(--owner-glass-border)',
-          borderRadius: 3,
-        }}
-      >
-        <DataGrid
-          rows={appointments}
-          columns={columns}
-          loading={loading}
-          pageSizeOptions={[10, 25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-          disableRowSelectionOnClick
-          sx={{
-            border: 'none',
-            '& .MuiDataGrid-cell': { borderColor: 'var(--owner-glass-border)' },
-            '& .MuiDataGrid-columnHeaders': { borderColor: 'var(--owner-glass-border)' },
-          }}
-        />
-      </Paper>
-    </Box>
+      <Card>
+        <CardHeader>
+          <CardTitle>Scheduled Bookings</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex flex-col gap-2">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <Skeleton key={index} className="h-10 w-full" />
+              ))}
+            </div>
+          ) : appointments.length === 0 ? (
+            <div className="flex h-40 flex-col items-center justify-center gap-2 text-center text-muted-foreground">
+              <CircleOff className="size-8" />
+              <p>No appointments found.</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Cost</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {appointments.map((appointment) => (
+                  <TableRow key={appointment.id}>
+                    <TableCell>{appointment.id}</TableCell>
+                    <TableCell className="font-medium">{appointment.customer_name}</TableCell>
+                    <TableCell>{appointment.customer_phone || "-"}</TableCell>
+                    <TableCell>
+                      {appointment.scheduled_start
+                        ? `${new Date(appointment.scheduled_start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ${new Date(appointment.scheduled_start).toLocaleDateString([], { month: "short", day: "numeric" })}`
+                        : "-"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={statusVariant(appointment.status)} className="capitalize">
+                        {formatStatus(appointment.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      ${Number(appointment.service_cost || 0).toFixed(2)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {statusActions(appointment).map((action) => {
+                          const Icon = action.icon;
+                          return (
+                            <Button
+                              key={action.label}
+                              type="button"
+                              variant={action.variant || "outline"}
+                              size="sm"
+                              onClick={() => handleStatusChange(appointment.id, action.status)}
+                            >
+                              <Icon data-icon="inline-start" />
+                              {action.label}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

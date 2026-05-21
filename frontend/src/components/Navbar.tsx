@@ -1,321 +1,187 @@
 import React, { useState } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
-import {
-  AppBar,
-  Box,
-  Toolbar,
-  IconButton,
-  Typography,
-  Menu,
-  Container,
-  Avatar,
-  Button,
-  Tooltip,
-  MenuItem,
-  useMediaQuery,
-  useTheme,
-} from "@mui/material";
-import MenuIcon from "@mui/icons-material/Menu";
-import ContentCutIcon from "@mui/icons-material/ContentCut";
-import SearchIcon from "@mui/icons-material/Search";
-import PersonIcon from "@mui/icons-material/Person";
+import { Scissors, Search, Menu, X, User, BookOpen } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-
-const pages = [
-  { title: "Home", path: "/" },
-  { title: "Search", path: "/search" },
-];
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
+import { Button } from "./ui/button";
+import { Avatar, AvatarFallback } from "./ui/avatar";
+import { cn } from "../lib/utils";
 
 const Navbar = () => {
-  const [anchorElNav, setAnchorElNav] = useState<null | HTMLElement>(null);
-  const [anchorElUser, setAnchorElUser] = useState<null | HTMLElement>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-
-  const handleOpenNavMenu = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorElNav(event.currentTarget);
-  };
-
-  const handleOpenUserMenu = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorElUser(event.currentTarget);
-  };
-
-  const handleCloseNavMenu = () => {
-    setAnchorElNav(null);
-  };
-
-  const handleCloseUserMenu = () => {
-    setAnchorElUser(null);
-  };
 
   const handleLogout = () => {
     logout();
-    handleCloseUserMenu();
     navigate("/");
+    setMobileOpen(false);
   };
 
+  const isEmployee = user?.role === "employee";
+
   return (
-    <AppBar position="static" elevation={0} sx={{ borderBottom: '1px solid #EBEBEB' }}>
-      <Container maxWidth="xl">
-        <Toolbar
-          disableGutters
-          sx={{
-            minHeight: { xs: 64, md: 80 },
-            py: { xs: 1, md: 1.5 }
-          }}
+    <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
+      <div className="mx-auto flex max-w-screen-xl items-center px-4 py-0 h-16">
+        {/* Logo */}
+        <RouterLink
+          to="/"
+          className="flex items-center gap-2 text-foreground no-underline hover:opacity-80 transition-opacity"
         >
-          {/* Logo */}
-          <Box
-            component={RouterLink}
-            to="/"
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              textDecoration: 'none',
-              color: 'inherit',
-              '&:hover': { opacity: 0.8 }
-            }}
-          >
-            <ContentCutIcon
-              sx={{
-                fontSize: { xs: 28, md: 32 },
-                color: 'primary.main',
-                mr: 1.5
-              }}
-            />
-            <Typography
-              variant="h5"
-              sx={{
-                fontWeight: 700,
-                fontSize: { xs: '1.5rem', md: '1.75rem' },
-                color: 'text.primary',
-                letterSpacing: '-0.02em'
-              }}
-            >
-              ZeroQwait
-            </Typography>
-          </Box>
+          <Scissors className="h-6 w-6 text-primary" />
+          <span className="text-xl font-bold tracking-[-0.02em]">ZeroQwait</span>
+        </RouterLink>
 
-          <Box sx={{ flexGrow: 1 }} />
+        <div className="flex-1" />
 
-          {/* Desktop Navigation */}
-          {!isMobile && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {/* Only show customer-facing features for non-employees */}
-              {user?.role !== 'employee' && (
-                <>
-                  <Button
-                    component={RouterLink}
-                    to="/search"
-                    startIcon={<SearchIcon />}
-                    sx={{
-                      color: 'text.primary',
-                      fontWeight: 500,
-                      px: 2,
-                      py: 1.5,
-                      '&:hover': {
-                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                      }
-                    }}
-                  >
-                    Search
-                  </Button>
-                  <Button
-                    component={RouterLink}
-                    to="/pricing"
-                    sx={{
-                      color: 'text.primary',
-                      fontWeight: 500,
-                      px: 2,
-                      py: 1.5,
-                      '&:hover': {
-                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                      }
-                    }}
-                  >
-                    Pricing
-                  </Button>
-
-                </>
-              )}
-
-              {/* User Menu */}
-              <Box sx={{ ml: 2 }}>
-                {isAuthenticated ? (
-                  <>
-                    <Tooltip title="Account menu">
-                      <IconButton
-                        onClick={handleOpenUserMenu}
-                        sx={{
-                          p: 0.5,
-                          border: '1px solid #DDDDDD',
-                          borderRadius: '50px',
-                          px: 1.5,
-                          '&:hover': {
-                            boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.18)',
-                          }
-                        }}
-                      >
-                        <PersonIcon sx={{ fontSize: 18, mr: 1 }} />
-                        <Avatar
-                          alt={user?.username || "User"}
-                          sx={{
-                            width: 24,
-                            height: 24,
-                            fontSize: '0.75rem',
-                            bgcolor: 'primary.main'
-                          }}
-                        >
-                          {user?.username?.charAt(0).toUpperCase() || 'U'}
-                        </Avatar>
-                      </IconButton>
-                    </Tooltip>
-                    <Menu
-                      anchorEl={anchorElUser}
-                      open={Boolean(anchorElUser)}
-                      onClose={handleCloseUserMenu}
-                      sx={{ mt: 1 }}
-                      PaperProps={{
-                        sx: {
-                          boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.1)',
-                          border: '1px solid #EBEBEB'
-                        }
-                      }}
-                    >
-                      <MenuItem
-                        onClick={handleLogout}
-                        sx={{
-                          px: 3,
-                          py: 1.5,
-                          fontSize: '0.875rem'
-                        }}
-                      >
-                        Logout
-                      </MenuItem>
-                    </Menu>
-                  </>
-                ) : (
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button
-                      component={RouterLink}
-                      to="/login"
-                      sx={{
-                        color: 'text.primary',
-                        fontWeight: 500,
-                        px: 2,
-                        py: 1.5,
-                        '&:hover': {
-                          backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                        }
-                      }}
-                    >
-                      Log in
-                    </Button>
-                    <Button
-                      component={RouterLink}
-                      to="/signup"
-                      variant="contained"
-                      sx={{
-                        fontWeight: 600,
-                        px: 3,
-                        py: 1.5,
-                        background: 'linear-gradient(135deg, #FF5A5F 0%, #FF385C 100%)',
-                        '&:hover': {
-                          background: 'linear-gradient(135deg, #FF385C 0%, #E00007 100%)',
-                        }
-                      }}
-                    >
-                      Sign up
-                    </Button>
-                  </Box>
-                )}
-              </Box>
-            </Box>
+        {/* Desktop nav */}
+        <nav className="hidden md:flex items-center gap-1">
+          {!isEmployee && (
+            <>
+              <RouterLink
+                to="/search"
+                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Search className="h-4 w-4" />
+                Search
+              </RouterLink>
+              <RouterLink
+                to="/pricing"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                Pricing
+              </RouterLink>
+              <RouterLink
+                to="/docs"
+                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <BookOpen className="h-4 w-4" />
+                Docs
+              </RouterLink>
+            </>
           )}
 
-          {/* Mobile Menu */}
-          {isMobile && (
-            <IconButton
-              onClick={handleOpenNavMenu}
-              sx={{
-                ml: 2,
-                p: 1,
-                border: '1px solid #DDDDDD',
-              }}
-            >
-              <MenuIcon />
-            </IconButton>
-          )}
-
-          <Menu
-            anchorEl={anchorElNav}
-            open={Boolean(anchorElNav)}
-            onClose={handleCloseNavMenu}
-            sx={{ display: { xs: 'block', md: 'none' } }}
-            PaperProps={{
-              sx: {
-                boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.1)',
-                border: '1px solid #EBEBEB',
-                minWidth: 200
-              }
-            }}
-          >
-            {/* Only show customer-facing features for non-employees */}
-            {user?.role !== 'employee' && (
-              <>
-                <MenuItem
-                  component={RouterLink}
-                  to="/search"
-                  onClick={handleCloseNavMenu}
-                  sx={{ px: 3, py: 1.5 }}
+          {/* User menu */}
+          <div className="ml-3">
+            {isAuthenticated ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-sm",
+                      "hover:shadow-sm transition-shadow"
+                    )}
+                  >
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <Avatar className="h-6 w-6">
+                      <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                        {user?.username?.charAt(0).toUpperCase() || "U"}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuItem onClick={handleLogout} className="cursor-pointer">
+                    Logout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" asChild>
+                  <RouterLink to="/login">Log in</RouterLink>
+                </Button>
+                <Button
+                  size="sm"
+                  asChild
+                  className="bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-600 hover:to-red-600 text-white"
                 >
-                  <SearchIcon sx={{ mr: 2, fontSize: 18 }} />
+                  <RouterLink to="/signup">Sign up</RouterLink>
+                </Button>
+              </div>
+            )}
+          </div>
+        </nav>
+
+        {/* Mobile hamburger */}
+        <button
+          type="button"
+          className="ml-3 flex h-9 w-9 items-center justify-center rounded-lg border border-border md:hidden"
+          onClick={() => setMobileOpen((o) => !o)}
+          aria-label="Toggle menu"
+        >
+          {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+        </button>
+      </div>
+
+      {/* Mobile menu */}
+      {mobileOpen && (
+        <div className="border-t border-border bg-background px-4 py-3 md:hidden">
+          <div className="flex flex-col gap-1">
+            {!isEmployee && (
+              <>
+                <RouterLink
+                  to="/search"
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <Search className="h-4 w-4" />
                   Search
-                </MenuItem>
-                <MenuItem
-                  component={RouterLink}
+                </RouterLink>
+                <RouterLink
                   to="/pricing"
-                  onClick={handleCloseNavMenu}
-                  sx={{ px: 3, py: 1.5 }}
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 >
                   Pricing
-                </MenuItem>
+                </RouterLink>
+                <RouterLink
+                  to="/docs"
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <BookOpen className="h-4 w-4" />
+                  Docs
+                </RouterLink>
               </>
             )}
             {!isAuthenticated && (
               <>
-                <MenuItem
-                  component={RouterLink}
+                <RouterLink
                   to="/login"
-                  onClick={handleCloseNavMenu}
-                  sx={{ px: 3, py: 1.5 }}
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 >
                   Log in
-                </MenuItem>
-                <MenuItem
-                  component={RouterLink}
+                </RouterLink>
+                <RouterLink
                   to="/signup"
-                  onClick={handleCloseNavMenu}
-                  sx={{ px: 3, py: 1.5 }}
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 >
                   Sign up
-                </MenuItem>
+                </RouterLink>
               </>
             )}
             {isAuthenticated && (
-              <MenuItem
+              <button
+                type="button"
                 onClick={handleLogout}
-                sx={{ px: 3, py: 1.5, borderTop: '1px solid #EBEBEB' }}
+                className="rounded-lg border-t border-border px-3 py-2.5 text-left text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               >
                 Logout
-              </MenuItem>
+              </button>
             )}
-          </Menu>
-        </Toolbar>
-      </Container>
-    </AppBar>
+          </div>
+        </div>
+      )}
+    </header>
   );
 };
 

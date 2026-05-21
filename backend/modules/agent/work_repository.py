@@ -14,13 +14,17 @@ from modules.agent.models import (
     ApprovalStatus,
     CasePriority,
     CaseStatus,
+    Commitment,
     CustomerCase,
     GoalSource,
     GoalStatus,
     NotificationStatus,
     PolicyMode,
     RunStatus,
+    ShopSchedule,
+    ShopSoul,
     ShopPolicy,
+    SoulLearning,
     TaskStatus,
 )
 
@@ -446,6 +450,159 @@ class AgentWorkRepository:
             self.db.query(AgentNotification)
             .filter(AgentNotification.shop_id == shop_id)
             .order_by(AgentNotification.created_at.desc(), AgentNotification.id.desc())
+            .limit(limit)
+            .all()
+        )
+
+    def get_or_create_shop_soul(self, shop_id: int) -> ShopSoul:
+        soul = self.db.query(ShopSoul).filter(ShopSoul.shop_id == shop_id).first()
+        if soul is None:
+            soul = ShopSoul(
+                shop_id=shop_id,
+                personality={},
+                learned_patterns=[],
+                recent_decisions=[],
+                open_items=[],
+            )
+            self.db.add(soul)
+            self.db.commit()
+            self.db.refresh(soul)
+        return soul
+
+    def update_shop_soul(self, shop_id: int, **changes: object) -> ShopSoul:
+        soul = self.get_or_create_shop_soul(shop_id)
+        allowed = {
+            "tone",
+            "upsell_style",
+            "owner_communication",
+            "personality",
+            "learned_patterns",
+            "recent_decisions",
+            "open_items",
+            "summary",
+            "tier_scope",
+            "rolling_window_days",
+            "last_evolved_at",
+        }
+        _apply_model_updates(soul, **{key: value for key, value in changes.items() if key in allowed})
+        self.db.commit()
+        self.db.refresh(soul)
+        return soul
+
+    def create_soul_learning(
+        self,
+        *,
+        shop_id: int,
+        content: str,
+        run_id: Optional[int] = None,
+        source: str = "conversation",
+        category: str = "pattern",
+        confidence_score: float = 0.5,
+        evidence: Optional[dict] = None,
+    ) -> SoulLearning:
+        learning = SoulLearning(
+            shop_id=shop_id,
+            run_id=run_id,
+            source=source,
+            category=category,
+            content=content,
+            confidence_score=confidence_score,
+            evidence=evidence,
+        )
+        self.db.add(learning)
+        self.db.commit()
+        self.db.refresh(learning)
+        return learning
+
+    def create_commitment(
+        self,
+        *,
+        shop_id: int,
+        made_by: str,
+        commitment: str,
+        run_id: Optional[int] = None,
+        due_at: Optional[datetime] = None,
+        trigger_if_missed: Optional[str] = None,
+        action_payload: Optional[dict] = None,
+        detected_from: Optional[dict] = None,
+    ) -> Commitment:
+        record = Commitment(
+            shop_id=shop_id,
+            run_id=run_id,
+            made_by=made_by,
+            commitment=commitment,
+            due_at=due_at,
+            trigger_if_missed=trigger_if_missed,
+            action_payload=action_payload,
+            detected_from=detected_from,
+        )
+        self.db.add(record)
+        self.db.commit()
+        self.db.refresh(record)
+        return record
+
+    def list_pending_commitments(self, shop_id: int, limit: int = 25) -> list[Commitment]:
+        return (
+            self.db.query(Commitment)
+            .filter(Commitment.shop_id == shop_id, Commitment.status == "pending")
+            .order_by(Commitment.due_at.asc().nulls_last(), Commitment.created_at.asc())
+            .limit(limit)
+            .all()
+        )
+
+    def upsert_shop_schedule(
+        self,
+        *,
+        shop_id: int,
+        schedule_key: str,
+        temporal_schedule_id: str,
+        title: str,
+        cron_expression: str,
+        created_by_user_id: Optional[int] = None,
+        schedule_type: str = "custom",
+        description: Optional[str] = None,
+        natural_language: Optional[str] = None,
+        timezone: str = "UTC",
+        target_agent: str = "supervisor",
+        action_payload: Optional[dict] = None,
+        condition_payload: Optional[dict] = None,
+        tier_scope: str = "free",
+        status: str = "active",
+    ) -> ShopSchedule:
+        schedule = (
+            self.db.query(ShopSchedule)
+            .filter(ShopSchedule.shop_id == shop_id, ShopSchedule.schedule_key == schedule_key)
+            .first()
+        )
+        payload = {
+            "created_by_user_id": created_by_user_id,
+            "temporal_schedule_id": temporal_schedule_id,
+            "schedule_type": schedule_type,
+            "title": title,
+            "description": description,
+            "natural_language": natural_language,
+            "cron_expression": cron_expression,
+            "timezone": timezone,
+            "target_agent": target_agent,
+            "action_payload": action_payload,
+            "condition_payload": condition_payload,
+            "tier_scope": tier_scope,
+            "status": status,
+        }
+        if schedule is None:
+            schedule = ShopSchedule(shop_id=shop_id, schedule_key=schedule_key, **payload)
+            self.db.add(schedule)
+        else:
+            _apply_model_updates(schedule, **payload)
+        self.db.commit()
+        self.db.refresh(schedule)
+        return schedule
+
+    def list_active_shop_schedules(self, shop_id: int, limit: int = 50) -> list[ShopSchedule]:
+        return (
+            self.db.query(ShopSchedule)
+            .filter(ShopSchedule.shop_id == shop_id, ShopSchedule.status == "active")
+            .order_by(ShopSchedule.created_at.desc())
             .limit(limit)
             .all()
         )

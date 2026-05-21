@@ -33,6 +33,7 @@ class QueueItem(QueueItemBase):
     user_id: Optional[int] = None
     position: int
     status: QueueStatus
+    status_token: Optional[str] = None
     checked_in_at: datetime
     service_started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -53,6 +54,8 @@ class Queue(QueueBase):
     shop_id: int
     date: datetime
     is_active: bool
+    accepting_joins: bool = True
+    lock_reason: Optional[str] = None
     queue_items: List[QueueItem] = []
 
 # Shop with active queue

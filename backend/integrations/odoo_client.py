@@ -17,8 +17,7 @@ import xmlrpc.client
 
 logger = logging.getLogger(__name__)
 
-# Odoo is always enabled — no conditional toggle.
-ODOO_ENABLED = True
+ODOO_ENABLED = os.getenv("ODOO_ENABLED", "false").lower() in ("1", "true", "yes")
 ODOO_URL = os.getenv("ODOO_URL", "http://odoo:8069")
 ODOO_DB = os.getenv("ODOO_DB", "odoo")
 ODOO_USER = os.getenv("ODOO_USER", "admin")
@@ -36,7 +35,7 @@ def _add_company_filter(domain: list, company_id: Optional[int]) -> list:
 
 _M2O_FIELDS = {"country_id", "parent_id", "partner_id", "stage_id",
                "user_id", "journal_id", "account_id", "categ_id",
-               "move_id", "company_id"}
+               "move_id", "company_id", "uom_id", "uom_po_id"}
 
 
 def _resolve_m2o(records: list) -> list:
@@ -547,6 +546,93 @@ class OdooClient:
             logger.error("Odoo update_product failed: %s", e)
             return {"error": str(e)}
 
+    # ── Stock / Inventory ─────────────────────────────────────────
+
+    def get_low_stock_items(self, company_id: Optional[int] = None, threshold: float = 0) -> Dict[str, Any]:
+        """Return storable products whose on-hand quantity is at or below *threshold*."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            domain: list = [("type", "=", "product"), ("qty_on_hand", "<=", threshold)]
+            domain = _add_company_filter(domain, company_id)
+            items = self._execute(
+                "product.product", "search_read", domain,
+                ["id", "name", "qty_on_hand", "uom_id", "default_code", "barcode"],
+                limit=200,
+            )
+            return {"items": _resolve_m2o(items), "count": len(items)}
+        except Exception as e:
+            logger.error("Odoo get_low_stock_items failed: %s", e)
+            return {"error": str(e)}
+
+    def receive_stock(self, product_id: int, qty: float,
+                      company_id: Optional[int] = None, notes: str = "") -> Dict[str, Any]:
+        """Increase on-hand stock for *product_id* by *qty* (creates/updates stock.quant)."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            domain = _add_company_filter([("product_id", "=", product_id)], company_id)
+            quants = self._execute("stock.quant", "search_read", domain, ["id", "quantity"], limit=1)
+            if quants:
+                quant_id = quants[0]["id"]
+                new_qty = quants[0]["quantity"] + qty
+                self._models.execute_kw(
+                    self._db, self._uid, self._password,
+                    "stock.quant", "write", [[quant_id], {"quantity": new_qty}],
+                )
+            else:
+                vals: Dict[str, Any] = {"product_id": product_id, "quantity": qty, "location_id": 8}
+                if company_id:
+                    vals["company_id"] = company_id
+                quant_id = self._models.execute_kw(
+                    self._db, self._uid, self._password,
+                    "stock.quant", "create", [vals],
+                )
+            return {"quant_id": quant_id, "qty_added": qty, "notes": notes}
+        except Exception as e:
+            logger.error("Odoo receive_stock failed: %s", e)
+            return {"error": str(e)}
+
+    def adjust_stock(self, product_id: int, qty_delta: float,
+                     reason: str = "", company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Apply a signed *qty_delta* adjustment to *product_id*'s on-hand stock."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            domain = _add_company_filter([("product_id", "=", product_id)], company_id)
+            quants = self._execute("stock.quant", "search_read", domain, ["id", "quantity"], limit=1)
+            quant_id: Optional[int] = None
+            if quants:
+                quant_id = quants[0]["id"]
+                new_qty = quants[0]["quantity"] + qty_delta
+                self._models.execute_kw(
+                    self._db, self._uid, self._password,
+                    "stock.quant", "write", [[quant_id], {"quantity": new_qty}],
+                )
+            return {"quant_id": quant_id, "qty_delta": qty_delta, "reason": reason}
+        except Exception as e:
+            logger.error("Odoo adjust_stock failed: %s", e)
+            return {"error": str(e)}
+
+    def get_product_by_barcode(self, barcode: str, company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Look up a product by its barcode field."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            domain: list = [("barcode", "=", barcode)]
+            domain = _add_company_filter(domain, company_id)
+            items = self._execute(
+                "product.product", "search_read", domain,
+                ["id", "name", "qty_on_hand", "list_price", "default_code", "barcode"],
+                limit=1,
+            )
+            if not items:
+                return {"error": "not_found", "barcode": barcode}
+            return {"product": _resolve_m2o(items[0], [])}
+        except Exception as e:
+            logger.error("Odoo get_product_by_barcode failed: %s", e)
+            return {"error": str(e)}
+
     # ── Revenue Summary (aggregated from invoices) ────────────────
 
     def get_revenue_summary(self, date_from: Optional[str] = None,
@@ -656,17 +742,16 @@ class OdooClient:
             return {"error": str(e)}
 
     def add_note_to_lead(self, lead_id: int, body: str) -> Dict[str, Any]:
-        """Add a log note to a CRM lead via mail.message."""
+        """Add a log note to a CRM lead via message_post."""
         if not self.enabled:
             return _DISABLED
         try:
-            msg_id = self._execute("mail.message", "create", {
-                "model": "crm.lead",
-                "res_id": lead_id,
-                "body": body,
-                "message_type": "comment",
-                "subtype_xmlid": "mail.mt_note",
-            })
+            msg_id = self._execute(
+                "crm.lead", "message_post",
+                [lead_id],
+                body=body,
+                message_type="comment",
+            )
             return {"message_id": msg_id, "lead_id": lead_id}
         except Exception as e:
             logger.error("Odoo add_note_to_lead failed: %s", e)

@@ -1,39 +1,22 @@
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Button from '@mui/material/Button';
-import Typography from '@mui/material/Typography';
-import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
-import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
-import useMediaQuery from '@mui/material/useMediaQuery';
-import { useTheme } from '@mui/material/styles';
+import { ChevronRight, Lightbulb } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function HighlightedCard() {
-  const theme = useTheme();
-  const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
-
   return (
-    <Card sx={{ height: '100%' }}>
-      <CardContent>
-        <InsightsRoundedIcon />
-        <Typography
-          component="h2"
-          variant="subtitle2"
-          gutterBottom
-          sx={{ fontWeight: '600' }}
-        >
-          Explore your data
-        </Typography>
-        <Typography sx={{ color: 'text.secondary', mb: '8px' }}>
-          Uncover performance and visitor insights with our data wizardry.
-        </Typography>
-        <Button
-          variant="contained"
-          size="small"
-          color="primary"
-          endIcon={<ChevronRightRoundedIcon />}
-          fullWidth={isSmallScreen}
-        >
+    <Card className="h-full">
+      <CardHeader className="pb-2">
+        <Lightbulb className="size-5 text-primary" />
+        <CardTitle className="text-sm font-semibold">Explore your data</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">
+          Uncover performance and visitor insights with your operations data.
+        </p>
+        <Button type="button" size="sm" className="w-full sm:w-fit">
           Get insights
+          <ChevronRight data-icon="inline-end" />
         </Button>
       </CardContent>
     </Card>

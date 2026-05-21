@@ -1,226 +1,150 @@
-import * as React from 'react';
-import clsx from 'clsx';
-import { animated, useSpring } from '@react-spring/web';
-import { TransitionProps } from '@mui/material/transitions';
-import Box from '@mui/material/Box';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Collapse from '@mui/material/Collapse';
-import Typography from '@mui/material/Typography';
-import { RichTreeView } from '@mui/x-tree-view/RichTreeView';
-import { useTreeItem, UseTreeItemParameters } from '@mui/x-tree-view/useTreeItem';
-import {
-    TreeItemContent,
-    TreeItemIconContainer,
-    TreeItemLabel,
-    TreeItemRoot,
-} from '@mui/x-tree-view/TreeItem';
-import { TreeItemIcon } from '@mui/x-tree-view/TreeItemIcon';
-import { TreeItemProvider } from '@mui/x-tree-view/TreeItemProvider';
-import { TreeViewBaseItem } from '@mui/x-tree-view/models';
-import { useTheme } from '@mui/material/styles';
-import api from '../../../services/api';
-import { useShop } from '../../../contexts/ShopContext';
+import * as React from "react";
+import { ChevronRight } from "lucide-react";
 
-type Color = 'blue' | 'green' | 'red';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import api from "../../../services/api";
+import { useShop } from "../../../contexts/ShopContext";
 
-type ExtendedTreeItemProps = {
-    color?: Color;
-    id: string;
-    label: string;
+type Color = "blue" | "green" | "red";
+
+type TreeItem = {
+  color?: Color;
+  id: string;
+  label: string;
+  children?: TreeItem[];
 };
 
-// ... (Reusing styling components)
-function DotIcon({ color }: { color: string }) {
-    return (
-        <Box sx={{ marginRight: 1, display: 'flex', alignItems: 'center' }}>
-            <svg width={6} height={6}>
-                <circle cx={3} cy={3} r={3} fill={color} />
-            </svg>
-        </Box>
-    );
+const dotClass: Record<Color, string> = {
+  blue: "bg-primary",
+  green: "bg-success",
+  red: "bg-destructive",
+};
+
+function TreeNode({
+  item,
+  level = 0,
+  defaultExpanded,
+}: {
+  item: TreeItem;
+  level?: number;
+  defaultExpanded: Set<string>;
+}) {
+  const hasChildren = Boolean(item.children?.length);
+  const [expanded, setExpanded] = React.useState(defaultExpanded.has(item.id));
+
+  return (
+    <li>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm transition-colors hover:bg-muted/50"
+        style={{ paddingLeft: `${level * 16 + 8}px` }}
+        onClick={() => hasChildren && setExpanded((value) => !value)}
+      >
+        {hasChildren ? (
+          <ChevronRight className={cn("size-4 transition-transform", expanded && "rotate-90")} />
+        ) : (
+          <span className="size-4" />
+        )}
+        {item.color && <span className={cn("size-1.5 rounded-full", dotClass[item.color])} />}
+        <span className="truncate">{item.label}</span>
+      </button>
+      {hasChildren && expanded && (
+        <ul className="mt-1 flex flex-col gap-1">
+          {item.children?.map((child) => (
+            <TreeNode key={child.id} item={child} level={level + 1} defaultExpanded={defaultExpanded} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
 }
-
-const AnimatedCollapse = animated(Collapse);
-
-function TransitionComponent(props: TransitionProps) {
-    const style = useSpring({
-        to: {
-            opacity: props.in ? 1 : 0,
-            transform: `translate3d(0,${props.in ? 0 : 20}px,0)`,
-        },
-    });
-
-    return <AnimatedCollapse style={style} {...props} />;
-}
-
-interface CustomLabelProps {
-    children: React.ReactNode;
-    color?: Color;
-    expandable?: boolean;
-}
-
-function CustomLabel({ color, expandable, children, ...other }: CustomLabelProps) {
-    const theme = useTheme();
-    const colors = {
-        blue: (theme.palette as any).primary.main,
-        green: (theme.palette as any).success.main,
-        red: (theme.palette as any).error.main,
-    };
-
-    const iconColor = color ? colors[color] : null;
-    return (
-        <TreeItemLabel {...other} sx={{ display: 'flex', alignItems: 'center' }}>
-            {iconColor && <DotIcon color={iconColor} />}
-            <Typography
-                className="labelText"
-                variant="body2"
-                sx={{ color: 'text.primary' }}
-            >
-                {children}
-            </Typography>
-        </TreeItemLabel>
-    );
-}
-
-interface CustomTreeItemProps
-    extends
-    Omit<UseTreeItemParameters, 'rootRef'>,
-    Omit<React.HTMLAttributes<HTMLLIElement>, 'onFocus'> { }
-
-const CustomTreeItem = React.forwardRef(function CustomTreeItem(
-    props: CustomTreeItemProps,
-    ref: React.Ref<HTMLLIElement>,
-) {
-    const { id, itemId, label, disabled, children, ...other } = props;
-
-    const {
-        getRootProps,
-        getContentProps,
-        getIconContainerProps,
-        getLabelProps,
-        getGroupTransitionProps,
-        status,
-        publicAPI,
-    } = useTreeItem({ id, itemId, children, label, disabled, rootRef: ref });
-
-    const item = publicAPI.getItem(itemId);
-    const color = item?.color;
-    return (
-        <TreeItemProvider id={id} itemId={itemId}>
-            <TreeItemRoot {...getRootProps(other)}>
-                <TreeItemContent
-                    {...getContentProps({
-                        className: clsx('content', {
-                            expanded: status.expanded,
-                            selected: status.selected,
-                            focused: status.focused,
-                            disabled: status.disabled,
-                        }),
-                    })}
-                >
-                    {status.expandable && (
-                        <TreeItemIconContainer {...getIconContainerProps()}>
-                            <TreeItemIcon status={status} />
-                        </TreeItemIconContainer>
-                    )}
-
-                    <CustomLabel {...getLabelProps({ color })} />
-                </TreeItemContent>
-                {children && (
-                    <TransitionComponent
-                        {...getGroupTransitionProps({ className: 'groupTransition' })}
-                    />
-                )}
-            </TreeItemRoot>
-        </TreeItemProvider>
-    );
-});
 
 export default function TeamHierarchy() {
-    const { shop } = useShop();
-    const [items, setItems] = React.useState<TreeViewBaseItem<ExtendedTreeItemProps>[]>([]);
+  const { shop } = useShop();
+  const [items, setItems] = React.useState<TreeItem[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const defaultExpanded = React.useMemo(() => new Set(["managers", "employees"]), []);
 
-    React.useEffect(() => {
-        const fetchTeam = async () => {
-            if (!shop) return;
-            try {
-                // Fetch employees
-                const empResponse = await api.get(`/shops/${shop.id}/employees`);
-                const employees = empResponse.data;
+  React.useEffect(() => {
+    const fetchTeam = async () => {
+      if (!shop) {
+        setLoading(false);
+        return;
+      }
 
-                // Separate by role
-                const managers = employees.filter((e: any) => e.user.role === 'manager');
-                const regularEmployees = employees.filter((e: any) => e.user.role === 'employee');
+      try {
+        setLoading(true);
+        const empResponse = await api.get(`/shops/${shop.id}/employees`);
+        const employees = empResponse.data;
+        const managers = employees.filter((employee: any) => employee.user.role === "manager");
+        const regularEmployees = employees.filter((employee: any) => employee.user.role === "employee");
 
-                // Construct tree
-                const tree: TreeViewBaseItem<ExtendedTreeItemProps>[] = [
-                    {
-                        id: 'owner',
-                        label: 'Owner (You)',
-                        color: 'blue',
-                        children: []
-                    }
-                ];
+        const tree: TreeItem[] = [
+          {
+            id: "owner",
+            label: "Owner (You)",
+            color: "blue",
+            children: [],
+          },
+        ];
 
-                // Add Managers
-                if (managers.length > 0) {
-                    tree.push({
-                        id: 'managers',
-                        label: 'Managers',
-                        children: managers.map((m: any) => ({
-                            id: `m-${m.user.id}`,
-                            label: m.user.username,
-                            color: 'green'
-                        }))
-                    });
-                }
+        if (managers.length > 0) {
+          tree.push({
+            id: "managers",
+            label: "Managers",
+            children: managers.map((manager: any) => ({
+              id: `m-${manager.user.id}`,
+              label: manager.user.username,
+              color: "green",
+            })),
+          });
+        }
 
-                // Add Employees
-                if (regularEmployees.length > 0) {
-                    tree.push({
-                        id: 'employees',
-                        label: 'Employees',
-                        children: regularEmployees.map((e: any) => ({
-                            id: `e-${e.user.id}`,
-                            label: e.user.username,
-                            color: 'green'
-                        }))
-                    });
-                }
+        if (regularEmployees.length > 0) {
+          tree.push({
+            id: "employees",
+            label: "Employees",
+            children: regularEmployees.map((employee: any) => ({
+              id: `e-${employee.user.id}`,
+              label: employee.user.username,
+              color: "green",
+            })),
+          });
+        }
 
-                setItems(tree);
+        setItems(tree);
+      } catch (err) {
+        console.error("Failed to fetch team hierarchy", err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-            } catch (err) {
-                console.error("Failed to fetch team hierarchy", err);
-            }
-        };
-        fetchTeam();
-    }, [shop]);
+    fetchTeam();
+  }, [shop]);
 
-    return (
-        <Card
-            variant="outlined"
-            sx={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1, bgcolor: 'var(--owner-glass-bg)', backdropFilter: 'blur(20px)', borderColor: 'var(--owner-glass-border)', boxShadow: 'var(--owner-glass-shadow)' }}
-        >
-            <CardContent>
-                <Typography component="h2" variant="subtitle2">
-                    Team Hierarchy
-                </Typography>
-                <RichTreeView
-                    items={items}
-                    aria-label="team hierarchy"
-                    defaultExpandedItems={['managers', 'employees']}
-                    sx={{
-                        m: '0 -8px',
-                        pb: '8px',
-                        height: 'fit-content',
-                        flexGrow: 1,
-                        overflowY: 'auto',
-                    }}
-                    slots={{ item: CustomTreeItem }}
-                />
-            </CardContent>
-        </Card>
-    );
+  return (
+    <Card className="flex flex-grow flex-col gap-2 rounded-2xl border-border bg-card shadow-none">
+      <CardHeader className="p-5 pb-2">
+        <CardTitle className="text-base font-bold text-foreground">Team hierarchy</CardTitle>
+      </CardHeader>
+      <CardContent className="p-5 pt-0">
+        {loading ? (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-4/5" />
+            <Skeleton className="h-8 w-3/5" />
+          </div>
+        ) : (
+          <ul aria-label="team hierarchy" className="-mx-2 flex flex-col gap-1">
+            {items.map((item) => (
+              <TreeNode key={item.id} item={item} defaultExpanded={defaultExpanded} />
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
 }

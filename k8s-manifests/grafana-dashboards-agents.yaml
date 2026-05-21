@@ -1,0 +1,294 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-agents
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  zeroqwait-agent-overview.json: |
+    {
+      "uid": "zq-agent-overview",
+      "title": "ZeroQwait — Agent Overview",
+      "tags": ["zeroqwait", "agents"],
+      "timezone": "browser",
+      "refresh": "30s",
+      "schemaVersion": 36,
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Request Rate (req/s)",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 0, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "sum(rate(zq_http_requests_total[2m])) by (path_group)",
+              "legendFormat": "{{path_group}}"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "HTTP Latency P50 / P95 / P99",
+          "type": "timeseries",
+          "gridPos": { "x": 8, "y": 0, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(zq_http_request_duration_seconds_bucket[2m])) by (le, path_group))",
+              "legendFormat": "p50 {{path_group}}"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(zq_http_request_duration_seconds_bucket[2m])) by (le, path_group))",
+              "legendFormat": "p95 {{path_group}}"
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(zq_http_request_duration_seconds_bucket[2m])) by (le, path_group))",
+              "legendFormat": "p99 {{path_group}}"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "HTTP Error Rate (4xx+5xx / total)",
+          "type": "timeseries",
+          "gridPos": { "x": 16, "y": 0, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "sum(rate(zq_http_requests_total{status_code=~\"[45]..\"}[2m])) / sum(rate(zq_http_requests_total[2m]))",
+              "legendFormat": "error rate"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Agent Routing — Route Rate by Target",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 6, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "sum(rate(zq_agent_route_total[2m])) by (to_agent)",
+              "legendFormat": "→ {{to_agent}}"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Agent Execute — Latency P50 / P95 by Target",
+          "type": "timeseries",
+          "gridPos": { "x": 8, "y": 6, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(zq_agent_execute_duration_seconds_bucket[2m])) by (le, target))",
+              "legendFormat": "p50 {{target}}"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(zq_agent_execute_duration_seconds_bucket[2m])) by (le, target))",
+              "legendFormat": "p95 {{target}}"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Agent Execute — Error Rate by Target",
+          "type": "timeseries",
+          "gridPos": { "x": 16, "y": 6, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "sum(rate(zq_agent_execute_total{status=\"error\"}[2m])) by (target)",
+              "legendFormat": "errors {{target}}"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "Unhandled Intents (rate)",
+          "type": "stat",
+          "gridPos": { "x": 0, "y": 12, "w": 4, "h": 4 },
+          "targets": [
+            {
+              "expr": "sum(rate(zq_agent_unhandled_intent_total[5m]))",
+              "legendFormat": "unhandled/s"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "title": "Approval Required (pending count proxy)",
+          "type": "stat",
+          "gridPos": { "x": 4, "y": 12, "w": 4, "h": 4 },
+          "targets": [
+            {
+              "expr": "sum(increase(zq_agent_approval_required_total[1h]))",
+              "legendFormat": "last 1h approvals"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "title": "Approval Outcomes",
+          "type": "piechart",
+          "gridPos": { "x": 8, "y": 12, "w": 8, "h": 8 },
+          "targets": [
+            {
+              "expr": "sum(increase(zq_agent_approval_outcome_total[24h])) by (outcome)",
+              "legendFormat": "{{outcome}}"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "title": "Approval Wait Time P50 / P95",
+          "type": "timeseries",
+          "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(zq_agent_approval_wait_seconds_bucket[30m])) by (le))",
+              "legendFormat": "p50 wait"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(zq_agent_approval_wait_seconds_bucket[30m])) by (le))",
+              "legendFormat": "p95 wait"
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "title": "Checkpoint Operations (rate)",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 20, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "sum(rate(zq_agent_checkpoint_total[2m])) by (operation, status)",
+              "legendFormat": "{{operation}} {{status}}"
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "title": "In-Flight Agent Requests",
+          "type": "stat",
+          "gridPos": { "x": 8, "y": 20, "w": 4, "h": 4 },
+          "targets": [
+            {
+              "expr": "sum(zq_agent_inflight_requests)",
+              "legendFormat": "in-flight"
+            }
+          ]
+        }
+      ]
+    }
+  zeroqwait-notifications.json: |
+    {
+      "uid": "zq-notifications",
+      "title": "ZeroQwait — Notifications",
+      "tags": ["zeroqwait", "notifications"],
+      "timezone": "browser",
+      "refresh": "60s",
+      "schemaVersion": 36,
+      "time": { "from": "now-3h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Dispatch Rate by Channel",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 0, "w": 12, "h": 7 },
+          "targets": [
+            {
+              "expr": "sum(rate(zq_notification_dispatch_total[5m])) by (channel)",
+              "legendFormat": "{{channel}}"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Dispatch Rate by Event Type",
+          "type": "timeseries",
+          "gridPos": { "x": 12, "y": 0, "w": 12, "h": 7 },
+          "targets": [
+            {
+              "expr": "sum(rate(zq_notification_dispatch_total[5m])) by (event_type)",
+              "legendFormat": "{{event_type}}"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Dispatch Success vs Failure",
+          "type": "piechart",
+          "gridPos": { "x": 0, "y": 7, "w": 8, "h": 8 },
+          "targets": [
+            {
+              "expr": "sum(increase(zq_notification_dispatch_total[1h])) by (status)",
+              "legendFormat": "{{status}}"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Dispatch Failure Rate (last 1h)",
+          "type": "stat",
+          "gridPos": { "x": 8, "y": 7, "w": 4, "h": 4 },
+          "options": { "reduceOptions": { "calcs": ["last"] }, "colorMode": "background" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 0.05 },
+                  { "color": "red", "value": 0.15 }
+                ]
+              },
+              "unit": "percentunit"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(increase(zq_notification_dispatch_total{status!=\"sent\"}[1h])) / sum(increase(zq_notification_dispatch_total[1h]))",
+              "legendFormat": "failure %"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Dispatch Latency P50 / P95 by Channel",
+          "type": "timeseries",
+          "gridPos": { "x": 12, "y": 7, "w": 12, "h": 8 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(zq_notification_dispatch_duration_seconds_bucket[5m])) by (le, channel))",
+              "legendFormat": "p50 {{channel}}"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(zq_notification_dispatch_duration_seconds_bucket[5m])) by (le, channel))",
+              "legendFormat": "p95 {{channel}}"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Dispatch Volume — Last 24 h by Channel",
+          "type": "bargauge",
+          "gridPos": { "x": 0, "y": 15, "w": 12, "h": 6 },
+          "targets": [
+            {
+              "expr": "sum(increase(zq_notification_dispatch_total[24h])) by (channel)",
+              "legendFormat": "{{channel}}"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "Dispatch Volume — Last 24 h by Event Type",
+          "type": "bargauge",
+          "gridPos": { "x": 12, "y": 15, "w": 12, "h": 6 },
+          "targets": [
+            {
+              "expr": "sum(increase(zq_notification_dispatch_total[24h])) by (event_type)",
+              "legendFormat": "{{event_type}}"
+            }
+          ]
+        }
+      ]
+    }

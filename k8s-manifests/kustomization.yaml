@@ -12,6 +12,9 @@ resources:
   - postgres-statefulset.yaml
   - redis-statefulset.yaml
   - redis-service.yaml
+  - temporal-configmap.yaml
+  - temporal-deployment.yaml
+  - temporal-worker-deployment.yaml
   - backend-deployment.yaml
   - frontend-deployment.yaml
   - asr-deployment.yaml
@@ -21,6 +24,10 @@ resources:
   - finance-mcp-deployment.yaml
   - hr-mcp-deployment.yaml
   - voice-mcp-deployment.yaml
+  - odoo-secret.yaml
+  - odoo-pvc.yaml
+  - odoo-db-init-job.yaml
+  - odoo-deployment.yaml
   - ingress-traefik.yaml
   - network-policy.yaml
   - backend-pdb.yaml

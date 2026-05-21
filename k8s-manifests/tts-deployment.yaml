@@ -1,4 +1,6 @@
-# Piper TTS Deployment - CPU-only (no GPU required)
+# Qwen3-TTS Deployment — GPU-accelerated, voice: Vivian
+# Model: Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+# DO NOT change the voice, model, or port without AGENTS.md §0.1 approval
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,8 +23,8 @@ spec:
       priorityClassName: voice-critical
       containers:
         - name: tts-service
-          image: localhost:5000/prod/tts-service:v20260429092027-30a8ac4
-          imagePullPolicy: Always
+          image: ghcr.io/nfornj/tts-service:v20260516090919-3f86f98
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8880
               protocol: TCP
@@ -31,44 +33,57 @@ spec:
               value: "0.0.0.0"
             - name: PORT
               value: "8880"
-            - name: MODELS_DIR
-              value: "/app/models"
             - name: TTS_DEFAULT_VOICE
-              value: "female"
+              value: "Vivian"
+            - name: TTS_MODEL
+              value: "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+            - name: HF_HOME
+              value: "/data/huggingface"
+            - name: TRANSFORMERS_CACHE
+              value: "/data/huggingface"
           resources:
             requests:
-              memory: "512Mi"
-              cpu: "500m"
-            limits:
-              memory: "1Gi"
+              memory: "4Gi"
               cpu: "1"
+              nvidia.com/gpu: "1"
+            limits:
+              memory: "8Gi"
+              cpu: "2"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: tts-model-cache
+              mountPath: /data/huggingface
           startupProbe:
             httpGet:
               path: /health
               port: 8880
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 5
-            failureThreshold: 12
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 40
           readinessProbe:
             httpGet:
               path: /health
               port: 8880
-            initialDelaySeconds: 20
-            periodSeconds: 15
-            timeoutSeconds: 5
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 10
             failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health
               port: 8880
-            initialDelaySeconds: 60
+            initialDelaySeconds: 120
             periodSeconds: 30
-            timeoutSeconds: 10
+            timeoutSeconds: 15
             failureThreshold: 3
+      volumes:
+        - name: tts-model-cache
+          persistentVolumeClaim:
+            claimName: tts-model-cache
       terminationGracePeriodSeconds: 30
 ---
-# Piper TTS Service
+# Qwen3-TTS Service
 apiVersion: v1
 kind: Service
 metadata:
@@ -85,3 +100,4 @@ spec:
       protocol: TCP
   selector:
     app: tts-service
+

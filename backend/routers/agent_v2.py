@@ -33,11 +33,13 @@ from fastapi.responses import StreamingResponse
 from typing import Dict, Any, cast, Optional, List
 import asyncio
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import logging
 import os
+import time
+import re
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from sqlalchemy import text
 
@@ -45,6 +47,7 @@ from redis_client import redis_client as _redis
 from langgraph.types import Command
 
 from agents import approval_policy
+from agents import chat_service as _chat_service
 from agents.supervisor import create_supervisor_runnable
 from agents.briefings import (
     build_owner_briefing,
@@ -55,21 +58,18 @@ from agents.briefings import (
 )
 from agents.memory_context import (
     format_memory_context,
+    get_conversation_history,
     merge_and_rank_memories,
 )
 from agents.state import AgentState
-from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_saver
+from agents.checkpoints import build_checkpoint_config, get_sync_checkpoint_saver, get_pooled_checkpoint_saver
 from agents.chat_service import (
-    _build_pending_approval_block_message,
     _create_chat_work_context,
     _finalize_chat_work_context,
-    _get_current_pending_approval,
-    _get_pending_approval_payload,
     _persist_chat_turn_memory,
-    _record_approval_decision,
-    _resume_persisted_approval,
     _state_last_text,
 )
+from agents.tools import finance_tools
 from agents.document_store import (
     _OWNER_DOCUMENT_ALLOWED_EXTENSIONS,
     _OWNER_DOCUMENT_ALLOWED_MIME_TYPES,
@@ -94,6 +94,58 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v2/agent", tags=["agent_v2"])
 db_interface = DatabaseInterface()
+
+
+def _sync_chat_service_bindings() -> None:
+    _chat_service.SessionLocal = SessionLocal
+    _chat_service.AgentWorkRepository = AgentWorkRepository
+    _chat_service.db_interface = db_interface
+
+
+def _get_pending_approval_payload(
+    shop_id: int,
+    user_id: int,
+    metrics: Optional[Dict[str, Any]] = None,
+    *,
+    runnable: Any = None,
+) -> list[Dict[str, Any]]:
+    _sync_chat_service_bindings()
+    effective_runnable = _SUPERVISOR_RUNNABLE if runnable is None else runnable
+    if not hasattr(effective_runnable, "get_state"):
+        effective_runnable = None
+    return _chat_service._get_pending_approval_payload(
+        shop_id,
+        user_id,
+        metrics=metrics,
+        runnable=effective_runnable,
+    )
+
+
+def _get_current_pending_approval(
+    shop_id: int,
+    user_id: int,
+    *,
+    runnable: Any = None,
+) -> Optional[Dict[str, Any]]:
+    _sync_chat_service_bindings()
+    effective_runnable = _SUPERVISOR_RUNNABLE if runnable is None else runnable
+    if not hasattr(effective_runnable, "get_state"):
+        effective_runnable = None
+    return _chat_service._get_current_pending_approval(
+        shop_id,
+        user_id,
+        runnable=effective_runnable,
+    )
+
+
+def _record_approval_decision(**kwargs: Any) -> None:
+    _sync_chat_service_bindings()
+    _chat_service._record_approval_decision(**kwargs)
+
+
+def _resume_persisted_approval(**kwargs: Any) -> Optional[Dict[str, Any]]:
+    _sync_chat_service_bindings()
+    return _chat_service._resume_persisted_approval(**kwargs)
 
 # ---------------------------------------------------------------------------
 # Real-time thinking-step metadata for the streaming UI
@@ -177,6 +229,226 @@ def _sync_chat_timeout_seconds() -> float:
         return max(float(raw_value), 1.0)
     except (TypeError, ValueError):
         return 50.0
+
+
+def _is_service_customer_count_question(message: str) -> bool:
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized:
+        return False
+
+    has_service_subject = bool(re.search(r"\bservices?\b", normalized))
+    has_customer_subject = bool(
+        re.search(r"\b(?:customers?|clients?|visits?|attended|served)\b", normalized)
+    )
+    wants_breakdown = bool(
+        re.search(r"\b(?:for each|each service|per service|by service|service[- ]wise|breakdown)\b", normalized)
+    )
+    return has_service_subject and has_customer_subject and wants_breakdown
+
+
+def _is_today_revenue_question(message: str) -> bool:
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized:
+        return False
+
+    has_revenue_subject = bool(re.search(r"\b(?:revenue|sales|earned|earnings|income)\b", normalized))
+    has_today_window = bool(re.search(r"\b(?:today|todays|today's|this day)\b", normalized))
+    return has_revenue_subject and has_today_window
+
+
+def _is_top_services_question(message: str) -> bool:
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized:
+        return False
+
+    has_service_subject = bool(re.search(r"\bservices?\b", normalized))
+    has_ranking_intent = bool(
+        re.search(r"\b(?:top|best|highest|most popular|best-selling|best selling|rank|ranking)\b", normalized)
+    )
+    return has_service_subject and has_ranking_intent and not _is_service_customer_count_question(message)
+
+
+def _is_time_window_followup(message: str) -> bool:
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized:
+        return False
+
+    if re.search(r"\b(?:queue|customer service|wait time|employee|employees|staff|staffing|shift|shifts|appointment|appointments|close|open|reopen|pause|resume)\b", normalized):
+        return False
+
+    has_followup_prefix = bool(re.match(r"^(?:what about|how about|and|compare)\b", normalized))
+    has_time_window = bool(
+        re.search(
+            r"\b(?:today|yesterday|this|last|past|previous)\s+(?:\d{1,3}|[a-z]+)?\s*"
+            r"(?:days?|weeks?|months?|years?|week|month|year)\b",
+            normalized,
+        )
+        or re.search(r"\b\d{1,3}\s+(?:days?|weeks?|months?|years?)\b", normalized)
+        or re.search(r"\b(?:today|yesterday|this week|last week|this month|last month)\b", normalized)
+    )
+    has_new_subject = bool(
+        re.search(
+            r"\b(?:revenue|sales|services?|customers?|clients?|visits?|invoices?|payments?|pos|refunds?)\b",
+            normalized,
+        )
+    )
+    is_bare_time_window = bool(
+        re.fullmatch(
+            r"(?:today|yesterday|this\s+week|last\s+week|this\s+month|last\s+month|"
+            r"(?:\d{1,3}|[a-z]+)\s+(?:days?|weeks?|months?|years?)|"
+            r"(?:last|past|previous)\s+(?:\d{1,3}|[a-z]+)\s+(?:days?|weeks?|months?|years?))"
+            r"[?.!]?",
+            normalized,
+        )
+    )
+    return has_time_window and (has_followup_prefix or is_bare_time_window or (normalized.startswith("for ") and not has_new_subject))
+
+
+def _finance_followup_key(user_id: int) -> str:
+    return f"agent:last_finance_context:{user_id}"
+
+
+def _remember_direct_finance_context(shop_id: int, user_id: int, operation: str, message: str) -> None:
+    _redis.tenant_set(
+        shop_id,
+        _finance_followup_key(user_id),
+        {
+            "operation": operation,
+            "last_message": message,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        ttl=3600,
+    )
+
+
+def _load_direct_finance_followup_operation(shop_id: int, user_id: int, message: str) -> Optional[str]:
+    if not _is_time_window_followup(message):
+        return None
+
+    context = _redis.tenant_get(shop_id, _finance_followup_key(user_id))
+    if not isinstance(context, dict):
+        return None
+
+    operation = str(context.get("operation") or "").strip()
+    if operation in {"service_customer_counts", "top_services"}:
+        return operation
+    return None
+
+
+def _format_service_customer_counts(result: Dict[str, Any]) -> str:
+    if result.get("error"):
+        return f"I couldn't pull the service customer counts: {result['error']}"
+
+    services = list(result.get("services") or [])
+    window = str(result.get("window_display") or result.get("window") or "the selected period")
+    if not services:
+        return f"I don't see any completed customer visits by service for {window}."
+
+    lines = []
+    for service in services[:10]:
+        name = service.get("service_name") or "Unknown service"
+        count = int(service.get("customer_count", 0) or 0)
+        revenue = float(service.get("revenue", 0.0) or 0.0)
+        lines.append(f"- {name}: {count} customer{'s' if count != 1 else ''} (${revenue:.2f})")
+
+    total = int(result.get("total_customers", 0) or 0)
+    return (
+        f"Customers served by service for {window}: {total} total customer"
+        f"{'s' if total != 1 else ''}.\n"
+        + "\n".join(lines)
+    )
+
+
+def _format_daily_revenue(result: Dict[str, Any]) -> str:
+    if result.get("error"):
+        return f"I couldn't pull today's revenue: {result['error']}"
+
+    total_revenue = float(result.get("total_revenue", 0.0) or 0.0)
+    completed_services = int(result.get("completed_services", 0) or 0)
+    total_customers = int(result.get("total_customers", 0) or 0)
+    payment_transactions = int(result.get("payment_transactions", 0) or 0)
+    average_transaction = float(result.get("average_transaction", 0.0) or 0.0)
+    date = result.get("date") or "today"
+    if completed_services == 0 and total_revenue <= 0:
+        return f"I don't see any completed services or recorded revenue for {date} yet."
+    if completed_services == 0 and payment_transactions > 0 and total_revenue > 0:
+        return (
+            f"Recorded revenue for {date} is ${total_revenue:.2f} across {payment_transactions} completed payment transaction"
+            f"{'s' if payment_transactions != 1 else ''}. "
+            "I don't see any services formally closed out for that day yet."
+        )
+    return (
+        f"Revenue for {date} is ${total_revenue:.2f} across {completed_services} completed service"
+        f"{'s' if completed_services != 1 else ''}"
+        f" and {total_customers} customer visit{'s' if total_customers != 1 else ''}. "
+        f"Average transaction is ${average_transaction:.2f}."
+    )
+
+
+def _format_top_services(result: Dict[str, Any]) -> str:
+    if result.get("error"):
+        return f"I couldn't pull top services: {result['error']}"
+
+    services = list(result.get("services") or [])
+    window = str(result.get("window_display") or result.get("window") or "the selected period")
+    if not services:
+        return f"I couldn't find completed services to rank for {window}."
+
+    lines = []
+    for service in services[:8]:
+        name = service.get("name") or service.get("service_name") or "Unknown service"
+        count = int(service.get("completed_services", service.get("customer_count", 0)) or 0)
+        revenue = float(service.get("revenue", service.get("cost", 0.0)) or 0.0)
+        if "revenue" in service or "completed_services" in service or "customer_count" in service:
+            lines.append(f"- {name}: ${revenue:.2f} from {count} completed service{'s' if count != 1 else ''}")
+        else:
+            lines.append(f"- {name}: ${revenue:.2f}")
+    return f"Top services for {window}:\n" + "\n".join(lines)
+
+
+def _direct_service_customer_counts_response(shop_id: int, message: str) -> Dict[str, Any]:
+    result = finance_tools._local_service_customer_counts(shop_id, query=message, limit=20)
+    return {
+        "response": _format_service_customer_counts(result),
+        "agent": "finance",
+        "approval_required": False,
+        "pending_action": None,
+        "metadata": {
+            "shop_id": shop_id,
+            "direct_fastpath": "service_customer_counts",
+            "tool_results": result,
+        },
+    }
+
+
+def _direct_today_revenue_response(shop_id: int) -> Dict[str, Any]:
+    result = finance_tools._local_daily_revenue(shop_id, None)
+    return {
+        "response": _format_daily_revenue(result),
+        "agent": "finance",
+        "approval_required": False,
+        "pending_action": None,
+        "metadata": {
+            "shop_id": shop_id,
+            "direct_fastpath": "daily_revenue",
+            "tool_results": result,
+        },
+    }
+
+
+def _direct_top_services_response(shop_id: int, limit: int = 5) -> Dict[str, Any]:
+    result = finance_tools._local_top_services(shop_id, limit=limit)
+    return {
+        "response": _format_top_services(result),
+        "agent": "finance",
+        "approval_required": False,
+        "pending_action": None,
+        "metadata": {
+            "shop_id": shop_id,
+            "direct_fastpath": "top_services",
+            "tool_results": result,
+        },
+    }
 
 
 async def _invoke_supervisor_sync(initial_state: AgentState, checkpoint_config: Any) -> Dict[str, Any]:
@@ -324,6 +596,9 @@ def _select_document_reference_memories(
 
 
 def _reset_checkpoint_thread_if_idle(shop_id: int, user_id: int) -> None:
+    if not hasattr(_SUPERVISOR_RUNNABLE, "get_state"):
+        return
+
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
     snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
     if snapshot and snapshot.interrupts:
@@ -365,6 +640,13 @@ _FOLLOWUP_POOLS: Dict[Optional[str], list] = {
         "How many hours did the team work this week?",
         "Are there any open shifts?",
     ],
+    "crm": [
+        "Show my open leads",
+        "How many new contacts this week?",
+        "Show the sales pipeline summary",
+        "Which deals are in the negotiation stage?",
+        "Create a new lead",
+    ],
     None: [
         "Give me today's queue summary",
         "Show this week's revenue trend",
@@ -372,6 +654,23 @@ _FOLLOWUP_POOLS: Dict[Optional[str], list] = {
         "What can you help me with?",
     ],
 }
+
+
+def _iter_text_sse(text: str):
+    """Yield SSE ``data:`` lines for *text* split word-by-word.
+
+    Sends one event per word rather than one per character, reducing SSE
+    event count ~10x while preserving the frontend typewriter effect
+    (each chunk is appended to the in-progress message content).
+    """
+    if not text:
+        return
+    words = text.split(" ")
+    last = len(words) - 1
+    for i, word in enumerate(words):
+        chunk = word + (" " if i < last else "")
+        if chunk:
+            yield f"data: {json.dumps({'type': 'text', 'content': chunk})}\n\n"
 
 
 def _generate_followup_suggestions(
@@ -414,10 +713,7 @@ def _resolve_thinking_node(event: Any) -> Optional[str]:
 
 # PostgreSQL checkpoint persistence is mandatory.
 try:
-    _CHECKPOINTER_CM = get_sync_checkpoint_saver()
-    _CHECKPOINTER = _CHECKPOINTER_CM.__enter__()
-    if hasattr(_CHECKPOINTER, "setup"):
-        _CHECKPOINTER.setup()
+    _CHECKPOINTER = get_pooled_checkpoint_saver()
     _SUPERVISOR_RUNNABLE = create_supervisor_runnable(checkpointer=_CHECKPOINTER)
 except Exception as e:
     raise RuntimeError(
@@ -455,16 +751,41 @@ def _serialize_checkpoint_messages(state_values: Dict[str, Any]) -> list[Dict[st
             role = "user"
         elif msg_type == "ai":
             role = "assistant"
-        serialized.append(
-            {
-                "role": role,
-                "content": str(getattr(message, "content", "")),
-            }
-        )
+        content = str(getattr(message, "content", ""))
+        if not content.strip():
+            continue
+        # Use the message's additional_kwargs timestamp if present; else omit
+        additional = getattr(message, "additional_kwargs", {}) or {}
+        timestamp = additional.get("timestamp") or None
+        payload = {
+            "role": role,
+            "content": content,
+        }
+        if timestamp is not None:
+            payload["timestamp"] = timestamp
+        serialized.append(payload)
     return serialized
 
 
 def _notification_feed_type(notification_type: str, severity: str, title: str, message: str) -> str:
+    # Direct notification_type mapping takes priority — prevents haystack
+    # heuristics from misclassifying briefings that mention "approval", etc.
+    _ntype = notification_type.lower()
+    if _ntype.endswith("_briefing") or _ntype in (
+        "morning_briefing", "evening_briefing", "midday_briefing",
+        "finance_summary_ready", "commitment_due", "commitment_resolved",
+        "shop_open", "shop_close", "pre_close_awareness",
+        "remittance_due", "employee_hired", "custom_schedule_fired",
+    ):
+        return "system"
+    if _ntype in (
+        "payroll_approval_required", "tip_split_approval_required",
+        "capacity_borderline_approval", "policy_action_executed",
+    ):
+        return "approval_decision"
+    if _ntype in ("capacity_overload_lock", "queue_alert"):
+        return "queue_update"
+    # Haystack fallback for unknown notification types
     haystack = " ".join([notification_type, severity, title, message]).lower()
     if "error" in haystack:
         return "error"
@@ -480,6 +801,10 @@ def _serialize_notification_feed_event(notification: Any) -> Dict[str, Any]:
     notification_type = str(getattr(notification, "notification_type", "system") or "system")
     severity = str(getattr(notification, "severity", "info") or "info")
     created_at = getattr(notification, "created_at", None)
+    _status = getattr(notification, "status", "unread")
+    # Use .value so that str-enum instances (NotificationStatus.UNREAD) emit
+    # "unread" rather than the Python 3.11+ repr "NotificationStatus.UNREAD".
+    status_str = _status.value if hasattr(_status, "value") else str(_status)
     return {
         "id": f"notification_{getattr(notification, 'id', 'unknown')}",
         "type": _notification_feed_type(
@@ -492,7 +817,7 @@ def _serialize_notification_feed_event(notification: Any) -> Dict[str, Any]:
         "description": str(getattr(notification, "message", "")),
         "timestamp": created_at.isoformat() if created_at is not None else datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
         "severity": severity,
-        "status": str(getattr(notification, "status", "unread")),
+        "status": status_str,
         "notification_type": notification_type,
         "notification_id": getattr(notification, "id", None),
         "payload": payload,
@@ -996,22 +1321,73 @@ async def chat_sync(
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
 
-    existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
-    if existing_pending is not None:
-        return {
-            "response": _build_pending_approval_block_message(existing_pending),
-            "agent": "supervisor",
-            "approval_required": True,
-            "pending_action": existing_pending,
-            "metadata": {"pending_conflict": True},
-        }
+    logger.info("chat/sync start shop_id=%s user_id=%s msg_len=%d", shop_id, user_id, len(message))
 
     _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
-    
+
+    existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
+    followup_operation = None if existing_pending else _load_direct_finance_followup_operation(shop_id, int(user_id), message)
+    if followup_operation == "service_customer_counts":
+        response = _direct_service_customer_counts_response(shop_id, message)
+        _remember_direct_finance_context(shop_id, int(user_id), "service_customer_counts", message)
+        _persist_chat_turn_memory(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            user_message=message,
+            assistant_response=str(response.get("response") or ""),
+            route="/api/v2/agent/chat",
+        )
+        return response
+    if followup_operation == "top_services":
+        response = _direct_top_services_response(shop_id)
+        _remember_direct_finance_context(shop_id, int(user_id), "top_services", message)
+        _persist_chat_turn_memory(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            user_message=message,
+            assistant_response=str(response.get("response") or ""),
+            route="/api/v2/agent/chat",
+        )
+        return response
+
+    if existing_pending is None and _is_service_customer_count_question(message):
+        response = _direct_service_customer_counts_response(shop_id, message)
+        _remember_direct_finance_context(shop_id, int(user_id), "service_customer_counts", message)
+        _persist_chat_turn_memory(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            user_message=message,
+            assistant_response=str(response.get("response") or ""),
+            route="/api/v2/agent/chat",
+        )
+        return response
+    if existing_pending is None and _is_today_revenue_question(message):
+        response = _direct_today_revenue_response(shop_id)
+        _remember_direct_finance_context(shop_id, int(user_id), "daily_revenue", message)
+        _persist_chat_turn_memory(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            user_message=message,
+            assistant_response=str(response.get("response") or ""),
+            route="/api/v2/agent/chat",
+        )
+        return response
+    if existing_pending is None and _is_top_services_question(message):
+        response = _direct_top_services_response(shop_id)
+        _remember_direct_finance_context(shop_id, int(user_id), "top_services", message)
+        _persist_chat_turn_memory(
+            shop_id=shop_id,
+            user_id=int(user_id),
+            user_message=message,
+            assistant_response=str(response.get("response") or ""),
+            route="/api/v2/agent/chat",
+        )
+        return response
+
     # Build checkpoint config for this tenant
     checkpoint_config = build_checkpoint_config(shop_id, user_id)
     work_context = _create_chat_work_context(shop_id, int(user_id), message)
-    
+
     # Create initial state
     memory_context = _build_memory_context(shop_id, int(user_id), message)
     input_messages = []
@@ -1067,6 +1443,7 @@ async def chat_sync(
             tool_results=cast(Optional[Dict[str, Any]], result.get("tool_results")),
             approval_required=approval_required,
             pending_action=pending_action,
+            conversation_messages=messages,
         )
 
         _persist_chat_turn_memory(
@@ -1076,7 +1453,12 @@ async def chat_sync(
             assistant_response=response_text,
             route="/api/v2/agent/chat",
         )
-        
+
+        logger.info(
+            "chat/sync done shop_id=%s user_id=%s agent=%s text_len=%d approval=%s",
+            shop_id, user_id, result.get("current_agent", "supervisor"),
+            len(response_text), approval_required,
+        )
         return {
             "response": response_text,
             "agent": result.get("current_agent", "supervisor"),
@@ -1176,20 +1558,108 @@ async def chat_stream(
 
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
+
+    _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
+
+    existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
+    followup_operation = None if existing_pending else _load_direct_finance_followup_operation(shop_id, int(user_id), message)
     
     # Create streaming generator
     async def event_generator():
+        _stream_t0 = time.monotonic()
         try:
-            existing_pending = _get_current_pending_approval(shop_id, int(user_id), runnable=_SUPERVISOR_RUNNABLE)
-            if existing_pending is not None:
-                block_message = _build_pending_approval_block_message(existing_pending)
-                yield f"data: {json.dumps({'type': 'approval_required', 'action': existing_pending.get('action'), 'details': existing_pending})}\n\n"
-                for char in block_message:
-                    yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+            logger.info(
+                "chat/stream start shop_id=%s user_id=%s msg_len=%d fast_path=%s",
+                shop_id,
+                user_id,
+                len(message),
+                followup_operation or ("direct" if existing_pending is None else "pending"),
+            )
+            if followup_operation == "service_customer_counts" or (existing_pending is None and _is_service_customer_count_question(message)):
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Reading completed visits by service…', 'status': 'active', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'agent_switch', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'tool_call', 'tool': 'service_customer_counts', 'agent': 'finance', 'label': 'Counting customers by service'})}\n\n"
+                result = await asyncio.to_thread(
+                    finance_tools._local_service_customer_counts,
+                    shop_id,
+                    query=message,
+                    limit=20,
+                )
+                response_text = _format_service_customer_counts(result)
+                yield f"data: {json.dumps({'type': 'tool_result', 'tool': 'service_customer_counts', 'result': result, 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Service customer counts ready', 'status': 'done', 'agent': 'finance'})}\n\n"
+                for _sse in _iter_text_sse(response_text):
+                    yield _sse
+                _remember_direct_finance_context(shop_id, int(user_id), "service_customer_counts", message)
+                _persist_chat_turn_memory(
+                    shop_id=shop_id,
+                    user_id=int(user_id),
+                    user_message=message,
+                    assistant_response=response_text,
+                    route="/api/v2/agent/chat/stream",
+                )
+                _fast_dur_ms = int((time.monotonic() - _stream_t0) * 1000)
+                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False, 'duration_ms': _fast_dur_ms})}\n\n"
+                _fast_sugg = _generate_followup_suggestions('finance', message)
+                if _fast_sugg:
+                    yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': _fast_sugg})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
-            _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
+            if existing_pending is None and _is_today_revenue_question(message):
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Reading live revenue…', 'status': 'active', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'agent_switch', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'tool_call', 'tool': 'daily_revenue', 'agent': 'finance', 'label': 'Reading today revenue'})}\n\n"
+                result = await asyncio.to_thread(finance_tools._local_daily_revenue, shop_id, None)
+                response_text = _format_daily_revenue(result)
+                yield f"data: {json.dumps({'type': 'tool_result', 'tool': 'daily_revenue', 'result': result, 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Revenue ready', 'status': 'done', 'agent': 'finance'})}\n\n"
+                for _sse in _iter_text_sse(response_text):
+                    yield _sse
+                _remember_direct_finance_context(shop_id, int(user_id), "daily_revenue", message)
+                _persist_chat_turn_memory(
+                    shop_id=shop_id,
+                    user_id=int(user_id),
+                    user_message=message,
+                    assistant_response=response_text,
+                    route="/api/v2/agent/chat/stream",
+                )
+                _fast_dur_ms = int((time.monotonic() - _stream_t0) * 1000)
+                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False, 'duration_ms': _fast_dur_ms})}\n\n"
+                _fast_sugg = _generate_followup_suggestions('finance', message)
+                if _fast_sugg:
+                    yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': _fast_sugg})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            if followup_operation == "top_services" or (existing_pending is None and _is_top_services_question(message)):
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Ranking live services…', 'status': 'active', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'agent_switch', 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'tool_call', 'tool': 'top_services', 'agent': 'finance', 'label': 'Ranking top services'})}\n\n"
+                result = await asyncio.to_thread(finance_tools._local_top_services, shop_id, 5)
+                response_text = _format_top_services(result)
+                yield f"data: {json.dumps({'type': 'tool_result', 'tool': 'top_services', 'result': result, 'agent': 'finance'})}\n\n"
+                yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Top services ready', 'status': 'done', 'agent': 'finance'})}\n\n"
+                for _sse in _iter_text_sse(response_text):
+                    yield _sse
+                _remember_direct_finance_context(shop_id, int(user_id), "top_services", message)
+                _persist_chat_turn_memory(
+                    shop_id=shop_id,
+                    user_id=int(user_id),
+                    user_message=message,
+                    assistant_response=response_text,
+                    route="/api/v2/agent/chat/stream",
+                )
+                _fast_dur_ms = int((time.monotonic() - _stream_t0) * 1000)
+                yield f"data: {json.dumps({'type': 'stream_status', 'status': 'completed', 'agent': 'finance', 'has_text': True, 'has_tool_results': True, 'approval_required': False, 'duration_ms': _fast_dur_ms})}\n\n"
+                _fast_sugg = _generate_followup_suggestions('finance', message)
+                if _fast_sugg:
+                    yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': _fast_sugg})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            # Emit immediately so the user sees activity before any DB / LLM work starts.
+            yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'prepare', 'label': 'Analyzing your request…', 'status': 'active', 'agent': None})}\n\n"
 
             # Build checkpoint config
             checkpoint_config = build_checkpoint_config(shop_id, user_id)
@@ -1228,20 +1698,63 @@ async def chat_stream(
             pending_action: Optional[Dict[str, Any]] = None
 
             # ----------------------------------------------------------------
-            # Stream graph execution node-by-node via sync stream updates.
-            # This keeps compatibility with the sync Postgres checkpointer
-            # while still emitting real-time thinking-step events.
+            # Stream graph execution via producer thread + async consumer.
+            # A keepalive SSE comment is emitted every _KEEPALIVE_INTERVAL
+            # seconds so proxies/nginx don't close the connection during
+            # slow LLM steps (qwen3:14b can take 60-120s per step).
             # ----------------------------------------------------------------
-            try:
-                update_iter = runnable.stream(
-                    initial_state,
-                    config=checkpoint_config,
-                    stream_mode="updates",
-                )
+            _GRAPH_STEP_TIMEOUT = 150  # total seconds before we give up
+            _KEEPALIVE_INTERVAL = 15   # SSE ": keepalive" cadence
 
+            _graph_queue: asyncio.Queue = asyncio.Queue(maxsize=512)
+            _GRAPH_DONE = object()
+            _evt_loop = asyncio.get_event_loop()
+
+            def _produce_graph_events() -> None:
+                """Run sync LangGraph stream in a thread; push events to queue."""
+                try:
+                    for _upd in runnable.stream(
+                        initial_state,
+                        config=checkpoint_config,
+                        stream_mode="updates",
+                    ):
+                        _evt_loop.call_soon_threadsafe(_graph_queue.put_nowait, _upd)
+                except Exception as _exc:
+                    _evt_loop.call_soon_threadsafe(_graph_queue.put_nowait, _exc)
+                finally:
+                    _evt_loop.call_soon_threadsafe(_graph_queue.put_nowait, _GRAPH_DONE)
+
+            asyncio.ensure_future(asyncio.to_thread(_produce_graph_events))
+
+            _graph_deadline = asyncio.get_event_loop().time() + _GRAPH_STEP_TIMEOUT
+
+            try:
                 while True:
-                    update = await asyncio.to_thread(next, update_iter, None)
-                    if update is None:
+                    _remaining = _graph_deadline - asyncio.get_event_loop().time()
+                    if _remaining <= 0:
+                        logger.warning(
+                            "Graph timed out after %ds for shop=%s", _GRAPH_STEP_TIMEOUT, shop_id
+                        )
+                        break
+
+                    try:
+                        update = await asyncio.wait_for(
+                            _graph_queue.get(),
+                            timeout=min(_KEEPALIVE_INTERVAL, _remaining),
+                        )
+                    except asyncio.TimeoutError:
+                        # No event yet — send a keepalive comment to prevent proxy timeout.
+                        yield ": keepalive\n\n"
+                        continue
+
+                    if update is _GRAPH_DONE:
+                        break
+                    if isinstance(update, Exception):
+                        _exc_name = type(update).__name__
+                        if "interrupt" in _exc_name.lower() or "Interrupt" in _exc_name:
+                            logger.info("Graph interrupted (approval gate): %s", _exc_name)
+                        else:
+                            raise update
                         break
                     if not isinstance(update, dict):
                         continue
@@ -1331,6 +1844,15 @@ async def chat_stream(
                     logger.warning("Could not retrieve final checkpoint state: %s", state_exc)
 
             approval_required = pending_action is not None
+            # Best-effort grab of the final messages list for commitment scanning
+            final_messages_for_scan = None
+            try:
+                snap = await asyncio.to_thread(runnable.get_state, checkpoint_config)
+                if snap and snap.values and isinstance(snap.values.get("messages"), list):
+                    final_messages_for_scan = list(snap.values.get("messages") or [])
+            except Exception:
+                final_messages_for_scan = None
+
             pending_action = _finalize_chat_work_context(
                 shop_id=shop_id,
                 user_id=int(user_id),
@@ -1341,10 +1863,28 @@ async def chat_stream(
                 tool_results=final_tool_results,
                 approval_required=approval_required,
                 pending_action=pending_action,
+                conversation_messages=final_messages_for_scan,
             )
 
             if pending_action:
                 yield f"data: {json.dumps({'type': 'approval_required', 'action': pending_action.get('action'), 'details': pending_action})}\n\n"
+                # Notify owner via Telegram if connected
+                try:
+                    from modules.shops.models import Shop as _Shop
+                    _db_tg = SessionLocal()
+                    try:
+                        _shop_tg = _db_tg.query(_Shop).filter(_Shop.id == shop_id).first()
+                        if _shop_tg and _shop_tg.telegram_chat_id and _shop_tg.telegram_notifications_enabled:
+                            import telegram_service as _tg
+                            _action_id = pending_action.get("action_id") or pending_action.get("id") or ""
+                            _action_label = pending_action.get("action") or "Action required"
+                            _details = pending_action.get("description") or pending_action.get("details") or ""
+                            _tg_text = await _tg.format_approval_notification(_action_label, str(_details)[:200], _action_id)
+                            await _tg.send_message(_shop_tg.telegram_chat_id, _tg_text)
+                    finally:
+                        _db_tg.close()
+                except Exception as _tg_err:
+                    logger.warning("Telegram approval notification error: %s", _tg_err)
 
             _persist_chat_turn_memory(
                 shop_id=shop_id,
@@ -1354,12 +1894,17 @@ async def chat_stream(
                 route="/api/v2/agent/chat/stream",
             )
 
+            # Sanitize datetime/non-serializable objects before any json.dumps downstream.
             if isinstance(final_tool_results, dict) and final_tool_results:
+                try:
+                    final_tool_results = json.loads(json.dumps(final_tool_results, default=str))
+                except Exception:
+                    pass
                 yield f"data: {json.dumps({'type': 'tool_result', 'tool': final_metadata.get('specialist_operation') or final_tool_results.get('tool') or routed_agent or 'operation', 'result': final_tool_results, 'agent': routed_agent})}\n\n"
 
-            # Stream response text character-by-character.
-            for char in (final_response_text or ""):
-                yield f"data: {json.dumps({'type': 'text', 'content': char})}\n\n"
+            # Stream response text word-by-word for efficient SSE delivery.
+            for _sse in _iter_text_sse(final_response_text or ""):
+                yield _sse
 
             # Emit structured chart/file payloads for frontend insights panel and inline attachments.
             if routed_agent == "finance" and isinstance(final_tool_results, dict):
@@ -1514,6 +2059,29 @@ async def chat_stream(
                     }
                     yield f"data: {json.dumps(file_event)}\n\n"
 
+            if routed_agent == "inventory" and isinstance(final_tool_results, dict):
+                csv_content = final_tool_results.get("csv_content")
+                if isinstance(csv_content, str) and csv_content.strip():
+                    file_event = {
+                        "type": "file",
+                        "filename": final_tool_results.get("filename") or "inventory_export.csv",
+                        "mimeType": "text/csv",
+                        "content": base64.b64encode(csv_content.encode("utf-8")).decode("ascii"),
+                    }
+                    yield f"data: {json.dumps(file_event)}\n\n"
+
+            if routed_agent == "hr" and isinstance(final_tool_results, dict):
+                pdf_content = final_tool_results.get("pdf_content")
+                if isinstance(pdf_content, str) and pdf_content:
+                    pdf_filename = final_tool_results.get("pdf_filename") or "payroll_history.pdf"
+                    file_event = {
+                        "type": "file",
+                        "filename": pdf_filename,
+                        "mimeType": "application/pdf",
+                        "content": pdf_content,
+                    }
+                    yield f"data: {json.dumps(file_event)}\n\n"
+
             # Emit contextual follow-up suggestions based on the routed agent.
             follow_ups = _generate_followup_suggestions(routed_agent, message)
             if follow_ups:
@@ -1526,12 +2094,27 @@ async def chat_stream(
                 "has_text": bool(final_response_text),
                 "has_tool_results": bool(final_tool_results),
                 "approval_required": approval_required,
+                "duration_ms": int((time.monotonic() - _stream_t0) * 1000),
             }
             yield f"data: {json.dumps(completion_event)}\n\n"
+            logger.info(
+                "chat/stream done shop_id=%s user_id=%s agent=%s text_len=%d approval=%s",
+                shop_id,
+                user_id,
+                routed_agent or "supervisor",
+                len(final_response_text),
+                approval_required,
+            )
             yield "data: [DONE]\n\n"
 
+        except asyncio.CancelledError:
+            # Client disconnected mid-stream — clean exit, no need to yield [DONE].
+            logger.info("Stream cancelled: client disconnected for shop_id=%s", shop_id)
+            return
         except Exception as e:
-            logger.error(f"Stream error: {str(e)}", exc_info=True)
+            logger.error(
+                "Stream error shop_id=%s user_id=%s: %s", shop_id, user_id, e, exc_info=True
+            )
             error_message = str(e) or "Unexpected stream error"
             status_event = {"type": "stream_status", "status": "error", "message": error_message}
             error_event = {"type": "error", "message": error_message}
@@ -1669,6 +2252,187 @@ async def approve_action(
 
 
 # ============================================================================
+# Approval Streaming - SSE
+# ============================================================================
+
+@router.post("/approve/stream")
+async def approve_action_stream(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Streaming SSE version of /approve.
+
+    Emits thinking-step, tool-result, and text events while the graph
+    resumes from the HITL breakpoint so the owner sees live progress.
+
+    Same request body as /approve:
+      { "shop_id": 123, "action_id": "...", "approved": true, "reason": "..." }
+
+    Events emitted:
+      {type: "thinking_step", step, label, status, agent}
+      {type: "reasoning", step, id, text, agent, tool}
+      {type: "tool_result", tool, result, agent}
+      {type: "text", content}          — streamed response chunks
+      {type: "stream_status", status, agent, tool_results}
+      [DONE]
+    """
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+
+    shop_id = body.get("shop_id")
+    action_id = body.get("action_id")
+    approved = body.get("approved", False)
+    reason = body.get("reason")
+
+    user_id, shop_id = _require_owner_shop_access(shop_id, current_user)
+
+    checkpoint_config = build_checkpoint_config(shop_id, user_id)
+    runnable = _SUPERVISOR_RUNNABLE
+
+    # Snapshot retrieval is sync — wrap in thread to avoid blocking the event loop.
+    snapshot = await asyncio.to_thread(runnable.get_state, checkpoint_config)
+    interrupts = list(snapshot.interrupts or ())
+
+    # ── No live interrupt: fall back to persisted-approval path ──────────────
+    if not interrupts:
+        async def _no_interrupt_stream():
+            resumed = await asyncio.to_thread(
+                _resume_persisted_approval,
+                shop_id=shop_id,
+                action_id=str(action_id or "").strip() or None,
+                approved=bool(approved),
+                reason=reason,
+                user_id=user_id,
+            )
+            if resumed is None:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'No pending approval found for this thread'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            _record_approval_decision(
+                shop_id=shop_id,
+                action_id=str(action_id or "").strip() or None,
+                pending_action=None,
+                approved=bool(approved),
+                reason=reason,
+                user_id=user_id,
+                resumed=resumed,
+            )
+            msg = _state_last_text(resumed)
+            for _sse in _iter_text_sse(msg):
+                yield _sse
+            yield f"data: {json.dumps({'type': 'stream_status', 'status': 'approved' if approved else 'rejected', 'agent': resumed.get('current_agent', 'supervisor'), 'tool_results': resumed.get('tool_results')})}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(_no_interrupt_stream(), media_type="text/event-stream")
+
+    # ── Live interrupt: stream graph resume ───────────────────────────────────
+    current_interrupt_id = getattr(interrupts[0], "id", None)
+    snapshot_values = cast(Dict[str, Any], snapshot.values or {}) if snapshot else {}
+    current_pending_action = cast(Optional[Dict[str, Any]], snapshot_values.get("pending_approval"))
+
+    if action_id and current_interrupt_id and action_id != current_interrupt_id:
+        raise HTTPException(status_code=409, detail="action_id does not match the current pending approval")
+
+    async def _approval_stream():
+        final_response_text = ""
+        final_tool_results: Dict[str, Any] = {}
+        routed_agent = "supervisor"
+        _STEP_TIMEOUT = 150  # seconds per graph step
+
+        try:
+            _action_label = "approved" if approved else "rejected"
+            yield f"data: {json.dumps({'type': 'thinking_step', 'step': 'approve', 'label': f'Executing {_action_label} action\u2026', 'status': 'active', 'agent': routed_agent})}\n\n"
+
+            update_iter = runnable.stream(
+                Command(resume={"approved": bool(approved), "reason": reason}),
+                checkpoint_config,
+                stream_mode="updates",
+            )
+
+            while True:
+                update = await asyncio.wait_for(
+                    asyncio.to_thread(next, update_iter, None),
+                    timeout=_STEP_TIMEOUT,
+                )
+                if update is None:
+                    break
+                if not isinstance(update, dict):
+                    continue
+
+                for raw_node_name, out in update.items():
+                    lg_node = _resolve_thinking_node({"name": raw_node_name})
+                    if not lg_node:
+                        continue
+
+                    metadata_out = _extract_metadata_from_output(out)
+                    ca = _extract_current_agent_from_output(out)
+                    if ca and ca not in ("supervisor", "general", "", None):
+                        if ca != routed_agent:
+                            yield f"data: {json.dumps({'type': 'agent_switch', 'agent': ca})}\n\n"
+                        routed_agent = ca
+
+                    start_label = _thinking_label_active(lg_node, routed_agent)
+                    yield f"data: {json.dumps({'type': 'thinking_step', 'step': lg_node, 'label': start_label, 'status': 'active', 'agent': routed_agent})}\n\n"
+
+                    for reasoning_event in _normalize_reasoning_events(metadata_out.get("reasoning_events")):
+                        yield f"data: {json.dumps({'type': 'reasoning', 'step': lg_node, 'id': reasoning_event.get('id') or f'{lg_node}_reasoning', 'text': str(reasoning_event.get('text')).strip(), 'agent': routed_agent, 'tool': reasoning_event.get('tool')})}\n\n"
+
+                    if isinstance(out, dict) and isinstance(out.get("tool_results"), dict):
+                        final_tool_results = out["tool_results"]
+                        yield f"data: {json.dumps({'type': 'tool_result', 'tool': lg_node, 'result': final_tool_results, 'agent': routed_agent})}\n\n"
+
+                    if lg_node == "synthesize_response" and isinstance(out, dict):
+                        msgs = out.get("messages") or []
+                        if msgs:
+                            final_response_text = getattr(msgs[-1], "content", "") or ""
+
+                    done_label = _thinking_label_done(lg_node, routed_agent)
+                    yield f"data: {json.dumps({'type': 'thinking_step', 'step': lg_node, 'label': done_label, 'status': 'done', 'agent': routed_agent})}\n\n"
+
+        except Exception as stream_exc:
+            exc_name = type(stream_exc).__name__
+            if "interrupt" not in exc_name.lower():
+                logger.error("Approval stream error: %s", stream_exc, exc_info=True)
+                yield f"data: {json.dumps({'type': 'error', 'message': str(stream_exc)[:200]})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+        # Retrieve final text from checkpoint if synthesize_response didn't emit it.
+        if not final_response_text:
+            try:
+                snap = await asyncio.to_thread(runnable.get_state, checkpoint_config)
+                if snap and snap.values:
+                    final_response_text = _state_last_text(dict(snap.values))
+                    if not final_tool_results and isinstance(snap.values.get("tool_results"), dict):
+                        final_tool_results = snap.values["tool_results"]
+            except Exception as snap_exc:
+                logger.warning("Could not retrieve post-approval checkpoint: %s", snap_exc)
+
+        _record_approval_decision(
+            shop_id=shop_id,
+            action_id=current_interrupt_id,
+            pending_action=current_pending_action,
+            approved=bool(approved),
+            reason=reason,
+            user_id=user_id,
+            resumed={"current_agent": routed_agent, "tool_results": final_tool_results},
+        )
+
+        if final_response_text:
+            for _sse in _iter_text_sse(final_response_text):
+                yield _sse
+
+        yield f"data: {json.dumps({'type': 'stream_status', 'status': 'approved' if approved else 'rejected', 'agent': routed_agent, 'tool_results': final_tool_results})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_approval_stream(), media_type="text/event-stream")
+
+
+# ============================================================================
 # Conversation History & State
 # ============================================================================
 
@@ -1709,12 +2473,57 @@ async def get_history(
     snapshot = _SUPERVISOR_RUNNABLE.get_state(checkpoint_config)
     values = cast(Dict[str, Any], snapshot.values or {}) if snapshot else {}
     checkpoint_messages = _serialize_checkpoint_messages(values)
+    if not checkpoint_messages:
+        checkpoint_messages = get_conversation_history(_redis, str(shop_id), str(user_id))
 
     return {
         "messages": checkpoint_messages,
         "checkpoint_id": f"tenant_{shop_id}_{user_id}",
-        "pending": _get_pending_approval_payload(shop_id, user_id, runnable=_SUPERVISOR_RUNNABLE),
+        "pending": _get_pending_approval_payload(shop_id, user_id),
     }
+
+
+@router.post("/reset-conversation")
+async def reset_conversation(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete all checkpoint data for this owner's conversation thread so the
+    next message starts a completely fresh context.
+
+    The caller must own the shop (same guard as /history).
+    """
+    user_id: Optional[int] = current_user.get("user_id")
+    user_shops: list[int] = current_user.get("shop_ids") or []
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authenticated user_id missing")
+
+    if shop_id not in user_shops:
+        raise HTTPException(status_code=403, detail="Not owner of this shop")
+
+    thread_id = _checkpoint_thread_id(shop_id, user_id)
+    db = SessionLocal()
+    try:
+        db.execute(
+            text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"),
+            {"tid": thread_id},
+        )
+        db.execute(
+            text("DELETE FROM checkpoints WHERE thread_id = :tid"),
+            {"tid": thread_id},
+        )
+        db.commit()
+        logger.info("reset-conversation: cleared thread %s for user %s", thread_id, user_id)
+    except Exception as exc:
+        db.rollback()
+        logger.warning("reset-conversation: failed to clear thread %s: %s", thread_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to reset conversation")
+    finally:
+        db.close()
+
+    return {"status": "ok", "thread_id": thread_id}
 
 
 @router.get("/pending")
@@ -1754,7 +2563,7 @@ async def get_pending_approvals(
         raise HTTPException(status_code=403, detail="Not owner of this shop")
 
     metrics = db_interface.get_shop_live_wait_metrics(shop_id) or {}
-    return {"pending": _get_pending_approval_payload(shop_id, user_id, metrics, runnable=_SUPERVISOR_RUNNABLE)}
+    return {"pending": _get_pending_approval_payload(shop_id, user_id, metrics=metrics)}
 
 
 @router.get("/briefing")
@@ -1796,7 +2605,7 @@ async def get_owner_briefing(
         employees = db_interface.get_shop_employees(shop_id, is_active=True) or []
         metrics["active_employees"] = len(employees)
 
-    pending = _get_pending_approval_payload(shop_id, user_id, live_metrics or metrics, runnable=_SUPERVISOR_RUNNABLE)
+    pending = _get_pending_approval_payload(shop_id, user_id, metrics=live_metrics or metrics)
 
     active_services = int(metrics.get("active_services", 0) or 0)
     active_employees = int(metrics.get("active_employees", 0) or 0)
@@ -1904,26 +2713,57 @@ async def health_check():
     Health check for LangGraph agent.
     
     Verifies:
-    - Ollama LLM connectivity
+    - LLM connectivity (provider-aware: ollama, nvidia, openai-compatible)
     - PostgreSQL checkpoint connectivity
+    - Redis connectivity
     - Agent graph buildability
     """
-    
+    import httpx
+    from agents.llm_factory import normalize_provider, default_api_base_url_for_provider, _default_api_key
+
     health = {
         "status": "ok",
         "components": {}
     }
-    
-    # Check LLM (Ollama)
+
+    # Check LLM — provider-aware probe
+    llm_provider = normalize_provider(os.getenv("LLM_PROVIDER", "ollama"))
     try:
-        from agents.supervisor import get_llm
-        llm = get_llm()
-        # TODO: Actual ping
-        health["components"]["ollama"] = "ok"
+        if llm_provider == "ollama":
+            ollama_base = os.getenv("OLLAMA_URL", "http://localhost:11434/v1").rstrip("/")
+            if ollama_base.endswith("/v1"):
+                ollama_base = ollama_base[:-3]
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{ollama_base}/api/tags")
+                resp.raise_for_status()
+                models = [m.get("name", "") for m in resp.json().get("models", [])]
+            health["components"]["llm"] = f"ok (ollama, {len(models)} model(s))"
+        elif llm_provider == "nvidia":
+            api_key = _default_api_key("nvidia") or ""
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get(
+                    "https://integrate.api.nvidia.com/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                resp.raise_for_status()
+                model_count = len(resp.json().get("data", []))
+            health["components"]["llm"] = f"ok (nvidia nim, {model_count} model(s))"
+        else:
+            # OpenAI-compatible: probe /v1/models on the configured base URL
+            base_url = default_api_base_url_for_provider(llm_provider) or os.getenv("OPENAI_BASE_URL", "")
+            if base_url:
+                api_key = _default_api_key(llm_provider) or ""
+                headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(f"{base_url.rstrip('/')}/models", headers=headers)
+                    resp.raise_for_status()
+                health["components"]["llm"] = f"ok ({llm_provider})"
+            else:
+                health["components"]["llm"] = f"skipped (no base url for {llm_provider})"
     except Exception as e:
         health["status"] = "degraded"
-        health["components"]["ollama"] = f"error: {str(e)}"
-    
+        health["components"]["llm"] = f"error ({llm_provider}): {str(e)[:120]}"
+
     # Check PostgreSQL (checkpoints)
     try:
         from agents.checkpoints import get_checkpoint_saver
@@ -1932,7 +2772,20 @@ async def health_check():
     except Exception as e:
         health["status"] = "degraded"
         health["components"]["postgres"] = f"error: {str(e)}"
-    
+
+    # Check Redis
+    try:
+        from redis_client import redis_client as _redis
+        if _redis.client is not None:
+            _redis.client.ping()
+            health["components"]["redis"] = "ok"
+        else:
+            health["status"] = "degraded"
+            health["components"]["redis"] = "disabled (no connection)"
+    except Exception as e:
+        health["status"] = "degraded"
+        health["components"]["redis"] = f"error: {str(e)[:80]}"
+
     # Check graph compilation
     try:
         from agents.supervisor import create_supervisor_runnable
@@ -1941,6 +2794,21 @@ async def health_check():
     except Exception as e:
         health["status"] = "error"
         health["components"]["graph"] = f"error: {str(e)}"
+
+    # Check Temporal connectivity (only when TEMPORAL_ENABLED=true)
+    from agents.temporal_config import temporal_enabled, TEMPORAL_ADDRESS
+    if temporal_enabled():
+        try:
+            from temporalio.client import Client as TemporalClient
+            await asyncio.wait_for(
+                TemporalClient.connect(TEMPORAL_ADDRESS, namespace="default"),
+                timeout=4.0,
+            )
+            health["components"]["temporal"] = "ok"
+        except Exception as e:
+            health["components"]["temporal"] = f"error: {str(e)[:80]}"
+    else:
+        health["components"]["temporal"] = "disabled"
 
     # Check Odoo ERP
     try:

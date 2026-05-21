@@ -371,3 +371,8 @@ class RedisClient:
 
 # Global instance
 redis_client = RedisClient()
+
+
+def get_redis_client() -> RedisClient:
+    """Return the global RedisClient singleton."""
+    return redis_client

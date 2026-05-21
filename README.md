@@ -89,7 +89,21 @@ cd ..
 docker compose up -d db redis booking-mcp finance-mcp hr-mcp odoo
 ```
 
-5. Start the backend and frontend in source mode.
+5. Bootstrap the database (first time only, or after recreating the `db` container).
+
+```bash
+# Enable pgvector — required for the AI embedding column
+docker exec zeroqwait-db-1 psql -U postgres -d zeroqwait -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# Create all app tables
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/init_database.py
+cd ..
+```
+
+> The Docker Compose postgres is exposed on port **5433** (not 5432) to avoid conflicting with any system postgres. Ensure `backend/.env` has `DB_PORT=5433`.
+
+6. Start the backend and frontend in source mode.
 
 ```bash
 cd backend
@@ -98,7 +112,7 @@ uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ```bash
 cd frontend
-REACT_APP_API_URL=http://localhost:8000/api npm start
+npm start
 ```
 
 6. Open the app.

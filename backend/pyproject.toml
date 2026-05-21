@@ -29,6 +29,7 @@ dependencies = [
     "langchain-google-genai==4.2.2",
     "langchain-groq==1.1.2",
     "langchain-nvidia-ai-endpoints>=0.3.0",
+    "temporalio>=1.16.0",
     # Auth
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
@@ -36,6 +37,10 @@ dependencies = [
     "email-validator>=2.0.0",
     # Payments
     "stripe>=10.0.0",
+    # AWS (SES email + SNS SMS)
+    "boto3>=1.34.0",
+    # Observability
+    "prometheus-client>=0.20.0",
     # HTTP client
     "httpx>=0.27.0",
     # Config
@@ -43,6 +48,8 @@ dependencies = [
     # Utilities
     "python-slugify>=8.0.0",
     "python-dateutil>=2.9.0",
+    # PDF generation (Canadian payslips)
+    "reportlab>=4.1.0",
     # Scripts (seed data)
     "faker>=20.0.0",
     "requests>=2.31.0",

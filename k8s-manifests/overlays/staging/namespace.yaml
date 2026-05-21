@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zeroqwait-staging
+  labels:
+    env: staging
+    app.kubernetes.io/part-of: zeroqwait

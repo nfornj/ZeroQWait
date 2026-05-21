@@ -13,8 +13,11 @@ import AppErrorBoundary from "./components/AppErrorBoundary";
 import PricingPage from "./features/public-booking/pages/PricingPage";
 import SearchPage from "./features/public-booking/pages/SearchPage";
 import NotFoundPage from "./features/public-booking/pages/NotFoundPage";
+import DocsShowcasePage from "./features/public-booking/pages/DocsShowcasePage";
+import DocsArchitecturePage from "./features/public-booking/pages/DocsArchitecturePage";
 import ShopDashboardPage from "./features/shop-dashboard/pages/ShopDashboardPage";
 import ShopSettingsPage from "./features/shop-dashboard/pages/ShopSettingsPage";
+import ServicesManagementPage from "./features/shop-dashboard/pages/ServicesManagementPage";
 import EmployeeManagementPage from "./features/shop-dashboard/pages/EmployeeManagementPage";
 import EmployeeQueuePage from "./features/shop-dashboard/pages/EmployeeQueuePage";
 import QueueManagementPage from "./features/shop-dashboard/pages/QueueManagementPage";
@@ -27,9 +30,12 @@ import ShopLayout from "./layouts/ShopLayout";
 // PublicShopPage is used via SubdomainHandler (subdomain routing only)
 import PublicLayout from "./layouts/PublicLayout";
 import MasterDashboardPage from "./features/admin/pages/MasterDashboardPage";
-import ServicesManagementPage from "./features/shop-dashboard/pages/ServicesManagementPage";
+
 import AppointmentsPage from "./features/shop-dashboard/pages/AppointmentsPage";
 import OwnerDashboardPage from "./features/shop-dashboard/pages/OwnerDashboardPage";
+import AgentBrainPage from "./features/agent-brain/AgentBrainPage";
+import AgentInbox from "./features/agent-inbox/AgentInbox";
+import InventoryPage from "./features/shop-dashboard/pages/InventoryPage";
 import { useAuth } from "./contexts/AuthContext";
 
 import SignInSide from "./features/auth/components/auth-sign-in/SignInSide";
@@ -37,6 +43,8 @@ import ShopOwnerSignUp from "./features/auth/components/auth-sign-up/ShopOwnerSi
 import SubdomainHandler from "./components/SubdomainHandler";
 import AIShopPublicPage from "./features/public-booking/pages/AIShopPublicPage";
 import QueueViewPage from "./features/public-booking/pages/QueueViewPage";
+import QueueStatusPage from "./features/public-booking/pages/QueueStatusPage";
+import AppointmentStatusPage from "./features/public-booking/pages/AppointmentStatusPage";
 
 function App() {
   const { user } = useAuth();
@@ -71,12 +79,18 @@ function App() {
           {/* AI Shop page (localhost dev mode) */}
           <Route path="/shop-ai/:shopId" element={<AIShopPublicPage />} />
           <Route path="/queue/:shopId" element={<QueueViewPage />} />
+          {/* Public queue status page — no auth, accessed via unique link in email */}
+          <Route path="/queue-status/:token" element={<QueueStatusPage />} />
+          {/* Public appointment status page — no auth, accessed via unique link in email */}
+          <Route path="/appointment-status/:token" element={<AppointmentStatusPage />} />
 
           {/* Public Routes with Navbar */}
           <Route element={<PublicLayout />}>
             <Route path="/home" element={<Navigate to="/" replace />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/search" element={<SearchPage />} />
+            <Route path="/docs" element={<DocsShowcasePage />} />
+            <Route path="/docs/architecture" element={<DocsArchitecturePage />} />
           </Route>
 
           {/* In-Shop Display (No Layout - Fullscreen) */}
@@ -100,13 +114,15 @@ function App() {
             <Route path="/dashboard" element={<DashboardEntry />} />
             <Route path="/employee-dashboard" element={<EmployeeQueuePage />} />
             <Route path="/overview" element={<OwnerOnly><ShopDashboardPage /></OwnerOnly>} />
+            <Route path="/services" element={<OwnerOnly><ServicesManagementPage /></OwnerOnly>} />
             <Route path="/employees" element={<OwnerOnly><EmployeeManagementPage /></OwnerOnly>} />
             <Route path="/settings" element={<OwnerOnly><ShopSettingsPage /></OwnerOnly>} />
             <Route path="/queues" element={<OwnerOnly><QueueManagementPage /></OwnerOnly>} />
             <Route path="/queues/:queueId" element={<OwnerOnly><QueueDetailPage /></OwnerOnly>} />
-            <Route path="/services" element={<OwnerOnly><ServicesManagementPage /></OwnerOnly>} />
             <Route path="/appointments" element={<OwnerOnly><AppointmentsPage /></OwnerOnly>} />
-            <Route path="/agent-inbox" element={<DashboardEntry />} />
+            <Route path="/agent-inbox" element={<OwnerOnly><AgentInbox /></OwnerOnly>} />
+            <Route path="/agent-brain" element={<OwnerOnly><AgentBrainPage /></OwnerOnly>} />
+            <Route path="/inventory" element={<OwnerOnly><InventoryPage /></OwnerOnly>} />
           </Route>
 
           {/* Admin Portal — super_admin only, standalone (no ShopLayout) */}

@@ -1,33 +1,15 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  Container,
-  Typography,
-  Box,
-  CircularProgress,
-  Alert,
-  Card,
-  CardContent,
-  CardActions,
-  Button,
-  Chip,
-  TextField,
-  ToggleButtonGroup,
-  ToggleButton,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  SelectChangeEvent,
-} from "@mui/material";
-import LocationOnIcon from "@mui/icons-material/LocationOn";
-import PhoneIcon from "@mui/icons-material/Phone";
-import AccessTimeIcon from "@mui/icons-material/AccessTime";
-import MapIcon from "@mui/icons-material/Map";
-import ViewListIcon from "@mui/icons-material/ViewList";
 import axios from "axios";
+import { Clock, List, Loader2, Map, MapPin, Phone } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import MapView from "../components/MapView";
-
 
 interface Shop {
   id: number;
@@ -49,18 +31,18 @@ const SearchPage: React.FC = () => {
   const [filteredShops, setFilteredShops] = useState<Shop[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "map">("list");
   const [countries, setCountries] = useState<string[]>([]);
-  const [selectedCountry, setSelectedCountry] = useState<string>('all');
+  const [selectedCountry, setSelectedCountry] = useState<string>("all");
   const navigate = useNavigate();
 
   const fetchCountries = async () => {
     try {
-      const response = await axios.get('/shops/countries');
+      const response = await axios.get("/shops/countries");
       setCountries(response.data || []);
-    } catch (err) {
-      // Silently fail - countries filter optional
+    } catch {
+      // Country filter is optional.
     }
   };
 
@@ -68,11 +50,11 @@ const SearchPage: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const params = selectedCountry !== 'all' ? { country: selectedCountry } : {};
+      const params = selectedCountry !== "all" ? { country: selectedCountry } : {};
       const response = await axios.get(`/shops/`, { params });
       setShops(response.data);
       setFilteredShops(response.data);
-    } catch (err) {
+    } catch {
       setError("Failed to load businesses. Please try again.");
     } finally {
       setLoading(false);
@@ -80,256 +62,157 @@ const SearchPage: React.FC = () => {
   }, [selectedCountry]);
 
   useEffect(() => {
-    fetchCountries();
+    void fetchCountries();
   }, []);
 
   useEffect(() => {
-    fetchAllShops();
+    void fetchAllShops();
   }, [fetchAllShops]);
 
   useEffect(() => {
-    if (searchTerm.trim() === '') {
+    if (searchTerm.trim() === "") {
       setFilteredShops(shops);
-    } else {
-      const term = searchTerm.toLowerCase();
-      const filtered = shops.filter(shop =>
-        shop.name.toLowerCase().includes(term) ||
-        shop.shop_type.toLowerCase().includes(term) ||
-        shop.city.toLowerCase().includes(term) ||
-        shop.state.toLowerCase().includes(term) ||
-        (shop.description && shop.description.toLowerCase().includes(term))
-      );
-      setFilteredShops(filtered);
+      return;
     }
+
+    const term = searchTerm.toLowerCase();
+    setFilteredShops(
+      shops.filter(
+        (shop) =>
+          shop.name.toLowerCase().includes(term) ||
+          shop.shop_type.toLowerCase().includes(term) ||
+          shop.city.toLowerCase().includes(term) ||
+          shop.state.toLowerCase().includes(term) ||
+          (shop.description && shop.description.toLowerCase().includes(term)),
+      ),
+    );
   }, [searchTerm, shops]);
 
-
-
-  const handleCountryChange = (event: SelectChangeEvent) => {
-    setSelectedCountry(event.target.value);
-  };
-
-  const handleViewModeChange = (
-    _event: React.MouseEvent<HTMLElement>,
-    newMode: 'list' | 'map' | null
-  ) => {
-    if (newMode !== null) {
-      setViewMode(newMode);
-    }
-  };
-
   return (
-    <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
-      {/* Hero Section */}
-      <Box
-        sx={{
-          background: 'linear-gradient(135deg, rgba(255, 90, 95, 0.05) 0%, rgba(0, 166, 153, 0.05) 100%)',
-          py: { xs: 4, md: 6 }
-        }}
-      >
-        <Container maxWidth="lg">
-          <Box sx={{ textAlign: 'center', mb: 4 }}>
-            <Typography
-              variant="h3"
-              component="h1"
-              sx={{
-                fontWeight: 700,
-                mb: 2,
-                fontSize: { xs: '2rem', md: '2.5rem' },
-                color: 'text.primary'
-              }}
-            >
-              Find Shops and Services
-            </Typography>
-            <Typography
-              variant="h6"
-              sx={{
-                color: 'text.secondary',
-                maxWidth: '600px',
-                mx: 'auto',
-                fontSize: { xs: '1rem', md: '1.125rem' },
-                fontWeight: 400
-              }}
-            >
-              Search barbershops, salons, clinics, and other businesses, then open their live queue
-              or appointment flow in one place.
-            </Typography>
-          </Box>
+    <main className="min-h-screen bg-background">
+      <section className="border-b bg-gradient-to-br from-primary/5 to-secondary/30 py-10 md:py-14">
+        <div className="mx-auto flex max-w-5xl flex-col items-center gap-6 px-4 text-center md:px-6">
+          <div>
+            <h1 className="text-4xl font-bold tracking-tight md:text-5xl">Find Shops and Services</h1>
+            <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
+              Search barbershops, salons, clinics, and other businesses, then open their live queue or appointment flow in one place.
+            </p>
+          </div>
+          <Input
+            className="max-w-3xl bg-background"
+            placeholder="Search by name, type, or location..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+      </section>
 
-          <Box sx={{ maxWidth: '800px', mx: 'auto', mt: 4 }}>
-            <TextField
-              fullWidth
-              placeholder="Search by name, type, or location..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  bgcolor: 'background.paper',
-                }
-              }}
-            />
-          </Box>
-        </Container>
-      </Box>
-
-      {/* Results Section */}
-      <Container maxWidth="lg" sx={{ py: { xs: 4, md: 6 } }}>
+      <section className="mx-auto max-w-6xl px-4 py-10 md:px-6">
         {error && (
-          <Alert
-            severity="error"
-            sx={{
-              mb: 4,
-              border: '1px solid #FFEBEE'
-            }}
-          >
-            {error}
+          <Alert variant="destructive" className="mb-6">
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
         {loading ? (
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              py: 8
-            }}
-          >
-            <CircularProgress
-              size={48}
-              sx={{
-                mb: 2,
-                color: 'primary.main'
-              }}
-            />
-            <Typography variant="h6" color="text.secondary">
-              Loading businesses...
-            </Typography>
-          </Box>
+          <div className="flex flex-col items-center gap-3 py-20 text-muted-foreground">
+            <Loader2 className="size-10 animate-spin text-primary" />
+            <p className="text-lg font-medium">Loading businesses...</p>
+          </div>
         ) : filteredShops.length > 0 ? (
-          <Box>
-            <Box sx={{ mb: 4, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' }, gap: 2 }}>
-              <Typography
-                variant="h5"
-                sx={{
-                  fontWeight: 600,
-                  color: 'text.primary'
-                }}
-              >
-                Found {filteredShops.length} business{filteredShops.length !== 1 ? 'es' : ''}
-              </Typography>
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+              <h2 className="text-2xl font-semibold">
+                Found {filteredShops.length} business{filteredShops.length !== 1 ? "es" : ""}
+              </h2>
 
-              <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2 }}>
-                <FormControl sx={{ minWidth: 200 }} size="small">
-                  <InputLabel>Country</InputLabel>
-                  <Select
-                    value={selectedCountry}
-                    label="Country"
-                    onChange={handleCountryChange}
-                  >
-                    <MenuItem value="all">All Countries</MenuItem>
-                    {countries.map((country) => (
-                      <MenuItem key={country} value={country}>
-                        {country}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Select value={selectedCountry} onValueChange={setSelectedCountry}>
+                  <SelectTrigger className="sm:w-[220px]">
+                    <SelectValue placeholder="Country" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="all">All Countries</SelectItem>
+                      {countries.map((country) => (
+                        <SelectItem key={country} value={country}>
+                          {country}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
 
-                <ToggleButtonGroup
+                <ToggleGroup
+                  type="single"
                   value={viewMode}
-                  exclusive
-                  onChange={handleViewModeChange}
-                  aria-label="view mode"
-                  size="small"
+                  onValueChange={(value) => {
+                    if (value === "list" || value === "map") setViewMode(value);
+                  }}
+                  aria-label="View mode"
                 >
-                  <ToggleButton value="list" aria-label="list view">
-                    <ViewListIcon sx={{ mr: 1 }} />
+                  <ToggleGroupItem value="list" aria-label="List view">
+                    <List className="size-4" />
                     List
-                  </ToggleButton>
-                  <ToggleButton value="map" aria-label="map view">
-                    <MapIcon sx={{ mr: 1 }} />
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="map" aria-label="Map view">
+                    <Map className="size-4" />
                     Map
-                  </ToggleButton>
-                </ToggleButtonGroup>
-              </Box>
-            </Box>
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+            </div>
 
-            {viewMode === 'map' ? (
+            {viewMode === "map" ? (
               <MapView shops={filteredShops} />
             ) : (
-              <Box display="flex" flexWrap="wrap" gap={3}>
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {filteredShops.map((shop) => (
-                  <Box sx={{ flex: 1, minWidth: '250px' }} key={shop.id}>
-                    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                      <CardContent sx={{ flexGrow: 1 }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
-                          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                            {shop.name}
-                          </Typography>
-                          <Chip label={shop.shop_type} size="small" color="primary" />
-                        </Box>
-                        {shop.description && (
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            {shop.description}
-                          </Typography>
-                        )}
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                          <LocationOnIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                          <Typography variant="body2" color="text.secondary">
-                            {shop.city}, {shop.state}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                          <PhoneIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                          <Typography variant="body2" color="text.secondary">
-                            {shop.phone}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <AccessTimeIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                          <Typography variant="body2" color="text.secondary">
-                            Avg. {shop.average_service_time} min service
-                          </Typography>
-                        </Box>
-                      </CardContent>
-                      <CardActions sx={{ p: 2, pt: 0 }}>
-                        <Button fullWidth variant="contained" onClick={() => navigate(`/queue/${shop.id}`)}>
-                          Join Queue
-                        </Button>
-                      </CardActions>
-                    </Card>
-                  </Box>
+                  <Card key={shop.id} className="flex h-full flex-col">
+                    <CardContent className="flex flex-1 flex-col gap-4 p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <h3 className="text-lg font-semibold leading-tight">{shop.name}</h3>
+                        <Badge>{shop.shop_type}</Badge>
+                      </div>
+                      {shop.description && <p className="text-sm text-muted-foreground">{shop.description}</p>}
+                      <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+                        <span className="inline-flex items-center gap-2">
+                          <MapPin className="size-4" />
+                          {shop.city}, {shop.state}
+                        </span>
+                        <span className="inline-flex items-center gap-2">
+                          <Phone className="size-4" />
+                          {shop.phone}
+                        </span>
+                        <span className="inline-flex items-center gap-2">
+                          <Clock className="size-4" />
+                          Avg. {shop.average_service_time} min service
+                        </span>
+                      </div>
+                    </CardContent>
+                    <CardFooter className="p-5 pt-0">
+                      <Button className="w-full" onClick={() => navigate(`/queue/${shop.id}`)}>
+                        Join Queue
+                      </Button>
+                    </CardFooter>
+                  </Card>
                 ))}
-              </Box>
+              </div>
             )}
-          </Box>
+          </div>
         ) : (
-          !loading && !error && (
-            <Box
-              sx={{
-                textAlign: 'center',
-                py: 8
-              }}
-            >
-              <Typography
-                variant="h5"
-                sx={{
-                  color: 'text.secondary',
-                  mb: 2,
-                  fontWeight: 500
-                }}
-              >
-                No businesses found
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                {searchTerm ? 'Try a different search term' : 'No businesses are registered yet'}
-              </Typography>
-            </Box>
+          !loading &&
+          !error && (
+            <div className="py-20 text-center">
+              <h2 className="text-2xl font-semibold text-muted-foreground">No businesses found</h2>
+              <p className="mt-2 text-muted-foreground">
+                {searchTerm ? "Try a different search term" : "No businesses are registered yet"}
+              </p>
+            </div>
           )
         )}
-      </Container>
-    </Box>
+      </section>
+    </main>
   );
 };
 

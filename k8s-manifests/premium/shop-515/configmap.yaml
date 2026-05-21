@@ -1,0 +1,55 @@
+# ConfigMap for premium shop 515 (elite-style-studio)
+# Dedicated backend + worker pointing to dedicated postgres-shop-515 + redis-shop-515
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zeroqwait-shop-515
+  namespace: zeroqwait
+  labels:
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "515"
+    zeroqwait.io/component: config
+data:
+  SHOP_ID: "515"
+  SHOP_SLUG: "elite-style-studio"
+  SHOP_SCHEMA: "tenant_515"
+
+  # Dedicated postgres for shop-515
+  DB_HOST: "postgres-shop-515.zeroqwait.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "zeroqwait"
+  DB_USER: "zeroqwait"
+
+  # Dedicated redis for shop-515
+  REDIS_HOST: "redis-shop-515.zeroqwait.svc.cluster.local"
+  REDIS_PORT: "6379"
+
+  # Shared voice services (always shared)
+  TTS_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881"
+  ASR_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881/transcribe"
+
+  # LLM (shared NVIDIA NIM API)
+  LLM_PROVIDER: "nvidia"
+  NVIDIA_MODEL: "meta/llama-3.1-8b-instruct"
+
+  # Dedicated MCPs for shop-515
+  BOOKING_MCP_URL: "http://booking-mcp-shop-515.zeroqwait.svc.cluster.local:8890"
+  FINANCE_MCP_URL: "http://finance-mcp-shop-515.zeroqwait.svc.cluster.local:8891"
+  HR_MCP_URL: "http://hr-mcp-shop-515.zeroqwait.svc.cluster.local:8892"
+
+  # Shared CRM
+  ODOO_ENABLED: "true"
+  ODOO_URL: "http://odoo.zeroqwait.svc.cluster.local:8069"
+  ODOO_DB: "odoo"
+  ODOO_USER: "admin"
+
+  # Temporal — dedicated task queue for shop-515
+  TEMPORAL_ENABLED: "true"
+  TEMPORAL_TASK_QUEUE: "shop-515"
+  TEMPORAL_HOST: "temporal.zeroqwait.svc.cluster.local:7233"
+  TEMPORAL_ADDRESS: "temporal.zeroqwait.svc.cluster.local:7233"
+
+  # Runtime isolation
+  TENANT_SCHEMA: "tenant_515"
+  DEFAULT_SHOP_ID: "515"
+  COMPUTE_MODE: "dedicated_instance"

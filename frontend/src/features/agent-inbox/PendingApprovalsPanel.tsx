@@ -1,17 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  alpha,
-  Box,
-  CardContent,
-  Chip,
-  Collapse,
-  Divider,
-  IconButton,
-  Stack,
-  Typography,
-} from "@mui/material";
-import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
-
+import { ChevronDown } from "lucide-react";
+import { cn } from "../../lib/utils";
 import GlassCard from "../../components/GlassCard";
 import useOwnerBrand from "../../hooks/useOwnerBrand";
 import ApprovalCard from "./ApprovalCard";
@@ -39,42 +28,46 @@ const PendingApprovalsPanel: React.FC<PendingApprovalsPanelProps> = ({
   }, [approvals.length]);
 
   return (
-    <GlassCard>
-      <CardContent sx={{ py: 1.5 }}>
-        <Stack spacing={1}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="h6">Pending Approvals</Typography>
-            <Stack direction="row" spacing={0.75} alignItems="center">
-              <Chip
-                size="small"
-                label={latestApprovals.length}
-                sx={{
-                  bgcolor: alpha(brand.primary, 0.14),
+    <GlassCard className="rounded-2xl">
+      <div className="px-4 py-3">
+        <div className="flex flex-col gap-2">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <p className="text-base font-semibold">Pending Approvals</p>
+            <div className="flex items-center gap-1.5">
+              <span
+                className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold border"
+                style={{
+                  backgroundColor: `${brand.primary}24`,
                   color: brand.primary,
-                  border: `1px solid ${alpha(brand.primary, 0.22)}`,
-                  fontWeight: 700,
+                  borderColor: `${brand.primary}38`,
                 }}
-              />
-              <IconButton size="small" onClick={() => setOpen((prev) => !prev)} sx={{ color: brand.primary }}>
-                <ExpandMoreRoundedIcon
-                  sx={{
-                    fontSize: 18,
-                    transition: "transform 0.18s",
-                    transform: open ? "rotate(180deg)" : "rotate(0deg)",
-                  }}
+              >
+                {latestApprovals.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => setOpen((prev) => !prev)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted transition-colors"
+                style={{ color: brand.primary }}
+              >
+                <ChevronDown
+                  className={cn("h-4 w-4 transition-transform duration-200", open && "rotate-180")}
+                  style={{ fontSize: 18 }}
                 />
-              </IconButton>
-            </Stack>
-          </Stack>
-          <Divider sx={{ borderColor: alpha(brand.primary, 0.12) }} />
-          <Collapse in={open} unmountOnExit>
-            <Stack spacing={1.25}>
+              </button>
+            </div>
+          </div>
+
+          <hr style={{ borderColor: `${brand.primary}1f` }} />
+
+          {/* Body */}
+          {open && (
+            <div className="flex flex-col gap-3">
               {latestApprovals.length === 0 ? (
-                <Box py={0.5}>
-                  <Typography variant="body2" color="text.secondary">
-                    No approvals are waiting right now.
-                  </Typography>
-                </Box>
+                <p className="text-sm text-muted-foreground py-1">
+                  No approvals are waiting right now.
+                </p>
               ) : (
                 latestApprovals.map((approval) => (
                   <ApprovalCard
@@ -85,10 +78,10 @@ const PendingApprovalsPanel: React.FC<PendingApprovalsPanelProps> = ({
                   />
                 ))
               )}
-            </Stack>
-          </Collapse>
-        </Stack>
-      </CardContent>
+            </div>
+          )}
+        </div>
+      </div>
     </GlassCard>
   );
 };

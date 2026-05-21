@@ -12,7 +12,13 @@ from redis_client import redis_client
 from database import SessionLocal
 from audit_logger import audit
 from datetime import datetime, timedelta
+import asyncio
+import os
 import random
+import secrets
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from services.queue_email import send_queue_join_email, send_youre_next_email
+from services.queue_sms import send_queue_join_sms, send_youre_next_sms
 
 router = APIRouter()
 
@@ -104,6 +110,40 @@ def get_least_busy_employee(shop_id: int) -> Optional[int]:
                     load[item.assigned_employee_id] += 1
 
     return min(load, key=load.get)
+
+
+def _shop_is_within_operating_hours(shop_id: int) -> bool:
+    hours = shop_service.get_operating_hours(shop_id)
+    if not hours:
+        return True
+
+    try:
+        tz = ZoneInfo(hours.timezone)
+    except (ZoneInfoNotFoundError, Exception):
+        tz = ZoneInfo("UTC")
+
+    now_local = datetime.now(tz)
+    operating_days = hours.operating_days or list(range(7))
+    if now_local.weekday() not in operating_days:
+        return False
+
+    now_minutes = now_local.hour * 60 + now_local.minute
+    open_minutes = hours.open_time.hour * 60 + hours.open_time.minute
+    close_minutes = hours.close_time.hour * 60 + hours.close_time.minute
+
+    if close_minutes == 0:
+        return now_minutes >= open_minutes
+    return open_minutes <= now_minutes < close_minutes
+
+
+def _queue_closed_detail(shop_id: int) -> str:
+    hours = shop_service.get_operating_hours(shop_id)
+    if not hours:
+        return "Queue is currently closed."
+    return (
+        f"Queue is currently closed. Operating hours are "
+        f"{hours.open_time.strftime('%H:%M')}–{hours.close_time.strftime('%H:%M')} {hours.timezone}."
+    )
 
 
 def _build_shop_live_snapshot(shop_id: int) -> Dict:
@@ -234,8 +274,10 @@ def get_active_queue(
         
         queues = queue_service.get_active_queues(shop_id)
         if not queues:
-             q_create = schemas.QueueCreate(name="Main Queue", is_active=True)
-             queue = queue_service.create_queue(q_create, shop_id)
+               if not _shop_is_within_operating_hours(shop_id):
+                  raise HTTPException(status_code=404, detail=_queue_closed_detail(shop_id))
+               q_create = schemas.QueueCreate(name="Main Queue", is_active=True)
+               queue = queue_service.create_queue(q_create, shop_id)
         else:
              queue = queues[0]
              
@@ -289,10 +331,15 @@ async def join_queue(
             
         queues = queue_service.get_active_queues(shop_id)
         if not queues:
+            if not _shop_is_within_operating_hours(shop_id):
+                raise HTTPException(status_code=409, detail=_queue_closed_detail(shop_id))
             q_create = schemas.QueueCreate(name="Main Queue", is_active=True)
             queue = queue_service.create_queue(q_create, shop_id)
         else:
             queue = queues[0]
+
+        if not queue.accepting_joins:
+            raise HTTPException(status_code=409, detail=queue.lock_reason or "Queue is not accepting new joins right now")
             
         # Tier checks omitted for brevity (should implement)
         
@@ -309,6 +356,30 @@ async def join_queue(
             all_items = queue_service.get_queue_items(queue.id)
             active_items = [i for i in all_items if i.status in [QUEUE_STATUS_WAITING, QUEUE_STATUS_BEING_SERVED]]
             new_item.position = len(active_items)
+            # Generate unique status token for customer's self-tracking link
+            status_token = secrets.token_urlsafe(32)
+            queue_service.update_queue_item(new_item.id, {"status_token": status_token})
+            new_item.status_token = status_token
+            # Fire join confirmation email + SMS (non-blocking — never delays the HTTP response)
+            frontend_url = os.getenv("FRONTEND_URL", "https://zeroqwait.com")
+            _join_status_url = f"{frontend_url}/queue-status/{status_token}"
+            metrics = db_interface.get_shop_live_wait_metrics(shop_id)
+            _estimated_wait = metrics.get("avg_wait_minutes") if isinstance(metrics, dict) else None
+            _join_kwargs = dict(
+                customer_name=queue_item.customer_name,
+                shop_name=shop.name,
+                position=new_item.position,
+                estimated_wait_min=int(_estimated_wait) if _estimated_wait is not None else None,
+                status_url=_join_status_url,
+            )
+            if queue_item.customer_email:
+                asyncio.create_task(send_queue_join_email(
+                    customer_email=queue_item.customer_email, **_join_kwargs
+                ))
+            if queue_item.customer_phone:
+                asyncio.create_task(send_queue_join_sms(
+                    customer_phone=queue_item.customer_phone, **_join_kwargs
+                ))
             await _broadcast_shop_live_snapshot(shop_id)
             await audit(
                 action="QUEUE",
@@ -348,6 +419,27 @@ async def update_queue_item_status(
             update_data["completed_at"] = datetime.utcnow().isoformat()
             
         updated = queue_service.update_queue_item(item_id, update_data)
+        # Fire "you're next" email + SMS on manual BEING_SERVED transition
+        if new_status == QUEUE_STATUS_BEING_SERVED and item.status_token:
+            shop = shop_service.get_shop(queue.shop_id)
+            shop_name = shop.name if shop else "the shop"
+            service_name = item.service.name if item.service else None
+            frontend_url = os.getenv("FRONTEND_URL", "https://zeroqwait.com")
+            status_url = f"{frontend_url}/queue-status/{item.status_token}"
+            _next_kwargs = dict(
+                customer_name=item.customer_name,
+                shop_name=shop_name,
+                service_name=service_name,
+                status_url=status_url,
+            )
+            if item.customer_email:
+                asyncio.create_task(send_youre_next_email(
+                    customer_email=item.customer_email, **_next_kwargs
+                ))
+            if item.customer_phone:
+                asyncio.create_task(send_youre_next_sms(
+                    customer_phone=item.customer_phone, **_next_kwargs
+                ))
         # Invalidate queue cache for this shop
         redis_client.invalidate_queue_cache(queue.shop_id)
         await _broadcast_shop_live_snapshot(queue.shop_id)
@@ -440,6 +532,27 @@ async def call_next_customer(
         }
         
         result = queue_service.update_queue_item(next_item.id, update_data)
+        # Fire "you're next" email + SMS when calling the next customer
+        if next_item.status_token:
+            shop = shop_service.get_shop(queue.shop_id)
+            shop_name = shop.name if shop else "the shop"
+            service_name = next_item.service.name if next_item.service else None
+            frontend_url = os.getenv("FRONTEND_URL", "https://zeroqwait.com")
+            status_url = f"{frontend_url}/queue-status/{next_item.status_token}"
+            _call_kwargs = dict(
+                customer_name=next_item.customer_name,
+                shop_name=shop_name,
+                service_name=service_name,
+                status_url=status_url,
+            )
+            if next_item.customer_email:
+                asyncio.create_task(send_youre_next_email(
+                    customer_email=next_item.customer_email, **_call_kwargs
+                ))
+            if next_item.customer_phone:
+                asyncio.create_task(send_youre_next_sms(
+                    customer_phone=next_item.customer_phone, **_call_kwargs
+                ))
         # Invalidate queue cache for this shop
         redis_client.invalidate_queue_cache(queue.shop_id)
         await _broadcast_shop_live_snapshot(queue.shop_id)
@@ -451,6 +564,8 @@ async def call_next_customer(
                  result.assigned_employee = {"id": user.id, "username": user.username}
                  
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -470,6 +585,43 @@ def get_wait_estimate(item_id: int):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get wait estimate: {str(e)}")
+
+
+@router.get("/status/{token}")
+def get_queue_status_by_token(token: str):
+    """Public endpoint for customers to check their live queue position by status token.
+
+    No authentication required — access is controlled by the token itself.
+    Returns first-name-only for privacy; never exposes full PII to callers.
+    """
+    try:
+        item = queue_service.get_queue_item_by_token(token)
+        if not item:
+            raise HTTPException(status_code=404, detail="Queue status not found")
+
+        position_data = db_interface.get_queue_position(item.id)
+        queue = queue_service.get_queue(item.queue_id)
+        if not queue:
+            raise HTTPException(status_code=404, detail="Queue not found")
+
+        shop = shop_service.get_shop(queue.shop_id)
+        shop_name = shop.name if shop else "the shop"
+        first_name = item.customer_name.split()[0] if item.customer_name else "Customer"
+        service_name = item.service.name if item.service else None
+
+        return {
+            "customer_name": first_name,
+            "position": position_data.get("position"),
+            "status": item.status,
+            "estimated_wait_minutes": position_data.get("estimated_wait_minutes"),
+            "shop_name": shop_name,
+            "service_name": service_name,
+            "checked_in_at": item.checked_in_at.isoformat() if item.checked_in_at else None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch queue status: {str(e)}")
 
 
 @router.get("/shop/{shop_id}/live-metrics")

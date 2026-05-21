@@ -1,0 +1,49 @@
+# Premium Temporal worker Deployment template — dedicated worker per shop
+# Replace SHOP_ID, SHOP_SLUG, IMAGE_TAG before applying.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-shop-SHOP_ID
+  namespace: zeroqwait
+  labels:
+    app: worker-shop-SHOP_ID
+    zeroqwait.io/runtime: dedicated
+    zeroqwait.io/shop-id: "SHOP_ID"
+    zeroqwait.io/component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-shop-SHOP_ID
+  template:
+    metadata:
+      labels:
+        app: worker-shop-SHOP_ID
+        zeroqwait.io/runtime: dedicated
+        zeroqwait.io/shop-id: "SHOP_ID"
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/nfornj/backend:IMAGE_TAG
+          imagePullPolicy: Always
+          command: ["python", "-m", "temporal_worker"]
+          args: ["--shop-id", "SHOP_ID"]
+          envFrom:
+            - configMapRef:
+                name: zeroqwait-shop-SHOP_ID
+            - secretRef:
+                name: backend-secret
+          env:
+            - name: TENANT_SCHEMA
+              value: "tenant_SHOP_ID"
+            - name: DEFAULT_SHOP_ID
+              value: "SHOP_ID"
+            - name: TEMPORAL_TASK_QUEUE
+              value: "zeroqwait-shop-SHOP_ID"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "125m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"

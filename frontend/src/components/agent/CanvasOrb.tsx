@@ -1,5 +1,4 @@
 import React, { useRef, useEffect } from 'react';
-import { Box } from '@mui/material';
 
 interface CanvasOrbProps {
     volume: number;
@@ -108,15 +107,7 @@ const CanvasOrb: React.FC<CanvasOrbProps> = ({ volume, isListening, primaryColor
     }, [volume, isListening, primaryColor]);
 
     return (
-        <Box
-            sx={{
-                width: 400,
-                height: 400,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-            }}
-        >
+        <div className="flex size-[400px] items-center justify-center">
             <canvas
                 ref={canvasRef}
                 width={800}
@@ -127,7 +118,7 @@ const CanvasOrb: React.FC<CanvasOrbProps> = ({ volume, isListening, primaryColor
                     transform: 'translateZ(0)' // Hardware acceleration hint
                 }}
             />
-        </Box>
+        </div>
     );
 };
 

@@ -151,3 +151,69 @@ When updating deployment docs, keep these rules aligned with the repo:
 - Read `../README.md` for the repo-wide story
 - Read `../claude.md` for architecture and infra context
 - Inspect `deployment/scripts/` and `k8s-manifests/` if a doc appears stale
+
+## Public Docs UI Release Steps
+
+When frontend routes such as `/docs` or `/docs/architecture` are added or changed, use this exact path to make them live on `https://zeroqwait.com`.
+
+### 1. Validate The Frontend Change Locally
+
+```bash
+cd frontend
+npm run typecheck
+```
+
+If you want a full local smoke test:
+
+```bash
+cd /home/neekrishrichu/projects/FastCuts
+bash deployment/scripts/deploy-test.sh
+```
+
+Then verify:
+
+- `http://localhost:3000/docs`
+- `http://localhost:3000/docs/architecture`
+
+### 2. Push The Tested Change
+
+Non-prod validation path:
+
+```bash
+git push origin <branch>
+```
+
+Production release path:
+
+```bash
+git push origin prod
+```
+
+### 3. What The Production Workflow Does
+
+The `deploy-prod.yml` GitHub Actions workflow:
+
+- runs on push to the `prod` branch
+- checks out the repo on the self-hosted runner
+- logs in to `ghcr.io`
+- applies the Kubernetes backend secret from GitHub Secrets
+- runs `deployment/scripts/deploy-prod.sh`
+- builds and pushes versioned images through `deployment/scripts/run-local-pipeline.sh`
+- applies the K3s manifests in the `zeroqwait` namespace
+- waits for frontend, backend, and worker rollouts
+- purges Cloudflare cache
+
+### 4. Post-Deploy Verification
+
+Use these checks after the workflow completes:
+
+```bash
+gh run list --workflow deploy-prod.yml
+curl -I https://zeroqwait.com/docs
+curl -I https://zeroqwait.com/docs/architecture
+curl -fsS https://zeroqwait.com/api/agent/health
+```
+
+### 5. Important Note For SPA Routes
+
+`/docs` and `/docs/architecture` are frontend routes served by the React app. They become live when the updated frontend image is rolled out successfully behind the production ingress. No separate backend route is required for these pages.

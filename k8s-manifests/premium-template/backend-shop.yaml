@@ -1,0 +1,85 @@
+# Premium backend Deployment template — dedicated FastAPI instance per shop
+# Replace SHOP_ID, SHOP_SLUG, IMAGE_TAG before applying.
+#
+# Apply: SHOP_ID=42 SHOP_SLUG=my-shop IMAGE_TAG=v20260516005346-5794ab9 \
+#        envsubst < backend-shop.yaml | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-shop-SHOP_ID
+  namespace: zeroqwait
+  labels:
+    app: backend-shop-SHOP_ID
+    zeroqwait.io/runtime: dedicated
+    zeroqwait.io/shop-id: "SHOP_ID"
+    zeroqwait.io/component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-shop-SHOP_ID
+  template:
+    metadata:
+      labels:
+        app: backend-shop-SHOP_ID
+        zeroqwait.io/runtime: dedicated
+        zeroqwait.io/shop-id: "SHOP_ID"
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/nfornj/backend:IMAGE_TAG
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: zeroqwait-shop-SHOP_ID
+            - secretRef:
+                name: backend-secret          # shared — DB password, JWT, NVIDIA key
+          env:
+            # Force search_path to the shop's tenant schema
+            - name: TENANT_SCHEMA
+              value: "tenant_SHOP_ID"
+            - name: DEFAULT_SHOP_ID
+              value: "SHOP_ID"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /api/agent/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/agent/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+---
+# ClusterIP service for dedicated backend (ingress routes shop subdomain here)
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-shop-SHOP_ID
+  namespace: zeroqwait
+  labels:
+    app: backend-shop-SHOP_ID
+    zeroqwait.io/runtime: dedicated
+    zeroqwait.io/shop-id: "SHOP_ID"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+  selector:
+    app: backend-shop-SHOP_ID

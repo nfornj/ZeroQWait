@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-worker
+  namespace: zeroqwait
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 1800
+  selector:
+    matchLabels:
+      app: temporal-worker
+  template:
+    metadata:
+      labels:
+        app: temporal-worker
+    spec:
+      priorityClassName: app-critical
+      tolerations:
+      - key: "workload-pool"
+        operator: "Equal"
+        value: "core-cpu"
+        effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: zeroqwait.io/node-pool
+                operator: In
+                values: ["core-cpu"]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      initContainers:
+      - name: wait-for-temporal
+        image: busybox:1.28
+        command: ['sh', '-c', 'until nc -z temporal.zeroqwait.svc.cluster.local 7233; do echo waiting for temporal; sleep 2; done;']
+      containers:
+      - name: temporal-worker
+        image: ghcr.io/nfornj/backend:v20260505231038-fd470b1
+        command: ["python", "temporal_worker.py"]
+        envFrom:
+        - configMapRef:
+            name: backend-config
+        - secretRef:
+            name: backend-secret
+        env:
+        - name: TEMPORAL_ENABLED
+          value: "true"
+        - name: TEMPORAL_BOOTSTRAP_SCHEDULES
+          value: "true"
+        - name: TEMPORAL_MORNING_BRIEFING_CRON
+          value: "0 8 * * *"
+        - name: TEMPORAL_EVENING_WRAP_UP_CRON
+          value: "0 20 * * *"
+        - name: TEMPORAL_BRIEFING_TIMEZONE
+          value: "UTC"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]

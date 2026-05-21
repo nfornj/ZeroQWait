@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 
-import api from "../../../services/api";
 import {
   buildApprovalOutcomeFeedEvent,
   buildApprovalOutcomeInsight,
@@ -14,6 +13,8 @@ import type {
 } from "../types";
 
 type FeedEventInput = Omit<AgentFeedEvent, "id" | "timestamp">;
+
+const API_BASE = process.env.REACT_APP_API_URL || "/api";
 
 interface UseApprovalDecisionsOptions {
   shopId?: number;
@@ -39,31 +40,88 @@ export const useApprovalDecisions = ({
   const [isApproving, setIsApproving] = useState(false);
 
   const handleApprovalDecision = useCallback(
-    async (approval: PendingApproval, approved: boolean) => {
-      if (!shopId) return;
+    async (approval: PendingApproval, approved: boolean): Promise<boolean> => {
+      if (!shopId) return false;
 
       setError(null);
       setIsApproving(true);
 
+      const payload = {
+        shop_id: shopId,
+        action_id: approval.action_id,
+        approved,
+      };
+      const eventTimestamp = nowIso();
+
       try {
-        const payload = {
-          shop_id: shopId,
-          action_id: approval.action_id,
-          approved,
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${API_BASE}/v2/agent/approve/stream`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`Approval request failed with status ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let accumulatedText = "";
+        let finalAgent = "supervisor";
+        let finalToolResults: ApprovalExecutionResult | undefined;
+        let finalStatus = approved ? "approved" : "rejected";
+        let streamError: string | null = null;
+
+        outer: while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+
+            const rawPayload = trimmed.slice(5).trim();
+            if (rawPayload === "[DONE]") break outer;
+
+            try {
+              const event = JSON.parse(rawPayload);
+              const eventType = String(event.type || "");
+
+              if (eventType === "text") {
+                accumulatedText += String(event.content || "");
+              } else if (eventType === "stream_status") {
+                finalStatus = String(event.status || finalStatus);
+                if (event.agent) finalAgent = String(event.agent);
+                if (event.tool_results) finalToolResults = event.tool_results as ApprovalExecutionResult;
+              } else if (eventType === "error") {
+                streamError = String(event.message || "Approval stream error");
+              }
+            } catch {
+              // non-JSON SSE line — skip
+            }
+          }
+        }
+
+        if (streamError) throw new Error(streamError);
+
+        const message = accumulatedText || `Action ${approved ? "approved" : "rejected"}.`;
+        const syntheticResponse = {
+          message,
+          status: finalStatus,
+          agent: finalAgent,
+          tool_results: finalToolResults,
         };
-        const eventTimestamp = nowIso();
 
-        const response = await api.post<{
-          message: string;
-          status: string;
-          agent?: string;
-          tool_results?: ApprovalExecutionResult;
-        }>("/v2/agent/approve", payload);
-
-        appendSystemMessage(
-          response.data.message || `Action ${approved ? "approved" : "rejected"}.`,
-          response.data.agent,
-        );
+        appendSystemMessage(message, finalAgent);
 
         addFeedEvent({
           type: "approval_decision",
@@ -72,7 +130,7 @@ export const useApprovalDecisions = ({
           payload,
         });
 
-        const outcomeEvent = buildApprovalOutcomeFeedEvent(approval, approved, response.data, eventTimestamp);
+        const outcomeEvent = buildApprovalOutcomeFeedEvent(approval, approved, syntheticResponse, eventTimestamp);
         if (outcomeEvent) {
           addFeedEvent({
             type: outcomeEvent.type,
@@ -82,7 +140,7 @@ export const useApprovalDecisions = ({
           });
         }
 
-        const outcomeInsight = buildApprovalOutcomeInsight(approval, approved, response.data, eventTimestamp);
+        const outcomeInsight = buildApprovalOutcomeInsight(approval, approved, syntheticResponse, eventTimestamp);
         if (outcomeInsight) {
           prependInsightItem(outcomeInsight);
         }
@@ -90,14 +148,16 @@ export const useApprovalDecisions = ({
         await refreshPendingApprovals();
         await refreshBriefing();
         await refreshFeed();
+        return true;
       } catch (err: any) {
-        const detail = err?.response?.data?.detail || err?.message || "Failed to submit approval decision";
+        const detail = err?.message || "Failed to submit approval decision";
         setError(detail);
         addFeedEvent({
           type: "error",
           title: "Approval failed",
           description: detail,
         });
+        return false;
       } finally {
         setIsApproving(false);
       }

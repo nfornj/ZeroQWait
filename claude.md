@@ -17,7 +17,7 @@
 | Protected Artefact | Current Value | Why It Matters |
 | ---- | ---- | ---- |
 | Agent framework | LangGraph (langgraph >= 0.4) on FastAPI | Core state machine for all agent graphs; changing breaks checkpoint compatibility |
-| LLM model | `qwen3:14b-q4_K_M` via Ollama | Swapping models breaks agent behaviour and costs GPU re-pull time |
+| LLM model | `meta/llama-3.1-8b-instruct` via NVIDIA NIM API | Swapping models breaks agent behaviour and requires re-validating all agent prompts |
 | TTS engine | Qwen3-TTS (`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`) | Kokoro / Coqui incident on 2026-02-14 required emergency rollback |
 | TTS voice | `Vivian` | Voice is a brand experience choice |
 | TTS port | `8880` | Ingress and backend config hard-wired to this port |
@@ -174,7 +174,7 @@ These three items must appear consistently across:
 | **Agent Checkpoints**       | langgraph-checkpoint-postgres             | Persistent agent state per tenant in PostgreSQL                     |
 | **Database**                | PostgreSQL 15                            | Via K8s StatefulSet (prod DB: `fastcuts_db`, user: `fastcuts_user`) |
 | **Cache**                   | Redis 5.0.1                              | Session history, category cache, rate limiting, agent state cache   |
-| **AI/LLM**                  | LangGraph + langchain-ollama + Ollama     | Model: `qwen3:14b-q4_K_M` (~8-9GB, Q4_K_M quantized, GPU-only)      |
+| **AI/LLM**                  | LangGraph + langchain-openai + NVIDIA NIM API | Model: `meta/llama-3.1-8b-instruct` (hosted, no local GPU required); Ollama scaled to 0 in `llm` ns |
 | **Embeddings**              | sentence-transformers (all-MiniLM-L6-v2) | Semantic cache for query analysis                                   |
 | **MCP Tooling**             | Model Context Protocol servers            | BookingMCP, FinanceMCP, HRMCP — tools decoupled from agents        |
 | **Voice ASR**               | Whisper (via `asr_service/`)             | GPU-accelerated, separate K8s pod                                   |
@@ -463,6 +463,36 @@ Every agent graph invocation is **strictly tenant-scoped**:
 3. **Tool execution**: Every MCP tool call includes `tenant_id` in its context → `tenant_manager.tenant_session(shop_id)` ensures DB queries hit the correct schema
 4. **Checkpoint isolation**: Thread ID format: `tenant_{shop_id}_{user_id}` — ensures checkpoint data is tenant-scoped
 
+### Tier Runtime Isolation Model (2026-05-15)
+
+ZeroQwait is moving to a two-layer isolation model:
+
+| Tier | Data isolation | Compute isolation | Agent runtime |
+| ---- | -------------- | ----------------- | ------------- |
+| **Free** | One PostgreSQL schema per shop in the shared PostgreSQL instance | Shared backend deployment | Shared Temporal/agent worker |
+| **Premium** | One PostgreSQL schema per shop in the shared PostgreSQL instance | Dedicated backend deployment per premium shop | Dedicated Temporal/agent worker/task queue per premium shop |
+
+Important implementation rules:
+
+- The tenant unit remains **shop_id**, not owner account or subscription row.
+- `subscription_tier` is product entitlement and billing state; it must not be the only infrastructure switch.
+- `shops.data_isolation_mode`, `shops.compute_mode`, and `shop_runtime_assignments` are the runtime placement source of truth.
+- Free shops should eventually have `data_isolation_mode = "shop_schema"`, `compute_mode = "shared_instance"`, and no dedicated runtime assignment.
+- Premium shops should have `data_isolation_mode = "shop_schema"`, `compute_mode = "dedicated_instance"`, and one `shop_runtime_assignments` row with backend service, worker service, route host, and runtime status.
+- Premium dedicated agents mean dedicated backend and worker processes running the same LangGraph agent code for that shop; do not fork the agent framework or create a separate premium-only agent implementation.
+- Keep PostgreSQL, Redis, MCP servers, voice services, ASR, TTS, and LLM endpoints shared for the first rollout. Do not introduce per-premium database, Redis, MCP, TTS, ASR, or LLM stacks unless explicitly approved later.
+- Current local Kubernetes capacity is constrained: the host CPU is an Intel i5-13500H with 20 logical CPUs, but the active local Kubernetes context exposes 8 allocatable CPUs and about 15.4 GiB RAM. With current backend and worker requests, pilot no more than two dedicated premium runtimes before right-sizing or increasing cluster capacity.
+- New premium runtime manifests should be cloud-portable: use GHCR images, environment overlays, labels such as `zeroqwait.io/runtime=dedicated` and `zeroqwait.io/shop-id=<id>`, and avoid hard-coded local IPs or host paths in premium templates.
+
+Rollout order:
+
+1. Add or verify schema metadata and runtime assignment metadata.
+2. Backfill free shops from `public` into `tenant_<shop_id>` schemas with validation.
+3. Route all free-shop requests through shared compute with schema search_path set per shop.
+4. Assign one pilot premium shop to a dedicated backend and dedicated Temporal/agent worker.
+5. Add explicit ingress rules so the premium shop host routes `/api`, SSE, and WebSockets to the dedicated backend while `/` stays on shared frontend.
+6. Only after health validation, expand to additional premium shops.
+
 ### MCP Tool Servers
 
 Tools are decoupled from agents via Model Context Protocol servers. Each MCP server exposes a set of tools that agents call through thin wrappers.
@@ -685,16 +715,21 @@ Implementation details:
   - Strict frontend endpoint: `http://localhost:3000` (no random/ephemeral frontend host ports).
 - `deploy-prod.yml` (branch: `prod`) runs local image pipeline + applies K8s manifests + rollout checks in `zeroqwait`.
 
-### LLM Setup (Ollama)
+### LLM Setup (NVIDIA NIM API — primary)
 
-- Ollama runs in K8s namespace `llm` via Helm chart (ollama-1.38.0, image `ollama/ollama:latest`)
-- **GPU**: NVIDIA GeForce RTX 5070 Ti (16GB VRAM), CUDA 13.0, Driver 580.126.09
-- **Persistent storage**: 50Gi PVC (`ollama-data-pvc`, local-path) mounted at `/root/.ollama`
-- Internal URL: `http://ollama.llm.svc.cluster.local:11434/v1` (ClusterIP, used by backend)
-- External URL: `http://192.168.2.134:30002/v1` (NodePort, for debugging only)
-- Models: `qwen3:14b-q4_K_M` (~8-9GB, Q4_K_M quantized, GPU-only via `num_gpu=-1`, primary)
-- Config: `OLLAMA_URL` and `MODEL_NAME` in backend-configmap
-- **Model repull required** after PVC data loss: `sudo kubectl exec deployment/ollama -n llm -- ollama pull qwen3:14b-q4_K_M`
+- **Provider**: NVIDIA NIM hosted API (`api.nvidia.com`)
+- **Model**: `meta/llama-3.1-8b-instruct` (default; overridable via `NVIDIA_MODEL` env var)
+- **API key**: `NVIDIA_API_KEY` stored in `backend-secret` K8s secret (70-char `nvapi-*` key)
+- **Config**: `LLM_PROVIDER: nvidia` and `NVIDIA_MODEL: meta/llama-3.1-8b-instruct` in `backend-configmap`
+- **Factory**: `backend/agents/llm_factory.py` — activates NVIDIA provider when `NVIDIA_API_KEY` is set; falls back to Ollama only if key is absent
+- **GPU**: RTX 5070 Ti GPU is now fully available for TTS (`tts-service`) and ASR (`asr-service`) — no longer shared with a local LLM
+
+### LLM Fallback (Ollama — scaled to 0, emergency only)
+
+- Ollama deployment exists in K8s namespace `llm` but is scaled to **0 replicas** (2026-05-15)
+- **To restore as fallback**: `sudo kubectl scale deployment/ollama -n llm --replicas=1`
+- **Model repull required** after scale-up: `sudo kubectl exec deployment/ollama -n llm -- ollama pull qwen3:14b-q4_K_M`
+- **PVC**: `ollama-data-pvc` (50Gi) preserved — model weights are retained on disk
 
 ---
 
@@ -794,6 +829,34 @@ Implementation details:
 - [x] Supervisor routing and specialist execution exist for receptionist, finance, HR, and CRM flows
 - [x] MCP-backed booking, finance, and HR service paths exist in the repo
 - [x] Owner-facing frontend chat and approval UI exist under `frontend/src/features/agent-inbox/`
+- [x] **Agent Brain (Phase 2/3/4)** — see "Agent Brain Layer" section below
+  - SOUL (persistent shop personality + learned patterns) injected into supervisor synthesis
+  - Inferred Commitments scanned from chat tails and resolved on a 15-min Temporal sweep
+  - Natural-language Schedule Parser registers owner-defined recurring tasks as Temporal schedules
+  - Tier gating throughout: free vs premium/enterprise (sourced from `users.subscription_tier`)
+
+### Agent Brain Layer (added 2026-04-24)
+
+The brain layer extends the supervisor graph with persistent identity, inferred follow-through, and natural-language scheduling — all tier-aware via `users.subscription_tier` joined through `shops.owner_id`.
+
+| Capability | Module | DB Tables | Trigger |
+| ---------- | ------ | --------- | ------- |
+| **SOUL Reader** | `backend/agents/soul_reader.py` | `shop_soul`, `soul_learnings`, `commitments` | Read inside `supervisor.synthesize_response` and prepended to the system prompt. Free tier: 5 patterns / 30-day window. Premium: 25 patterns / 90-day window. |
+| **SOUL Updater** | `backend/agents/soul_updater.py` (Temporal activity) + `backend/agents/soul_workflows.py` (`AllShopsSoulEvolutionWorkflow`) | `shop_soul`, `soul_learnings` | Nightly schedule `zeroqwait-soul-evolution` (cron `0 3 * * *`). Free tier: at most one update / 7 days. |
+| **Commitment Scanner** | `backend/agents/commitment_scanner.py` | `commitments` | Fire-and-forget background task in `chat_service._finalize_chat_work_context` after every successful run. Free: ≤1 commitment/run. Premium: ≤5. |
+| **Commitment Resolver** | `backend/agents/commitment_workflows.py` (`CommitmentResolverWorkflow` + activities) | `commitments`, `agent_notifications` | Periodic schedule `zeroqwait-commitment-sweep` every 15 min. Free: notification only. Premium: notification + auto-act flag for supervisor follow-up. |
+| **NL Schedule Parser** | `backend/agents/schedule_intent_parser.py` | `shop_schedules` | Fast-path inside `supervisor.classify_intent` (regex prefilter → planner LLM with `ScheduleIntent` schema). Registers a Temporal schedule pointing at `CustomShopScheduleWorkflow`. Free cap: 3 active custom schedules. Premium: unlimited. |
+| **Custom Schedule Workflow** | `backend/agents/custom_schedule_workflow.py` | `shop_schedules`, `agent_notifications` | Created on demand by NL Schedule Parser. Each fire writes a `custom_schedule_fired` notification (full agent execution from these is a follow-up). |
+
+Brain Temporal bootstrap lives in `backend/agents/temporal_schedules.ensure_brain_schedules` and is called from `temporal_worker.py` at startup. New workflows/activities registered: `ShopSoulEvolutionWorkflow`, `AllShopsSoulEvolutionWorkflow`, `CommitmentResolverWorkflow`, `CustomShopScheduleWorkflow`, plus their backing activities.
+
+Tier source of truth: `backend/agents/llm_factory.load_shop_subscription_tier(shop_id)` (joins `shops.owner_id → users.subscription_tier`). Premium tier set: `PREMIUM_SUBSCRIPTION_TIERS = {"premium", "enterprise"}`.
+
+### Cleanup Notes (2026-04-24)
+
+- `backend/agent/` (singular dir) is **still in use** — imported by `backend/agent_logic.py` (cache, analyzer, categories, pydantic_agent, master, background) and `backend/tests/test_semantic_cache.py`. Do not delete until customer-facing chat is migrated off `agent_logic.py`.
+- `backend/agent_logic.py` is **still in use** — imported by `backend/main.py` (sentence-transformer pre-warming) and `backend/routers/agent.py` (legacy `/api/agent/master/*` endpoints serving the customer landing page chat). Do not delete until customer chat moves to LangGraph receptionist.
+- `backend/split_god_files.py` is a one-shot historical migration script with no runtime imports.
 
 #### Remaining High-Priority Work
 - [ ] Tighten validation and observability for agent routing, approvals, and health checks
@@ -861,8 +924,9 @@ Implementation details:
 
 | Variable          | Default                                                          | Description         |
 | ----------------- | ---------------------------------------------------------------- | ------------------- |
-| `OLLAMA_URL`      | `http://localhost:11434/v1`                                      | Ollama API endpoint |
-| `MODEL_NAME`      | `llama3.2:latest`                                                | LLM model name      |
+| `NVIDIA_API_KEY`  | *(in K8s secret)*                                                | NVIDIA NIM API key (primary LLM) |
+| `NVIDIA_MODEL`    | `meta/llama-3.1-8b-instruct`                                     | NVIDIA NIM model name |
+| `LLM_PROVIDER`    | `nvidia`                                                         | Active LLM provider (`nvidia`\|`ollama`\|`groq`) |
 | `DB_HOST`         | `localhost`                                                      | PostgreSQL host     |
 | `DB_PORT`         | `5432`                                                           | PostgreSQL port     |
 | `DB_NAME`         | `zeroqwait`                                                      | Database name       |
@@ -911,39 +975,42 @@ curl -sk -X POST https://zeroqwait.com/api/agent/master/chat \
 
 ---
 
-## 16. DevOps Pipeline (Local-Only Registry + Argo CD)
+## 16. DevOps Pipeline (GHCR + Argo CD)
 
 ### Goal
 
-Use a **local Docker registry only** (no cloud image registry), persist image blobs on SSD, and keep a complete, visual GitOps deployment history.
+Use **GitHub Container Registry (GHCR) exclusively** (`ghcr.io/nfornj`) for all versioned images. The local Docker registry (`localhost:5000`) is **deprecated and must not be used** for K8s images. All K8s manifests must reference `ghcr.io/nfornj/<service>:<tag>` — never `localhost:5000`.
+
+### MANDATORY Registry Rule
+
+> **`localhost:5000` is FORBIDDEN in K8s manifests and CI builds.**
+>
+> - **All `image:` fields in every file under `k8s-manifests/`** must use `ghcr.io/nfornj/<service>:<tag>`.
+> - **Never run `docker build -t localhost:5000/...`** for images destined for K8s.
+> - **Never update a K8s manifest** to reference `localhost:5000/...`.
+> - The only authorised path to push K8s images is `deployment/scripts/run-local-pipeline.sh` (uses `REGISTRY=ghcr.io/nfornj` by default) or the GitHub Actions deploy workflows which push with `GITHUB_TOKEN`.
+> - If you need `write:packages` scope to push manually, authenticate with: `gh auth token | sudo docker login ghcr.io -u nfornj --password-stdin` — but verify the `gh` token has `write:packages` scope first.
 
 ### Standard Stack
 
-- **Registry**: local Docker Registry v2 on `localhost:5000`
-- **Registry storage path**: `/media/neekrishrichu/One Touch/projects/zeroqwait` (SSD)
-- **Registry UI**: `http://localhost:5080` (joxit/docker-registry-ui, visual tag browser + delete)
+- **Registry**: GitHub Container Registry — `ghcr.io/nfornj`
+- **Image naming**: `ghcr.io/nfornj/<service>:vYYYYMMDDHHMMSS-<sha>` (semver via `run-local-pipeline.sh`)
 - **GitOps**: Argo CD v3.3.6 in `argocd` namespace
 - **Argo CD UI**: `https://localhost:8443` (port-forward: `sudo kubectl port-forward svc/argocd-server -n argocd 8443:443`)
 - **Argo CD login**: user `admin`, initial password in `argocd-initial-admin-secret` K8s secret
 - **Manifest source**: `k8s-manifests` (Kustomize root)
-- **Version policy**: keep only **last 10 tags** per service in registry
+- **Version policy**: keep only **last 10 tags** per service (pruned via `deployment/scripts/prune-ghcr-tags.sh`)
 
 ### Pipeline Scripts (authoritative)
 
-- `deployment/scripts/setup-local-registry.sh`
-  - Starts/recreates registry container with delete API enabled
-  - Uses `deployment/registry/config.yml`
-  - Mounts SSD path for image storage
+- `deployment/scripts/run-local-pipeline.sh`
+  - **Primary build + push path** — always defaults to `REGISTRY=ghcr.io/nfornj`
+  - Builds versioned images (`vYYYYMMDDHHMMSS-<sha>`), pushes to GHCR, updates `k8s-manifests/` image tags, optionally commits and triggers Argo CD sync
+  - Requires docker login to GHCR (handled automatically in CI via `GITHUB_TOKEN`)
 - `deployment/scripts/setup-argocd-gitops.sh`
   - Installs Argo CD and creates `zeroqwait` Application
-- `deployment/scripts/run-local-pipeline.sh`
-  - Runs backend + frontend tests for each run
-  - Builds/pushes versioned images (`vYYYYMMDDHHMMSS-<sha>`)
-  - Updates image tags in K8s deployment manifests
-  - Optionally commits manifest updates
-  - Optionally triggers Argo sync
-- `deployment/scripts/prune-registry-tags.sh`
-  - Enforces retention: keeps only latest 10 tags per repo
+- `deployment/scripts/prune-ghcr-tags.sh`
+  - Enforces retention: keeps only latest 10 tags per repo on GHCR
 
 ### Services under versioned image pipeline
 
@@ -952,6 +1019,9 @@ Use a **local Docker registry only** (no cloud image registry), persist image bl
 - `asr-service`
 - `tts-service`
 - `voice-mcp`
+- `finance-mcp`
+- `booking-mcp`
+- `hr-mcp`
 
 ### Visual operations
 
@@ -963,7 +1033,7 @@ Use a **local Docker registry only** (no cloud image registry), persist image bl
 
 - Do not replace protected AI/TTS models while introducing pipeline changes.
 - Keep TTS voice `Vivian`, service port `8880`, and Qwen3-TTS engine unchanged.
-- Do not switch registry to cloud unless explicitly approved.
+- **Do not use `localhost:5000` for any K8s image** — this rule supersedes any previous guidance about a local-only registry.
 
 ### Branch-Based Deployment Policy
 
@@ -1028,6 +1098,6 @@ Use a **local Docker registry only** (no cloud image registry), persist image bl
 
 ### What is NOT in this project
 - No managed cloud-database abstraction layer — database access is plain SQLAlchemy + PostgreSQL
-- No OpenAI — LLM is local Ollama (qwen3:14b-q4_K_M)
+- No local LLM — LLM is NVIDIA NIM API (`meta/llama-3.1-8b-instruct`); Ollama is scaled to 0
 - No Twenty CRM — fully removed, Odoo handles all CRM
 - No LangChain Tool/StructuredTool wrappers anywhere in agents/tools/

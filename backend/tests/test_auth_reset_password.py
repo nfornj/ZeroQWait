@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock, patch
 
 from modules.auth.router import router as auth_router
 
@@ -81,3 +82,73 @@ def test_reset_password_updates_password_and_invalidates_token(monkeypatch):
     assert response.status_code == 200
     assert response.json()["message"] == "Password has been reset successfully."
     assert deleted["key"] == "password_reset:good-token"
+
+
+# ── SES path in send_password_reset_email ────────────────────────────────────
+
+def test_send_password_reset_email_uses_ses_when_configured():
+    """When SES is configured, send_password_reset_email queues SES via asyncio.create_task."""
+    import asyncio
+
+    tasks_created = []
+
+    # asyncio.create_task accepts a coroutine; we capture it without actually awaiting
+    def fake_create_task(coro):
+        tasks_created.append(coro)
+        # Close the coroutine to avoid "coroutine was never awaited" warnings
+        coro.close()
+        return MagicMock()
+
+    mock_ses_send = AsyncMock(return_value=True)
+
+    with patch("shared.email_utils.is_ses_configured", return_value=True), \
+         patch("shared.email_utils.ses_send_email", mock_ses_send), \
+         patch("shared.email_utils.asyncio.create_task", fake_create_task):
+        from shared import email_utils
+        import importlib
+        importlib.reload(email_utils)
+
+        result = email_utils.send_password_reset_email(
+            email="owner@example.com",
+            reset_token="ses-test-token",
+        )
+
+    assert result is True
+    assert len(tasks_created) == 1   # one coroutine was queued
+
+
+def test_send_password_reset_email_falls_back_to_smtp_when_ses_not_configured(monkeypatch):
+    """When SES is not configured but EMAIL_PASSWORD is set, SMTP is used."""
+    import smtplib
+    from unittest.mock import MagicMock
+
+    smtp_calls = {"send": False}
+
+    class FakeSMTP:
+        def __init__(self, host, port):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            pass
+        def starttls(self):
+            pass
+        def login(self, user, password):
+            pass
+        def send_message(self, msg):
+            smtp_calls["send"] = True
+
+    with patch("shared.email_utils.is_ses_configured", return_value=False), \
+         patch("shared.email_utils.EMAIL_PASSWORD", "fake-password"), \
+         patch("shared.email_utils.smtplib.SMTP", FakeSMTP):
+        from shared import email_utils
+        import importlib
+        importlib.reload(email_utils)
+
+        result = email_utils.send_password_reset_email(
+            email="owner@example.com",
+            reset_token="smtp-test-token",
+        )
+
+    assert result is True
+    assert smtp_calls["send"] is True

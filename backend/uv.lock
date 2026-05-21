@@ -223,6 +223,7 @@ dependencies = [
     { name = "sentence-transformers" },
     { name = "sqlalchemy" },
     { name = "stripe" },
+    { name = "temporalio" },
     { name = "uvicorn" },
 ]
 
@@ -275,6 +276,7 @@ requires-dist = [
     { name = "sentence-transformers", specifier = ">=4.0.0" },
     { name = "sqlalchemy", specifier = ">=2.0.30" },
     { name = "stripe", specifier = ">=10.0.0" },
+    { name = "temporalio", specifier = ">=1.16.0" },
     { name = "uvicorn", specifier = ">=0.30.0" },
 ]
 provides-extras = ["dev"]

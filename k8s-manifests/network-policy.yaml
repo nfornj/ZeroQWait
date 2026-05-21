@@ -29,6 +29,15 @@ spec:
         - podSelector:
             matchLabels:
               app: finance-mcp
+        - podSelector:
+            matchLabels:
+              app: temporal
+        - podSelector:
+            matchLabels:
+              app: temporal-worker
+        - podSelector:
+            matchLabels:
+              app: odoo
       ports:
         - protocol: TCP
           port: 5432
@@ -50,6 +59,9 @@ spec:
         - podSelector:
             matchLabels:
               app: backend
+        - podSelector:
+            matchLabels:
+              app: temporal-worker
       ports:
         - protocol: TCP
           port: 6379

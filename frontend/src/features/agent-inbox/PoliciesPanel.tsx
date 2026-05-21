@@ -1,21 +1,14 @@
 import React, { useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { Button } from "../../components/ui/button";
 import {
-  alpha,
-  Box,
-  Button,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Collapse,
-  Divider,
-  IconButton,
-  MenuItem,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
-import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
-
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
+import { cn } from "../../lib/utils";
 import GlassCard from "../../components/GlassCard";
 import useOwnerBrand from "../../hooks/useOwnerBrand";
 import { labelForPolicyMode } from "./agentInboxShared";
@@ -38,117 +31,123 @@ const PoliciesPanel: React.FC<PoliciesPanelProps> = ({
   const [open, setOpen] = useState(false);
 
   return (
-    <GlassCard>
-      <CardContent sx={{ py: 1.5 }}>
-        <Stack spacing={1.25}>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-            <Box>
-              <Typography variant="h6">Approval Policies</Typography>
-              <Typography variant="body2" color="text.secondary">
+    <GlassCard className="rounded-2xl">
+      <div className="px-4 py-3">
+        <div className="flex flex-col gap-3">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-base font-semibold">Approval Policies</p>
+              <p className="text-sm text-muted-foreground">
                 Choose what the agent team can run automatically for this shop.
-              </Typography>
-            </Box>
-            <Stack direction="row" spacing={0.5} alignItems="center">
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               {savingPolicyKey ? (
-                <CircularProgress size={18} />
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-border border-t-primary" />
               ) : (
-                <Chip
-                  size="small"
-                  label={`${policies.length} actions`}
-                  sx={{
-                    bgcolor: alpha(brand.primary, 0.14),
+                <span
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold border"
+                  style={{
+                    backgroundColor: `${brand.primary}24`,
                     color: brand.primary,
-                    border: `1px solid ${alpha(brand.primary, 0.22)}`,
-                    fontWeight: 700,
+                    borderColor: `${brand.primary}38`,
                   }}
-                />
+                >
+                  {policies.length} actions
+                </span>
               )}
-              <IconButton size="small" onClick={() => setOpen((prev) => !prev)} sx={{ color: brand.primary }}>
-                <ExpandMoreRoundedIcon
-                  sx={{
-                    transition: "transform 0.18s",
-                    transform: open ? "rotate(180deg)" : "rotate(0deg)",
-                  }}
+              <button
+                type="button"
+                onClick={() => setOpen((prev) => !prev)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted transition-colors"
+                style={{ color: brand.primary }}
+              >
+                <ChevronDown
+                  className={cn("h-4 w-4 transition-transform duration-200", open && "rotate-180")}
                 />
-              </IconButton>
-            </Stack>
-          </Stack>
-          <Collapse in={open} unmountOnExit>
-            <Stack spacing={1.25}>
-              <Divider sx={{ borderColor: alpha(brand.primary, 0.12) }} />
+              </button>
+            </div>
+          </div>
+
+          {/* Collapsible body */}
+          {open && (
+            <div className="flex flex-col gap-3">
+              <hr style={{ borderColor: `${brand.primary}1f` }} />
+
               {policies.length === 0 ? (
-                <Stack spacing={1}>
-                  <Typography variant="body2" color="text.secondary">
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-muted-foreground">
                     No approval policies are available for this shop yet.
-                  </Typography>
+                  </p>
                   {onRetry && (
-                    <Button size="small" onClick={onRetry} sx={{ alignSelf: "flex-start" }}>
+                    <Button size="sm" variant="ghost" onClick={onRetry} className="self-start">
                       Retry
                     </Button>
                   )}
-                </Stack>
+                </div>
               ) : (
                 policies.map((policy) => {
                   const isSaving = savingPolicyKey === policy.policy_key;
                   return (
-                    <Box
+                    <div
                       key={policy.policy_key}
-                      sx={{
-                        p: 1.25,
-                        borderRadius: 2.5,
-                        border: `1px solid ${alpha(brand.primary, 0.12)}`,
-                        bgcolor: alpha(brand.primary, 0.04),
+                      className="rounded-xl border p-3"
+                      style={{
+                        borderColor: `${brand.primary}1f`,
+                        backgroundColor: `${brand.primary}0a`,
                       }}
                     >
-                      <Stack spacing={1}>
-                        <Stack direction={{ xs: "column", lg: "row" }} justifyContent="space-between" spacing={1}>
-                          <Box sx={{ minWidth: 0 }}>
-                            <Typography variant="subtitle2" sx={{ color: brand.primary }}>
-                              {policy.title}
-                            </Typography>
-                            <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" mt={0.5}>
-                              <Chip size="small" variant="outlined" label={policy.category} />
-                              <Chip size="small" variant="outlined" label={`${policy.risk_level || "medium"} risk`} />
-                              <Chip
-                                size="small"
-                                variant="outlined"
-                                label={
-                                  policy.explicit
-                                    ? "Custom mode"
-                                    : `Default: ${labelForPolicyMode(policy.default_mode)}`
-                                }
-                              />
-                            </Stack>
-                          </Box>
-                          <TextField
-                            select
-                            size="small"
-                            label="Mode"
-                            value={policy.mode}
-                            disabled={isSaving}
-                            onChange={(event) => onModeChange(policy, event.target.value)}
-                            sx={{ minWidth: { xs: "100%", lg: 220 } }}
-                          >
+                      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold" style={{ color: brand.primary }}>
+                            {policy.title}
+                          </p>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                              {policy.category}
+                            </span>
+                            <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                              {policy.risk_level || "medium"} risk
+                            </span>
+                            <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                              {policy.explicit
+                                ? "Custom mode"
+                                : `Default: ${labelForPolicyMode(policy.default_mode)}`}
+                            </span>
+                          </div>
+                        </div>
+
+                        <Select
+                          value={policy.mode}
+                          disabled={isSaving}
+                          onValueChange={(value) => onModeChange(policy, value)}
+                        >
+                          <SelectTrigger className="w-full lg:w-52 h-8 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
                             {(policy.supported_modes || []).map((mode) => (
-                              <MenuItem key={mode} value={mode}>
+                              <SelectItem key={mode} value={mode}>
                                 {labelForPolicyMode(mode)}
-                              </MenuItem>
+                              </SelectItem>
                             ))}
-                          </TextField>
-                        </Stack>
-                        <Typography variant="caption" color="text.secondary">
-                          Current mode: {labelForPolicyMode(policy.mode)}
-                          {isSaving ? " · Saving..." : ""}
-                        </Typography>
-                      </Stack>
-                    </Box>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        Current mode: {labelForPolicyMode(policy.mode)}
+                        {isSaving ? " · Saving..." : ""}
+                      </p>
+                    </div>
                   );
                 })
               )}
-            </Stack>
-          </Collapse>
-        </Stack>
-      </CardContent>
+            </div>
+          )}
+        </div>
+      </div>
     </GlassCard>
   );
 };

@@ -84,8 +84,8 @@ class AgentDocument(Base):
     __tablename__ = "agent_documents"
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
-    uploaded_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    uploaded_by_user_id = Column(Integer, ForeignKey("platform.users.id"), nullable=False, index=True)
     filename = Column(String, nullable=False)
     relative_path = Column(String, nullable=True)
     content_type = Column(String, nullable=False)
@@ -106,12 +106,98 @@ class ShopLLMConfig(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     provider = Column(String(32), nullable=False, default="ollama", index=True)
     model_name = Column(String, nullable=False)
     api_base_url = Column(String, nullable=True)
     api_key_encrypted = Column(Text, nullable=True)
     settings = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ShopSoul(Base):
+    __tablename__ = "shop_soul"
+    __table_args__ = (
+        UniqueConstraint("shop_id", name="uq_shop_soul_shop"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    tone = Column(String, nullable=True)
+    upsell_style = Column(String, nullable=True)
+    owner_communication = Column(String, nullable=True)
+    personality = Column(JSON, nullable=True)
+    learned_patterns = Column(JSON, nullable=True)
+    recent_decisions = Column(JSON, nullable=True)
+    open_items = Column(JSON, nullable=True)
+    summary = Column(Text, nullable=True)
+    tier_scope = Column(String, nullable=False, default="basic", index=True)
+    rolling_window_days = Column(Integer, nullable=False, default=30)
+    last_evolved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class SoulLearning(Base):
+    __tablename__ = "soul_learnings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_id = Column(Integer, ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    source = Column(String, nullable=False, default="conversation", index=True)
+    category = Column(String, nullable=False, default="pattern", index=True)
+    content = Column(Text, nullable=False)
+    confidence_score = Column(Float, nullable=False, default=0.5)
+    evidence = Column(JSON, nullable=True)
+    graduated = Column(Boolean, nullable=False, default=False, index=True)
+    observed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Commitment(Base):
+    __tablename__ = "commitments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_id = Column(Integer, ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    made_by = Column(String, nullable=False, index=True)
+    commitment = Column(Text, nullable=False)
+    due_at = Column(DateTime, nullable=True, index=True)
+    trigger_if_missed = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    action_payload = Column(JSON, nullable=True)
+    detected_from = Column(JSON, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ShopSchedule(Base):
+    __tablename__ = "shop_schedules"
+    __table_args__ = (
+        UniqueConstraint("shop_id", "schedule_key", name="uq_shop_schedule_key"),
+        UniqueConstraint("temporal_schedule_id", name="uq_shop_schedule_temporal_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by_user_id = Column(Integer, ForeignKey("platform.users.id", ondelete="SET NULL"), nullable=True, index=True)
+    schedule_key = Column(String, nullable=False, index=True)
+    temporal_schedule_id = Column(String, nullable=False, index=True)
+    schedule_type = Column(String, nullable=False, default="custom", index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    natural_language = Column(Text, nullable=True)
+    cron_expression = Column(String, nullable=False)
+    timezone = Column(String, nullable=False, default="UTC")
+    target_agent = Column(String, nullable=False, default="supervisor", index=True)
+    action_payload = Column(JSON, nullable=True)
+    condition_payload = Column(JSON, nullable=True)
+    status = Column(String, nullable=False, default="active", index=True)
+    tier_scope = Column(String, nullable=False, default="free", index=True)
+    last_triggered_at = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -196,8 +282,8 @@ class AgentGoal(Base):
     __tablename__ = "agent_goals"
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
-    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by_user_id = Column(Integer, ForeignKey("platform.users.id"), nullable=True, index=True)
     source = Column(SQLEnum(GoalSource), nullable=False, default=GoalSource.CHAT, index=True)
     goal_type = Column(String, nullable=False, index=True)
     title = Column(String, nullable=False)
@@ -220,7 +306,7 @@ class AgentTask(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     goal_id = Column(Integer, ForeignKey("agent_goals.id", ondelete="CASCADE"), nullable=False, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     assigned_agent = Column(String, nullable=False, index=True)
     task_type = Column(String, nullable=False, index=True)
     title = Column(String, nullable=False)
@@ -240,10 +326,10 @@ class AgentRun(Base):
     __tablename__ = "agent_runs"
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     goal_id = Column(Integer, ForeignKey("agent_goals.id", ondelete="SET NULL"), nullable=True, index=True)
     task_id = Column(Integer, ForeignKey("agent_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
-    triggered_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    triggered_by_user_id = Column(Integer, ForeignKey("platform.users.id"), nullable=True, index=True)
     run_type = Column(String, nullable=False, default="chat", index=True)
     trigger_source = Column(String, nullable=False, default="chat", index=True)
     execution_mode = Column(String, nullable=False, default="interactive", index=True)
@@ -265,12 +351,12 @@ class ApprovalRequest(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     external_action_id = Column(String, nullable=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     goal_id = Column(Integer, ForeignKey("agent_goals.id", ondelete="SET NULL"), nullable=True, index=True)
     task_id = Column(Integer, ForeignKey("agent_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     run_id = Column(Integer, ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True)
-    requested_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
-    decided_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    requested_by_user_id = Column(Integer, ForeignKey("platform.users.id"), nullable=True, index=True)
+    decided_by_user_id = Column(Integer, ForeignKey("platform.users.id"), nullable=True, index=True)
     requested_by_agent = Column(String, nullable=False, index=True)
     action_type = Column(String, nullable=False, index=True)
     title = Column(String, nullable=False)
@@ -295,7 +381,7 @@ class ShopPolicy(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     policy_key = Column(String, nullable=False, index=True)
     category = Column(String, nullable=False, default="operations", index=True)
     mode = Column(SQLEnum(PolicyMode), nullable=False, default=PolicyMode.REQUIRE_APPROVAL, index=True)
@@ -310,7 +396,7 @@ class AgentNotification(Base):
     __tablename__ = "agent_notifications"
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     goal_id = Column(Integer, ForeignKey("agent_goals.id", ondelete="SET NULL"), nullable=True, index=True)
     task_id = Column(Integer, ForeignKey("agent_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     run_id = Column(Integer, ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -329,8 +415,8 @@ class CustomerCase(Base):
     __tablename__ = "customer_cases"
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
-    customer_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_user_id = Column(Integer, ForeignKey("platform.users.id"), nullable=True, index=True)
     current_goal_id = Column(Integer, ForeignKey("agent_goals.id", ondelete="SET NULL"), nullable=True, index=True)
     case_type = Column(String, nullable=False, index=True)
     status = Column(SQLEnum(CaseStatus), nullable=False, default=CaseStatus.OPEN, index=True)

@@ -41,7 +41,7 @@ class Invoice(Base):
     __tablename__ = "invoices"
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     customer_id = Column(Integer, ForeignKey("shop_customers.id"), nullable=True, index=True)
 
     invoice_number = Column(String, nullable=False, index=True)
@@ -95,7 +95,7 @@ class Payment(Base):
     __tablename__ = "payments"
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_id = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey("platform.shops.id", ondelete="CASCADE"), nullable=False, index=True)
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True, index=True)
     customer_id = Column(Integer, ForeignKey("shop_customers.id"), nullable=True, index=True)
 
@@ -110,7 +110,7 @@ class Payment(Base):
     external_ref = Column(String, nullable=True)
     payment_meta = Column(JSON, nullable=True)
 
-    processed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    processed_by = Column(Integer, ForeignKey("platform.users.id"), nullable=True)
     processed_at = Column(DateTime)
     refunded_at = Column(DateTime)
     refund_amount = Column(Float, default=0.0)

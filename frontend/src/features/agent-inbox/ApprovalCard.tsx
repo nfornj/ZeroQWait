@@ -1,17 +1,10 @@
 import React from "react";
-import {
-  alpha,
-  Box,
-  Button,
-  Card,
-  Chip,
-  Stack,
-  Typography,
-  useTheme,
-} from "@mui/material";
-import RocketLaunchRoundedIcon from "@mui/icons-material/RocketLaunchRounded";
+import { Rocket } from "lucide-react";
+import { Button } from "../../components/ui/button";
+import { Badge } from "../../components/ui/badge";
+import { cn } from "../../lib/utils";
 import type { PendingApproval } from "./types";
-import { useShop } from "../../contexts/ShopContext";
+import { useOwnerBrand } from "../../hooks/useOwnerBrand";
 
 interface ApprovalCardProps {
   approval: PendingApproval;
@@ -21,29 +14,18 @@ interface ApprovalCardProps {
 
 const formatPolicyMode = (mode?: string): string => {
   switch (mode) {
-    case "require_approval":
-      return "Require approval";
-    case "allow":
-      return "Allow automatically";
-    case "notify_only":
-      return "Notify after auto-run";
-    case "silent":
-      return "Silent auto-run";
-    case "forbid":
-      return "Blocked by policy";
-    default:
-      return mode ? mode.replace(/_/g, " ") : "Policy controlled";
+    case "require_approval": return "Require approval";
+    case "allow": return "Allow automatically";
+    case "notify_only": return "Notify after auto-run";
+    case "silent": return "Silent auto-run";
+    case "forbid": return "Blocked by policy";
+    default: return mode ? mode.replace(/_/g, " ") : "Policy controlled";
   }
 };
 
 const formatActionLabel = (action?: string): string => {
   if (!action) return "Approve";
-
-  const primaryWord = action
-    .replace(/[_-]+/g, " ")
-    .trim()
-    .split(/\s+/)[0];
-
+  const primaryWord = action.replace(/[_-]+/g, " ").trim().split(/\s+/)[0];
   if (!primaryWord) return "Approve";
   return primaryWord.charAt(0).toUpperCase() + primaryWord.slice(1);
 };
@@ -56,148 +38,96 @@ const getApprovalDescription = (approval: PendingApproval): string => {
 };
 
 const ApprovalCard: React.FC<ApprovalCardProps> = ({ approval, isSubmitting, onDecision }) => {
-  const muiTheme = useTheme();
-  const { shop } = useShop();
-  const brandPrimary = shop?.primary_color || muiTheme.palette.primary.main;
-  const brandSecondary = shop?.secondary_color || brandPrimary;
-  const cardBg =
-    muiTheme.palette.mode === "dark"
-      ? alpha(muiTheme.palette.background.paper, 0.88)
-      : alpha("#ffffff", 0.9);
-  const cardBorder =
-    muiTheme.palette.mode === "dark"
-      ? alpha(brandPrimary, 0.24)
-      : alpha(brandPrimary, 0.16);
-  const riskTone = approval.risk_level === "high"
-    ? muiTheme.palette.error.main
-    : approval.risk_level === "medium"
-      ? muiTheme.palette.warning.main
-      : muiTheme.palette.success.main;
+  const brand = useOwnerBrand();
+
+  const riskColor =
+    approval.risk_level === "high"
+      ? "#ef4444"
+      : approval.risk_level === "medium"
+      ? "#f59e0b"
+      : "#22c55e";
+
   const title = approval.title || approval.action.replace(/_/g, " ");
   const description = getApprovalDescription(approval);
   const actionLabel = formatActionLabel(approval.action);
 
   return (
-    <Card
-      variant="outlined"
-      sx={{
-        borderRadius: 3.5,
-        borderColor: cardBorder,
-        bgcolor: cardBg,
-        backdropFilter: "blur(20px)",
-        boxShadow: "none",
+    <div
+      className="rounded-2xl border backdrop-blur-xl"
+      style={{
+        borderColor: brand.glass.border,
+        backgroundColor: brand.glass.bg,
       }}
     >
-      <Box
-        sx={{
-          px: 2,
-          py: 1.75,
-          display: "flex",
-          flexDirection: { xs: "column", sm: "row" },
-          alignItems: { xs: "stretch", sm: "center" },
-          gap: 1.5,
-        }}
-      >
-        <Stack direction="row" spacing={1.5} sx={{ flex: 1, minWidth: 0 }}>
-          <Box
-            sx={{
-              width: 52,
-              height: 52,
-              borderRadius: 2.5,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              bgcolor: alpha(brandSecondary, 0.12),
-              color: brandSecondary,
-              border: `1px solid ${alpha(brandSecondary, 0.18)}`,
-              flexShrink: 0,
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4 px-4 py-4">
+        {/* Icon + Info */}
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div
+            className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 border"
+            style={{
+              backgroundColor: `${brand.secondary}1f`,
+              borderColor: `${brand.secondary}2e`,
+              color: brand.secondary,
             }}
           >
-            <RocketLaunchRoundedIcon sx={{ fontSize: 24 }} />
-          </Box>
+            <Rocket className="h-5 w-5" />
+          </div>
 
-          <Stack spacing={0.65} sx={{ minWidth: 0, flex: 1 }}>
-            <Typography variant="h6" sx={{ fontSize: "1.05rem", fontWeight: 700, color: "text.primary" }}>
-              {title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
-              {description}
-            </Typography>
-            <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <p className="text-base font-bold text-foreground leading-snug">{title}</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
+            <div className="flex flex-wrap gap-1.5 mt-0.5">
               {approval.risk_level && (
-                <Chip
-                  size="small"
-                  label={`Risk: ${String(approval.risk_level)}`}
-                  sx={{
-                    bgcolor: alpha(riskTone, 0.12),
-                    color: riskTone,
-                    border: `1px solid ${alpha(riskTone, 0.18)}`,
-                    fontWeight: 600,
+                <span
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold border"
+                  style={{
+                    backgroundColor: `${riskColor}1f`,
+                    color: riskColor,
+                    borderColor: `${riskColor}2e`,
                   }}
-                />
+                >
+                  Risk: {approval.risk_level}
+                </span>
               )}
               {approval.policy_mode && (
-                <Chip
-                  size="small"
-                  label={formatPolicyMode(approval.policy_mode)}
-                  sx={{
-                    bgcolor: alpha(brandPrimary, 0.08),
-                    color: brandPrimary,
-                    border: `1px solid ${alpha(brandPrimary, 0.16)}`,
+                <span
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-xs border"
+                  style={{
+                    backgroundColor: `${brand.primary}14`,
+                    color: brand.primary,
+                    borderColor: `${brand.primary}29`,
                   }}
-                />
+                >
+                  {formatPolicyMode(approval.policy_mode)}
+                </span>
               )}
-            </Stack>
-          </Stack>
-        </Stack>
+            </div>
+          </div>
+        </div>
 
-        <Stack
-          direction="row"
-          spacing={1}
-          justifyContent={{ xs: "flex-end", sm: "flex-start" }}
-          sx={{ ml: { sm: "auto" }, flexShrink: 0 }}
-        >
+        {/* Actions */}
+        <div className="flex gap-2 justify-end sm:justify-start flex-shrink-0 sm:ml-auto">
           <Button
-            variant="text"
-            color="inherit"
+            variant="ghost"
+            size="sm"
             disabled={isSubmitting}
             onClick={() => onDecision(approval, false)}
-            sx={{
-              minWidth: 72,
-              borderRadius: 999,
-              px: 1.5,
-              color: muiTheme.palette.text.primary,
-              textTransform: "none",
-              fontWeight: 600,
-            }}
+            className="rounded-full font-semibold"
           >
             Deny
           </Button>
           <Button
-            variant="contained"
+            size="sm"
             disabled={isSubmitting}
             onClick={() => onDecision(approval, true)}
-            sx={{
-              minWidth: 96,
-              borderRadius: 999,
-              px: 2,
-              bgcolor: brandPrimary,
-              boxShadow: "none",
-              color: muiTheme.palette.getContrastText(brandPrimary),
-              textTransform: "none",
-              fontWeight: 700,
-              "&:hover": {
-                bgcolor: brandPrimary,
-                filter: "brightness(0.95)",
-                boxShadow: "none",
-              },
-            }}
+            className="rounded-full font-bold"
+            style={{ backgroundColor: brand.primary }}
           >
             {actionLabel}
           </Button>
-        </Stack>
-      </Box>
-    </Card>
+        </div>
+      </div>
+    </div>
   );
 };
 

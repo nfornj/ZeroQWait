@@ -8,6 +8,7 @@ import sys
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 
@@ -53,6 +54,11 @@ class CustomerMetricsRequest(ShopRequest):
     query: Optional[str] = None
 
 
+class ServiceCustomerCountsRequest(ShopRequest):
+    query: Optional[str] = None
+    limit: int = 20
+
+
 class CreateInvoiceRequest(ShopRequest):
     service_name: str
     unit_price: float
@@ -82,6 +88,12 @@ class ListInvoicesRequest(ShopRequest):
 
 class PosSummaryRequest(ShopRequest):
     date: Optional[str] = None
+
+
+class QueryAnswerRequest(ShopRequest):
+    question: str
+    operation: Optional[str] = None
+    mode: str = "enabled"
 
 
 class InactiveClientsRequest(ShopRequest):
@@ -123,6 +135,11 @@ async def rest_top_services(req: TopServicesRequest):
 @app.post("/customers/metrics")
 async def rest_customer_metrics(req: CustomerMetricsRequest):
     return finance_tools._local_customer_metrics(req.shop_id, req.query)
+
+
+@app.post("/services/customer-counts")
+async def rest_service_customer_counts(req: ServiceCustomerCountsRequest):
+    return finance_tools._local_service_customer_counts(req.shop_id, query=req.query, limit=req.limit)
 
 
 @app.post("/reports/export")
@@ -172,6 +189,17 @@ async def rest_list_invoices(req: ListInvoicesRequest):
 @app.post("/pos/summary")
 async def rest_get_pos_summary(req: PosSummaryRequest):
     return finance_tools._local_get_pos_summary(req.shop_id, req.date)
+
+
+@app.post("/query/answer")
+async def rest_answer_finance_question(req: QueryAnswerRequest):
+    return await run_in_threadpool(
+        finance_tools._local_answer_finance_question,
+        req.shop_id,
+        req.question,
+        req.operation,
+        req.mode,
+    )
 
 
 @app.post("/clients/inactive")
@@ -231,6 +259,12 @@ try:
     @mcp.tool(description="Return customer metrics for a shop.")
     async def customer_metrics(shop_id: int, query: Optional[str] = None) -> dict:
         return await rest_customer_metrics(CustomerMetricsRequest(shop_id=shop_id, query=query))
+
+    @mcp.tool(description="Return completed customer counts grouped by service for a shop.")
+    async def service_customer_counts(shop_id: int, query: Optional[str] = None, limit: int = 20) -> dict:
+        return await rest_service_customer_counts(
+            ServiceCustomerCountsRequest(shop_id=shop_id, query=query, limit=limit)
+        )
 
     @mcp.tool(description="Export a weekly finance report for a shop.")
     async def export_report(shop_id: int, format: str = "csv") -> dict:
@@ -299,6 +333,12 @@ try:
     @mcp.tool(description="Return POS summary for a shop and date.")
     async def get_pos_summary(shop_id: int, date: Optional[str] = None) -> dict:
         return await rest_get_pos_summary(PosSummaryRequest(shop_id=shop_id, date=date))
+
+    @mcp.tool(description="Answer a finance read question with the guarded dynamic SQL query engine.")
+    async def answer_finance_question(shop_id: int, question: str, operation: Optional[str] = None, mode: str = "enabled") -> dict:
+        return await rest_answer_finance_question(
+            QueryAnswerRequest(shop_id=shop_id, question=question, operation=operation, mode=mode)
+        )
 
     @mcp.tool(description="Return inactive clients for a shop.")
     async def get_inactive_clients(shop_id: int, days_threshold: int = 45) -> dict:

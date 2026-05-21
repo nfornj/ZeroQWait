@@ -1,24 +1,14 @@
 import React, { useState } from "react";
-import {
-  Paper,
-  TextField,
-  Button,
-  Box,
-  Alert,
-  CircularProgress,
-  InputAdornment,
-  Slider,
-  Typography,
-} from "@mui/material";
-import SearchIcon from "@mui/icons-material/Search";
-import MyLocationIcon from "@mui/icons-material/MyLocation";
+import { Loader2, LocateFixed, Search } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 
 interface SearchFormProps {
-  onSearch: (
-    latitude: number,
-    longitude: number,
-    radius: number
-  ) => Promise<void>;
+  onSearch: (latitude: number, longitude: number, radius: number) => Promise<void>;
 }
 
 const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
@@ -39,36 +29,27 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
-          await onSearch(
-            position.coords.latitude,
-            position.coords.longitude,
-            radius
-          );
-          setLocation(
-            `${position.coords.latitude}, ${position.coords.longitude}`
-          );
-        } catch (err) {
+          await onSearch(position.coords.latitude, position.coords.longitude, radius);
+          setLocation(`${position.coords.latitude}, ${position.coords.longitude}`);
+        } catch {
           setError("Failed to search with current location");
         } finally {
           setLoading(false);
         }
       },
-      (error) => {
+      () => {
         setError("Failed to get your location. Please enter it manually.");
         setLoading(false);
-      }
+      },
     );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Simple validation for coordinates format (latitude, longitude)
     const coords = location.split(",").map((coord) => parseFloat(coord.trim()));
-    if (coords.length !== 2 || isNaN(coords[0]) || isNaN(coords[1])) {
-      setError(
-        "Please enter valid coordinates (latitude, longitude) or use current location"
-      );
+    if (coords.length !== 2 || Number.isNaN(coords[0]) || Number.isNaN(coords[1])) {
+      setError("Please enter valid coordinates (latitude, longitude) or use current location");
       return;
     }
 
@@ -76,7 +57,7 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
       setLoading(true);
       setError(null);
       await onSearch(coords[0], coords[1], radius);
-    } catch (err) {
+    } catch {
       setError("Failed to search for haircut services");
     } finally {
       setLoading(false);
@@ -84,195 +65,69 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
   };
 
   return (
-    <Paper
-      component="form"
-      onSubmit={handleSubmit}
-      elevation={0}
-      sx={{
-        p: { xs: 3, md: 4 },
-        border: '1px solid #EBEBEB',
-        background: 'linear-gradient(135deg, rgba(255, 90, 95, 0.02) 0%, rgba(0, 166, 153, 0.02) 100%)',
-      }}
-    >
-      {error && (
-        <Alert
-          severity="error"
-          sx={{
-            mb: 3,
-            border: '1px solid #FFEBEE'
-          }}
-        >
-          {error}
-        </Alert>
-      )}
+    <Card className="border-border/70 bg-gradient-to-br from-primary/5 to-secondary/30">
+      <CardContent className="p-6 md:p-8">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-      {/* Search Input Section */}
-      <Box sx={{ mb: 4 }}>
-        <Typography
-          variant="h6"
-          sx={{
-            fontWeight: 600,
-            mb: 2,
-            color: 'text.primary'
-          }}
-        >
-          Where do you want to find a haircut?
-        </Typography>
+          <div className="flex flex-col gap-3">
+            <Label htmlFor="location" className="text-base">
+              Where do you want to find a haircut?
+            </Label>
+            <div className="flex flex-col gap-3 md:flex-row">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="location"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  disabled={loading}
+                  placeholder="Enter coordinates (latitude, longitude)"
+                  className="pl-9"
+                />
+              </div>
+              <Button type="button" variant="outline" onClick={handleUseCurrentLocation} disabled={loading}>
+                <LocateFixed data-icon="inline-start" />
+                Use My Location
+              </Button>
+            </div>
+          </div>
 
-        <Box sx={{
-          display: 'flex',
-          flexDirection: { xs: 'column', md: 'row' },
-          gap: 2,
-          alignItems: { md: 'flex-end' }
-        }}>
-          <TextField
-            fullWidth
-            label="Location"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            disabled={loading}
-            placeholder="Enter coordinates (latitude, longitude)"
-            variant="outlined"
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                backgroundColor: 'white',
-                fontSize: '1rem',
-                '& fieldset': {
-                  borderColor: '#DDDDDD',
-                  borderWidth: 2
-                },
-                '&:hover fieldset': {
-                  borderColor: '#BBBBBB'
-                },
-                '&.Mui-focused fieldset': {
-                  borderColor: 'primary.main',
-                  borderWidth: 2
-                }
-              },
-              '& .MuiInputLabel-root': {
-                color: 'text.secondary',
-                fontWeight: 500
-              }
-            }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon sx={{ color: 'text.secondary' }} />
-                </InputAdornment>
-              ),
-            }}
-          />
-          <Button
-            variant="outlined"
-            onClick={handleUseCurrentLocation}
-            disabled={loading}
-            startIcon={<MyLocationIcon />}
-            sx={{
-              minWidth: { xs: '100%', md: 'auto' },
-              py: 1.75,
-              px: 3,
-              borderWidth: 2,
-              fontWeight: 600,
-              '&:hover': {
-                borderWidth: 2
-              }
-            }}
-          >
-            Use My Location
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="radius" className="text-base">
+                Search radius
+              </Label>
+              <span className="text-sm font-medium text-muted-foreground">{radius} km</span>
+            </div>
+            <Slider
+              id="radius"
+              value={[radius]}
+              min={1}
+              max={50}
+              step={1}
+              onValueChange={(value) => setRadius(value[0] || 1)}
+              disabled={loading}
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>1km</span>
+              <span>10km</span>
+              <span>25km</span>
+              <span>50km</span>
+            </div>
+          </div>
+
+          <Button type="submit" size="lg" disabled={loading || !location.trim()}>
+            {loading && <Loader2 data-icon="inline-start" className="animate-spin" />}
+            Search for Salons
           </Button>
-        </Box>
-      </Box>
-
-      {/* Radius Selection */}
-      <Box sx={{ mb: 4 }}>
-        <Typography
-          variant="h6"
-          sx={{
-            fontWeight: 600,
-            mb: 2,
-            color: 'text.primary'
-          }}
-        >
-          Search within {radius} km
-        </Typography>
-        <Box sx={{ px: 2 }}>
-          <Slider
-            value={radius}
-            onChange={(_, newValue) => setRadius(newValue as number)}
-            min={1}
-            max={50}
-            step={1}
-            valueLabelDisplay="auto"
-            sx={{
-              color: 'primary.main',
-              height: 6,
-              '& .MuiSlider-track': {
-                border: 'none',
-                background: 'linear-gradient(135deg, #FF5A5F 0%, #FF385C 100%)'
-              },
-              '& .MuiSlider-thumb': {
-                height: 24,
-                width: 24,
-                backgroundColor: 'white',
-                border: '3px solid',
-                borderColor: 'primary.main',
-                boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.15)',
-                '&:focus, &:hover, &.Mui-active, &.Mui-focusVisible': {
-                  boxShadow: '0px 4px 16px rgba(255, 90, 95, 0.3)'
-                }
-              },
-              '& .MuiSlider-valueLabel': {
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                backgroundColor: 'primary.main',
-                '&:before': {
-                  borderBottomColor: 'primary.main'
-                }
-              }
-            }}
-            marks={[
-              { value: 1, label: '1km' },
-              { value: 10, label: '10km' },
-              { value: 25, label: '25km' },
-              { value: 50, label: '50km' }
-            ]}
-          />
-        </Box>
-      </Box>
-
-      {/* Search Button */}
-      <Button
-        type="submit"
-        variant="contained"
-        fullWidth
-        disabled={loading || !location.trim()}
-        sx={{
-          py: 2,
-          px: 4,
-          fontSize: '1.125rem',
-          fontWeight: 600,
-          background: 'linear-gradient(135deg, #FF5A5F 0%, #FF385C 100%)',
-          boxShadow: '0 4px 16px rgba(255, 90, 95, 0.3)',
-          '&:hover': {
-            background: 'linear-gradient(135deg, #FF385C 0%, #E00007 100%)',
-            boxShadow: '0 6px 20px rgba(255, 90, 95, 0.4)',
-            transform: 'translateY(-1px)'
-          },
-          '&:disabled': {
-            background: '#EEEEEE',
-            color: '#AAAAAA',
-            boxShadow: 'none'
-          },
-          transition: 'all 0.2s ease-in-out'
-        }}
-      >
-        {loading ? (
-          <CircularProgress size={24} sx={{ color: 'white' }} />
-        ) : (
-          'Search for Salons'
-        )}
-      </Button>
-    </Paper>
+        </form>
+      </CardContent>
+    </Card>
   );
 };
 
