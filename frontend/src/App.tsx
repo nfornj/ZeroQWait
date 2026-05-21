@@ -17,6 +17,7 @@ import DocsShowcasePage from "./features/public-booking/pages/DocsShowcasePage";
 import DocsArchitecturePage from "./features/public-booking/pages/DocsArchitecturePage";
 import ShopDashboardPage from "./features/shop-dashboard/pages/ShopDashboardPage";
 import ShopSettingsPage from "./features/shop-dashboard/pages/ShopSettingsPage";
+import ServicesManagementPage from "./features/shop-dashboard/pages/ServicesManagementPage";
 import EmployeeManagementPage from "./features/shop-dashboard/pages/EmployeeManagementPage";
 import EmployeeQueuePage from "./features/shop-dashboard/pages/EmployeeQueuePage";
 import QueueManagementPage from "./features/shop-dashboard/pages/QueueManagementPage";
@@ -113,6 +114,7 @@ function App() {
             <Route path="/dashboard" element={<DashboardEntry />} />
             <Route path="/employee-dashboard" element={<EmployeeQueuePage />} />
             <Route path="/overview" element={<OwnerOnly><ShopDashboardPage /></OwnerOnly>} />
+            <Route path="/services" element={<OwnerOnly><ServicesManagementPage /></OwnerOnly>} />
             <Route path="/employees" element={<OwnerOnly><EmployeeManagementPage /></OwnerOnly>} />
             <Route path="/settings" element={<OwnerOnly><ShopSettingsPage /></OwnerOnly>} />
             <Route path="/queues" element={<OwnerOnly><QueueManagementPage /></OwnerOnly>} />
