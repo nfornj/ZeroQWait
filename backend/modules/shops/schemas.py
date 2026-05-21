@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 from datetime import date, datetime, time
 from pydantic import BaseModel, ConfigDict
 from shared.schemas import DictModel
@@ -149,6 +149,7 @@ class ShopServiceBase(DictModel):
     duration_minutes: int = 30
     cost: float = 0.0
     currency: Optional[str] = "USD"
+    catalog_section: Literal["popular", "specialized"] = "popular"
     is_active: bool = True
 
 class ShopServiceCreate(ShopServiceBase):
@@ -160,6 +161,7 @@ class ShopServiceUpdate(BaseModel):
     duration_minutes: Optional[int] = None
     cost: Optional[float] = None
     currency: Optional[str] = None
+    catalog_section: Optional[Literal["popular", "specialized"]] = None
     is_active: Optional[bool] = None
 
 class ShopService(ShopServiceBase):

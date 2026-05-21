@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Clock, Pencil, Copy, Trash2, MoreHorizontal, Scissors, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../../services/api';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '../../../components/ui/button';
+import { Input } from '../../../components/ui/input';
+import { Label } from '../../../components/ui/label';
+import { Textarea } from '../../../components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -13,16 +14,18 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from '@/components/ui/dialog';
+} from '../../../components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '../../../components/ui/dropdown-menu';
+import { Skeleton } from '../../../components/ui/skeleton';
 import { useShop } from '../../../contexts/ShopContext';
+
+type CatalogSection = 'popular' | 'specialized';
 
 interface ShopService {
   id: number;
@@ -32,10 +35,39 @@ interface ShopService {
   duration_minutes: number;
   cost: number;
   currency: string;
+  catalog_section?: CatalogSection;
   is_active: boolean;
 }
 
-const emptyForm = { id: undefined as number | undefined, name: '', description: '', duration_minutes: 30, cost: 0 };
+interface ServiceFormData {
+  id?: number;
+  name: string;
+  description: string;
+  duration_minutes: number;
+  cost: number;
+  catalog_section: CatalogSection;
+}
+
+const SECTION_LABELS: Record<CatalogSection, string> = {
+  popular: 'Popular Services',
+  specialized: 'Specialized Treatments',
+};
+
+const normalizeSection = (service: ShopService, index: number): CatalogSection => {
+  if (service.catalog_section === 'popular' || service.catalog_section === 'specialized') {
+    return service.catalog_section;
+  }
+  return index < 3 ? 'popular' : 'specialized';
+};
+
+const emptyForm = (section: CatalogSection = 'specialized'): ServiceFormData => ({
+  id: undefined,
+  name: '',
+  description: '',
+  duration_minutes: 30,
+  cost: 0,
+  catalog_section: section,
+});
 
 // ─── Service Card ─────────────────────────────────────────────────────────────
 function ServiceCard({
@@ -47,7 +79,7 @@ function ServiceCard({
   service: ShopService;
   onEdit: (s: ShopService) => void;
   onDuplicate: (s: ShopService) => void;
-  onDelete: (id: number) => void;
+  onDelete: (s: ShopService) => void;
 }) {
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-card p-5 shadow-none transition-shadow hover:shadow-sm">
@@ -83,7 +115,7 @@ function ServiceCard({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={() => onDelete(service.id)}
+                onClick={() => onDelete(service)}
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
@@ -128,7 +160,7 @@ function ServiceCard({
         </button>
         <button
           type="button"
-          onClick={() => onDelete(service.id)}
+          onClick={() => onDelete(service)}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -140,11 +172,12 @@ function ServiceCard({
 }
 
 // ─── Add New Service Card ─────────────────────────────────────────────────────
-function AddServiceCard({ onClick }: { onClick: () => void }) {
+function AddServiceCard({ onClick, section }: { onClick: (s: CatalogSection) => void; section: CatalogSection }) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      aria-label="Add a new service"
+      onClick={() => onClick(section)}
       className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border bg-card p-8 text-center transition-colors hover:border-muted-foreground/40 hover:bg-accent"
     >
       <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-border bg-background">
@@ -181,15 +214,26 @@ function ServiceCardSkeleton() {
   );
 }
 
+// ─── Section Header ───────────────────────────────────────────────────────────
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <div className="mb-4 flex items-center gap-2">
+      <Scissors className="h-4 w-4 text-muted-foreground" />
+      <h2 className="text-sm font-semibold text-foreground">{label}</h2>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 const ServicesManagementPage: React.FC = () => {
   const { shop } = useShop();
+  const navigate = useNavigate();
   const [services, setServices] = useState<ShopService[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
-  const [formData, setFormData] = useState(emptyForm);
+  const [deleteTarget, setDeleteTarget] = useState<ShopService | null>(null);
+  const [formData, setFormData] = useState<ServiceFormData>(emptyForm());
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -210,30 +254,35 @@ const ServicesManagementPage: React.FC = () => {
     }
   };
 
-  const openAdd = () => {
-    setFormData(emptyForm);
+  const openAdd = (section: CatalogSection = 'specialized') => {
+    setFormData(emptyForm(section));
     setDialogOpen(true);
   };
 
   const openEdit = (service: ShopService) => {
+    const idx = services.findIndex((s) => s.id === service.id);
     setFormData({
       id: service.id,
       name: service.name,
       description: service.description || '',
       duration_minutes: service.duration_minutes,
       cost: service.cost,
+      catalog_section: normalizeSection(service, idx >= 0 ? idx : 0),
     });
     setDialogOpen(true);
   };
 
   const handleDuplicate = async (service: ShopService) => {
     if (!shop) return;
+    const idx = services.findIndex((s) => s.id === service.id);
     try {
       await api.post(`/shops/${shop.id}/services`, {
-        name: `${service.name} (copy)`,
+        name: `${service.name} Copy`,
         description: service.description,
         duration_minutes: service.duration_minutes,
         cost: service.cost,
+        currency: service.currency,
+        catalog_section: normalizeSection(service, idx >= 0 ? idx : 0),
       });
       toast.success('Service duplicated');
       fetchServices();
@@ -247,10 +296,22 @@ const ServicesManagementPage: React.FC = () => {
     setSubmitting(true);
     try {
       if (formData.id) {
-        await api.put(`/shops/${shop.id}/services/${formData.id}`, formData);
+        await api.put(`/shops/${shop.id}/services/${formData.id}`, {
+          name: formData.name,
+          description: formData.description,
+          duration_minutes: formData.duration_minutes,
+          cost: formData.cost,
+          catalog_section: formData.catalog_section,
+        });
         toast.success('Service updated');
       } else {
-        await api.post(`/shops/${shop.id}/services`, formData);
+        await api.post(`/shops/${shop.id}/services`, {
+          name: formData.name,
+          description: formData.description,
+          duration_minutes: formData.duration_minutes,
+          cost: formData.cost,
+          catalog_section: formData.catalog_section,
+        });
         toast.success('Service created');
       }
       setDialogOpen(false);
@@ -262,31 +323,38 @@ const ServicesManagementPage: React.FC = () => {
     }
   };
 
-  const handleDeleteClick = (id: number) => {
-    setDeleteTargetId(id);
+  const handleDeleteClick = (service: ShopService) => {
+    setDeleteTarget(service);
     setDeleteDialogOpen(true);
   };
 
   const confirmDelete = async () => {
-    if (!shop || deleteTargetId === null) return;
+    if (!shop || deleteTarget === null) return;
     try {
-      await api.delete(`/shops/${shop.id}/services/${deleteTargetId}`);
+      await api.delete(`/shops/${shop.id}/services/${deleteTarget.id}`);
       toast.success('Service deleted');
       setDeleteDialogOpen(false);
-      setDeleteTargetId(null);
+      setDeleteTarget(null);
       fetchServices();
     } catch {
       toast.error('Failed to delete service');
     }
   };
 
+  const normalizedServices = services.map((s, i) => ({
+    ...s,
+    catalog_section: normalizeSection(s, i),
+  }));
+
+  const popularServices = normalizedServices.filter((s) => s.catalog_section === 'popular');
+  const specializedServices = normalizedServices.filter((s) => s.catalog_section === 'specialized');
   const activeServices = services.filter((s) => s.is_active);
   const mostBooked = services[0]?.name ?? null;
 
   return (
     <div className="w-full max-w-[1700px]">
 
-      {/* Page header — 3-column row matching mockup */}
+      {/* Page header — 3-column row */}
       <div className="mb-8 flex items-center gap-6">
 
         {/* Left: title + subtitle */}
@@ -302,7 +370,7 @@ const ServicesManagementPage: React.FC = () => {
         <div className="flex flex-shrink-0 items-center justify-center">
           <Button
             size="lg"
-            onClick={openAdd}
+            onClick={() => openAdd('specialized')}
             className="rounded-xl px-6 font-semibold shadow-none"
             style={{ backgroundColor: 'var(--owner-primary)', color: '#fff' }}
           >
@@ -311,7 +379,7 @@ const ServicesManagementPage: React.FC = () => {
           </Button>
         </div>
 
-        {/* Right: info card — icon left, text right (matches mockup) */}
+        {/* Right: info card */}
         <div className="flex w-72 flex-shrink-0 items-center gap-4 rounded-2xl border border-border bg-card px-5 py-4">
           <div
             className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full"
@@ -332,10 +400,11 @@ const ServicesManagementPage: React.FC = () => {
                   You have {activeServices.length} active service{activeServices.length !== 1 ? 's' : ''}
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Most booked: {mostBooked ?? '—'}
+                  <span>Most booked:</span>{' '}<span>{mostBooked ?? '—'}</span>
                 </p>
                 <button
                   type="button"
+                  onClick={() => navigate('/overview')}
                   className="mt-1.5 text-xs font-medium hover:underline"
                   style={{ color: 'var(--owner-primary)' }}
                 >
@@ -348,25 +417,24 @@ const ServicesManagementPage: React.FC = () => {
 
       </div>
 
-      {/* Services section label */}
-      <div className="mb-4 flex items-center gap-2">
-        <Scissors className="h-4 w-4 text-muted-foreground" />
-        <h2 className="text-sm font-semibold text-foreground">
-          {loading ? 'Loading…' : `All Services (${services.length})`}
-        </h2>
-      </div>
+      {/* Loading skeleton sections */}
+      {loading && (
+        <div className="mb-8">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <ServiceCardSkeleton />
+            <ServiceCardSkeleton />
+            <ServiceCardSkeleton />
+            <ServiceCardSkeleton />
+          </div>
+        </div>
+      )}
 
-      {/* Card grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {loading ? (
-          <>
-            <ServiceCardSkeleton />
-            <ServiceCardSkeleton />
-            <ServiceCardSkeleton />
-          </>
-        ) : (
-          <>
-            {services.map((service) => (
+      {/* Popular Services section */}
+      {!loading && (
+        <div className="mb-8">
+          <SectionHeader label={SECTION_LABELS.popular} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {popularServices.map((service) => (
               <ServiceCard
                 key={service.id}
                 service={service}
@@ -375,10 +443,28 @@ const ServicesManagementPage: React.FC = () => {
                 onDelete={handleDeleteClick}
               />
             ))}
-            <AddServiceCard onClick={openAdd} />
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
+
+      {/* Specialized Treatments section */}
+      {!loading && (
+        <div className="mb-8">
+          <SectionHeader label={SECTION_LABELS.specialized} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {specializedServices.map((service) => (
+              <ServiceCard
+                key={service.id}
+                service={service}
+                onEdit={openEdit}
+                onDuplicate={handleDuplicate}
+                onDelete={handleDeleteClick}
+              />
+            ))}
+            <AddServiceCard onClick={openAdd} section="specialized" />
+          </div>
+        </div>
+      )}
 
       {/* ── Add / Edit Dialog ── */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -394,7 +480,7 @@ const ServicesManagementPage: React.FC = () => {
 
           <div className="flex flex-col gap-4 py-2">
             <div className="grid gap-1.5">
-              <Label htmlFor="svc-name">Service name *</Label>
+              <Label htmlFor="svc-name">Service Name</Label>
               <Input
                 id="svc-name"
                 placeholder="e.g. Deep Tissue Massage"
@@ -450,7 +536,7 @@ const ServicesManagementPage: React.FC = () => {
               disabled={submitting || !formData.name.trim() || formData.cost < 0}
               style={{ backgroundColor: 'var(--owner-primary)', color: '#fff' }}
             >
-              {submitting ? 'Saving…' : formData.id ? 'Save changes' : 'Add service'}
+              {submitting ? 'Saving…' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -462,7 +548,7 @@ const ServicesManagementPage: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Delete service?</DialogTitle>
             <DialogDescription>
-              This action cannot be undone. The service will be permanently removed from your catalog.
+              Are you sure you want to delete {deleteTarget?.name}? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

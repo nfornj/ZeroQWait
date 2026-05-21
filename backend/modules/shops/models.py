@@ -93,6 +93,7 @@ class ShopService(Base):
     duration_minutes = Column(Integer, default=30)
     cost = Column(Float, default=0.0)
     currency = Column(String, default="USD")
+    catalog_section = Column(String(32), default="popular", nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
