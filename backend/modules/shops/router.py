@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, status, UploadFile, File, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from typing import List, Optional
 from modules.shops import schemas
@@ -23,6 +23,17 @@ except PermissionError:
     # Startup should not fail if uploads directory is not writable in this environment.
     # Upload handlers can return a proper runtime error if/when used.
     pass
+
+
+def _get_owned_shop(shop_id: int, current_user: dict):
+    shop = shop_service.get_shop(shop_id)
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    if current_user.role != "shop_owner" or shop.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    return shop
 
 @router.post("/", response_model=schemas.Shop)
 def create_shop(
@@ -209,12 +220,7 @@ def update_shop(
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        shop = shop_service.get_shop(shop_id)
-        if not shop:
-            raise HTTPException(status_code=404, detail="Shop not found")
-        
-        if shop.owner_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        shop = _get_owned_shop(shop_id, current_user)
         
         updates = shop_update.model_dump(exclude_unset=True)
         if not updates:
@@ -222,6 +228,8 @@ def update_shop(
             
         updated = shop_service.update_shop(shop_id, updates)
         return updated
+    except HTTPException:
+        raise
     except Exception as e:
          raise HTTPException(status_code=500, detail=str(e))
 
@@ -320,20 +328,91 @@ def get_shop_by_slug(slug: str, current_user: Optional[dict] = Depends(get_curre
         raise HTTPException(status_code=500, detail=f"Failed to fetch shop: {str(e)}")
 
 @router.get("/{shop_id}/close-days")
-def get_close_days(shop_id: int):
-    # Authorization checks omitted for brevity but should be there
+def get_close_days(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    _get_owned_shop(shop_id, current_user)
     return shop_service.get_close_days(shop_id)
 
-@router.post("/{shop_id}/close-days")
-def add_close_day(shop_id: int, date_str: str, reason: Optional[str] = None):
+@router.post("/{shop_id}/close-days", response_model=schemas.ShopCloseDay)
+def add_close_day(
+    shop_id: int,
+    payload: Optional[schemas.ShopCloseDayCreate] = Body(default=None),
+    date_str: Optional[str] = None,
+    reason: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
     from datetime import datetime
-    date_val = datetime.strptime(date_str, "%Y-%m-%d").date()
-    return shop_service.add_close_day(shop_id, date_val, reason)
+    _get_owned_shop(shop_id, current_user)
+
+    raw_date = payload.date if payload else date_str
+    if not raw_date:
+        raise HTTPException(status_code=400, detail="date is required")
+
+    date_val = datetime.strptime(raw_date, "%Y-%m-%d").date()
+    return shop_service.add_close_day(
+        shop_id,
+        date_val,
+        reason=(payload.reason if payload else reason),
+        name=(payload.name if payload else None),
+        notes=(payload.notes if payload else None),
+        repeat_yearly=(payload.repeatYearly if payload else False),
+    )
 
 @router.delete("/{shop_id}/close-days/{day_id}")
-def delete_close_day(shop_id: int, day_id: int):
+def delete_close_day(
+    shop_id: int,
+    day_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    _get_owned_shop(shop_id, current_user)
     shop_service.delete_close_day(shop_id, day_id)
     return {"success": True}
+
+
+@router.get("/{shop_id}/business-hours", response_model=List[schemas.ShopBusinessHour])
+def get_business_hours(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    _get_owned_shop(shop_id, current_user)
+    return shop_service.get_business_hours(shop_id)
+
+
+@router.put("/{shop_id}/business-hours", response_model=List[schemas.ShopBusinessHour])
+def update_business_hours(
+    shop_id: int,
+    hours: List[schemas.ShopBusinessHourUpdate],
+    current_user: dict = Depends(get_current_user),
+):
+    _get_owned_shop(shop_id, current_user)
+    try:
+        return shop_service.update_business_hours(shop_id, hours)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{shop_id}/booking-settings", response_model=schemas.ShopBookingSettings)
+def get_booking_settings(
+    shop_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    _get_owned_shop(shop_id, current_user)
+    return shop_service.get_booking_settings(shop_id)
+
+
+@router.put("/{shop_id}/booking-settings", response_model=schemas.ShopBookingSettings)
+def update_booking_settings(
+    shop_id: int,
+    settings: schemas.ShopBookingSettingsUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    _get_owned_shop(shop_id, current_user)
+    try:
+        return shop_service.update_booking_settings(shop_id, settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/check-slug/{slug}")
