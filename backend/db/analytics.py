@@ -4,6 +4,7 @@ Analytics operations and active queue/wait-time tool helpers.
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from sqlalchemy import or_, func, desc
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Import the single source of truth for database connections
 from database import SessionLocal
@@ -12,11 +13,51 @@ from models import (
     ShopService, ShopCustomer, DailyAnalytics, ConversationHistory, CategoryAlias, 
     LearnedSynonym, AgentKnowledge, AgentMemory
 )
+from modules.shops.models import ShopOperatingHours
 import schemas
 
 
 
 class AnalyticsMixin:
+    def _current_shop_local_date(self, db, shop_id: int):
+        hours = db.query(ShopOperatingHours).filter(ShopOperatingHours.shop_id == shop_id).first()
+        timezone_name = hours.timezone if hours and hours.timezone else "UTC"
+        try:
+            tz = ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, Exception):
+            tz = ZoneInfo("UTC")
+        return datetime.now(tz).date()
+
+    def _current_active_queues(self, db, shop_id: int) -> List[Queue]:
+        queues = db.query(Queue).filter(
+            Queue.shop_id == shop_id,
+            Queue.is_active == True,
+        ).all()
+        if not queues:
+            return []
+
+        current_local_date = self._current_shop_local_date(db, shop_id)
+        current_queues: List[Queue] = []
+        stale_queues: List[Queue] = []
+
+        for queue in queues:
+            queue_date = queue.date.date() if queue.date else current_local_date
+            if queue_date == current_local_date:
+                current_queues.append(queue)
+            else:
+                stale_queues.append(queue)
+
+        if stale_queues:
+            for queue in stale_queues:
+                queue.is_active = False
+                queue.accepting_joins = False
+                if not queue.lock_reason:
+                    queue.lock_reason = "Auto-closed stale queue from a previous business day"
+            db.commit()
+
+        current_queues.sort(key=lambda queue: (queue.date or datetime.min, queue.id), reverse=True)
+        return current_queues
+
     # --- Analytics operations ---
     def get_analytics_queues(self, shop_id: int) -> List[Dict]:
         db = self.get_session()
@@ -52,10 +93,7 @@ class AnalyticsMixin:
                 return {"error": "Shop not found", "wait_minutes": None}
             
             # Get active queue for this shop
-            queue = db.query(Queue).filter(
-                Queue.shop_id == shop_id,
-                Queue.is_active == True
-            ).first()
+            queue = next(iter(self._current_active_queues(db, shop_id)), None)
             
             if not queue:
                 return {"shop_name": shop.name, "wait_minutes": 0, "queue_length": 0}
@@ -88,10 +126,7 @@ class AnalyticsMixin:
             if not shop:
                 return {"error": "Shop not found"}
 
-            active_queues = db.query(Queue).filter(
-                Queue.shop_id == shop_id,
-                Queue.is_active == True,
-            ).all()
+            active_queues = self._current_active_queues(db, shop_id)
             queue_ids = [q.id for q in active_queues]
 
             if not queue_ids:
