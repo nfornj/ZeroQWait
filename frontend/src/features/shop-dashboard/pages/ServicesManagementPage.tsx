@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Clock, Pencil, Copy, Trash2, MoreHorizontal, Scissors, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../../services/api';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '../../../components/ui/button';
+import { Input } from '../../../components/ui/input';
+import { Label } from '../../../components/ui/label';
+import { Textarea } from '../../../components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -14,15 +14,15 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from '@/components/ui/dialog';
+} from '../../../components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '../../../components/ui/dropdown-menu';
+import { Skeleton } from '../../../components/ui/skeleton';
 import { useShop } from '../../../contexts/ShopContext';
 
 type CatalogSection = 'popular' | 'specialized';
@@ -417,18 +417,24 @@ const ServicesManagementPage: React.FC = () => {
 
       </div>
 
+      {/* Loading skeleton sections */}
+      {loading && (
+        <div className="mb-8">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <ServiceCardSkeleton />
+            <ServiceCardSkeleton />
+            <ServiceCardSkeleton />
+            <ServiceCardSkeleton />
+          </div>
+        </div>
+      )}
+
       {/* Popular Services section */}
-      <div className="mb-8">
-        <SectionHeader label={SECTION_LABELS.popular} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {loading ? (
-            <>
-              <ServiceCardSkeleton />
-              <ServiceCardSkeleton />
-              <ServiceCardSkeleton />
-            </>
-          ) : (
-            popularServices.map((service) => (
+      {!loading && (
+        <div className="mb-8">
+          <SectionHeader label={SECTION_LABELS.popular} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {popularServices.map((service) => (
               <ServiceCard
                 key={service.id}
                 service={service}
@@ -436,33 +442,29 @@ const ServicesManagementPage: React.FC = () => {
                 onDuplicate={handleDuplicate}
                 onDelete={handleDeleteClick}
               />
-            ))
-          )}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Specialized Treatments section */}
-      <div className="mb-8">
-        <SectionHeader label={SECTION_LABELS.specialized} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {loading ? (
-            <ServiceCardSkeleton />
-          ) : (
-            <>
-              {specializedServices.map((service) => (
-                <ServiceCard
-                  key={service.id}
-                  service={service}
-                  onEdit={openEdit}
-                  onDuplicate={handleDuplicate}
-                  onDelete={handleDeleteClick}
-                />
-              ))}
-              <AddServiceCard onClick={openAdd} section="specialized" />
-            </>
-          )}
+      {!loading && (
+        <div className="mb-8">
+          <SectionHeader label={SECTION_LABELS.specialized} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {specializedServices.map((service) => (
+              <ServiceCard
+                key={service.id}
+                service={service}
+                onEdit={openEdit}
+                onDuplicate={handleDuplicate}
+                onDelete={handleDeleteClick}
+              />
+            ))}
+            <AddServiceCard onClick={openAdd} section="specialized" />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Add / Edit Dialog ── */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

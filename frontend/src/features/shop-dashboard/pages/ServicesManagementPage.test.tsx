@@ -3,6 +3,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ServicesManagementPage from './ServicesManagementPage';
 import api from '../../../services/api';
 
+jest.mock('@/lib/utils', () => ({
+    cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
+}), { virtual: true });
+
 const mockNavigate = jest.fn();
 
 jest.mock('react-router-dom', () => ({
