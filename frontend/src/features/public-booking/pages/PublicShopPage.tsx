@@ -13,6 +13,21 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 
+interface QueueItem {
+  id: number;
+  customer_name: string;
+  status: string;
+  checked_in_at: string;
+}
+
+interface Queue {
+  id: number;
+  is_active: boolean;
+  accepting_joins?: boolean;
+  lock_reason?: string | null;
+  queue_items?: QueueItem[];
+}
+
 interface PublicShopPageProps {
   shopSlug?: string;
 }
@@ -22,7 +37,7 @@ const PublicShopPage: React.FC<PublicShopPageProps> = ({ shopSlug }) => {
   const effectiveSlug = shopSlug || slug;
   const navigate = useNavigate();
   const [shop, setShop] = useState<any>(null);
-  const [queues, setQueues] = useState<any[]>([]);
+  const [queues, setQueues] = useState<Queue[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [services, setServices] = useState<any[]>([]);
@@ -48,7 +63,7 @@ const PublicShopPage: React.FC<PublicShopPageProps> = ({ shopSlug }) => {
           return;
         }
 
-        setQueues(response.data.queues ? response.data.queues.filter((q: any) => q.is_active) : []);
+        setQueues(response.data.queues ? response.data.queues.filter((q: Queue) => q.is_active) : []);
 
         try {
           const servicesRes = await axios.get(`/shops/${response.data.id}/services`);
@@ -116,6 +131,9 @@ const PublicShopPage: React.FC<PublicShopPageProps> = ({ shopSlug }) => {
   }
 
   const waitingItems = queues[0]?.queue_items?.filter((i: any) => i.status === "waiting") || [];
+  const activeQueue = queues.find((entry) => entry.is_active) || null;
+  const queueOpen = Boolean(activeQueue && activeQueue.accepting_joins !== false);
+  const queueStatusLabel = queueOpen ? "Open now" : "Closed now";
   const brandGradient = `linear-gradient(90deg, ${shop.primary_color || "#1976d2"}, #000)`;
 
   return (
@@ -135,6 +153,7 @@ const PublicShopPage: React.FC<PublicShopPageProps> = ({ shopSlug }) => {
                 {shop.address}, {shop.city}, {shop.state}
               </p>
             </div>
+            <Badge variant={queueOpen ? "default" : "secondary"}>{queueStatusLabel}</Badge>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             {shop.phone && <span>{shop.phone}</span>}
@@ -168,6 +187,14 @@ const PublicShopPage: React.FC<PublicShopPageProps> = ({ shopSlug }) => {
               <CardTitle>Join Queue</CardTitle>
             </CardHeader>
             <CardContent>
+              {!queueOpen && (
+                <Alert className="mb-4">
+                  <AlertDescription>
+                    {activeQueue?.lock_reason || "Queue is currently closed. Please check back during operating hours."}
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {joinError && (
                 <Alert variant="destructive" className="mb-4">
                   <AlertDescription>{joinError}</AlertDescription>
@@ -177,28 +204,29 @@ const PublicShopPage: React.FC<PublicShopPageProps> = ({ shopSlug }) => {
               <form onSubmit={handleJoinQueue} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="customerName">Your Name</Label>
-                  <Input id="customerName" required value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+                  <Input id="customerName" required disabled={!queueOpen} value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="customerPhone">Phone Number</Label>
-                  <Input id="customerPhone" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+                  <Input id="customerPhone" disabled={!queueOpen} value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="customerEmail">Email (optional)</Label>
                   <Input
                     id="customerEmail"
                     type="email"
+                    disabled={!queueOpen}
                     value={customerEmail}
                     onChange={(e) => setCustomerEmail(e.target.value)}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="notes">Notes (optional)</Label>
-                  <Textarea id="notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+                  <Textarea id="notes" rows={3} disabled={!queueOpen} value={notes} onChange={(e) => setNotes(e.target.value)} />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Service (Optional)</Label>
-                  <Select value={selectedServiceId} onValueChange={setSelectedServiceId}>
+                  <Select value={selectedServiceId} onValueChange={setSelectedServiceId} disabled={!queueOpen}>
                     <SelectTrigger>
                       <SelectValue placeholder="None" />
                     </SelectTrigger>
@@ -214,9 +242,9 @@ const PublicShopPage: React.FC<PublicShopPageProps> = ({ shopSlug }) => {
                   </Select>
                 </div>
 
-                <Button type="submit" size="lg" disabled={joinLoading}>
+                <Button type="submit" size="lg" disabled={joinLoading || !queueOpen}>
                   {joinLoading && <Loader2 data-icon="inline-start" className="animate-spin" />}
-                  JOIN QUEUE
+                  {queueOpen ? "JOIN QUEUE" : "QUEUE CLOSED"}
                 </Button>
               </form>
             </CardContent>
@@ -254,7 +282,9 @@ const PublicShopPage: React.FC<PublicShopPageProps> = ({ shopSlug }) => {
                     {waitingItems.length > 5 && <p className="text-center text-sm text-muted-foreground">... and more</p>}
                   </div>
                 ) : (
-                  <p className="py-8 text-center text-muted-foreground">Queue is empty. Join now!</p>
+                  <p className="py-8 text-center text-muted-foreground">
+                    {queueOpen ? "Queue is empty. Join now!" : "Queue is currently closed."}
+                  </p>
                 )}
               </CardContent>
             </Card>

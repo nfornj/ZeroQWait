@@ -54,6 +54,8 @@ class Queue(QueueBase):
     shop_id: int
     date: datetime
     is_active: bool
+    accepting_joins: bool = True
+    lock_reason: Optional[str] = None
     queue_items: List[QueueItem] = []
 
 # Shop with active queue
