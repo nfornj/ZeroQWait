@@ -69,6 +69,7 @@ const InlineCheckoutCard: React.FC<InlineCheckoutCardProps> = ({
         currency: "usd",
         description: `Payment for ${data.serviceName || "service"} at ${data.shopName}`,
         shop_id: data.shopId,
+        idempotency_key: `${data.shopId}:${data.queueItemId}:${data.serviceCost.toFixed(2)}`,
       });
 
       const { payment_intent_id, client_secret, amount, currency } = resp.data;

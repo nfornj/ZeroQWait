@@ -25,6 +25,7 @@ def create_payment_intent(
     currency: str = "usd",
     description: str = "",
     metadata: Optional[Dict] = None,
+    idempotency_key: Optional[str] = None,
 ) -> Dict:
     """
     Create a Stripe PaymentIntent.
@@ -47,6 +48,7 @@ def create_payment_intent(
         description=description,
         metadata=metadata or {},
         automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
+        idempotency_key=idempotency_key,
     )
 
     logger.info("Created PaymentIntent %s for %d %s", intent.id, amount_cents, currency)

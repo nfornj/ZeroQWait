@@ -301,48 +301,71 @@ def deduct_service_supplies(
     service_id: int,
     appointment_id: Optional[int] = None,
     created_by: Optional[int] = None,
+    session=None,
 ) -> List[Dict[str, Any]]:
     """Deduct supplies_used amounts defined on the service from inventory.
 
     Returns list of deduction results, one per supply.
     """
     import json as _json
-    with SessionLocal() as session:
+    owns_session = session is None
+    session = session or SessionLocal()
+    try:
         row = session.execute(
             text("SELECT supplies_used FROM shop_services WHERE id = :sid AND shop_id = :shop_id"),
             {"sid": service_id, "shop_id": shop_id},
         ).fetchone()
 
-    if not row:
-        return []
-    raw = row[0]
-    supplies: List[Dict[str, Any]] = []
-    if isinstance(raw, str):
-        try:
-            supplies = _json.loads(raw)
-        except Exception:
-            supplies = []
-    elif isinstance(raw, list):
-        supplies = raw
+        if not row:
+            return []
+        raw = row[0]
+        supplies: List[Dict[str, Any]] = []
+        if isinstance(raw, str):
+            if raw.strip():
+                try:
+                    supplies = _json.loads(raw)
+                except Exception as exc:
+                    raise ValueError(f"Invalid supplies_used config for service {service_id}") from exc
+        elif isinstance(raw, list):
+            supplies = raw
 
-    results = []
-    for supply in supplies:
-        item_id = supply.get("item_id")
-        qty = float(supply.get("quantity", 0))
-        if not item_id or qty <= 0:
-            continue
-        try:
-            result = record_usage(
-                shop_id, item_id, qty,
-                notes=f"Auto-deducted for service #{service_id}",
-                appointment_id=appointment_id,
-                created_by=created_by,
+        results = []
+        for supply in supplies:
+            item_id = supply.get("item_id")
+            qty = float(supply.get("quantity", 0))
+            if not item_id or qty <= 0:
+                continue
+            new_stock = _record_movement(
+                session,
+                shop_id,
+                int(item_id),
+                "service_deduction",
+                -qty,
+                f"Auto-deducted for service #{service_id}",
+                appointment_id,
+                created_by,
+                None,
             )
-            result["supply_item_id"] = item_id
-            results.append(result)
-        except Exception as exc:
-            logger.warning("deduct_service_supplies: item %d failed: %s", item_id, exc)
-    return results
+            results.append(
+                {
+                    "item_id": int(item_id),
+                    "new_stock": new_stock,
+                    "movement": "service_deduction",
+                    "quantity_used": qty,
+                    "supply_item_id": int(item_id),
+                }
+            )
+
+        if owns_session:
+            session.commit()
+        return results
+    except Exception:
+        if owns_session:
+            session.rollback()
+        raise
+    finally:
+        if owns_session:
+            session.close()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

@@ -4,12 +4,14 @@ from datetime import datetime, timezone
 import logging
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import text
+
 from database import SessionLocal
 from db_interface import DatabaseInterface
 from modules.shops.models import Shop
 from redis_client import redis_client
 
-from .tools import finance_tools
+from .tools import finance_tools, payment_tools
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,204 @@ def _normalize_alert(alert: Dict[str, Any], created_at: Optional[str] = None) ->
         "title": str(alert.get("title") or "Alert"),
         "body": str(alert.get("body") or ""),
         "created_at": created_at or str(alert.get("created_at") or _utcnow_iso()),
+    }
+
+
+def _to_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _to_float(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def get_daily_operations_snapshot(shop_id: int) -> Dict[str, Any]:
+    """Return a one-day operational digest for a salon shop.
+
+    This keeps the existing owner briefing endpoint but adds the missing
+    cross-cutting salon day view: opening state, appointments, walk-ins,
+    staff punches, payments, and inventory usage.
+    """
+    with SessionLocal() as session:
+        queue_row = session.execute(
+            text(
+                """
+                SELECT id, is_active, accepting_joins, lock_reason
+                FROM queues
+                WHERE shop_id = :shop_id
+                  AND DATE(date) = CURRENT_DATE
+                ORDER BY date DESC, id DESC
+                LIMIT 1
+                """
+            ),
+            {"shop_id": shop_id},
+        ).fetchone()
+
+        appointment_row = session.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+                    COUNT(*) FILTER (WHERE status IN ('scheduled', 'confirmed', 'checked_in', 'in_progress')) AS upcoming,
+                    COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled,
+                    COUNT(*) FILTER (WHERE status = 'no_show') AS no_show
+                FROM appointments
+                WHERE shop_id = :shop_id
+                  AND DATE(scheduled_start) = CURRENT_DATE
+                """
+            ),
+            {"shop_id": shop_id},
+        ).fetchone()
+
+        walk_in_row = session.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE qi.status = 'waiting') AS waiting,
+                    COUNT(*) FILTER (WHERE qi.status = 'being_served') AS serving,
+                    COUNT(*) FILTER (WHERE qi.status = 'completed') AS completed,
+                    COUNT(*) FILTER (WHERE qi.status = 'cancelled') AS cancelled
+                FROM queue_items qi
+                JOIN queues q ON q.id = qi.queue_id
+                WHERE q.shop_id = :shop_id
+                  AND DATE(q.date) = CURRENT_DATE
+                """
+            ),
+            {"shop_id": shop_id},
+        ).fetchone()
+
+        staff_row = session.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE DATE(clock_in) = CURRENT_DATE) AS clock_ins_today,
+                    COUNT(*) FILTER (WHERE clock_out IS NOT NULL AND DATE(clock_out) = CURRENT_DATE) AS clock_outs_today,
+                    COUNT(*) FILTER (WHERE clock_out IS NULL) AS currently_clocked_in
+                FROM employee_shifts
+                WHERE shop_id = :shop_id
+                  AND (
+                    DATE(clock_in) = CURRENT_DATE
+                    OR (clock_out IS NOT NULL AND DATE(clock_out) = CURRENT_DATE)
+                    OR clock_out IS NULL
+                  )
+                """
+            ),
+            {"shop_id": shop_id},
+        ).fetchone()
+
+        inventory_row = session.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE movement_type IN ('usage', 'service_deduction', 'sale')) AS usage_events,
+                    COUNT(DISTINCT item_id) FILTER (WHERE movement_type IN ('usage', 'service_deduction', 'sale')) AS items_used,
+                    COALESCE(
+                        SUM(
+                            CASE
+                                WHEN movement_type IN ('usage', 'service_deduction', 'sale') AND quantity < 0
+                                    THEN ABS(quantity) * COALESCE(unit_cost, 0)
+                                ELSE 0
+                            END
+                        ),
+                        0
+                    ) AS usage_cost
+                FROM inventory_movements
+                WHERE shop_id = :shop_id
+                  AND DATE(created_at) = CURRENT_DATE
+                """
+            ),
+            {"shop_id": shop_id},
+        ).fetchone()
+
+        low_stock_row = session.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM inventory_items
+                WHERE shop_id = :shop_id
+                  AND is_active = TRUE
+                  AND current_stock <= reorder_threshold
+                """
+            ),
+            {"shop_id": shop_id},
+        ).fetchone()
+
+    payment_summary = payment_tools.daily_pos_summary(shop_id)
+    if payment_summary.get("error"):
+        payment_summary = {
+            "total_transactions": 0,
+            "total_revenue": 0.0,
+            "total_tips": 0.0,
+            "total_refunds": 0.0,
+            "net_revenue": 0.0,
+            "by_method": {},
+        }
+
+    queue_open = bool(queue_row and queue_row[1])
+    accepting_joins = bool(queue_row and queue_row[2])
+    appointment_total = _to_int(appointment_row[0] if appointment_row else 0)
+    walk_in_total = _to_int(walk_in_row[0] if walk_in_row else 0)
+    clock_ins_today = _to_int(staff_row[0] if staff_row else 0)
+    payment_count = _to_int(payment_summary.get("total_transactions"))
+    usage_events = _to_int(inventory_row[0] if inventory_row else 0)
+
+    return {
+        "digest": (
+            f"{('Queue is open' if queue_open else 'Queue is closed')}"
+            f"{(' and accepting walk-ins' if queue_open and accepting_joins else '')}. "
+            f"{appointment_total} appointments are on today's book, "
+            f"{walk_in_total} walk-ins have been recorded, "
+            f"{clock_ins_today} staff clock-ins are logged, "
+            f"{payment_count} payments have been processed, and "
+            f"{usage_events} inventory usage events have been captured."
+        ),
+        "opening": {
+            "queue_id": _to_int(queue_row[0] if queue_row else 0) or None,
+            "queue_open": queue_open,
+            "accepting_walk_ins": accepting_joins,
+            "lock_reason": str(queue_row[3]) if queue_row and queue_row[3] else None,
+        },
+        "appointments": {
+            "total": appointment_total,
+            "completed": _to_int(appointment_row[1] if appointment_row else 0),
+            "upcoming": _to_int(appointment_row[2] if appointment_row else 0),
+            "cancelled": _to_int(appointment_row[3] if appointment_row else 0),
+            "no_show": _to_int(appointment_row[4] if appointment_row else 0),
+        },
+        "walk_ins": {
+            "total": walk_in_total,
+            "waiting": _to_int(walk_in_row[1] if walk_in_row else 0),
+            "serving": _to_int(walk_in_row[2] if walk_in_row else 0),
+            "completed": _to_int(walk_in_row[3] if walk_in_row else 0),
+            "cancelled": _to_int(walk_in_row[4] if walk_in_row else 0),
+        },
+        "staff": {
+            "clock_ins_today": clock_ins_today,
+            "clock_outs_today": _to_int(staff_row[1] if staff_row else 0),
+            "currently_clocked_in": _to_int(staff_row[2] if staff_row else 0),
+        },
+        "payments": {
+            "transactions": payment_count,
+            "revenue": _to_float(payment_summary.get("total_revenue")),
+            "tips": _to_float(payment_summary.get("total_tips")),
+            "refunds": _to_float(payment_summary.get("total_refunds")),
+            "net_revenue": _to_float(payment_summary.get("net_revenue")),
+            "by_method": dict(payment_summary.get("by_method") or {}),
+        },
+        "inventory": {
+            "usage_events": usage_events,
+            "items_used": _to_int(inventory_row[1] if inventory_row else 0),
+            "usage_cost": _to_float(inventory_row[2] if inventory_row else 0),
+            "low_stock_count": _to_int(low_stock_row[0] if low_stock_row else 0),
+        },
     }
 
 
@@ -375,6 +575,7 @@ def build_owner_briefing(
     today_revenue: float,
     today_transactions: int,
     weekly_revenue: float,
+    daily_operations: Optional[Dict[str, Any]] = None,
     alert_history: Optional[List[Dict[str, Any]]] = None,
     generated_at: Optional[str] = None,
     source: str = "live",
@@ -382,6 +583,8 @@ def build_owner_briefing(
     queue_length = int(metrics.get("queue_length", 0) or 0)
     wait_minutes = int(metrics.get("estimated_wait_minutes", 0) or 0)
     serving_count = int(metrics.get("people_being_served", 0) or 0)
+    daily_operations = daily_operations or {}
+    ops_digest = str(daily_operations.get("digest") or "").strip()
     alerts = build_briefing_alerts(metrics, pending_count, active_services)
     recommendations = build_briefing_recommendations(metrics, pending_count, active_services)
     actions = build_owner_briefing_actions(metrics, pending_count, active_services)
@@ -395,6 +598,7 @@ def build_owner_briefing(
             f"{shop_name} currently has {queue_length} people waiting, "
             f"{serving_count} being served, {active_employees} active staff detected, and "
             f"{pending_count} pending approval{'s' if pending_count != 1 else ''}."
+            + (f" {ops_digest}" if ops_digest else "")
         ),
         "metrics": {
             "queue_length": queue_length,
@@ -407,6 +611,7 @@ def build_owner_briefing(
             "today_transactions": int(today_transactions or 0),
             "weekly_revenue": float(weekly_revenue or 0.0),
         },
+        "daily_operations": daily_operations,
         "alerts": alerts,
         "alert_history": alert_history or [],
         "recommendations": recommendations,
@@ -467,6 +672,7 @@ def refresh_shop_briefing_cache(
     active_employees = int(metrics.get("active_employees", 0) or len(employees) or 0)
 
     existing_history = get_shop_alert_history(shop_id)
+    daily_operations = get_daily_operations_snapshot(shop_id)
     briefing = build_owner_briefing(
         shop_id=shop_id,
         shop_name=resolved_shop_name,
@@ -477,6 +683,7 @@ def refresh_shop_briefing_cache(
         today_revenue=float(today_revenue.get("total_revenue", 0.0) or 0.0),
         today_transactions=int(today_revenue.get("transaction_count", 0) or 0),
         weekly_revenue=float(weekly_revenue.get("total_revenue", 0.0) or 0.0),
+        daily_operations=daily_operations,
         alert_history=existing_history,
         source="scheduled",
     )

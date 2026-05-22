@@ -62,12 +62,21 @@ class PaymentService:
             "method": pmt.method.value if pmt.method else None,
             "status": pmt.status.value if pmt.status else None,
             "external_ref": pmt.external_ref,
+            "stripe_event_id": pmt.stripe_event_id,
             "processed_at": str(pmt.processed_at) if pmt.processed_at else None,
             "refunded_at": str(pmt.refunded_at) if pmt.refunded_at else None,
             "refund_amount": pmt.refund_amount,
             "notes": pmt.notes,
             "created_at": str(pmt.created_at) if pmt.created_at else None,
         }
+
+    def get_payment_by_stripe_event_id(self, stripe_event_id: str) -> Optional[Dict]:
+        session = self.get_session()
+        try:
+            payment = session.query(Payment).filter(Payment.stripe_event_id == stripe_event_id).first()
+            return self._payment_to_dict(payment) if payment else None
+        finally:
+            session.close()
 
     # ── Invoice CRUD ──────────────────────────────────────────────
 
@@ -172,6 +181,8 @@ class PaymentService:
         processed_by: Optional[int] = None,
         notes: Optional[str] = None,
         external_ref: Optional[str] = None,
+        stripe_event_id: Optional[str] = None,
+        payment_meta: Optional[Dict] = None,
     ) -> Dict:
         session = self.get_session()
         try:
@@ -193,6 +204,8 @@ class PaymentService:
                 processed_at=datetime.utcnow(),
                 notes=notes,
                 external_ref=external_ref,
+                stripe_event_id=stripe_event_id,
+                payment_meta=payment_meta,
             )
             session.add(pmt)
 

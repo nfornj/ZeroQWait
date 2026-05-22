@@ -1,6 +1,6 @@
 """Appointment router — scheduling, availability, and smart load balancing."""
 
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -139,6 +139,12 @@ def _auto_assign_employee(shop_id: int, scheduled_start: datetime, scheduled_end
         session.close()
 
 
+def _normalize_utc_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 async def _broadcast_appointment_update(shop_id: int, event_type: str, data: dict):
     """Push appointment events to shop owner via WebSocket."""
     payload = {
@@ -167,8 +173,10 @@ async def book_appointment(
     if not shop:
         raise HTTPException(status_code=404, detail="Shop not found")
 
+    scheduled_start = _normalize_utc_naive(req.scheduled_start)
+
     # Validate scheduled_start is in the future
-    if req.scheduled_start < datetime.utcnow():
+    if scheduled_start < datetime.now(timezone.utc).replace(tzinfo=None):
         raise HTTPException(status_code=400, detail="Cannot book appointments in the past")
 
     # Get service details for duration and cost
@@ -182,12 +190,12 @@ async def book_appointment(
             duration = svc["duration_minutes"]
         service_cost = svc["cost"]
 
-    scheduled_end = req.scheduled_start + timedelta(minutes=duration)
+    scheduled_end = scheduled_start + timedelta(minutes=duration)
 
     # Auto-assign employee if not specified
     employee_id = req.employee_id
     if not employee_id:
-        employee_id = _auto_assign_employee(shop_id, req.scheduled_start, scheduled_end)
+        employee_id = _auto_assign_employee(shop_id, scheduled_start, scheduled_end)
         if not employee_id:
             raise HTTPException(
                 status_code=409,
@@ -197,7 +205,7 @@ async def book_appointment(
     result = appointment_service.book_appointment(
         shop_id=shop_id,
         customer_name=req.customer_name,
-        scheduled_start=req.scheduled_start,
+        scheduled_start=scheduled_start,
         service_id=req.service_id,
         employee_id=employee_id,
         customer_phone=req.customer_phone,

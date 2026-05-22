@@ -33,6 +33,7 @@ class CreatePaymentIntentRequest(BaseModel):
     description: str = Field(default="")
     shop_id: Optional[int] = None
     invoice_id: Optional[int] = None
+    idempotency_key: str = Field(..., min_length=1, max_length=255)
 
     @field_validator("currency", mode="before")
     @classmethod
@@ -80,7 +81,10 @@ def get_stripe_config():
 
 
 @router.post("/create-payment-intent", response_model=PaymentIntentResponse)
-def create_payment(req: CreatePaymentIntentRequest):
+def create_payment(
+    req: CreatePaymentIntentRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Create a Stripe PaymentIntent for a customer payment.
     Called by the AI agent or directly by the frontend.
@@ -94,6 +98,7 @@ def create_payment(req: CreatePaymentIntentRequest):
         metadata["shop_id"] = str(req.shop_id)
     if req.invoice_id:
         metadata["invoice_id"] = str(req.invoice_id)
+    metadata["requested_by_user_id"] = str(current_user["id"])
 
     try:
         intent = create_payment_intent(
@@ -101,6 +106,7 @@ def create_payment(req: CreatePaymentIntentRequest):
             currency=req.currency,
             description=req.description or f"ZeroQwait payment - ${req.amount:.2f}",
             metadata=metadata,
+            idempotency_key=req.idempotency_key,
         )
     except Exception as e:
         logger.error("Stripe PaymentIntent creation failed: %s", e)
@@ -153,12 +159,17 @@ async def stripe_webhook(request: Request):
         logger.warning("Stripe webhook signature verification failed: %s", e)
         raise HTTPException(status_code=400, detail="Invalid signature")
 
+    event_id = event["id"]
+    if _payment_service.get_payment_by_stripe_event_id(event_id):
+        logger.info("Duplicate Stripe webhook ignored: %s", event_id)
+        return {"status": "duplicate", "event_id": event_id}
+
     event_type = event["type"]
     data_object = event["data"]["object"]
     logger.info("Stripe webhook received: %s for %s", event_type, data_object.get("id"))
 
     if event_type == "payment_intent.succeeded":
-        _handle_payment_succeeded(data_object)
+        _handle_payment_succeeded(event_id, data_object)
     elif event_type == "payment_intent.payment_failed":
         _handle_payment_failed(data_object)
 
@@ -167,7 +178,7 @@ async def stripe_webhook(request: Request):
 
 # ── Webhook Handlers ────────────────────────────────────────────────
 
-def _handle_payment_succeeded(intent_data: dict):
+def _handle_payment_succeeded(stripe_event_id: str, intent_data: dict):
     """Record a successful Stripe payment in the local database and sync to Odoo."""
     metadata = intent_data.get("metadata", {})
     shop_id = metadata.get("shop_id")
@@ -189,6 +200,8 @@ def _handle_payment_succeeded(intent_data: dict):
             method="online",
             invoice_id=int(invoice_id) if invoice_id else None,
             external_ref=stripe_ref,
+            stripe_event_id=stripe_event_id,
+            payment_meta={"stripe_event_type": "payment_intent.succeeded", "metadata": metadata},
             notes=f"Stripe payment - {currency.upper()} {amount:.2f}",
         )
         logger.info("Recorded Stripe payment for shop %d: $%.2f", shop_id, amount)

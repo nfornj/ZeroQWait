@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 
 from database import SessionLocal
+from agents.tools.service_supply_defaults import build_service_supply_map
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +228,7 @@ def seed_default_services(shop_id: int, shop_type: str) -> List[Dict[str, Any]]:
 
     vertical_key = _normalize_vertical(shop_type)
     defaults = VERTICAL_DEFAULTS.get(vertical_key, VERTICAL_DEFAULTS["barbershop"])
+    service_supply_map = build_service_supply_map(shop_id, vertical_key)
 
     created = []
     for svc in defaults:
@@ -238,6 +240,7 @@ def seed_default_services(shop_id: int, shop_type: str) -> List[Dict[str, Any]]:
                 price_cents=svc.get("price_cents", 0),
                 hst_applicable=svc.get("hst_applicable", True),
                 category=svc.get("category"),
+                supplies_used=service_supply_map.get(svc["name"]),
             )
             created.append(record)
         except Exception as exc:

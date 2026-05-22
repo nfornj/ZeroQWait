@@ -8,6 +8,14 @@ from typing import List, Optional, Dict
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+
+def _status_value(value) -> Optional[str]:
+    if value is None:
+        return None
+    if hasattr(value, "value"):
+        return str(value.value)
+    return str(value)
+
 class QueueService:
     def get_db(self):
         return SessionLocal()
@@ -127,12 +135,27 @@ class QueueService:
         try:
             item = db.query(QueueItem).filter(QueueItem.id == item_id).first()
             if item:
+                previous_status = _status_value(item.status)
                 for key, value in updates.items():
                     setattr(item, key, value)
+
+                next_status = _status_value(getattr(item, "status", None))
+                if next_status == "completed" and previous_status != "completed" and item.service_id:
+                    from agents.tools.inventory_tools import deduct_service_supplies
+
+                    deduct_service_supplies(
+                        shop_id=int(item.queue.shop_id),
+                        service_id=int(item.service_id),
+                        session=db,
+                    )
+
                 db.commit()
                 db.refresh(item)
                 return schemas.QueueItem.model_validate(item)
             return None
+        except Exception:
+            db.rollback()
+            raise
         finally:
             db.close()
 

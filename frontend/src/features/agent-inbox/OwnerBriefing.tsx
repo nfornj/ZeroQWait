@@ -48,6 +48,7 @@ const StatCard: React.FC<{
 
 const OwnerBriefingPanel: React.FC<OwnerBriefingProps> = ({ briefing, onAction, isLoading }) => {
   const brand = useOwnerBrand();
+  const dayOps = briefing?.daily_operations;
 
   if (!briefing) {
     if (isLoading) {
@@ -81,6 +82,50 @@ const OwnerBriefingPanel: React.FC<OwnerBriefingProps> = ({ briefing, onAction, 
         </div>
 
         <p className="text-sm text-muted-foreground mb-3 leading-relaxed">{briefing.summary}</p>
+
+        {dayOps && (
+          <div
+            className="rounded-xl border px-3 py-3 mb-3"
+            style={{
+              borderColor: `${brand.secondary}28`,
+              backgroundColor: `${brand.secondary}10`,
+            }}
+          >
+            <div className="flex items-center gap-1.5 mb-2">
+              <AlertTriangle className="h-3.5 w-3.5" style={{ color: brand.secondary }} />
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Salon Day Digest
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground mb-2 leading-relaxed">{dayOps.digest}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-foreground/80">
+              <div className="rounded-lg border px-2.5 py-2" style={{ borderColor: `${brand.secondary}24` }}>
+                <p className="font-semibold">Opening</p>
+                <p>{dayOps.opening.queue_open ? "Queue open" : "Queue closed"}{dayOps.opening.accepting_walk_ins ? " and taking walk-ins" : ""}</p>
+              </div>
+              <div className="rounded-lg border px-2.5 py-2" style={{ borderColor: `${brand.secondary}24` }}>
+                <p className="font-semibold">Appointments</p>
+                <p>{dayOps.appointments.total} total, {dayOps.appointments.upcoming} upcoming, {dayOps.appointments.completed} completed</p>
+              </div>
+              <div className="rounded-lg border px-2.5 py-2" style={{ borderColor: `${brand.secondary}24` }}>
+                <p className="font-semibold">Walk-ins</p>
+                <p>{dayOps.walk_ins.total} total, {dayOps.walk_ins.waiting} waiting, {dayOps.walk_ins.completed} completed</p>
+              </div>
+              <div className="rounded-lg border px-2.5 py-2" style={{ borderColor: `${brand.secondary}24` }}>
+                <p className="font-semibold">Staff Time</p>
+                <p>{dayOps.staff.clock_ins_today} clock-ins, {dayOps.staff.clock_outs_today} clock-outs, {dayOps.staff.currently_clocked_in} active now</p>
+              </div>
+              <div className="rounded-lg border px-2.5 py-2" style={{ borderColor: `${brand.secondary}24` }}>
+                <p className="font-semibold">Payments</p>
+                <p>{dayOps.payments.transactions} payments, {formatCurrency(dayOps.payments.net_revenue)} net</p>
+              </div>
+              <div className="rounded-lg border px-2.5 py-2" style={{ borderColor: `${brand.secondary}24` }}>
+                <p className="font-semibold">Inventory</p>
+                <p>{dayOps.inventory.usage_events} usage events, {dayOps.inventory.low_stock_count} low-stock item{dayOps.inventory.low_stock_count === 1 ? "" : "s"}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">

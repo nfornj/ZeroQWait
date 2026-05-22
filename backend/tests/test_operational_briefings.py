@@ -56,6 +56,15 @@ class TestOperationalBriefings(unittest.TestCase):
             today_revenue=320.0,
             today_transactions=9,
             weekly_revenue=1840.0,
+            daily_operations={
+                "digest": "Queue is open and accepting walk-ins. 5 appointments are on today's book, 4 walk-ins have been recorded, 2 staff clock-ins are logged, 9 payments have been processed, and 3 inventory usage events have been captured.",
+                "opening": {"queue_open": True, "accepting_walk_ins": True},
+                "appointments": {"total": 5, "completed": 2, "upcoming": 3, "cancelled": 0, "no_show": 0},
+                "walk_ins": {"total": 4, "waiting": 2, "serving": 1, "completed": 1, "cancelled": 0},
+                "staff": {"clock_ins_today": 2, "clock_outs_today": 1, "currently_clocked_in": 1},
+                "payments": {"transactions": 9, "revenue": 320.0, "tips": 24.0, "refunds": 0.0, "net_revenue": 320.0, "by_method": {"cash": 120.0}},
+                "inventory": {"usage_events": 3, "items_used": 2, "usage_cost": 18.5, "low_stock_count": 1},
+            },
             alert_history=[
                 {
                     "severity": "warning",
@@ -70,6 +79,9 @@ class TestOperationalBriefings(unittest.TestCase):
 
         self.assertEqual(briefing["source"], "scheduled")
         self.assertEqual(briefing["metrics"]["pending_approvals"], 1)
+        self.assertEqual(briefing["daily_operations"]["appointments"]["total"], 5)
+        self.assertEqual(briefing["daily_operations"]["inventory"]["usage_events"], 3)
+        self.assertIn("5 appointments", briefing["summary"])
         self.assertTrue(briefing["actions"])
         self.assertTrue(briefing["alerts"])
         self.assertEqual(briefing["alert_history"][0]["title"], "Queue pressure is building")

@@ -10,6 +10,14 @@ from database import SessionLocal
 from .models import Appointment, AppointmentStatus
 
 
+def _status_value(value) -> Optional[str]:
+    if value is None:
+        return None
+    if hasattr(value, "value"):
+        return str(value.value)
+    return str(value)
+
+
 class AppointmentService:
     """Tenant-scoped appointment operations."""
 
@@ -188,6 +196,7 @@ class AppointmentService:
             except ValueError:
                 return {"error": f"Invalid status: {new_status}"}
 
+            previous_status = _status_value(appt.status)
             appt.status = status_enum
 
             if status_enum == AppointmentStatus.CANCELLED:
@@ -197,6 +206,15 @@ class AppointmentService:
                 appt.actual_start = datetime.utcnow()
             elif status_enum == AppointmentStatus.COMPLETED:
                 appt.actual_end = datetime.utcnow()
+                if previous_status != AppointmentStatus.COMPLETED.value and appt.service_id:
+                    from agents.tools.inventory_tools import deduct_service_supplies
+
+                    deduct_service_supplies(
+                        shop_id=shop_id,
+                        service_id=int(appt.service_id),
+                        appointment_id=appointment_id,
+                        session=session,
+                    )
             elif status_enum == AppointmentStatus.CHECKED_IN:
                 pass  # just the status flip
 

@@ -108,6 +108,7 @@ class Payment(Base):
 
     # External payment reference (Stripe charge ID, etc.)
     external_ref = Column(String, nullable=True)
+    stripe_event_id = Column(String, nullable=True, index=True)
     payment_meta = Column(JSON, nullable=True)
 
     processed_by = Column(Integer, ForeignKey("platform.users.id"), nullable=True)

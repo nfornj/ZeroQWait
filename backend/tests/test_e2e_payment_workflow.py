@@ -162,6 +162,7 @@ def step_create_payment_intent(shop_id: int, amount: float = 25.00) -> dict:
             "currency": "usd",
             "description": "E2E test payment",
             "shop_id": shop_id,
+            "idempotency_key": f"e2e:{shop_id}:{int(amount * 100)}",
         },
     )
     if resp.status_code == 200:

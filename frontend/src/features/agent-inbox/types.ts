@@ -76,6 +76,49 @@ export interface BriefingAction {
   description?: string;
 }
 
+export interface DailyOperationsSnapshot {
+  digest: string;
+  opening: {
+    queue_id?: number | null;
+    queue_open: boolean;
+    accepting_walk_ins: boolean;
+    lock_reason?: string | null;
+  };
+  appointments: {
+    total: number;
+    completed: number;
+    upcoming: number;
+    cancelled: number;
+    no_show: number;
+  };
+  walk_ins: {
+    total: number;
+    waiting: number;
+    serving: number;
+    completed: number;
+    cancelled: number;
+  };
+  staff: {
+    clock_ins_today: number;
+    clock_outs_today: number;
+    currently_clocked_in: number;
+  };
+  payments: {
+    transactions: number;
+    revenue: number;
+    tips: number;
+    refunds: number;
+    net_revenue: number;
+    by_method: Record<string, number>;
+  };
+  inventory: {
+    usage_events: number;
+    items_used: number;
+    usage_cost: number;
+    low_stock_count: number;
+  };
+}
+
 export interface OwnerBriefing {
   shop_id: number;
   shop_name: string;
@@ -93,6 +136,7 @@ export interface OwnerBriefing {
     today_transactions: number;
     weekly_revenue: number;
   };
+  daily_operations?: DailyOperationsSnapshot;
   alerts: BriefingAlert[];
   alert_history?: BriefingAlert[];
   recent_notifications?: AgentFeedEvent[];
