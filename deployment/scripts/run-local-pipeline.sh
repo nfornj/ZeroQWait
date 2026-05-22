@@ -15,8 +15,8 @@ AUTO_COMMIT="${AUTO_COMMIT:-true}"
 ARGOCD_SYNC="${ARGOCD_SYNC:-false}"
 IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-}"
 # Comma-separated list of services to build. Empty = build all.
-# Valid values: backend,frontend,asr-service,tts-service,voice-mcp,booking-mcp,finance-mcp,hr-mcp
-SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp,booking-mcp,finance-mcp,hr-mcp}"
+# Valid values: backend,frontend,asr-service,tts-service,voice-mcp,booking-mcp,finance-mcp,hr-mcp,simulation
+SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp,booking-mcp,finance-mcp,hr-mcp,simulation}"
 # Set SKIP_TESTS=true to skip backend pytest + frontend npm test steps
 SKIP_TESTS="${SKIP_TESTS:-false}"
 # Set SKIP_REGISTRY_PRUNE=true to avoid deleting newly-pushed images in the same run.
@@ -123,6 +123,7 @@ main() {
   should_build "asr-service" && build_push "asr-service" "asr_service"
   should_build "tts-service" && build_push "tts-service" "tts_service"
   should_build "voice-mcp"  && build_push "voice-mcp"  "mcps/voice"
+  should_build "simulation" && build_push "simulation" "simulation"
   # booking/finance/hr MCPs need project root as context (Dockerfiles reference backend/ + mcps/X/)
   should_build "booking-mcp" && build_push "booking-mcp" "." "mcps/booking/Dockerfile"
   should_build "finance-mcp" && build_push "finance-mcp" "." "mcps/finance/Dockerfile"
@@ -134,6 +135,7 @@ main() {
   should_build "asr-service" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/asr-deployment.yaml"         "asr-service" "$(repo_for asr-service)"
   should_build "tts-service" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/tts-deployment.yaml"         "tts-service" "$(repo_for tts-service)"
   should_build "voice-mcp"   && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/voice-mcp-deployment.yaml"   "voice-mcp" "$(repo_for voice-mcp)"
+  should_build "simulation"  && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/simulation-deployment.yaml"  "simulation" "$(repo_for simulation)"
   should_build "booking-mcp" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/booking-mcp-deployment.yaml" "booking-mcp" "$(repo_for booking-mcp)"
   should_build "finance-mcp" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/finance-mcp-deployment.yaml" "finance-mcp" "$(repo_for finance-mcp)"
   should_build "hr-mcp"      && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/hr-mcp-deployment.yaml"      "hr-mcp" "$(repo_for hr-mcp)"
@@ -147,6 +149,7 @@ main() {
     should_build "asr-service" && staged+=("k8s-manifests/asr-deployment.yaml")
     should_build "tts-service" && staged+=("k8s-manifests/tts-deployment.yaml")
     should_build "voice-mcp"   && staged+=("k8s-manifests/voice-mcp-deployment.yaml")
+    should_build "simulation"  && staged+=("k8s-manifests/simulation-deployment.yaml")
     should_build "booking-mcp" && staged+=("k8s-manifests/booking-mcp-deployment.yaml")
     should_build "finance-mcp" && staged+=("k8s-manifests/finance-mcp-deployment.yaml")
     should_build "hr-mcp"      && staged+=("k8s-manifests/hr-mcp-deployment.yaml")
@@ -165,6 +168,7 @@ main() {
     should_build "asr-service" && prune_repos+=("$(repo_for asr-service)")
     should_build "tts-service" && prune_repos+=("$(repo_for tts-service)")
     should_build "voice-mcp"   && prune_repos+=("$(repo_for voice-mcp)")
+    should_build "simulation"  && prune_repos+=("$(repo_for simulation)")
     should_build "booking-mcp" && prune_repos+=("$(repo_for booking-mcp)")
     should_build "finance-mcp" && prune_repos+=("$(repo_for finance-mcp)")
     should_build "hr-mcp"      && prune_repos+=("$(repo_for hr-mcp)")

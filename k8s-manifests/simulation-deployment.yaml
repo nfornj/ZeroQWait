@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simulation
+  namespace: zeroqwait
+  labels:
+    app: simulation
+    zeroqwait.io/tier: shared-infra
+    zeroqwait.io/component: simulation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simulation
+  template:
+    metadata:
+      labels:
+        app: simulation
+        zeroqwait.io/tier: shared-infra
+        zeroqwait.io/component: simulation
+    spec:
+      restartPolicy: Always
+      tolerations:
+      - key: "workload-pool"
+        operator: "Equal"
+        value: "core-cpu"
+        effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: zeroqwait.io/node-pool
+                operator: In
+                values: ["core-cpu"]
+      containers:
+      - name: simulation
+        image: ghcr.io/nfornj/simulation:v20260522184443-e75907a
+        imagePullPolicy: IfNotPresent
+        command: ["python", "-u", "run_manifest.py"]
+        env:
+        - name: BASE_URL
+          value: http://backend.zeroqwait.svc.cluster.local:8000
+        - name: SIM_MANIFEST_PATH
+          value: /app/shop_manifest.json
+        - name: SIM_LOG_ONLY
+          value: "true"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "768Mi"
+            cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]

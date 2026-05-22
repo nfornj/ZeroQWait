@@ -24,6 +24,7 @@ resources:
   - finance-mcp-deployment.yaml
   - hr-mcp-deployment.yaml
   - voice-mcp-deployment.yaml
+  - simulation-deployment.yaml
   - odoo-secret.yaml
   - odoo-pvc.yaml
   - odoo-db-init-job.yaml
