@@ -31,6 +31,9 @@ spec:
               app: finance-mcp
         - podSelector:
             matchLabels:
+              app: odoo-mcp
+        - podSelector:
+            matchLabels:
               app: temporal
         - podSelector:
             matchLabels:

@@ -32,7 +32,7 @@ spec:
                     values: ["core-cpu"]
       containers:
         - name: odoo-mcp
-          image: ghcr.io/nfornj/odoo-mcp:v20260523000929-d331489
+          image: ghcr.io/nfornj/odoo-mcp:v20260523090940-e94d942
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8893
