@@ -23,6 +23,7 @@ resources:
   - booking-mcp-deployment.yaml
   - finance-mcp-deployment.yaml
   - hr-mcp-deployment.yaml
+  - odoo-mcp-deployment.yaml
   - voice-mcp-deployment.yaml
   - simulation-deployment.yaml
   - odoo-secret.yaml

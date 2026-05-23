@@ -25,12 +25,50 @@ ODOO_PASSWORD = os.getenv("ODOO_PASSWORD", "admin")
 
 _DISABLED = {"enabled": False, "message": "Odoo integration is disabled"}
 
+_ODOO_READ_MODELS = {
+    "account.journal",
+    "account.move",
+    "account.move.line",
+    "account.payment",
+    "crm.lead",
+    "crm.stage",
+    "product.product",
+    "res.company",
+    "res.partner",
+    "stock.quant",
+}
+
+_ODOO_COMPANY_FILTER_MODELS = {
+    "account.journal",
+    "account.move",
+    "account.move.line",
+    "account.payment",
+    "crm.lead",
+    "product.product",
+    "res.partner",
+    "stock.quant",
+}
+
 
 def _add_company_filter(domain: list, company_id: Optional[int]) -> list:
     """Append company_id filter to an Odoo domain if provided."""
     if company_id is not None:
         return domain + [("company_id", "=", company_id)]
     return domain
+
+
+def _validate_read_model(model: str) -> str:
+    value = str(model or "").strip()
+    if value not in _ODOO_READ_MODELS:
+        raise ValueError(f"Odoo read model {value!r} is not allowlisted")
+    return value
+
+
+def _company_scoped_domain(model: str, domain: Optional[list], company_id: Optional[int]) -> list:
+    value = list(domain or [])
+    if model in _ODOO_COMPANY_FILTER_MODELS:
+        return _add_company_filter(value, company_id)
+    return value
 
 
 _M2O_FIELDS = {"country_id", "parent_id", "partner_id", "stage_id",
@@ -91,15 +129,78 @@ class OdooClient:
         )
 
     def health_check(self) -> Dict[str, Any]:
-        """Check Odoo connectivity and return version info."""
+        """Check Odoo server reachability and database authentication."""
         if not self.enabled:
             return _DISABLED
         try:
             common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
             version = common.version()
-            return {"enabled": True, "status": "ok", "version": version.get("server_version", "unknown")}
+            uid = common.authenticate(ODOO_DB, ODOO_USER, ODOO_PASSWORD, {})
+            if not uid:
+                return {
+                    "enabled": True,
+                    "status": "error",
+                    "db": ODOO_DB,
+                    "version": version.get("server_version", "unknown"),
+                    "error": "Odoo authentication failed — check ODOO_DB, ODOO_USER, ODOO_PASSWORD",
+                }
+            return {
+                "enabled": True,
+                "status": "ok",
+                "db": ODOO_DB,
+                "uid": uid,
+                "version": version.get("server_version", "unknown"),
+            }
         except Exception as e:
-            return {"enabled": True, "status": "error", "error": str(e)}
+            return {"enabled": True, "status": "error", "db": ODOO_DB, "error": str(e)}
+
+    def diagnose_access(self, models: Optional[List[str]] = None,
+                        company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Check read access for allowlisted Odoo models without mutating data."""
+        if not self.enabled:
+            return _DISABLED
+        model_names = models or [
+            "res.partner",
+            "crm.lead",
+            "account.move",
+            "account.payment",
+            "product.product",
+            "stock.quant",
+        ]
+        checks = []
+        for raw_model in model_names:
+            try:
+                model = _validate_read_model(raw_model)
+                domain = _company_scoped_domain(model, [], company_id)
+                rows = self._execute(model, "search_read", domain, ["id"], limit=1) or []
+                checks.append({"model": model, "ok": True, "sample_count": len(rows)})
+            except Exception as e:
+                checks.append({"model": str(raw_model), "ok": False, "error": str(e)})
+        return {"checks": checks, "company_id": company_id}
+
+    def aggregate_records(self, model: str, domain: Optional[list] = None,
+                          fields: Optional[List[str]] = None,
+                          groupby: Optional[List[str]] = None,
+                          company_id: Optional[int] = None,
+                          limit: int = 80) -> Dict[str, Any]:
+        """Run a read-only Odoo read_group query for diagnostics and analytics."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            model_name = _validate_read_model(model)
+            safe_domain = _company_scoped_domain(model_name, domain, company_id)
+            result = self._execute(
+                model_name,
+                "read_group",
+                safe_domain,
+                fields or ["id"],
+                groupby or [],
+                limit=max(1, min(int(limit or 80), 200)),
+            )
+            return {"model": model_name, "rows": _resolve_m2o(result or []), "count": len(result or [])}
+        except Exception as e:
+            logger.error("Odoo aggregate_records failed: %s", e)
+            return {"error": str(e)}
 
     # ── Company Management (Multi-Tenancy) ────────────────────────
 

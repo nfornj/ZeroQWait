@@ -296,13 +296,13 @@ INSERT INTO payroll_constants (
  '[{"min":0,"max":148269,"rate":0.10},{"min":148269,"max":177922,"rate":0.12},{"min":177922,"max":237230,"rate":0.13},{"min":237230,"max":355845,"rate":0.14},{"min":355845,"max":null,"rate":0.15}]',
  '{}'),
 
--- Quebec (TP-1015 — Calculator must raise NotImplementedError for QC)
+-- Quebec (TP-1015 provincial withholding supported in payroll_calculator.py)
 (2025, 'QC',
  0.0595, 4055.50, 3500.00,
  0.0166, 1049.12, 63200.00,
  '[{"min":0,"max":57375,"rate":0.15},{"min":57375,"max":114750,"rate":0.205},{"min":114750,"max":177882,"rate":0.26},{"min":177882,"max":253414,"rate":0.29},{"min":253414,"max":null,"rate":0.33}]',
- '[{"min":0,"max":55867,"rate":0.14},{"min":55867,"max":111733,"rate":0.19},{"min":111733,"max":135701,"rate":0.24},{"min":135701,"max":null,"rate":0.2575}]',
- '{"qpip_note":"Quebec uses TP-1015 which differs from T4127 — use RQ provincial calculator"}'),
+ '[{"min":0,"max":53255,"rate":0.14},{"min":53255,"max":106495,"rate":0.19},{"min":106495,"max":129590,"rate":0.24},{"min":129590,"max":null,"rate":0.2575}]',
+ '{"source":"Revenu Quebec TP-1015.G-V 2025-01","basic_personal_amount":18571}'),
 
 -- Manitoba
 (2025, 'MB',

@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odoo-mcp
+  namespace: zeroqwait
+  labels:
+    app: odoo-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: odoo-mcp
+  template:
+    metadata:
+      labels:
+        app: odoo-mcp
+    spec:
+      priorityClassName: app-critical
+      tolerations:
+        - key: "workload-pool"
+          operator: "Equal"
+          value: "core-cpu"
+          effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: zeroqwait.io/node-pool
+                    operator: In
+                    values: ["core-cpu"]
+      containers:
+        - name: odoo-mcp
+          image: ghcr.io/nfornj/odoo-mcp:v20260523000929-d331489
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8893
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secret
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8893"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8893
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8893
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: odoo-mcp
+  namespace: zeroqwait
+  labels:
+    app: odoo-mcp
+spec:
+  type: ClusterIP
+  selector:
+    app: odoo-mcp
+  ports:
+    - name: http
+      port: 8893
+      targetPort: 8893
+      protocol: TCP

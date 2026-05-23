@@ -130,6 +130,14 @@ class TestFinanceOperationNormalization(unittest.TestCase):
         self.assertTrue(result["dynamic_sql_fallback_used"])
         self.assertEqual(result["dynamic_sql_error_class"], "ValidationError")
 
+    def test_dynamic_read_local_mode_is_enabled(self) -> None:
+        original_mode = finance._DYNAMIC_READS_MODE
+        try:
+            finance._DYNAMIC_READS_MODE = "local"
+            self.assertTrue(finance._dynamic_reads_enabled())
+        finally:
+            finance._DYNAMIC_READS_MODE = original_mode
+
 
 if __name__ == "__main__":
     unittest.main()

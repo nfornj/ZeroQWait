@@ -15,8 +15,8 @@ AUTO_COMMIT="${AUTO_COMMIT:-true}"
 ARGOCD_SYNC="${ARGOCD_SYNC:-false}"
 IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-}"
 # Comma-separated list of services to build. Empty = build all.
-# Valid values: backend,frontend,asr-service,tts-service,voice-mcp,booking-mcp,finance-mcp,hr-mcp,simulation
-SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp,booking-mcp,finance-mcp,hr-mcp,simulation}"
+# Valid values: backend,frontend,asr-service,tts-service,voice-mcp,booking-mcp,finance-mcp,hr-mcp,odoo-mcp,simulation
+SERVICES="${SERVICES:-backend,frontend,asr-service,tts-service,voice-mcp,booking-mcp,finance-mcp,hr-mcp,odoo-mcp,simulation}"
 # Set SKIP_TESTS=true to skip backend pytest + frontend npm test steps
 SKIP_TESTS="${SKIP_TESTS:-false}"
 # Set SKIP_REGISTRY_PRUNE=true to avoid deleting newly-pushed images in the same run.
@@ -128,6 +128,7 @@ main() {
   should_build "booking-mcp" && build_push "booking-mcp" "." "mcps/booking/Dockerfile"
   should_build "finance-mcp" && build_push "finance-mcp" "." "mcps/finance/Dockerfile"
   should_build "hr-mcp"      && build_push "hr-mcp"      "." "mcps/hr/Dockerfile"
+  should_build "odoo-mcp"    && build_push "odoo-mcp"    "." "mcps/odoo/Dockerfile"
 
   should_build "backend"     && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/backend-deployment.yaml"     "backend" "$(repo_for backend)"
   should_build "backend"     && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/temporal-worker-deployment.yaml" "backend" "$(repo_for backend)"
@@ -139,6 +140,7 @@ main() {
   should_build "booking-mcp" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/booking-mcp-deployment.yaml" "booking-mcp" "$(repo_for booking-mcp)"
   should_build "finance-mcp" && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/finance-mcp-deployment.yaml" "finance-mcp" "$(repo_for finance-mcp)"
   should_build "hr-mcp"      && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/hr-mcp-deployment.yaml"      "hr-mcp" "$(repo_for hr-mcp)"
+  should_build "odoo-mcp"    && update_manifest_tag "${PROJECT_ROOT}/k8s-manifests/odoo-mcp-deployment.yaml"    "odoo-mcp" "$(repo_for odoo-mcp)"
 
   if [[ "${AUTO_COMMIT}" == "true" ]]; then
     # Only stage manifests for services that were built
@@ -153,6 +155,7 @@ main() {
     should_build "booking-mcp" && staged+=("k8s-manifests/booking-mcp-deployment.yaml")
     should_build "finance-mcp" && staged+=("k8s-manifests/finance-mcp-deployment.yaml")
     should_build "hr-mcp"      && staged+=("k8s-manifests/hr-mcp-deployment.yaml")
+    should_build "odoo-mcp"    && staged+=("k8s-manifests/odoo-mcp-deployment.yaml")
     if [[ ${#staged[@]} -gt 0 ]]; then
       git -C "${PROJECT_ROOT}" add "${staged[@]}"
       git -C "${PROJECT_ROOT}" commit -m "ci: release ${VERSION_TAG}" || true
@@ -172,6 +175,7 @@ main() {
     should_build "booking-mcp" && prune_repos+=("$(repo_for booking-mcp)")
     should_build "finance-mcp" && prune_repos+=("$(repo_for finance-mcp)")
     should_build "hr-mcp"      && prune_repos+=("$(repo_for hr-mcp)")
+    should_build "odoo-mcp"    && prune_repos+=("$(repo_for odoo-mcp)")
 
     KEEP_VERSIONS="${RETAIN_VERSIONS}" REPOSITORIES="${prune_repos[*]}" "${PROJECT_ROOT}/deployment/scripts/prune-registry-tags.sh"
   fi

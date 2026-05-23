@@ -95,6 +95,80 @@ class TestOdooInventoryClient(unittest.TestCase):
         self.assertEqual(result, {"quant_id": 31, "qty_delta": -1.5, "reason": "count"})
         self.assertEqual(client._execute.call_args_list[1].args, ("stock.quant", "write", [31], {"quantity": 2.5}))
 
+    def test_diagnose_access_uses_allowlisted_read_models(self) -> None:
+        client = self._client()
+        client._execute = MagicMock(return_value=[{"id": 1}])
+
+        result = client.diagnose_access(models=["res.partner"], company_id=9)
+
+        self.assertEqual(result["checks"], [{"model": "res.partner", "ok": True, "sample_count": 1}])
+        client._execute.assert_called_once_with(
+            "res.partner", "search_read", [("company_id", "=", 9)], ["id"], limit=1
+        )
+
+    def test_diagnose_access_rejects_non_allowlisted_model(self) -> None:
+        client = self._client()
+        client._execute = MagicMock()
+
+        result = client.diagnose_access(models=["ir.config_parameter"], company_id=9)
+
+        self.assertFalse(result["checks"][0]["ok"])
+        self.assertIn("not allowlisted", result["checks"][0]["error"])
+        client._execute.assert_not_called()
+
+    def test_aggregate_records_uses_read_group_with_company_scope(self) -> None:
+        client = self._client()
+        client._execute = MagicMock(return_value=[{"stage_id": [4, "Won"], "expected_revenue": 1000.0}])
+
+        result = client.aggregate_records(
+            "crm.lead",
+            domain=[("type", "=", "opportunity")],
+            fields=["expected_revenue:sum"],
+            groupby=["stage_id"],
+            company_id=9,
+        )
+
+        self.assertEqual(result["rows"][0]["stage_id"], "Won")
+        client._execute.assert_called_once_with(
+            "crm.lead",
+            "read_group",
+            [("type", "=", "opportunity"), ("company_id", "=", 9)],
+            ["expected_revenue:sum"],
+            ["stage_id"],
+            limit=80,
+        )
+
+    def test_health_check_verifies_odoo_database_auth(self) -> None:
+        client = self._client()
+        common = MagicMock()
+        common.version.return_value = {"server_version": "17.0-test"}
+        common.authenticate.return_value = 7
+
+        with patch("integrations.odoo_client.xmlrpc.client.ServerProxy", return_value=common), patch(
+            "integrations.odoo_client.ODOO_DB", "demo_odoo"
+        ):
+            result = client.health_check()
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["db"], "demo_odoo")
+        self.assertEqual(result["uid"], 7)
+        common.authenticate.assert_called_once()
+
+    def test_health_check_reports_database_auth_failure(self) -> None:
+        client = self._client()
+        common = MagicMock()
+        common.version.return_value = {"server_version": "17.0-test"}
+        common.authenticate.return_value = False
+
+        with patch("integrations.odoo_client.xmlrpc.client.ServerProxy", return_value=common), patch(
+            "integrations.odoo_client.ODOO_DB", "missing_odoo"
+        ):
+            result = client.health_check()
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["db"], "missing_odoo")
+        self.assertIn("authentication failed", result["error"])
+
 
 class TestInventoryOdooLookup(unittest.TestCase):
     def test_check_stock_product_id_uses_direct_odoo_lookup(self) -> None:

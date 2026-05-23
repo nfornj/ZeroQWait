@@ -152,6 +152,18 @@ class LowStockRequest(ShopRequest):
     threshold: float = 0
 
 
+class DiagnoseAccessRequest(ShopRequest):
+    models: Optional[list[str]] = None
+
+
+class AggregateRecordsRequest(ShopRequest):
+    model: str
+    domain: Optional[list] = None
+    fields: Optional[list[str]] = None
+    groupby: Optional[list[str]] = None
+    limit: int = 80
+
+
 # ── REST endpoints ─────────────────────────────────────────────────────────────
 
 
@@ -344,6 +356,25 @@ async def rest_products_update(req: ProductUpdateRequest):
 async def rest_low_stock(req: LowStockRequest):
     cid = _company_id(req.shop_id)
     return _odoo().get_low_stock_items(company_id=cid, threshold=req.threshold)
+
+
+@app.post("/diagnostics/access")
+async def rest_diagnose_access(req: DiagnoseAccessRequest):
+    cid = _company_id(req.shop_id)
+    return _odoo().diagnose_access(models=req.models, company_id=cid)
+
+
+@app.post("/analytics/aggregate")
+async def rest_aggregate_records(req: AggregateRecordsRequest):
+    cid = _company_id(req.shop_id)
+    return _odoo().aggregate_records(
+        model=req.model,
+        domain=req.domain,
+        fields=req.fields,
+        groupby=req.groupby,
+        company_id=cid,
+        limit=req.limit,
+    )
 
 
 @app.get("/leads/stages")
@@ -543,6 +574,30 @@ try:
     @mcp.tool(description="Get low-stock items from Odoo inventory for a shop. threshold defaults to 0 (out-of-stock).")
     async def get_low_stock_items(shop_id: int, threshold: float = 0) -> dict:
         return await rest_low_stock(LowStockRequest(shop_id=shop_id, threshold=threshold))
+
+    @mcp.tool(description="Diagnose read access to allowlisted Odoo models for a shop without changing data.")
+    async def diagnose_access(shop_id: int, models: Optional[list[str]] = None) -> dict:
+        return await rest_diagnose_access(DiagnoseAccessRequest(shop_id=shop_id, models=models))
+
+    @mcp.tool(description="Aggregate allowlisted Odoo records with read_group for read-only diagnostics and analytics.")
+    async def aggregate_records(
+        shop_id: int,
+        model: str,
+        domain: Optional[list] = None,
+        fields: Optional[list[str]] = None,
+        groupby: Optional[list[str]] = None,
+        limit: int = 80,
+    ) -> dict:
+        return await rest_aggregate_records(
+            AggregateRecordsRequest(
+                shop_id=shop_id,
+                model=model,
+                domain=domain,
+                fields=fields,
+                groupby=groupby,
+                limit=limit,
+            )
+        )
 
     @mcp.tool(description="List available CRM pipeline stages in Odoo.")
     async def get_lead_stages(shop_id: int) -> dict:

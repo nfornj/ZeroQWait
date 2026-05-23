@@ -7,11 +7,9 @@ and feeding them here.
 
 Province support
 ----------------
-All 10 provinces have bracket data seeded in migration 007.  Quebec requires
-TP-1015 provincial deductions (Revenu Québec formulas), which differ
-significantly from the T4127 method.  Passing province='QC' raises
-NotImplementedError so callers know to route QC employees through the RQ
-calculator (future work).
+All 10 provinces have bracket data seeded in migration 007.  Quebec uses a
+dedicated TP-1015.3-style provincial withholding helper so QC employees do not
+hard-fail during payslip generation.
 
 Worked validation example (spec §9)
 -------------------------------------
@@ -274,8 +272,39 @@ def calculate_federal_tax(
 
 
 # ---------------------------------------------------------------------------
-# Provincial income tax (T4127 §8 — ON method)
+# Provincial income tax
 # ---------------------------------------------------------------------------
+
+def _qc_provincial_tax(
+    gross_period: float,
+    cpp_period: float,
+    ei_period: float,
+    pay_frequency: str,
+    td1_prov_claim: float,
+    constants: PayrollConstants,
+) -> float:
+    """
+    Return Quebec provincial income tax for one pay period.
+
+    This follows Revenu Quebec's TP-1015.3 source-deduction shape for the
+    common regular-pay case: annualize remuneration, subtract annualized
+    statutory deductions, apply Quebec tax brackets, subtract the non-refundable
+    personal credit from the employee's TP-1015.3 claim amount, then divide back
+    to the pay period.
+    """
+    periods = _periods(pay_frequency)
+
+    ann_gross = gross_period * periods
+    ann_cpp = cpp_period * periods
+    ann_ei = ei_period * periods
+    ann_taxable = max(ann_gross - ann_cpp - ann_ei, 0.0)
+
+    ann_tax_gross = _apply_brackets(ann_taxable, constants.prov_brackets)
+    lowest_qc_rate = float(constants.prov_brackets[0]["rate"])
+    personal_credit = lowest_qc_rate * td1_prov_claim
+    ann_net_tax = max(ann_tax_gross - personal_credit, 0.0)
+
+    return round(ann_net_tax / periods, 2)
 
 def calculate_provincial_tax(
     gross_period: float,
@@ -288,15 +317,17 @@ def calculate_provincial_tax(
     """
     Return the provincial income tax to withhold for this pay period.
 
-    Quebec raises NotImplementedError (TP-1015 required, not T4127).
-    All other provinces follow the same annualise → bracket → credit → surtax
-    → de-annualise pattern.
+    Quebec uses a dedicated TP-1015.3-style helper. All other provinces follow
+    the CRA T4127 annualise → bracket → credit → surtax → de-annualise pattern.
     """
     if constants.province == "QC":
-        raise NotImplementedError(
-            "Quebec uses TP-1015 (Revenu Québec formulas), which differ from "
-            "the CRA T4127 method.  Route QC employees through the RQ "
-            "provincial payroll calculator."
+        return _qc_provincial_tax(
+            gross_period=gross_period,
+            cpp_period=cpp_period,
+            ei_period=ei_period,
+            pay_frequency=pay_frequency,
+            td1_prov_claim=td1_prov_claim,
+            constants=constants,
         )
 
     periods = _periods(pay_frequency)
