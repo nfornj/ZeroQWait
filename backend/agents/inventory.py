@@ -337,10 +337,7 @@ def _build_inventory_executor(shop_id: int):
                 if barcode:
                     return odoo_client.get_product_by_barcode(barcode, company_id=company_id)
                 if product_id:
-                    # Reuse low-stock listing filtered by id as a product detail lookup
-                    result = odoo_client.get_low_stock_items(company_id=company_id, threshold=999999)
-                    items = [i for i in result.get("items", []) if i.get("id") == product_id]
-                    return {"product": items[0]} if items else {"error": "not_found", "product_id": product_id}
+                    return odoo_client.get_product_by_id(product_id, company_id=company_id)
                 # Name-based search: get all products and filter by name
                 query_name = _optional_str(arguments.get("name") or arguments.get("query") or arguments.get("product_name"))
                 result = odoo_client.get_low_stock_items(company_id=company_id, threshold=999999)

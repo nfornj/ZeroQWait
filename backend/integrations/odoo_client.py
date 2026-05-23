@@ -565,6 +565,24 @@ class OdooClient:
             logger.error("Odoo get_low_stock_items failed: %s", e)
             return {"error": str(e)}
 
+    def get_product_by_id(self, product_id: int, company_id: Optional[int] = None) -> Dict[str, Any]:
+        """Look up a single product by Odoo product ID."""
+        if not self.enabled:
+            return _DISABLED
+        try:
+            domain = _add_company_filter([("id", "=", product_id)], company_id)
+            items = self._execute(
+                "product.product", "search_read", domain,
+                ["id", "name", "qty_on_hand", "uom_id", "default_code", "barcode"],
+                limit=1,
+            )
+            if not items:
+                return {"error": "not_found", "product_id": product_id}
+            return {"product": _resolve_m2o(items)[0]}
+        except Exception as e:
+            logger.error("Odoo get_product_by_id failed: %s", e)
+            return {"error": str(e)}
+
     def receive_stock(self, product_id: int, qty: float,
                       company_id: Optional[int] = None, notes: str = "") -> Dict[str, Any]:
         """Increase on-hand stock for *product_id* by *qty* (creates/updates stock.quant)."""
@@ -576,18 +594,12 @@ class OdooClient:
             if quants:
                 quant_id = quants[0]["id"]
                 new_qty = quants[0]["quantity"] + qty
-                self._models.execute_kw(
-                    self._db, self._uid, self._password,
-                    "stock.quant", "write", [[quant_id], {"quantity": new_qty}],
-                )
+                self._execute("stock.quant", "write", [quant_id], {"quantity": new_qty})
             else:
                 vals: Dict[str, Any] = {"product_id": product_id, "quantity": qty, "location_id": 8}
                 if company_id:
                     vals["company_id"] = company_id
-                quant_id = self._models.execute_kw(
-                    self._db, self._uid, self._password,
-                    "stock.quant", "create", [vals],
-                )
+                quant_id = self._execute("stock.quant", "create", vals)
             return {"quant_id": quant_id, "qty_added": qty, "notes": notes}
         except Exception as e:
             logger.error("Odoo receive_stock failed: %s", e)
@@ -605,10 +617,7 @@ class OdooClient:
             if quants:
                 quant_id = quants[0]["id"]
                 new_qty = quants[0]["quantity"] + qty_delta
-                self._models.execute_kw(
-                    self._db, self._uid, self._password,
-                    "stock.quant", "write", [[quant_id], {"quantity": new_qty}],
-                )
+                self._execute("stock.quant", "write", [quant_id], {"quantity": new_qty})
             return {"quant_id": quant_id, "qty_delta": qty_delta, "reason": reason}
         except Exception as e:
             logger.error("Odoo adjust_stock failed: %s", e)
@@ -628,7 +637,7 @@ class OdooClient:
             )
             if not items:
                 return {"error": "not_found", "barcode": barcode}
-            return {"product": _resolve_m2o(items[0], [])}
+            return {"product": _resolve_m2o([items[0]])[0]}
         except Exception as e:
             logger.error("Odoo get_product_by_barcode failed: %s", e)
             return {"error": str(e)}
