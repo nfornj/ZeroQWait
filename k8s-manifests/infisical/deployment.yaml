@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: infisical-secret
+  namespace: infisical
+type: Opaque
+stringData:
+  # Replace before applying. Use a dedicated database/user if available.
+  # The host points at the existing cluster PostgreSQL service in the zeroqwait namespace.
+  DATABASE_URL: "postgresql://REPLACE_ME_USER:REPLACE_ME_PASSWORD@postgres.zeroqwait.svc.cluster.local:5432/infisical"
+  ENCRYPTION_KEY: "REPLACE_ME_32_BYTE_HEX_OR_BASE64_KEY"
+  AUTH_SECRET: "REPLACE_ME_RANDOM_AUTH_SECRET"
+  JWT_SECRET: "REPLACE_ME_RANDOM_JWT_SECRET"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: infisical
+  namespace: infisical
+  labels:
+    app: infisical
+    app.kubernetes.io/name: infisical
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: infisical
+  template:
+    metadata:
+      labels:
+        app: infisical
+        app.kubernetes.io/name: infisical
+    spec:
+      containers:
+        - name: infisical
+          image: infisical/infisical:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "8080"
+            - name: NODE_ENV
+              value: "production"
+            - name: SITE_URL
+              value: "http://infisical-svc:8080"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: infisical-secret
+                  key: DATABASE_URL
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: infisical-secret
+                  key: ENCRYPTION_KEY
+            - name: AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: infisical-secret
+                  key: AUTH_SECRET
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: infisical-secret
+                  key: JWT_SECRET
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
