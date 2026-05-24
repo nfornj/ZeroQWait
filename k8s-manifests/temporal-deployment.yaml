@@ -48,13 +48,13 @@ spec:
         - name: POSTGRES_USER
           valueFrom:
             secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_USER
+              name: backend-secret
+              key: DB_USER
         - name: POSTGRES_PWD
           valueFrom:
             secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_PASSWORD
+              name: backend-secret
+              key: DB_PASSWORD
         - name: DBNAME
           value: "temporal"
         - name: VISIBILITY_DBNAME
