@@ -1,0 +1,43 @@
+# Ingress for premium shop ${SHOP_ID} — ${SHOP_SLUG}.zeroqwait.com
+# Routes to dedicated backend-shop-${SHOP_ID} service
+# Must be applied BEFORE the wildcard *.zeroqwait.com ingress is updated,
+# or as a separate more-specific Ingress resource (Traefik picks most-specific match).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shop-${SHOP_ID}-ingress
+  namespace: zeroqwait
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.priority: "100"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - "${SHOP_SLUG}.zeroqwait.com"
+      secretName: zeroqwait-wildcard-tls
+  rules:
+    - host: "${SHOP_SLUG}.zeroqwait.com"
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-shop-${SHOP_ID}
+                port:
+                  number: 8000
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-shop-${SHOP_ID}
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000

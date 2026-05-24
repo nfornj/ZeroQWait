@@ -1,0 +1,72 @@
+# DB init Job for premium shop ${SHOP_ID}
+# Runs AFTER postgres-shop-${SHOP_ID} is ready (init container waits for it).
+# Creates the zeroqwait database + application schema in the dedicated postgres.
+# Run once: kubectl apply -f db-init-job.yaml -n zeroqwait
+# Check: kubectl logs job/db-init-shop-${SHOP_ID} -n zeroqwait
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init-shop-${SHOP_ID}
+  namespace: zeroqwait
+  labels:
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "${SHOP_ID}"
+    zeroqwait.io/component: db-init
+  annotations:
+    # Manual re-run: kubectl delete job db-init-shop-${SHOP_ID} -n zeroqwait && kubectl apply -f db-init-job.yaml
+    description: "Initialize postgres-shop-${SHOP_ID} with zeroqwait schema"
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        zeroqwait.io/shop-id: "${SHOP_ID}"
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.28
+          command:
+            - sh
+            - -c
+            - until nc -z postgres-shop-${SHOP_ID}.zeroqwait.svc.cluster.local 5432; do echo waiting for postgres-shop-${SHOP_ID}; sleep 3; done; echo postgres ready
+      containers:
+        - name: db-init
+          image: ghcr.io/nfornj/backend:${BACKEND_IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "=== Initializing postgres-shop-${SHOP_ID} for shop ${SHOP_ID} ==="
+              echo "Creating platform schema if not exists..."
+              python -c "from database import engine; from sqlalchemy import text; conn = engine.connect(); conn.execute(text('CREATE SCHEMA IF NOT EXISTS platform')); conn.execute(text('CREATE SCHEMA IF NOT EXISTS tenant_${SHOP_ID}')); conn.execute(text('CREATE EXTENSION IF NOT EXISTS vector')); conn.commit(); conn.close(); print('Schemas and extensions ready.')"
+              echo "Running database init script..."
+              python init_database.py
+              echo "Running Alembic migrations..."
+              cd /app && python -m alembic upgrade head || echo "Alembic not configured, skipping"
+              echo "=== DB init complete for shop ${SHOP_ID} ==="
+          envFrom:
+            - configMapRef:
+                name: zeroqwait-shop-${SHOP_ID}
+            - secretRef:
+                name: backend-secret
+          env:
+            - name: DB_HOST
+              value: "postgres-shop-${SHOP_ID}.zeroqwait.svc.cluster.local"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

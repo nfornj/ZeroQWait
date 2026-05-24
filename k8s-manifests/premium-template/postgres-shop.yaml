@@ -1,0 +1,96 @@
+# Dedicated PostgreSQL for premium shop ${SHOP_ID}
+# All data for shop ${SHOP_ID} lives here (isolated from postgres-shared)
+# Init job in db-init-job.yaml must run before backend-shop-${SHOP_ID} starts
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-shop-${SHOP_ID}
+  namespace: zeroqwait
+  labels:
+    app: postgres-shop-${SHOP_ID}
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "${SHOP_ID}"
+    zeroqwait.io/component: database
+spec:
+  serviceName: postgres-shop-${SHOP_ID}
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-shop-${SHOP_ID}
+  template:
+    metadata:
+      labels:
+        app: postgres-shop-${SHOP_ID}
+        zeroqwait.io/tier: premium
+        zeroqwait.io/shop-id: "${SHOP_ID}"
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg15
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "750m"
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U $POSTGRES_USER
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U $POSTGRES_USER
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-storage
+        labels:
+          zeroqwait.io/shop-id: "${SHOP_ID}"
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-shop-${SHOP_ID}
+  namespace: zeroqwait
+  labels:
+    app: postgres-shop-${SHOP_ID}
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "${SHOP_ID}"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: postgres-shop-${SHOP_ID}
+  ports:
+    - port: 5432
+      targetPort: 5432

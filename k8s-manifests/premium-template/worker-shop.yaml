@@ -3,43 +3,44 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: worker-shop-SHOP_ID
+  name: worker-shop-${SHOP_ID}
   namespace: zeroqwait
   labels:
-    app: worker-shop-SHOP_ID
+    app: worker-shop-${SHOP_ID}
     zeroqwait.io/runtime: dedicated
-    zeroqwait.io/shop-id: "SHOP_ID"
+    zeroqwait.io/shop-id: "${SHOP_ID}"
     zeroqwait.io/component: worker
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: worker-shop-SHOP_ID
+      app: worker-shop-${SHOP_ID}
   template:
     metadata:
       labels:
-        app: worker-shop-SHOP_ID
+        app: worker-shop-${SHOP_ID}
         zeroqwait.io/runtime: dedicated
-        zeroqwait.io/shop-id: "SHOP_ID"
+        zeroqwait.io/shop-id: "${SHOP_ID}"
+        zeroqwait.io/component: worker
     spec:
       containers:
         - name: worker
-          image: ghcr.io/nfornj/backend:IMAGE_TAG
+          image: ghcr.io/nfornj/backend:${IMAGE_TAG}
           imagePullPolicy: Always
           command: ["python", "-m", "temporal_worker"]
-          args: ["--shop-id", "SHOP_ID"]
+          args: ["--shop-id", "${SHOP_ID}"]
           envFrom:
             - configMapRef:
-                name: zeroqwait-shop-SHOP_ID
+                name: zeroqwait-shop-${SHOP_ID}
             - secretRef:
                 name: backend-secret
           env:
             - name: TENANT_SCHEMA
-              value: "tenant_SHOP_ID"
+              value: "tenant_${SHOP_ID}"
             - name: DEFAULT_SHOP_ID
-              value: "SHOP_ID"
+              value: "${SHOP_ID}"
             - name: TEMPORAL_TASK_QUEUE
-              value: "zeroqwait-shop-SHOP_ID"
+              value: "zeroqwait-shop-${SHOP_ID}"
           resources:
             requests:
               memory: "256Mi"

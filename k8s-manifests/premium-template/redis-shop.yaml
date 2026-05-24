@@ -1,0 +1,82 @@
+# Dedicated Redis for premium shop ${SHOP_ID}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-shop-${SHOP_ID}
+  namespace: zeroqwait
+  labels:
+    app: redis-shop-${SHOP_ID}
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "${SHOP_ID}"
+    zeroqwait.io/component: cache
+spec:
+  serviceName: redis-shop-${SHOP_ID}
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-shop-${SHOP_ID}
+  template:
+    metadata:
+      labels:
+        app: redis-shop-${SHOP_ID}
+        zeroqwait.io/tier: premium
+        zeroqwait.io/shop-id: "${SHOP_ID}"
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          command:
+            - redis-server
+            - --appendonly
+            - "yes"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+        labels:
+          zeroqwait.io/shop-id: "${SHOP_ID}"
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-shop-${SHOP_ID}
+  namespace: zeroqwait
+  labels:
+    app: redis-shop-${SHOP_ID}
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "${SHOP_ID}"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: redis-shop-${SHOP_ID}
+  ports:
+    - port: 6379
+      targetPort: 6379

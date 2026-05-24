@@ -1,30 +1,38 @@
 # Premium shop ConfigMap template
 # Replace SHOP_ID with the actual numeric shop ID before applying.
-# Used by: postgres-shop.yaml, backend-shop.yaml, worker-shop.yaml
+# Used by: postgres-shop.yaml, redis-shop.yaml, mcp-shop.yaml, backend-shop.yaml, worker-shop.yaml
 #
 # Apply: envsubst < configmap-shop.yaml | kubectl apply -f -
 # (requires SHOP_ID, SHOP_SLUG, SHOP_SCHEMA env vars to be set)
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: zeroqwait-shop-SHOP_ID
+  name: zeroqwait-shop-${SHOP_ID}
   namespace: zeroqwait
   labels:
     app.kubernetes.io/part-of: zeroqwait
     zeroqwait.io/runtime: dedicated
-    zeroqwait.io/shop-id: "SHOP_ID"
+    zeroqwait.io/shop-id: "${SHOP_ID}"
 data:
-  SHOP_ID: "SHOP_ID"
-  SHOP_SLUG: "SHOP_SLUG"
-  SHOP_SCHEMA: "tenant_SHOP_ID"
+  SHOP_ID: "${SHOP_ID}"
+  SHOP_SLUG: "${SHOP_SLUG}"
+  SHOP_SCHEMA: "tenant_${SHOP_ID}"
+  COMPUTE_MODE: "dedicated_instance"
 
-  # Shared services — same for all shops
-  DB_HOST: "postgres.zeroqwait.svc.cluster.local"
+  # Dedicated data/cache services for this premium shop
+  DB_HOST: "postgres-shop-${SHOP_ID}.zeroqwait.svc.cluster.local"
   DB_PORT: "5432"
   DB_NAME: "zeroqwait"
   DB_USER: "zeroqwait"
-  REDIS_HOST: "redis.zeroqwait.svc.cluster.local"
+  REDIS_HOST: "redis-shop-${SHOP_ID}.zeroqwait.svc.cluster.local"
   REDIS_PORT: "6379"
+
+  # Dedicated MCP processes for this premium shop
+  BOOKING_MCP_URL: "http://booking-mcp-shop-${SHOP_ID}.zeroqwait.svc.cluster.local:8890"
+  FINANCE_MCP_URL: "http://finance-mcp-shop-${SHOP_ID}.zeroqwait.svc.cluster.local:8891"
+  HR_MCP_URL: "http://hr-mcp-shop-${SHOP_ID}.zeroqwait.svc.cluster.local:8892"
+
+  # Shared voice services — always shared infrastructure
   TTS_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881"
   ASR_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881/transcribe"
 
@@ -32,5 +40,7 @@ data:
   NVIDIA_MODEL: "meta/llama-3.1-8b-instruct"
 
   # Temporal — dedicated queue for this shop
-  TEMPORAL_TASK_QUEUE: "zeroqwait-shop-SHOP_ID"
+  TEMPORAL_TASK_QUEUE: "zeroqwait-shop-${SHOP_ID}"
+  TEMPORAL_ADDRESS: "temporal.zeroqwait.svc.cluster.local:7233"
   TEMPORAL_HOST: "temporal.zeroqwait.svc.cluster.local:7233"
+  TEMPORAL_NAMESPACE: "default"

@@ -1,0 +1,227 @@
+# Dedicated MCPs for premium shop ${SHOP_ID}
+# Same code as shared MCPs, separate processes with shop-${SHOP_ID} configmap
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-mcp-shop-${SHOP_ID}
+  namespace: zeroqwait
+  labels:
+    app: booking-mcp-shop-${SHOP_ID}
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "${SHOP_ID}"
+    zeroqwait.io/component: mcp-booking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: booking-mcp-shop-${SHOP_ID}
+  template:
+    metadata:
+      labels:
+        app: booking-mcp-shop-${SHOP_ID}
+        zeroqwait.io/tier: premium
+        zeroqwait.io/shop-id: "${SHOP_ID}"
+    spec:
+      containers:
+        - name: booking-mcp
+          image: ghcr.io/nfornj/booking-mcp:${MCP_IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8890
+          envFrom:
+            - configMapRef:
+                name: zeroqwait-shop-${SHOP_ID}
+            - secretRef:
+                name: backend-secret
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8890"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8890
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8890
+            initialDelaySeconds: 20
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-mcp-shop-${SHOP_ID}
+  namespace: zeroqwait
+  labels:
+    app: booking-mcp-shop-${SHOP_ID}
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "${SHOP_ID}"
+spec:
+  type: ClusterIP
+  selector:
+    app: booking-mcp-shop-${SHOP_ID}
+  ports:
+    - port: 8890
+      targetPort: 8890
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finance-mcp-shop-${SHOP_ID}
+  namespace: zeroqwait
+  labels:
+    app: finance-mcp-shop-${SHOP_ID}
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "${SHOP_ID}"
+    zeroqwait.io/component: mcp-finance
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: finance-mcp-shop-${SHOP_ID}
+  template:
+    metadata:
+      labels:
+        app: finance-mcp-shop-${SHOP_ID}
+        zeroqwait.io/tier: premium
+        zeroqwait.io/shop-id: "${SHOP_ID}"
+    spec:
+      containers:
+        - name: finance-mcp
+          image: ghcr.io/nfornj/finance-mcp:${MCP_IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8891
+          envFrom:
+            - configMapRef:
+                name: zeroqwait-shop-${SHOP_ID}
+            - secretRef:
+                name: backend-secret
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8891"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8891
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8891
+            initialDelaySeconds: 20
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finance-mcp-shop-${SHOP_ID}
+  namespace: zeroqwait
+  labels:
+    app: finance-mcp-shop-${SHOP_ID}
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "${SHOP_ID}"
+spec:
+  type: ClusterIP
+  selector:
+    app: finance-mcp-shop-${SHOP_ID}
+  ports:
+    - port: 8891
+      targetPort: 8891
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hr-mcp-shop-${SHOP_ID}
+  namespace: zeroqwait
+  labels:
+    app: hr-mcp-shop-${SHOP_ID}
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "${SHOP_ID}"
+    zeroqwait.io/component: mcp-hr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hr-mcp-shop-${SHOP_ID}
+  template:
+    metadata:
+      labels:
+        app: hr-mcp-shop-${SHOP_ID}
+        zeroqwait.io/tier: premium
+        zeroqwait.io/shop-id: "${SHOP_ID}"
+    spec:
+      containers:
+        - name: hr-mcp
+          image: ghcr.io/nfornj/hr-mcp:${MCP_IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8892
+          envFrom:
+            - configMapRef:
+                name: zeroqwait-shop-${SHOP_ID}
+            - secretRef:
+                name: backend-secret
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8892"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8892
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8892
+            initialDelaySeconds: 20
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hr-mcp-shop-${SHOP_ID}
+  namespace: zeroqwait
+  labels:
+    app: hr-mcp-shop-${SHOP_ID}
+    zeroqwait.io/tier: premium
+    zeroqwait.io/shop-id: "${SHOP_ID}"
+spec:
+  type: ClusterIP
+  selector:
+    app: hr-mcp-shop-${SHOP_ID}
+  ports:
+    - port: 8892
+      targetPort: 8892
