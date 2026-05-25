@@ -7,6 +7,7 @@ from urllib.parse import quote, urlparse
 import boto3
 from botocore.client import Config
 
+from observability.metrics import b2_upload_size_bytes, b2_uploads_total
 from shared.secrets import getenv, load_infisical_secrets
 
 load_infisical_secrets()
@@ -53,16 +54,25 @@ def _client():
 
 def upload_file(buffer: bytes, filename: str, mime_type: str) -> str:
     key = _object_key(filename)
-    endpoint = _required_secret("B2_ENDPOINT").rstrip("/")
-    bucket_name = _required_secret("B2_BUCKET_NAME")
+    size_bytes = len(buffer)
+    try:
+        endpoint = _required_secret("B2_ENDPOINT").rstrip("/")
+        bucket_name = _required_secret("B2_BUCKET_NAME")
 
-    _client().put_object(
-        Bucket=bucket_name,
-        Key=key,
-        Body=buffer,
-        ContentType=mime_type,
-    )
-    return _public_url(endpoint, bucket_name, key)
+        _client().put_object(
+            Bucket=bucket_name,
+            Key=key,
+            Body=buffer,
+            ContentType=mime_type,
+        )
+        url = _public_url(endpoint, bucket_name, key)
+    except Exception:
+        b2_uploads_total.labels(status="failed").inc()
+        raise
+
+    b2_uploads_total.labels(status="success").inc()
+    b2_upload_size_bytes.observe(size_bytes)
+    return url
 
 
 def delete_file(filename: str) -> None:

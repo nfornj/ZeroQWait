@@ -18,9 +18,11 @@ IAM permissions required:
 import logging
 import os
 import re
+from typing import Final
 
 import boto3
 from botocore.exceptions import ClientError
+from observability.metrics import email_delivery_total, sms_delivery_total
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,40 @@ logger = logging.getLogger(__name__)
 _REGION = os.getenv("AWS_REGION", "us-east-1")
 _FROM_EMAIL = os.getenv("AWS_SES_FROM_EMAIL", "")
 _SMS_SENDER_ID = os.getenv("AWS_SNS_SMS_SENDER_ID", "ZeroQwait")[:11]
+_EMAIL_TYPES: Final[set[str]] = {
+    "direct",
+    "queue_join",
+    "youre_next",
+    "appointment_confirmation",
+    "password_reset",
+    "morning_briefing",
+    "commitment_reminder",
+    "revenue_alert",
+    "staff_absence",
+    "agent_escalation",
+    "sentiment_alert",
+    "booking_confirmed",
+    "reminder_24h",
+    "reminder_1h",
+    "receipt",
+    "low_stock_alert",
+}
+
+
+def _email_type(value: str | None) -> str:
+    candidate = re.sub(r"[^a-z0-9_]+", "_", (value or "direct").strip().lower()).strip("_")
+    return candidate if candidate in _EMAIL_TYPES else "other"
+
+
+def _record_email(email_type: str | None, sent: bool) -> None:
+    email_delivery_total.labels(
+        email_type=_email_type(email_type),
+        status="sent" if sent else "failed",
+    ).inc()
+
+
+def _record_sms(sent: bool) -> None:
+    sms_delivery_total.labels(status="sent" if sent else "failed").inc()
 
 
 def is_ses_configured() -> bool:
@@ -122,7 +158,12 @@ def _to_html(markdown_text: str) -> str:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-async def send_email(to_address: str, subject: str, markdown_text: str) -> bool:
+async def send_email(
+    to_address: str,
+    subject: str,
+    markdown_text: str,
+    email_type: str = "direct",
+) -> bool:
     """Send an HTML + plain-text email via AWS SES.
 
     Args:
@@ -137,6 +178,7 @@ async def send_email(to_address: str, subject: str, markdown_text: str) -> bool:
         logger.warning(
             "aws_client: SES not configured — set AWS_ACCESS_KEY_ID and AWS_SES_FROM_EMAIL"
         )
+        _record_email(email_type, False)
         return False
 
     plain = _strip_markdown(markdown_text)
@@ -155,16 +197,19 @@ async def send_email(to_address: str, subject: str, markdown_text: str) -> bool:
             },
         )
         logger.info("aws_client: email sent to %s (subject=%r)", to_address, subject)
+        _record_email(email_type, True)
         return True
 
     except ClientError as exc:
         code = exc.response["Error"]["Code"]
         msg  = exc.response["Error"]["Message"]
         logger.error("aws_client: SES error [%s]: %s", code, msg)
+        _record_email(email_type, False)
         return False
 
     except Exception as exc:
         logger.error("aws_client: SES unexpected error: %s", exc)
+        _record_email(email_type, False)
         return False
 
 
@@ -188,6 +233,7 @@ async def send_sms(phone_number: str, markdown_text: str) -> bool:
         logger.warning(
             "aws_client: SNS not configured — set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
         )
+        _record_sms(False)
         return False
 
     plain = _strip_markdown(markdown_text)
@@ -214,14 +260,17 @@ async def send_sms(phone_number: str, markdown_text: str) -> bool:
             MessageAttributes=message_attributes,
         )
         logger.info("aws_client: SMS sent to %s", phone_number)
+        _record_sms(True)
         return True
 
     except ClientError as exc:
         code = exc.response["Error"]["Code"]
         msg  = exc.response["Error"]["Message"]
         logger.error("aws_client: SNS error [%s]: %s", code, msg)
+        _record_sms(False)
         return False
 
     except Exception as exc:
         logger.error("aws_client: SNS unexpected error: %s", exc)
+        _record_sms(False)
         return False

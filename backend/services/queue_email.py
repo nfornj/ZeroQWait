@@ -74,7 +74,12 @@ You'll receive another email when it's almost your turn. You can also check your
 """.strip()
 
     try:
-        await send_email(to_address=customer_email, subject=subject, markdown_text=body)
+        await send_email(
+            to_address=customer_email,
+            subject=subject,
+            markdown_text=body,
+            email_type="queue_join",
+        )
         logger.info("Queue join email sent to %s (position #%d, shop=%s)", customer_email, position, shop_name)
     except Exception as exc:
         logger.error("Failed to send queue join email to %s: %s", customer_email, exc)
@@ -117,7 +122,12 @@ You're **now being served** at **{shop_name}**. Please head to the counter now.
 """.strip()
 
     try:
-        await send_email(to_address=customer_email, subject=subject, markdown_text=body)
+        await send_email(
+            to_address=customer_email,
+            subject=subject,
+            markdown_text=body,
+            email_type="youre_next",
+        )
         logger.info("You're-next email sent to %s (shop=%s)", customer_email, shop_name)
     except Exception as exc:
         logger.error("Failed to send you're-next email to %s: %s", customer_email, exc)
@@ -175,7 +185,12 @@ You will receive a reminder when it is almost your turn.
 """.strip()
 
     try:
-        await send_email(to_address=customer_email, subject=subject, markdown_text=body)
+        await send_email(
+            to_address=customer_email,
+            subject=subject,
+            markdown_text=body,
+            email_type="appointment_confirmation",
+        )
         logger.info(
             "Appointment confirmation email sent to %s (service=%s, shop=%s)",
             customer_email, service_name, shop_name,

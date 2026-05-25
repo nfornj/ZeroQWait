@@ -188,7 +188,7 @@ async def _dispatch_inner(
 
         text, _ = template_fn(data)
         subject = _EMAIL_SUBJECTS.get(event_type, "ZeroQwait notification")
-        ok = await aws.send_email(to_email, subject, text)
+        ok = await aws.send_email(to_email, subject, text, email_type=event_type)
         status = "sent" if ok else "failed"
         _log(shop_id, channel, event_type, text, status, db)
         result["sent"] = ok

@@ -17,6 +17,16 @@ from prometheus_client import Counter, Gauge, Histogram
 
 _LATENCY_BUCKETS = (.05, .1, .25, .5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0)
 _TOOL_LATENCY_BUCKETS = (.025, .05, .1, .25, .5, 1.0, 2.5, 5.0, 15.0, 30.0)
+_UPLOAD_SIZE_BUCKETS = (
+    1_024,
+    10_240,
+    102_400,
+    1_048_576,
+    5_242_880,
+    10_485_760,
+    52_428_800,
+    104_857_600,
+)
 
 # ── Agent request lifecycle ────────────────────────────────────────────────────
 
@@ -152,6 +162,44 @@ notification_provider_errors_total = Counter(
     ["provider", "error_code"],
     # provider:   telegram | ses | sns
     # error_code: normalized short code from the provider error
+)
+
+# ── Product operations metrics ───────────────────────────────────────────────
+
+email_delivery_total = Counter(
+    "zeroqwait_emails_total",
+    "Emails sent or failed by bounded email type.",
+    ["email_type", "status"],
+    # email_type: queue_join | youre_next | appointment_confirmation | password_reset | ... | direct | other
+    # status:     sent | failed
+)
+
+sms_delivery_total = Counter(
+    "zeroqwait_sms_total",
+    "SMS messages sent or failed.",
+    ["status"],
+    # status: sent | failed
+)
+
+b2_uploads_total = Counter(
+    "zeroqwait_b2_uploads_total",
+    "Backblaze B2 upload attempts by status.",
+    ["status"],
+    # status: success | failed
+)
+
+b2_upload_size_bytes = Histogram(
+    "zeroqwait_b2_upload_size_bytes",
+    "Size of successful Backblaze B2 uploads in bytes.",
+    buckets=_UPLOAD_SIZE_BUCKETS,
+)
+
+infisical_secret_fetch_duration = Histogram(
+    "zeroqwait_infisical_secret_fetch_duration_seconds",
+    "Infisical startup secret fetch latency in seconds.",
+    ["status"],
+    # status: success | failed
+    buckets=(.05, .1, .25, .5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
 )
 
 # ── HTTP layer (FastAPI) ───────────────────────────────────────────────────────

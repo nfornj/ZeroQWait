@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Mapping
 
@@ -160,12 +161,28 @@ def load_infisical_secrets() -> None:
         logger.info("Infisical secret loading skipped; using local process environment.")
         return
 
+    fetch_started = time.perf_counter()
     try:
         values = _fetch_infisical_secret_values()
     except Exception as exc:
+        try:
+            from observability.metrics import infisical_secret_fetch_duration
+            infisical_secret_fetch_duration.labels(status="failed").observe(
+                time.perf_counter() - fetch_started
+            )
+        except Exception:
+            pass
         _loaded = True
         logger.warning("Infisical secret loading failed; using local process environment fallback: %s", exc)
         return
+
+    try:
+        from observability.metrics import infisical_secret_fetch_duration
+        infisical_secret_fetch_duration.labels(status="success").observe(
+            time.perf_counter() - fetch_started
+        )
+    except Exception:
+        pass
 
     for key, value in values.items():
         os.environ[key] = value
