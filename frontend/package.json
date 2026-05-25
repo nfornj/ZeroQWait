@@ -65,6 +65,8 @@
     "react-webcam": "^7.2.0",
     "recharts": "^3.8.1",
     "sonner": "^2.0.7",
+    "supertokens-auth-react": "^0.51.2",
+    "supertokens-web-js": "^0.16.0",
     "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "5.8.3",

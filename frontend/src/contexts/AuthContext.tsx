@@ -1,6 +1,7 @@
-import React, { createContext, useState, useEffect, useContext } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import axios from "axios";
-import { isTokenExpired } from "../utils/authHelpers";
+import EmailPassword from "supertokens-auth-react/recipe/emailpassword";
+import Session from "supertokens-auth-react/recipe/session";
 
 interface User {
   id: number;
@@ -36,138 +37,130 @@ export const useAuth = () => {
   return context;
 };
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(
-    localStorage.getItem("token")
-  );
-  // Start loading=true when a token exists so ProtectedRoute waits for
-  // /users/me validation before deciding to redirect. Without this, loading
-  // starts false → ProtectedRoute sees isAuthenticated=false → redirects to
-  // /login before the fetch completes, causing the root-URL jitter.
-  const [loading, setLoading] = useState<boolean>(!!localStorage.getItem("token"));
-  const [error, setError] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!token);
+async function getSuperTokensAccessToken(): Promise<string | null> {
+  try {
+    return (await Session.getAccessToken()) || null;
+  } catch {
+    return null;
+  }
+}
 
-  // Define logout early so it can be used in useEffects
-  const logout = React.useCallback(() => {
-    const storedToken = localStorage.getItem("token");
-    if (storedToken) {
-      void axios.post("/auth/logout", null, {
-        headers: { Authorization: `Bearer ${storedToken}` },
-      }).catch(() => undefined);
-    }
+function publicRoute(pathname: string): boolean {
+  const publicPaths = [
+    "/",
+    "/login",
+    "/signin",
+    "/signup",
+    "/register",
+    "/ai",
+    "/forgot-password",
+    "/reset-password",
+  ];
+  return (
+    publicPaths.includes(pathname) ||
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/shop-ai") ||
+    pathname.startsWith("/queue/")
+  );
+}
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  const clearAuthState = useCallback(() => {
     localStorage.removeItem("token");
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
   }, []);
 
-  // Check token expiration on mount and periodically
-  useEffect(() => {
-    const currentPath = window.location.pathname;
-    const isPasswordResetRoute = currentPath === "/reset-password";
+  const refreshUser = useCallback(async () => {
+    setLoading(true);
+    try {
+      const sessionExists = await Session.doesSessionExist();
+      const accessToken = (await getSuperTokensAccessToken()) || localStorage.getItem("token");
 
-    // Check for token in URL (passed from cross-domain redirect)
+      if (!sessionExists && !accessToken) {
+        clearAuthState();
+        return;
+      }
+
+      if (accessToken) {
+        localStorage.setItem("token", accessToken);
+        setToken(accessToken);
+      }
+
+      const response = await axios.get("/users/me", {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+      });
+
+      setUser(response.data);
+      setIsAuthenticated(true);
+    } catch (err: any) {
+      if (err.response?.status === 401) {
+        clearAuthState();
+      } else {
+        setError(err.response?.data?.detail || "Unable to load user session");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [clearAuthState]);
+
+  const logout = useCallback(async () => {
+    try {
+      if (await Session.doesSessionExist()) {
+        await Session.signOut();
+      } else {
+        await EmailPassword.signOut().catch(() => undefined);
+      }
+    } catch {
+      // Clearing local state is still the right client-side outcome if the server session is already gone.
+    } finally {
+      clearAuthState();
+    }
+  }, [clearAuthState]);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlToken = params.get("token");
 
-    if (urlToken && !isPasswordResetRoute) {
-      console.log("[AuthContext] Token found in URL, saving to localStorage");
+    if (urlToken && window.location.pathname !== "/reset-password") {
       localStorage.setItem("token", urlToken);
       setToken(urlToken);
-      setIsAuthenticated(true);
-
-      // Clean URL without reloading
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, newUrl);
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    const checkTokenExpiration = () => {
-      const storedToken = localStorage.getItem('token');
-      if (storedToken && isTokenExpired(storedToken)) {
-        logout();
-
-        // Smart redirect based on current location
-        const currentHost = window.location.hostname;
-        const currentPath = window.location.pathname;
-
-        // Check if we're on a shop subdomain
-        const isShopSubdomain = () => {
-          if (currentHost === 'localhost') return false;
-          if (currentHost.match(/^\d+\.\d+\.\d+\.\d+\.(nip|np)\.io$/)) return false;
-          if (currentHost.match(/^www\./)) return false;
-
-          const parts = currentHost.split('.');
-          if (currentHost.includes('nip.io') || currentHost.includes('np.io')) {
-            return parts.length > 4;
-          } else {
-            return parts.length > 2;
-          }
-        };
-
-        // Extract shop slug from subdomain if present
-        const getShopSlug = () => {
-          const parts = currentHost.split('.');
-          return parts[0]; // First part is the shop slug
-        };
-
-        if (isShopSubdomain()) {
-          // Redirect to public shop page to maintain context
-          const shopSlug = getShopSlug();
-          console.log('[AuthContext] Token expired on shop subdomain, redirecting to public shop page');
-          window.location.href = '/';
-        } else {
-          // Redirect to marketing page on main domain
-          console.log('[AuthContext] Token expired on main domain, redirecting to marketing page');
-          window.location.href = '/';
-        }
-      }
-    };
-
-    // Check immediately on mount (if no URL token was just set)
-    if (!urlToken) {
-      checkTokenExpiration();
-    }
-
-    // Check every minute
-    const interval = setInterval(checkTokenExpiration, 60000);
-
-    return () => clearInterval(interval);
-  }, []);
+    void refreshUser();
+  }, [refreshUser]);
 
   // Set up axios interceptors for authentication
   useEffect(() => {
-    // Request interceptor - add token to headers
     const requestInterceptor = axios.interceptors.request.use(
       (config) => {
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
+        const accessToken = token || localStorage.getItem("token");
+        if (accessToken) {
+          config.headers.Authorization = `Bearer ${accessToken}`;
         }
         return config;
       },
-      (error) => Promise.reject(error)
+      (requestError) => Promise.reject(requestError)
     );
 
-    // Response interceptor - handle 401 Unauthorized
     const responseInterceptor = axios.interceptors.response.use(
       (response) => response,
-      (error) => {
-        if (error.response?.status === 401) {
-          // Token expired or invalid - auto logout
-          logout();
-          // Only redirect to /login when the user is on a protected page.
-          // Never redirect if already on /login, / (landing), or /signin to
-          // avoid the redirect loop that causes root-URL jitter.
-          const publicPaths = ['/', '/login', '/signin', '/signup', '/register', '/ai', '/forgot-password', '/reset-password'];
-          const isPublic = publicPaths.some(p => window.location.pathname === p || window.location.pathname.startsWith('/shop-ai') || window.location.pathname.startsWith('/queue/'));
-          if (!isPublic) {
+      (responseError) => {
+        if (responseError.response?.status === 401) {
+          void logout();
+          if (!publicRoute(window.location.pathname)) {
             window.location.href = '/login';
           }
         }
-        return Promise.reject(error);
+        return Promise.reject(responseError);
       }
     );
 
@@ -175,32 +168,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       axios.interceptors.request.eject(requestInterceptor);
       axios.interceptors.response.eject(responseInterceptor);
     };
-  }, [token, logout]);
-
-  // Fetch user data if token exists
-  useEffect(() => {
-    const fetchUser = async () => {
-      if (token) {
-        try {
-          setLoading(true);
-          console.log("[AuthContext] Fetching user data with token:", token.substring(0, 20) + "...");
-          const response = await axios.get("/users/me");
-          console.log("[AuthContext] User data received:", response.data);
-          setUser(response.data);
-          setIsAuthenticated(true);
-        } catch (err: any) {
-          console.error("[AuthContext] Error fetching user:", err.response?.status, err.response?.data);
-          // Only logout if it's not a 401 (interceptor handles that)
-          if (err.response?.status !== 401) {
-            logout();
-          }
-        } finally {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchUser();
   }, [token, logout]);
 
   const login = async (username: string, password: string) => {
@@ -218,21 +185,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem("token", access_token);
       setToken(access_token);
 
-      // Fetch user data
-      const userResponse = await axios.get("/users/me", {
-        headers: { Authorization: `Bearer ${access_token}` },
-      });
-
-      setUser(userResponse.data);
-      console.log("[AuthContext] Login successful. User role:", userResponse.data.role);
-      setIsAuthenticated(true);
+      await refreshUser();
     } catch (err: any) {
-      console.error("[AuthContext] Login error:", err);
-      if (err.response) {
-        console.error("[AuthContext] Response status:", err.response.status);
-        console.error("[AuthContext] Response data:", err.response.data);
-      }
       setError(err.response?.data?.detail || "Login failed");
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -248,15 +204,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(true);
       setError(null);
 
-      await axios.post("/users", {
+      const response = await axios.post("/auth/register", {
         username,
         email,
         password,
         role,
       });
 
-      // Login after successful registration
-      await login(username, password);
+      if (response.data?.access_token) {
+        localStorage.setItem("token", response.data.access_token);
+        setToken(response.data.access_token);
+      }
+      await refreshUser();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Registration failed");
       throw err; // Re-throw to prevent navigation
@@ -264,8 +223,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(false);
     }
   };
-
-  console.log("[AuthContext] Current state:", { user, token: token ? token.substring(0, 20) + "..." : null, isAuthenticated, loading });
 
   const value = {
     user,

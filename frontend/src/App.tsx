@@ -1,6 +1,8 @@
 import React from "react";
-import { Routes, Route } from "react-router-dom";
-import { Navigate } from "react-router-dom";
+import * as ReactRouterDom from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { getSuperTokensRoutesForReactRouterDom } from "supertokens-auth-react/ui";
+import { EmailPasswordPreBuiltUI } from "supertokens-auth-react/recipe/emailpassword/prebuiltui";
 // ThemeProvider is now imported from our context which handles dynamic theming
 import { ThemeProvider } from "./contexts/ThemeContext";
 
@@ -71,6 +73,7 @@ function App() {
           <Route path="/signup" element={<ShopOwnerSignUp />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          {getSuperTokensRoutesForReactRouterDom(ReactRouterDom, [EmailPasswordPreBuiltUI])}
 
           <Route path="/" element={<SubdomainHandler />} />
           <Route path="/ai" element={<Navigate to="/" replace />} />
