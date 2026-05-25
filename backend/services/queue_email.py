@@ -12,7 +12,8 @@ block the HTTP response.  All failures are logged but not re-raised.
 
 import logging
 import os
-from services.aws_client import send_email, is_ses_configured
+from services.aws_client import send_email as ses_send_email, is_ses_configured
+from services.brevo_email import is_brevo_configured, sendBookingConfirmation
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ async def send_queue_join_email(
         status_url: Public URL the customer can visit to check live status.
     """
     if not is_ses_configured():
-        logger.debug("SES not configured — skipping queue join email to %s", customer_email)
+        logger.debug("Email provider not configured — skipping queue join email to %s", customer_email)
         return
 
     first_name = customer_name.split()[0] if customer_name else "there"
@@ -74,7 +75,7 @@ You'll receive another email when it's almost your turn. You can also check your
 """.strip()
 
     try:
-        await send_email(
+        await ses_send_email(
             to_address=customer_email,
             subject=subject,
             markdown_text=body,
@@ -102,7 +103,7 @@ async def send_youre_next_email(
         status_url: The customer's status link (for reference).
     """
     if not is_ses_configured():
-        logger.debug("SES not configured — skipping you're next email to %s", customer_email)
+        logger.debug("Email provider not configured — skipping you're next email to %s", customer_email)
         return
 
     first_name = customer_name.split()[0] if customer_name else "there"
@@ -122,7 +123,7 @@ You're **now being served** at **{shop_name}**. Please head to the counter now.
 """.strip()
 
     try:
-        await send_email(
+        await ses_send_email(
             to_address=customer_email,
             subject=subject,
             markdown_text=body,
@@ -156,7 +157,7 @@ async def send_appointment_confirmation_email(
         status_url:       Public URL to view / manage the appointment.
     """
     if not is_ses_configured():
-        logger.debug("SES not configured — skipping appointment confirmation email to %s", customer_email)
+        logger.debug("Email provider not configured — skipping appointment confirmation email to %s", customer_email)
         return
 
     first_name = customer_name.split()[0] if customer_name else "there"
@@ -185,12 +186,26 @@ You will receive a reminder when it is almost your turn.
 """.strip()
 
     try:
-        await send_email(
-            to_address=customer_email,
-            subject=subject,
-            markdown_text=body,
-            email_type="appointment_confirmation",
-        )
+        if is_brevo_configured():
+            await sendBookingConfirmation(
+                customer_email,
+                customer_name,
+                {
+                    "shop_name": shop_name,
+                    "service_name": service_name,
+                    "scheduled_start": scheduled_start,
+                    "scheduled_date": scheduled_date,
+                    "scheduled_time": scheduled_time,
+                    "status_url": status_url,
+                },
+            )
+        else:
+            await ses_send_email(
+                to_address=customer_email,
+                subject=subject,
+                markdown_text=body,
+                email_type="appointment_confirmation",
+            )
         logger.info(
             "Appointment confirmation email sent to %s (service=%s, shop=%s)",
             customer_email, service_name, shop_name,

@@ -1,6 +1,11 @@
-"""aws_client.py — AWS SES (email) and SNS (SMS) notification senders.
+"""aws_client.py — Email and AWS SNS (SMS) notification senders.
+
+Email delivery prefers Brevo transactional email when BREVO_API_KEY and
+BREVO_SENDER_EMAIL are configured, then falls back to AWS SES.
 
 Environment variables required (non-optional at send time):
+    BREVO_API_KEY           Brevo transactional email API key
+    BREVO_SENDER_EMAIL      Verified Brevo sender address
     AWS_REGION              e.g. us-east-1
     AWS_ACCESS_KEY_ID       IAM user access key
     AWS_SECRET_ACCESS_KEY   IAM user secret
@@ -68,7 +73,9 @@ def _record_sms(sent: bool) -> None:
 
 
 def is_ses_configured() -> bool:
-    return bool(os.getenv("AWS_ACCESS_KEY_ID") and _FROM_EMAIL)
+    from services.brevo_email import is_brevo_configured
+
+    return is_brevo_configured() or bool(os.getenv("AWS_ACCESS_KEY_ID") and _FROM_EMAIL)
 
 
 def is_sns_configured() -> bool:
@@ -164,7 +171,7 @@ async def send_email(
     markdown_text: str,
     email_type: str = "direct",
 ) -> bool:
-    """Send an HTML + plain-text email via AWS SES.
+    """Send an HTML + plain-text email via Brevo or AWS SES.
 
     Args:
         to_address:    Recipient email (must be verified if SES is in sandbox mode).
@@ -176,13 +183,32 @@ async def send_email(
     """
     if not is_ses_configured():
         logger.warning(
-            "aws_client: SES not configured — set AWS_ACCESS_KEY_ID and AWS_SES_FROM_EMAIL"
+            "aws_client: email provider not configured — set BREVO_API_KEY/BREVO_SENDER_EMAIL or AWS SES credentials"
         )
         _record_email(email_type, False)
         return False
 
     plain = _strip_markdown(markdown_text)
     html = _to_html(markdown_text)
+
+    try:
+        from services.brevo_email import is_brevo_configured, send_transactional_email
+
+        if is_brevo_configured():
+            ok = await send_transactional_email(
+                to=to_address,
+                subject=subject,
+                html_content=html,
+                text_content=plain,
+                email_type=email_type,
+                record_metrics=False,
+            )
+            _record_email(email_type, ok)
+            return ok
+    except Exception as exc:
+        logger.error("aws_client: Brevo handoff failed: %s", exc)
+        _record_email(email_type, False)
+        return False
 
     try:
         _ses().send_email(

@@ -183,7 +183,7 @@ async def _dispatch_inner(
             return result
 
         if not aws.is_ses_configured():
-            result["reason"] = "ses_not_configured"
+            result["reason"] = "email_not_configured"
             return result
 
         text, _ = template_fn(data)
@@ -300,6 +300,7 @@ async def send_appointment_notification(
     """
     from sqlalchemy import text as _sql_text
     from database import SessionLocal as _SL
+    from shared.secrets import getenv
 
     _own_db = db is None
     _db = _SL() if _own_db else db
@@ -307,7 +308,7 @@ async def send_appointment_notification(
         row = _db.execute(
             _sql_text("""
                 SELECT
-                    a.id, a.shop_id, a.customer_name, a.customer_phone,
+                    a.id, a.shop_id, a.customer_name, a.customer_phone, a.customer_email,
                     a.scheduled_start, a.public_token,
                     ss.name AS service_name,
                     s.name  AS shop_name
@@ -323,18 +324,47 @@ async def send_appointment_notification(
             return {"sent": False, "reason": "appointment_not_found"}
 
         cancel_url = ""
-        if row[5]:  # public_token
-            cancel_url = f"/book/cancel/{row[5]}"
+        if row[6]:  # public_token
+            frontend_url = (getenv("FRONTEND_URL", "https://zeroqwait.com") or "https://zeroqwait.com").rstrip("/")
+            cancel_url = f"{frontend_url}/book/cancel/{row[6]}"
 
         data: dict[str, Any] = {
             "customer_name": row[2] or "Customer",
-            "service_name": row[6] or "appointment",
-            "shop_name": row[7] or "the shop",
-            "scheduled_time": row[4].strftime("%A, %b %d at %I:%M %p") if row[4] else "your scheduled time",
+            "service_name": row[7] or "appointment",
+            "shop_name": row[8] or "the shop",
+            "scheduled_time": row[5].strftime("%A, %b %d at %I:%M %p") if row[5] else "your scheduled time",
             "cancel_url": cancel_url,
         }
         if extra_vars:
             data.update(extra_vars)
+
+        customer_email = row[4]
+        if customer_email and template_key in {"booking_confirmed", "reminder_24h", "reminder_1h"}:
+            from services.brevo_email import (
+                is_brevo_configured,
+                sendBookingConfirmation,
+                sendBookingReminder,
+            )
+
+            if is_brevo_configured():
+                details = {
+                    "shop_name": data["shop_name"],
+                    "service_name": data["service_name"],
+                    "scheduled_time": data["scheduled_time"],
+                    "status_url": data.get("cancel_url", ""),
+                    "cancel_url": data.get("cancel_url", ""),
+                    "reminder_window": "24 hours away" if template_key == "reminder_24h" else "1 hour away",
+                }
+                if template_key == "booking_confirmed":
+                    ok = await sendBookingConfirmation(customer_email, data["customer_name"], details)
+                else:
+                    ok = await sendBookingReminder(customer_email, data["customer_name"], details)
+                return {
+                    "sent": ok,
+                    "channel": "email",
+                    "reason": None if ok else "brevo_send_error",
+                    "shop_id": row[1],
+                }
 
         # Route to shop owner's Telegram (owner is notified, not the customer)
         # Customer Telegram notifications require a separate handshake — future scope.
@@ -366,9 +396,12 @@ async def send_receipt_notification(
                     t.id, t.shop_id, t.subtotal_cents, t.hst_cents,
                     t.tip_cents, t.total_cents, t.payment_method,
                     sc.name AS customer_name,
-                    s.name  AS shop_name
+                    s.name  AS shop_name,
+                    sc.email AS customer_email,
+                    a.customer_email AS appointment_email
                 FROM pos_transactions t
                 LEFT JOIN shop_customers sc ON sc.id = t.customer_id
+                LEFT JOIN appointments a ON a.id = t.appointment_id
                 LEFT JOIN shops s ON s.id = t.shop_id
                 WHERE t.id = :txn_id
             """),
@@ -403,6 +436,33 @@ async def send_receipt_notification(
             "payment_method": txn[6] or "cash",
             "items": items,
         }
+
+        customer_email = txn[9] or txn[10]
+        if customer_email:
+            from services.brevo_email import is_brevo_configured, sendPaymentReceipt
+
+            if is_brevo_configured():
+                ok = await sendPaymentReceipt(
+                    customer_email,
+                    data["customer_name"],
+                    data["total"],
+                    "",
+                )
+                result = {
+                    "sent": ok,
+                    "channel": "email",
+                    "reason": None if ok else "brevo_send_error",
+                    "shop_id": txn[1],
+                }
+
+                if ok:
+                    _db.execute(
+                        _sql_text("UPDATE pos_transactions SET receipt_sent = TRUE WHERE id = :txn_id"),
+                        {"txn_id": pos_transaction_id},
+                    )
+                    _db.commit()
+
+                return result
 
         result = await dispatch(
             shop_id=txn[1],
