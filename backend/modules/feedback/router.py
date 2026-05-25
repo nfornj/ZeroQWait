@@ -14,6 +14,7 @@ from shared.auth_utils import get_current_user
 from modules.auth.models import User, UserRole
 from modules.feedback.models import ChatFeedback
 from modules.feedback.schemas import FeedbackResponse, FeedbackStatusUpdate
+from services.storage_service import upload_file
 
 logger = logging.getLogger(__name__)
 
@@ -69,17 +70,13 @@ async def submit_feedback(
         if len(contents) > _MAX_SCREENSHOT_BYTES:
             raise HTTPException(status_code=400, detail="Screenshot must be smaller than 10 MB")
 
-        upload_dir = _get_upload_dir()
         ext = os.path.splitext(screenshot.filename)[-1].lower() or ".png"
         safe_ext = ext if ext in {".png", ".jpg", ".jpeg", ".gif", ".webp"} else ".png"
         unique_name = f"{uuid.uuid4().hex}{safe_ext}"
-        file_path = os.path.join(upload_dir, unique_name)
+        object_key = f"feedback/screenshots/{unique_name}"
 
-        with open(file_path, "wb") as f:
-            f.write(contents)
-
-        screenshot_filename = unique_name
-        logger.info(f"Screenshot saved: {unique_name}")
+        screenshot_filename = upload_file(contents, object_key, screenshot.content_type or "application/octet-stream")
+        logger.info("Feedback screenshot uploaded to object storage: %s", object_key)
 
     ticket_id = _generate_ticket_id(db)
     feedback = ChatFeedback(
@@ -178,7 +175,10 @@ def get_screenshot(
 def _to_response(item: ChatFeedback) -> FeedbackResponse:
     screenshot_url = None
     if item.screenshot_filename:
-        screenshot_url = f"/api/chat-feedback/screenshot/{item.screenshot_filename}"
+        if item.screenshot_filename.startswith(("http://", "https://")):
+            screenshot_url = item.screenshot_filename
+        else:
+            screenshot_url = f"/api/chat-feedback/screenshot/{item.screenshot_filename}"
     return FeedbackResponse(
         id=item.id,
         ticket_id=item.ticket_id,

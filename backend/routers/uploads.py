@@ -1,12 +1,10 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
-import shutil
 import os
 import uuid
-from typing import Optional
+
+from services.storage_service import upload_file
 
 router = APIRouter()
-
-UPLOAD_DIR = "static/uploads"
 
 @router.post("/logo")
 async def upload_logo(file: UploadFile = File(...)):
@@ -18,16 +16,13 @@ async def upload_logo(file: UploadFile = File(...)):
     # Generate unique filename
     file_extension = os.path.splitext(file.filename)[1]
     filename = f"{uuid.uuid4()}{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
+    object_key = f"uploads/logos/{filename}"
     
-    # Save file
+    # Save file to object storage
     try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        file_bytes = await file.read()
+        url = upload_file(file_bytes, object_key, file.content_type or "application/octet-stream")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not save file: {str(e)}")
         
-    # Return URL
-    # Assuming the server is running on localhost:8000 for now. 
-    # In production, this should be an env var or constructed dynamically.
-    return {"url": f"http://localhost:8000/static/uploads/{filename}"}
+    return {"url": url}

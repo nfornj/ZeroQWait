@@ -7,6 +7,7 @@ from modules.queues.service import queue_service as qs
 from modules.queues import schemas as queue_schemas
 from shared.auth_utils import get_current_user, get_current_user_optional
 from permissions import sanitize_queue_data_for_public
+from services.storage_service import upload_file
 import logging
 import random
 from pathlib import Path
@@ -248,17 +249,15 @@ def upload_shop_logo(
         extension = Path(file.filename or "logo.png").suffix.lower() or ".png"
         safe_extension = extension if extension in {".png", ".jpg", ".jpeg", ".webp"} else ".png"
         filename = f"shop_{shop_id}_{int(datetime.utcnow().timestamp())}{safe_extension}"
-        file_path = UPLOAD_DIR / filename
+        object_key = f"shop-logos/{filename}"
+        file_bytes = file.file.read()
+        logo_url = upload_file(file_bytes, object_key, file.content_type or "application/octet-stream")
 
-        with file_path.open("wb") as f:
-            f.write(file.file.read())
-
-        static_logo_url = f"/static/uploads/shop-logos/{filename}"
-        updated = shop_service.update_shop(shop_id, {"logo_url": static_logo_url})
+        updated = shop_service.update_shop(shop_id, {"logo_url": logo_url})
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to update shop logo")
 
-        return {"message": "Logo uploaded", "logo_url": static_logo_url}
+        return {"message": "Logo uploaded", "logo_url": logo_url}
     except HTTPException:
         raise
     except Exception as e:

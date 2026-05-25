@@ -14,7 +14,7 @@ class ChatFeedback(Base):
     email = Column(String(255), nullable=True)
     description = Column(Text, nullable=False)
     page_context = Column(String(100), nullable=True)   # e.g. "landing_page", "shop_page"
-    screenshot_filename = Column(String(500), nullable=True)  # relative path under static/uploads/feedback/
+    screenshot_filename = Column(String(500), nullable=True)  # full object-storage URL for new uploads
     status = Column(String(20), nullable=False, default="open")  # open | reviewed | closed
     admin_notes = Column(Text, nullable=True)
     submitted_at = Column(DateTime(timezone=True), server_default=func.now())
