@@ -59,6 +59,16 @@ def _load_local_env() -> None:
     load_dotenv(dotenv_path=repo_root / ".env", override=False)
     load_dotenv(dotenv_path=backend_dir / ".env", override=False)
 
+    env_slug = (os.getenv("INFISICAL_ENV") or os.getenv("INFISICAL_ENVIRONMENT") or "").strip()
+    if env_slug:
+        load_dotenv(dotenv_path=repo_root / f".env.{env_slug}", override=False)
+        load_dotenv(dotenv_path=backend_dir / f".env.{env_slug}", override=False)
+        return
+
+    if not os.getenv("INFISICAL_CLIENT_ID") and (repo_root / ".env.test").exists():
+        load_dotenv(dotenv_path=repo_root / ".env.test", override=False)
+        load_dotenv(dotenv_path=backend_dir / ".env.test", override=False)
+
 
 def _is_enabled() -> bool:
     raw_value = os.getenv("INFISICAL_ENABLED", "auto").strip().lower()
@@ -84,7 +94,7 @@ def _extract_access_token(payload: Mapping[str, object]) -> str | None:
 
 
 def _fetch_infisical_secret_values() -> dict[str, str]:
-    base_url = os.getenv("INFISICAL_URL", "http://infisical-svc.infisical.svc.cluster.local:8080").rstrip("/")
+    base_url = os.getenv("INFISICAL_URL", "https://app.infisical.com").rstrip("/")
     client_id = os.getenv("INFISICAL_CLIENT_ID", "").strip()
     client_secret = os.getenv("INFISICAL_CLIENT_SECRET", "").strip()
     project_id = (
@@ -92,7 +102,7 @@ def _fetch_infisical_secret_values() -> dict[str, str]:
         or os.getenv("INFISICAL_WORKSPACE_ID")
         or ""
     ).strip()
-    environment = os.getenv("INFISICAL_ENVIRONMENT", "production").strip()
+    environment = (os.getenv("INFISICAL_ENV") or os.getenv("INFISICAL_ENVIRONMENT") or "prod").strip()
     secret_path = os.getenv("INFISICAL_SECRET_PATH", "/").strip() or "/"
     timeout_seconds = float(os.getenv("INFISICAL_TIMEOUT_SECONDS", "10"))
 
