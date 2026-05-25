@@ -16,7 +16,7 @@ router = APIRouter()
 # ──────────────────────────────────────
 
 @router.post("/shops/{shop_id}/employees", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
-def add_employee(
+async def add_employee(
     shop_id: int,
     employee: schemas.EmployeeCreate,
     current_user: dict = Depends(get_current_user)
@@ -36,7 +36,7 @@ def add_employee(
             password=employee.password,
             role=employee.role
         )
-        new_user = auth_service.create_user(user_create)
+        new_user = await auth_service.create_user_with_supertokens(user_create)
 
         # Link employee to shop
         employee_service.create_shop_employee({

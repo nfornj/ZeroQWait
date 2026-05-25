@@ -1,11 +1,16 @@
-from fastapi import FastAPI, WebSocket
-from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
 import re as _re
 import uvicorn
 from contextlib import asynccontextmanager
-from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments, llm_settings, payroll, platform as platform_router
+from shared.secrets import getenv, load_infisical_secrets
+
+load_infisical_secrets()
+
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from supertokens_python.framework.fastapi import get_middleware as get_supertokens_middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, voice_agent, registration, tenants, payments, llm_settings, payroll, platform as platform_router
 from routers.telegram_router import router as telegram_router
 from routers.services_router import router as services_v1_router
 from routers.inventory_router import router as inventory_router
@@ -30,6 +35,9 @@ from websocket_manager import manager
 import agent_logic  # Force eager loading of sentence-transformer model at startup  # noqa: F401
 from database import set_tenant_for_request, SessionLocal
 from observability.middleware import AgentMetricsMiddleware
+from shared.supertokens_auth import init_supertokens
+
+init_supertokens()
 
 # Setup logging
 logging.basicConfig(
@@ -148,9 +156,8 @@ async def lifespan(app: FastAPI):
     # Validate NVIDIA API key at startup — loud failure beats a silent fallback
     # to ollama which would cause the agent to slow down to 35+ seconds.
     try:
-        import os as _os
-        _nvidia_key = _os.getenv("NVIDIA_API_KEY", "")
-        _llm_provider = _os.getenv("LLM_PROVIDER", "ollama")
+        _nvidia_key = getenv("NVIDIA_API_KEY", "") or ""
+        _llm_provider = getenv("LLM_PROVIDER", "ollama")
         if _llm_provider == "nvidia":
             if not _nvidia_key or len(_nvidia_key) < 8:
                 logger.error(
@@ -160,7 +167,7 @@ async def lifespan(app: FastAPI):
                 )
             else:
                 masked = f"{_nvidia_key[:8]}****{_nvidia_key[-4:]}"
-                logger.info(f"✅ NVIDIA_API_KEY loaded (key: {masked}), model: {_os.getenv('NVIDIA_MODEL', 'not set')}")
+                logger.info(f"✅ NVIDIA_API_KEY loaded (key: {masked}), model: {getenv('NVIDIA_MODEL', 'not set')}")
         else:
             logger.info(f"LLM_PROVIDER={_llm_provider} (not nvidia — NVIDIA key not required)")
     except Exception as _key_err:
@@ -200,7 +207,6 @@ app = FastAPI(
 )
 
 # Configure CORS
-import os
 allowed_origins = [
     "http://localhost:3000",
     "http://localhost:3001",
@@ -212,7 +218,7 @@ allowed_origins = [
 ]
 
 # Allow custom frontend URL from environment variable
-frontend_url = os.getenv("FRONTEND_URL")
+frontend_url = getenv("FRONTEND_URL")
 if frontend_url and frontend_url not in allowed_origins:
     allowed_origins.append(frontend_url)
     # Also add subdomain versions
@@ -226,6 +232,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(get_supertokens_middleware())
 
 
 # ── Docs no-cache middleware ─────────────────────────────────────────
@@ -323,6 +331,7 @@ app.include_router(agent.router, prefix="/api/agent", tags=["AI Agent"])
 app.include_router(agent_v2.router, prefix="", tags=["AI Agent v2"])
 app.include_router(registration.router, prefix="/api/agent/registration", tags=["Registration"])
 app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
+app.include_router(voice_agent.router, tags=["Voice Agent"])
 app.include_router(tenants.router, prefix="/api", tags=["Tenants"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(payroll.router, prefix="/api/payroll", tags=["Payroll"])

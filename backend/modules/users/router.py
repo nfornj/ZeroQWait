@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from modules.auth import schemas
 from modules.auth.service import auth_service
-from shared.auth_utils import get_password_hash, get_current_active_user
+from shared.auth_utils import get_current_active_user
 
 router = APIRouter()
 
 @router.post("/users", response_model=schemas.User)
-def create_user(user: schemas.UserCreate):
+async def create_user(user: schemas.UserCreate):
     # Check if email already exists
     existing_user = auth_service.get_user_by_email(user.email)
     if existing_user:
@@ -18,11 +18,12 @@ def create_user(user: schemas.UserCreate):
         raise HTTPException(status_code=400, detail="Username already taken")
     
     try:
-        # Create new user
-        created_user = auth_service.create_user(user)
+        created_user = await auth_service.create_user_with_supertokens(user)
         if created_user:
             return created_user
         raise HTTPException(status_code=500, detail="Failed to create user")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
 

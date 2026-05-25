@@ -53,6 +53,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Define logout early so it can be used in useEffects
   const logout = React.useCallback(() => {
+    const storedToken = localStorage.getItem("token");
+    if (storedToken) {
+      void axios.post("/auth/logout", null, {
+        headers: { Authorization: `Bearer ${storedToken}` },
+      }).catch(() => undefined);
+    }
     localStorage.removeItem("token");
     setToken(null);
     setUser(null);

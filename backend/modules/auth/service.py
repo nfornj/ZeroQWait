@@ -3,6 +3,13 @@ from database import SessionLocal
 from modules.auth.models import User
 from modules.auth import schemas
 from shared.auth_utils import verify_password, get_password_hash
+from shared.supertokens_auth import (
+    create_app_user_id_mapping,
+    delete_supertokens_user,
+    is_email_already_exists,
+    is_sign_up_ok,
+    sign_up_email_password,
+)
 from typing import Optional
 
 class AuthService:
@@ -54,6 +61,36 @@ class AuthService:
             db.commit()
             db.refresh(db_user)
             return schemas.User.model_validate(db_user)
+        finally:
+            db.close()
+
+    async def create_user_with_supertokens(self, user_create: schemas.UserCreate) -> schemas.User:
+        auth_result = await sign_up_email_password(user_create.email, user_create.password)
+        if is_email_already_exists(auth_result):
+            raise ValueError("Email already registered")
+        if not is_sign_up_ok(auth_result):
+            raise ValueError("Failed to create SuperTokens user")
+
+        supertokens_user_id = auth_result.recipe_user_id.get_as_string()
+        db = self.get_db()
+        try:
+            hashed_password = get_password_hash(user_create.password)
+            db_user = User(
+                email=user_create.email,
+                username=user_create.username,
+                hashed_password=hashed_password,
+                role=user_create.role,
+            )
+            db.add(db_user)
+            db.flush()
+            await create_app_user_id_mapping(supertokens_user_id, db_user.id)
+            db.commit()
+            db.refresh(db_user)
+            return schemas.User.model_validate(db_user)
+        except Exception:
+            db.rollback()
+            await delete_supertokens_user(supertokens_user_id)
+            raise
         finally:
             db.close()
 
