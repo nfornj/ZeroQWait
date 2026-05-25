@@ -1,17 +1,23 @@
-"""aws_client.py — Email and AWS SNS (SMS) notification senders.
+"""aws_client.py — Email and SMS notification senders.
 
 Email delivery prefers Brevo transactional email when BREVO_API_KEY and
 BREVO_SENDER_EMAIL are configured, then falls back to AWS SES.
 
+SMS delivery prefers Telnyx when TELNYX_API_KEY and TELNYX_FROM_NUMBER are
+configured, then falls back to AWS SNS.
+
 Environment variables required (non-optional at send time):
     BREVO_API_KEY           Brevo transactional email API key
     BREVO_SENDER_EMAIL      Verified Brevo sender address
+    TELNYX_API_KEY          Telnyx messaging API key
+    TELNYX_FROM_NUMBER      Telnyx sender number in E.164 format
     AWS_REGION              e.g. us-east-1
     AWS_ACCESS_KEY_ID       IAM user access key
     AWS_SECRET_ACCESS_KEY   IAM user secret
     AWS_SES_FROM_EMAIL      Verified sender address, e.g. notifications@zeroqwait.com
 
 Optional:
+    TELNYX_MESSAGING_PROFILE_ID Optional Telnyx messaging profile override
     AWS_SNS_SMS_SENDER_ID   Alphanumeric sender name shown on SMS (max 11 chars, default "ZeroQwait")
                             Not supported in all countries (US does not support it).
 
@@ -79,7 +85,9 @@ def is_ses_configured() -> bool:
 
 
 def is_sns_configured() -> bool:
-    return bool(os.getenv("AWS_ACCESS_KEY_ID"))
+    from services.telnyx_sms import is_telnyx_configured
+
+    return is_telnyx_configured() or bool(os.getenv("AWS_ACCESS_KEY_ID"))
 
 
 # ── Clients (lazy, one per call to avoid stale credentials) ───────────────────
@@ -240,7 +248,7 @@ async def send_email(
 
 
 async def send_sms(phone_number: str, markdown_text: str) -> bool:
-    """Send a transactional SMS via AWS SNS direct publish.
+    """Send a transactional SMS via Telnyx or AWS SNS direct publish.
 
     Args:
         phone_number:  E.164 format, e.g. +14155552671 or +16137654321.
@@ -250,14 +258,29 @@ async def send_sms(phone_number: str, markdown_text: str) -> bool:
         True on success, False on any error (errors are logged, not raised).
 
     Notes:
+        - Telnyx is preferred when configured.
         - SNS SMS does not support sender ID in all regions/countries.
           US numbers never show a sender ID; they show a random short code.
         - Single SMS segment = 160 GSM chars. Messages over 400 chars are truncated.
         - For production use, move the AWS account out of the SNS SMS sandbox.
     """
-    if not is_sns_configured():
+    try:
+        from services.telnyx_sms import is_telnyx_configured, send_transactional_sms
+
+        if is_telnyx_configured():
+            return await send_transactional_sms(
+                phone_number=phone_number,
+                message=markdown_text,
+                record_metrics=True,
+            )
+    except Exception as exc:
+        logger.error("aws_client: Telnyx handoff failed: %s", exc)
+        _record_sms(False)
+        return False
+
+    if not os.getenv("AWS_ACCESS_KEY_ID"):
         logger.warning(
-            "aws_client: SNS not configured — set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+            "aws_client: SMS provider not configured — set TELNYX_API_KEY/TELNYX_FROM_NUMBER or AWS SNS credentials"
         )
         _record_sms(False)
         return False

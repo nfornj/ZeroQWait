@@ -1,6 +1,6 @@
-"""queue_sms.py — Customer-facing SMS notifications via AWS SNS.
+"""queue_sms.py — Customer-facing SMS notifications via Telnyx or AWS SNS.
 
-Sandbox note: AWS SNS SMS sandbox only sends to *verified* destination phone
+Fallback note: AWS SNS SMS sandbox only sends to *verified* destination phone
 numbers. Verify numbers in the AWS console:
   SNS → Text messaging (SMS) → Sandbox destination phone numbers → Add phone number
 
@@ -55,7 +55,7 @@ async def send_queue_join_sms(
 ) -> None:
     """Send a queue-join confirmation SMS."""
     if not is_sns_configured():
-        logger.debug("SNS not configured — skipping queue join SMS to %s", customer_phone)
+        logger.debug("SMS provider not configured — skipping queue join SMS to %s", customer_phone)
         return
 
     e164 = _normalize_phone(customer_phone)
@@ -86,7 +86,7 @@ async def send_youre_next_sms(
 ) -> None:
     """Send an 'it's your turn' SMS."""
     if not is_sns_configured():
-        logger.debug("SNS not configured — skipping you're-next SMS to %s", customer_phone)
+        logger.debug("SMS provider not configured — skipping you're-next SMS to %s", customer_phone)
         return
 
     e164 = _normalize_phone(customer_phone)
@@ -119,7 +119,7 @@ async def send_appointment_confirmation_sms(
 ) -> None:
     """Send an appointment booking confirmation SMS."""
     if not is_sns_configured():
-        logger.debug("SNS not configured — skipping appointment confirmation SMS to %s", customer_phone)
+        logger.debug("SMS provider not configured — skipping appointment confirmation SMS to %s", customer_phone)
         return
 
     e164 = _normalize_phone(customer_phone)

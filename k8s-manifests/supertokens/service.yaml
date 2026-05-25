@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: supertokens-svc
+  namespace: zeroqwait
+  labels:
+    app: supertokens
+    app.kubernetes.io/name: supertokens
+    zeroqwait.io/tier: shared-infra
+spec:
+  type: ClusterIP
+  selector:
+    app: supertokens
+  ports:
+    - name: http
+      port: 3567
+      targetPort: http

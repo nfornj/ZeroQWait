@@ -40,13 +40,12 @@ def test_send_queue_join_email_ses_calls_aws(caplog):
     """When SES is configured, send_queue_join_email calls aws_client.send_email."""
     mock_send = AsyncMock(return_value=True)
 
-    with patch("services.queue_email.is_ses_configured", return_value=True), \
-         patch("services.queue_email.ses_send_email", mock_send):
-        from services import queue_email
-        # Reload to re-apply patches
-        import importlib
-        importlib.reload(queue_email)
+    from services import queue_email
+    import importlib
+    importlib.reload(queue_email)
 
+    with patch.object(queue_email, "is_ses_configured", return_value=True), \
+         patch.object(queue_email, "ses_send_email", mock_send):
         asyncio.run(
             queue_email.send_queue_join_email(
                 customer_email="customer@example.com",
@@ -70,12 +69,12 @@ def test_send_youre_next_email_ses_calls_aws():
     """send_youre_next_email calls aws_client.send_email with the right content."""
     mock_send = AsyncMock(return_value=True)
 
-    with patch("services.queue_email.is_ses_configured", return_value=True), \
-         patch("services.queue_email.ses_send_email", mock_send):
-        from services import queue_email
-        import importlib
-        importlib.reload(queue_email)
+    from services import queue_email
+    import importlib
+    importlib.reload(queue_email)
 
+    with patch.object(queue_email, "is_ses_configured", return_value=True), \
+         patch.object(queue_email, "ses_send_email", mock_send):
         asyncio.run(
             queue_email.send_youre_next_email(
                 customer_email="customer@example.com",
@@ -97,12 +96,12 @@ def test_send_youre_next_email_ses_exception_does_not_raise():
     """Exceptions in SES are swallowed — queue operations must not fail."""
     mock_send = AsyncMock(side_effect=Exception("SES timeout"))
 
-    with patch("services.queue_email.is_ses_configured", return_value=True), \
-         patch("services.queue_email.ses_send_email", mock_send):
-        from services import queue_email
-        import importlib
-        importlib.reload(queue_email)
+    from services import queue_email
+    import importlib
+    importlib.reload(queue_email)
 
+    with patch.object(queue_email, "is_ses_configured", return_value=True), \
+         patch.object(queue_email, "ses_send_email", mock_send):
         # Must not raise
         asyncio.run(
             queue_email.send_youre_next_email(

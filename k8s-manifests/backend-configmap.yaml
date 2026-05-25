@@ -24,6 +24,7 @@ data:
   TEMPORAL_ADDRESS: "temporal.zeroqwait.svc.cluster.local:7233"
   TEMPORAL_NAMESPACE: "default"
   TEMPORAL_TASK_QUEUE: "zeroqwait-agent-brain"
+  SUPERTOKENS_CONNECTION_URI: "http://supertokens-svc.zeroqwait.svc.cluster.local:3567"
   # All voice operations route through voice-mcp (the MCP voice gateway).
   # voice-mcp proxies to tts-service:8880 and asr-service:8000 internally.
   TTS_SERVICE_URL: "http://voice-mcp.zeroqwait.svc.cluster.local:8881"
