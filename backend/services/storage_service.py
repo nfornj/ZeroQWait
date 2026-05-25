@@ -31,7 +31,7 @@ def _object_key(filename: str) -> str:
 def _public_url(endpoint: str, bucket_name: str, key: str) -> str:
     parsed = urlparse(endpoint)
     if not parsed.scheme or not parsed.netloc:
-        raise ValueError("B2_ENDPOINT must include scheme and host, for example https://s3.us-west-004.backblazeb2.com")
+        raise ValueError("B2_ENDPOINT must include scheme and host, for example https://s3.us-east-005.backblazeb2.com")
     encoded_key = quote(key, safe="/")
     return f"{parsed.scheme}://{bucket_name}.{parsed.netloc}/{encoded_key}"
 
