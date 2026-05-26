@@ -3,7 +3,8 @@
 This folder contains standalone manifests for Infisical Community Edition:
 
 - `namespace.yaml` creates the `infisical` namespace.
-- `deployment.yaml` creates the Infisical secret and deployment.
+- `secret.yaml` is a template for the runtime database and app secrets.
+- `deployment.yaml` creates the Infisical deployment.
 - `service.yaml` exposes the app internally as `http://infisical-svc:8080` inside the `infisical` namespace.
 - `ingress.yaml` routes HTTP traffic to `infisical-svc` through Traefik.
 
@@ -17,11 +18,14 @@ Infisical is configured to use the existing PostgreSQL service in the cluster:
 postgres.zeroqwait.svc.cluster.local:5432
 ```
 
-Before applying, replace the placeholder `DATABASE_URL` in `deployment.yaml` with credentials and a database that Infisical can use, for example:
+Before applying, create the real `infisical-secret` in Kubernetes or replace the placeholders in `secret.yaml` with credentials and a database that Infisical can use, for example:
 
 ```text
-postgresql://infisical:<password>@postgres.zeroqwait.svc.cluster.local:5432/infisical
+DB_CONNECTION_URI=postgresql://infisical:<password>@postgres.zeroqwait.svc.cluster.local:5432/infisical
+REDIS_URL=redis://:<redis-password>@redis.zeroqwait.svc.cluster.local:6379
 ```
+
+Generate `ENCRYPTION_KEY` with `openssl rand -hex 16` before the first successful boot. Do not rotate it after secrets have been created unless you are deliberately migrating encrypted data.
 
 Create the `infisical` database and user in PostgreSQL first, or change the URL to a database/user that already exists and is intended for Infisical.
 
@@ -37,6 +41,7 @@ From the repo root:
 
 ```bash
 kubectl apply -f k8s-manifests/infisical/namespace.yaml
+kubectl apply -f k8s-manifests/infisical/secret.yaml
 kubectl apply -f k8s-manifests/infisical/deployment.yaml
 kubectl apply -f k8s-manifests/infisical/service.yaml
 kubectl apply -f k8s-manifests/infisical/ingress.yaml

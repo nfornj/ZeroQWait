@@ -41,6 +41,18 @@ spec:
         - podSelector:
             matchLabels:
               app: odoo
+        - podSelector:
+            matchLabels:
+              app: supertokens
+        - podSelector:
+            matchLabels:
+              app: postgres-b2-backup
+        - namespaceSelector:
+            matchLabels:
+              name: infisical
+          podSelector:
+            matchLabels:
+              app: infisical
       ports:
         - protocol: TCP
           port: 5432
@@ -65,6 +77,12 @@ spec:
         - podSelector:
             matchLabels:
               app: temporal-worker
+        - namespaceSelector:
+            matchLabels:
+              name: infisical
+          podSelector:
+            matchLabels:
+              app: infisical
       ports:
         - protocol: TCP
           port: 6379
