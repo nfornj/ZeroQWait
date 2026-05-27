@@ -14,6 +14,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_MANIFEST_PATH = Path(os.getenv("SIM_MANIFEST_PATH", BASE_DIR / "shop_manifest.json"))
+START_STAGGER_SECONDS = float(os.getenv("SIM_START_STAGGER_SECONDS", "0"))
 
 
 def load_manifest() -> list[dict]:
@@ -63,7 +64,7 @@ def build_env(target: dict) -> dict[str, str]:
         env["SIM_SHOP_SLUG"] = str(target["shop_slug"])
     env["SIM_EMPLOYEE_SPECS"] = json.dumps(target.get("employees") or default_employee_specs(target))
     for key, value in (target.get("env") or {}).items():
-        env[str(key)] = str(value)
+        env.setdefault(str(key), str(value))
     return env
 
 
@@ -75,7 +76,9 @@ async def pipe_output(prefix: str, stream: asyncio.StreamReader) -> None:
         print(f"[{prefix}] {line.decode(errors='replace').rstrip()}", flush=True)
 
 
-async def run_target(target: dict) -> int:
+async def run_target(target: dict, delay_seconds: float = 0.0) -> int:
+    if delay_seconds > 0:
+        await asyncio.sleep(delay_seconds)
     key = target.get("key") or target.get("shop_name") or target["owner_email"]
     process = await asyncio.create_subprocess_exec(
         sys.executable,
@@ -102,7 +105,10 @@ async def main() -> int:
         print("No simulation targets found in manifest.", flush=True)
         return 1
 
-    tasks = [asyncio.create_task(run_target(target)) for target in targets]
+    tasks = [
+        asyncio.create_task(run_target(target, index * START_STAGGER_SECONDS))
+        for index, target in enumerate(targets)
+    ]
 
     def _stop() -> None:
         for task in tasks:
