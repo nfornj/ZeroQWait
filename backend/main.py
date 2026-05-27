@@ -263,9 +263,13 @@ class TenantMiddleware(BaseHTTPMiddleware):
     _SHOP_ID_PATTERNS = [
         _re.compile(r'/api/queues/shop/(\d+)'),
         _re.compile(r'/api/shops/(\d+)'),
+        _re.compile(r'/api/clock-in/(\d+)'),
         _re.compile(r'/api/employees/shops/(\d+)'),
         _re.compile(r'/api/analytics/(?:daily/|peak-hours/|archive/stats/|services/|revenue/monthly-by-service/)?(\d+)'),
         _re.compile(r'/api/services/shops/(\d+)'),
+        _re.compile(r'/api/v1/services/shop/(\d+)'),
+        _re.compile(r'/api/v1/inventory/shop/(\d+)'),
+        _re.compile(r'/api/v1/pos/shop/(\d+)'),
         _re.compile(r'/api/appointments/shop/(\d+)'),
     ]
 
