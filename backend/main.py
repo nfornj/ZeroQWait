@@ -10,7 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from supertokens_python.framework.fastapi import get_middleware as get_supertokens_middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, voice_agent, registration, tenants, payments, llm_settings, payroll, platform as platform_router
+from routers import subscriptions, analytics, uploads, data_generation, services, agent, agent_v2, voice, registration, tenants, payments, llm_settings, payroll, platform as platform_router
+try:
+    from routers import voice_agent
+except ImportError:
+    voice_agent = None
 from routers.telegram_router import router as telegram_router
 from routers.services_router import router as services_v1_router
 from routers.inventory_router import router as inventory_router
@@ -331,7 +335,8 @@ app.include_router(agent.router, prefix="/api/agent", tags=["AI Agent"])
 app.include_router(agent_v2.router, prefix="", tags=["AI Agent v2"])
 app.include_router(registration.router, prefix="/api/agent/registration", tags=["Registration"])
 app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
-app.include_router(voice_agent.router, tags=["Voice Agent"])
+if voice_agent is not None:
+    app.include_router(voice_agent.router, tags=["Voice Agent"])
 app.include_router(tenants.router, prefix="/api", tags=["Tenants"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(payroll.router, prefix="/api/payroll", tags=["Payroll"])
