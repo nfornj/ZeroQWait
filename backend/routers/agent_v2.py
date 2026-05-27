@@ -85,8 +85,10 @@ from agents.document_store import (
     _serialize_owner_document,
 )
 from shared.auth_utils import get_current_user
+from shared.secrets import getenv
 from db_interface import DatabaseInterface
-from database import SessionLocal
+from database import SessionLocal, set_tenant_for_request
+from tenant_manager import resolve_shop_schema_from_metadata
 from modules.agent.models import AgentDocument, AgentMemory, ApprovalStatus, GoalSource, GoalStatus, PolicyMode, RunStatus
 from modules.agent.work_repository import AgentWorkRepository
 
@@ -895,7 +897,28 @@ def _require_owner_shop_access(shop_id: Any, current_user: Dict[str, Any]) -> tu
     if normalized_shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
 
+    _set_tenant_context_for_shop(normalized_shop_id)
+
     return int(user_id), normalized_shop_id
+
+
+def _set_tenant_context_for_shop(shop_id: int) -> None:
+    db = SessionLocal()
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT id, tenant_schema, data_isolation_mode
+                FROM platform.shops
+                WHERE id = :shop_id
+                """
+            ),
+            {"shop_id": shop_id},
+        ).mappings().first()
+        schema = resolve_shop_schema_from_metadata(dict(row)) if row else None
+        set_tenant_for_request(schema)
+    finally:
+        db.close()
 
 
 def _list_policy_payload(shop_id: int) -> list[Dict[str, Any]]:
@@ -2727,10 +2750,10 @@ async def health_check():
     }
 
     # Check LLM — provider-aware probe
-    llm_provider = normalize_provider(os.getenv("LLM_PROVIDER", "ollama"))
+    llm_provider = normalize_provider(getenv("LLM_PROVIDER", "ollama"))
     try:
         if llm_provider == "ollama":
-            ollama_base = os.getenv("OLLAMA_URL", "http://localhost:11434/v1").rstrip("/")
+            ollama_base = (getenv("OLLAMA_URL", "http://localhost:11434/v1") or "http://localhost:11434/v1").rstrip("/")
             if ollama_base.endswith("/v1"):
                 ollama_base = ollama_base[:-3]
             async with httpx.AsyncClient(timeout=5.0) as client:
