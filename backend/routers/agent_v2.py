@@ -1344,6 +1344,8 @@ async def chat_sync(
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
 
+    _set_tenant_context_for_shop(shop_id)
+
     logger.info("chat/sync start shop_id=%s user_id=%s msg_len=%d", shop_id, user_id, len(message))
 
     _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
@@ -1581,6 +1583,8 @@ async def chat_stream(
 
     if shop_id not in user_shops:
         raise HTTPException(status_code=403, detail="Not owner of this shop")
+
+    _set_tenant_context_for_shop(shop_id)
 
     _reset_checkpoint_thread_if_idle(shop_id, int(user_id))
 
