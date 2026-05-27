@@ -36,7 +36,7 @@ spec:
                 values: ["core-cpu"]
       containers:
       - name: simulation
-        image: ghcr.io/nfornj/simulation:v20260527021421-8bb5942
+        image: ghcr.io/nfornj/simulation:v20260527022243-df7f439
         imagePullPolicy: IfNotPresent
         command: ["python", "-u", "run_manifest.py"]
         env:
