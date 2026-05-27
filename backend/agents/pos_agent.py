@@ -163,6 +163,30 @@ def _calculate_totals(session_data: Dict[str, Any]) -> Dict[str, int]:
     }
 
 
+def _resolve_shop_employee_id(session, shop_id: int, employee_id: Optional[int]) -> Optional[int]:
+    if employee_id is None:
+        return None
+    row = session.execute(
+        text("""
+            SELECT id
+            FROM shop_employees
+            WHERE shop_id = :shop_id AND id = :employee_id
+        """),
+        {"shop_id": shop_id, "employee_id": employee_id},
+    ).fetchone()
+    if row:
+        return row[0]
+    row = session.execute(
+        text("""
+            SELECT id
+            FROM shop_employees
+            WHERE shop_id = :shop_id AND user_id = :employee_id
+        """),
+        {"shop_id": shop_id, "employee_id": employee_id},
+    ).fetchone()
+    return row[0] if row else None
+
+
 # ── Executor ──────────────────────────────────────────────────────────────────
 
 def _build_pos_executor(shop_id: int):
@@ -302,6 +326,7 @@ def _build_pos_executor(shop_id: int):
             totals = _calculate_totals(sess)
 
             with SessionLocal() as session:
+                employee_id = _resolve_shop_employee_id(session, shop_id, sess.get("employee_id"))
                 txn = session.execute(
                     text("""
                         INSERT INTO pos_transactions
@@ -316,7 +341,7 @@ def _build_pos_executor(shop_id: int):
                     """),
                     {
                         "shop_id": shop_id,
-                        "emp_id": sess.get("employee_id"),
+                        "emp_id": employee_id,
                         "sub": totals["subtotal_cents"],
                         "hst": totals["hst_cents"],
                         "tip": totals["tip_cents"],
