@@ -262,6 +262,7 @@ class Actor:
     email: str
     password: str
     role: str
+    username: Optional[str] = None
     token: Optional[str] = None
     user_id: Optional[int] = None
     on_sick_day: bool = False
@@ -712,6 +713,7 @@ def _load_employee_specs() -> list[Actor]:
                 email=spec["email"],
                 password=spec.get("password", SIM_OWNER_PASSWORD),
                 role=spec.get("role", "employee"),
+                username=spec.get("username"),
                 svc_time_min=float(spec.get("svc_time_min", 20.0)),
                 svc_time_max=float(spec.get("svc_time_max", 30.0)),
             )
@@ -775,7 +777,7 @@ async def ensure_user(client: httpx.AsyncClient, actor: Actor) -> bool:
             client, "POST", "/api/users",
             json={
                 "email": actor.email,
-                "username": actor.display_name,
+                "username": actor.username or actor.display_name,
                 "password": actor.password,
                 "role": actor.role,
             },
@@ -898,7 +900,7 @@ async def setup(
                 token=owner.token,
                 json={
                     "email": emp.email,
-                    "username": emp.display_name,
+                    "username": emp.username or emp.display_name,
                     "password": emp.password,
                     "role": "employee",
                 },
