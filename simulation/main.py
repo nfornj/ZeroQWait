@@ -580,7 +580,12 @@ async def _process_sale(
     )
 
     if queue_item_id is not None:
-        await _request(client, "POST", f"/api/queues/items/{queue_item_id}/checkout")
+        await _request(
+            client,
+            "POST",
+            f"/api/queues/items/{queue_item_id}/checkout",
+            params={"shop_id": STATE.shop_id},
+        )
 
     await _record_service_inventory_usage(
         client,
@@ -1293,7 +1298,7 @@ async def employee_loop(client: httpx.AsyncClient, owner: Actor, emp: Actor) -> 
             item = await _request(
                 client, "POST", f"/api/queues/{STATE.queue_id}/call-next",
                 token=emp.token,
-                params={"employee_id": emp.user_id},
+                params={"employee_id": emp.user_id, "shop_id": STATE.shop_id},
             )
             svc: dict = item.get("service") or {}
             svc_name = svc.get("name", "service")
@@ -1315,7 +1320,7 @@ async def employee_loop(client: httpx.AsyncClient, owner: Actor, emp: Actor) -> 
             await _request(
                 client, "PATCH", f"/api/queues/items/{item_id}/status",
                 token=emp.token,
-                params={"new_status": "completed"},
+                params={"new_status": "completed", "shop_id": STATE.shop_id},
             )
 
             try:

@@ -19,8 +19,32 @@ import secrets
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from services.queue_email import send_queue_join_email, send_youre_next_email
 from services.queue_sms import send_queue_join_sms, send_youre_next_sms
+from sqlalchemy import text
+from database import set_tenant_for_request
+from tenant_manager import resolve_shop_schema_from_metadata
 
 router = APIRouter()
+
+
+def _set_tenant_context_for_shop(shop_id: Optional[int]) -> None:
+    if shop_id is None:
+        return
+    db = SessionLocal()
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT id, tenant_schema, data_isolation_mode
+                FROM platform.shops
+                WHERE id = :shop_id
+                """
+            ),
+            {"shop_id": shop_id},
+        ).mappings().first()
+        schema = resolve_shop_schema_from_metadata(dict(row)) if row else None
+        set_tenant_for_request(schema)
+    finally:
+        db.close()
 
 # Helper function to anonymize customer names for privacy
 def anonymize_customer_name(name: str) -> str:
@@ -399,9 +423,11 @@ async def join_queue(
 async def update_queue_item_status(
     item_id: int,
     new_status: str,
+    shop_id: Optional[int] = None,
     current_user: dict = Depends(get_current_user)
 ):
     try:
+        _set_tenant_context_for_shop(shop_id)
         item = queue_service.get_queue_item(item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Queue item not found")
@@ -451,9 +477,11 @@ async def update_queue_item_status(
 @router.post("/items/{item_id}/checkout")
 async def mark_queue_item_checked_out(
     item_id: int,
+    shop_id: Optional[int] = None,
 ):
     """Mark a queue item as checked out after successful payment."""
     try:
+        _set_tenant_context_for_shop(shop_id)
         item = queue_service.get_queue_item(item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Queue item not found")
@@ -493,9 +521,11 @@ async def mark_queue_item_checked_out(
 async def call_next_customer(
     queue_id: int,
     employee_id: Optional[int] = None,
+    shop_id: Optional[int] = None,
     current_user: dict = Depends(get_current_user)
 ):
     try:
+        _set_tenant_context_for_shop(shop_id)
         queue = queue_service.get_queue(queue_id)
         if not queue:
             raise HTTPException(status_code=404, detail="Queue not found")
