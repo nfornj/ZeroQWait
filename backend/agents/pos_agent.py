@@ -85,12 +85,14 @@ def _load_session(shop_id: int, session_id: str) -> Optional[Dict[str, Any]]:
     raw = r.get(_session_key(shop_id, session_id))
     if raw is None:
         return None
+    if isinstance(raw, dict):
+        return raw
     return json.loads(raw)
 
 
 def _save_session(shop_id: int, session_id: str, data: Dict[str, Any]) -> None:
     r = get_redis_client()
-    r.setex(_session_key(shop_id, session_id), SESSION_TTL, json.dumps(data))
+    r.set(_session_key(shop_id, session_id), data, ttl=SESSION_TTL)
 
 
 def _new_session(shop_id: int, customer_name: Optional[str], employee_id: Optional[int]) -> tuple[str, Dict[str, Any]]:
