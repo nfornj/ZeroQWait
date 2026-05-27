@@ -169,7 +169,7 @@ def _resolve_shop_employee_id(session, shop_id: int, employee_id: Optional[int])
     row = session.execute(
         text("""
             SELECT id
-            FROM shop_employees
+            FROM public.shop_employees
             WHERE shop_id = :shop_id AND id = :employee_id
         """),
         {"shop_id": shop_id, "employee_id": employee_id},
@@ -179,7 +179,7 @@ def _resolve_shop_employee_id(session, shop_id: int, employee_id: Optional[int])
     row = session.execute(
         text("""
             SELECT id
-            FROM shop_employees
+            FROM public.shop_employees
             WHERE shop_id = :shop_id AND user_id = :employee_id
         """),
         {"shop_id": shop_id, "employee_id": employee_id},
