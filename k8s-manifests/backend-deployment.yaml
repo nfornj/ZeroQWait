@@ -8,7 +8,7 @@ metadata:
     zeroqwait.io/tier: free
     zeroqwait.io/component: backend
 spec:
-  replicas: 1
+  replicas: 2
   progressDeadlineSeconds: 1800
   selector:
     matchLabels:
@@ -51,7 +51,7 @@ spec:
       - name: backend
         # Image built by CI and pushed to GHCR.
         # The run-local-pipeline.sh sed step replaces the tag on every prod deploy.
-        image: ghcr.io/nfornj/backend:v20260516111053-6dc07b2
+        image: ghcr.io/nfornj/backend:v20260527015927-a7208f7-overlay
         ports:
         - containerPort: 8000
         envFrom:
