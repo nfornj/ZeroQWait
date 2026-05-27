@@ -1130,7 +1130,7 @@ def _seconds_until_open() -> float:
 # ─── Actor: Customer ──────────────────────────────────────────────────────────
 
 
-async def customer_loop(client: httpx.AsyncClient) -> None:
+async def customer_loop(client: httpx.AsyncClient, owner: Actor) -> None:
     """Continuously spawn new customers joining the queue."""
     await asyncio.sleep(3)
     while STATE.running:
@@ -1350,6 +1350,8 @@ async def employee_loop(client: httpx.AsyncClient, owner: Actor, emp: Actor) -> 
                 await login(client, emp)
             else:
                 STATE.log(f"⚠️  {emp.display_name}: {str(e)[:80]}", "dim yellow")
+        except Exception as exc:
+            STATE.log(f"⚠️  {emp.display_name} loop error: {type(exc).__name__}: {str(exc)[:80]}", "dim yellow")
 
         await asyncio.sleep(delay)
 
@@ -2056,7 +2058,7 @@ async def main() -> None:
             return
 
         tasks = [
-            asyncio.create_task(customer_loop(client)),
+            asyncio.create_task(customer_loop(client, owner)),
             *(asyncio.create_task(employee_loop(client, owner, employee)) for employee in employees),
             asyncio.create_task(owner_loop(client, owner)),
             asyncio.create_task(owner_approval_loop(client, owner)),
