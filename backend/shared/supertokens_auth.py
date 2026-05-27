@@ -92,6 +92,9 @@ async def create_app_user_id_mapping(supertokens_user_id: str, app_user_id: int)
             force=True,
         )
     except Exception as exc:
+        if isinstance(exc, KeyError) and exc.args == ("does_external_user_id_exist",):
+            logger.warning("SuperTokens user-id mapping response omitted existence flags; continuing with session payload mapping.")
+            return
         message = str(exc)
         if "already" in message.lower() and str(app_user_id) in message:
             return
