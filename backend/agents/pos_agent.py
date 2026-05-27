@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 HST_RATE = 0.13
 SESSION_TTL = 7200  # 2 hours in seconds
+_LOCAL_SESSIONS: Dict[str, tuple[float, Dict[str, Any]]] = {}
 
 OPERATION_ALIASES = {
     "ring up": "add_line_item",
@@ -81,18 +83,36 @@ def _session_key(shop_id: int, session_id: str) -> str:
 
 
 def _load_session(shop_id: int, session_id: str) -> Optional[Dict[str, Any]]:
+    key = _session_key(shop_id, session_id)
     r = get_redis_client()
-    raw = r.get(_session_key(shop_id, session_id))
+    raw = r.get(key)
     if raw is None:
-        return None
+        local = _LOCAL_SESSIONS.get(key)
+        if local is None:
+            return None
+        expires_at, data = local
+        if expires_at < time.time():
+            _LOCAL_SESSIONS.pop(key, None)
+            return None
+        return data
+    _LOCAL_SESSIONS.pop(key, None)
     if isinstance(raw, dict):
         return raw
     return json.loads(raw)
 
 
 def _save_session(shop_id: int, session_id: str, data: Dict[str, Any]) -> None:
+    key = _session_key(shop_id, session_id)
     r = get_redis_client()
-    r.set(_session_key(shop_id, session_id), data, ttl=SESSION_TTL)
+    if not r.set(key, data, ttl=SESSION_TTL):
+        _LOCAL_SESSIONS[key] = (time.time() + SESSION_TTL, data)
+
+
+def _delete_session(shop_id: int, session_id: str) -> None:
+    key = _session_key(shop_id, session_id)
+    _LOCAL_SESSIONS.pop(key, None)
+    r = get_redis_client()
+    r.delete(key)
 
 
 def _new_session(shop_id: int, customer_name: Optional[str], employee_id: Optional[int]) -> tuple[str, Dict[str, Any]]:
@@ -331,8 +351,7 @@ def _build_pos_executor(shop_id: int):
                 session.commit()
 
             # Invalidate session in Redis
-            r = get_redis_client()
-            r.delete(_session_key(shop_id, sid))
+            _delete_session(shop_id, sid)
 
             # Fire-and-forget receipt notification
             if args.get("send_receipt", False):
