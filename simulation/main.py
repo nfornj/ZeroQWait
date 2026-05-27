@@ -289,6 +289,7 @@ class SimState:
     walkins_open: bool = True        # False during a queue surge
     in_surge: bool = False           # True when waiting >= SURGE_THRESHOLD
     business_profile: str = "generic"
+    staff_employee_ids: list[int] = field(default_factory=list)
     stats: dict = field(default_factory=lambda: {
         "appointments_booked": 0,
         "customers_served": 0,
@@ -959,6 +960,7 @@ async def setup(
     if STATE.shop_closed_today:
         STATE.log("🔒 Today is a registered CLOSE DAY — no customers will arrive", "bold red")
     else:
+        STATE.staff_employee_ids = [int(emp.user_id) for emp in employees if emp.clocked_in and emp.user_id is not None]
         STATE.log("🚀 Setup complete — simulation is LIVE!", "bold green")
         STATE.log(f"   👀 Watch at http://localhost:3000", "bold cyan")
     return True
@@ -1144,6 +1146,7 @@ async def customer_loop(client: httpx.AsyncClient) -> None:
 
         name = f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}"
         service = random.choice(STATE.services) if STATE.services else None
+        employee_id = random.choice(STATE.staff_employee_ids) if STATE.staff_employee_ids else None
 
         try:
             if not STATE.walkins_open or random.random() > WALKIN_RATIO:
@@ -1159,6 +1162,7 @@ async def customer_loop(client: httpx.AsyncClient) -> None:
                         "customer_email": f"{name.lower().replace(' ', '.')}@demo.zeroqwait.local",
                         "scheduled_start": scheduled_start.isoformat(),
                         "duration_minutes": _service_duration_minutes(service),
+                        "employee_id": employee_id,
                         "notes": random.choice([None, None, "Booked online", "Returning client"]),
                     },
                 )
