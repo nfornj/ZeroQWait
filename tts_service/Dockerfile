@@ -1,34 +1,32 @@
-FROM python:3.11-slim
+FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04
 
-# System deps required by piper-tts (espeak-ng for phonemization, libgomp for ONNX runtime)
+# Avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        libespeak-ng1 libgomp1 wget ca-certificates && \
+        python3 python3-pip python3-venv libsndfile1 && \
     rm -rf /var/lib/apt/lists/*
 
-# Install piper-tts and API server deps
+# Create venv to avoid PEP 668 issues
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# GPU optimization environment variables for Ada architecture (RTX 5060 Ti)
+ENV CUDA_COMPUTE_CAPABILITY=8.9
+ENV TORCH_CUDA_ARCH_LIST=8.9
+ENV CUDA_FORCE_PTX_JIT=0
+
+# Install TTS dependencies. qwen-tts pulls torch with GPU support.
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
-
-# Download Piper ONNX voice models at build time so the image is self-contained
-RUN mkdir -p /app/models
-
-ARG PIPER_BASE=https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US
-
-RUN wget -q "${PIPER_BASE}/lessac/medium/en_US-lessac-medium.onnx" \
-        -O /app/models/en_US-lessac-medium.onnx && \
-    wget -q "${PIPER_BASE}/lessac/medium/en_US-lessac-medium.onnx.json" \
-        -O /app/models/en_US-lessac-medium.onnx.json && \
-    wget -q "${PIPER_BASE}/ryan/medium/en_US-ryan-medium.onnx" \
-        -O /app/models/en_US-ryan-medium.onnx && \
-    wget -q "${PIPER_BASE}/ryan/medium/en_US-ryan-medium.onnx.json" \
-        -O /app/models/en_US-ryan-medium.onnx.json
 
 COPY main.py /app/main.py
 WORKDIR /app
 
-ENV MODELS_DIR=/app/models
-ENV TTS_DEFAULT_VOICE=female
+# HuggingFace cache directory (mount as volume for persistence)
+ENV HF_HOME=/data/huggingface
+ENV TRANSFORMERS_CACHE=/data/huggingface
 
 EXPOSE 8880
 

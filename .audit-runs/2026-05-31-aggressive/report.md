@@ -118,16 +118,30 @@
 - Production agent health: `status: ok`; Redis now reports `ok`.
 - Non-prod agent health: `status: ok`; Redis now reports `ok`.
 - Production and non-prod `/api/voice/tts/health`: returned `status: ok` through `voice-mcp` after restoring the gateway.
+- Host GPU runtime restored:
+  - `nvidia-smi` now reports `NVIDIA GeForce RTX 5060 Ti`, driver `580.159.03`, `16311 MiB` memory.
+  - Kubernetes node now advertises `nvidia.com/gpu: 1` capacity and `1` allocatable.
+  - `nvidia-device-plugin-daemonset` is `1/1 Running`.
+  - `zeroqwait-ai/asr-service` is `1/1 Running`.
+  - `zeroqwait-ai/tts-service` is `1/1 Running` on `ghcr.io/nfornj/tts-service:v20260516090919-3f86f98`.
+- Direct cluster TTS health now confirms the protected service config: `model: Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`, `voice: Vivian`.
+- Production uncached TTS synthesis now succeeds: unique text request returned `HTTP 200`, `content-type: audio/wav`, `x-tts-cache: MISS`, `x-tts-synth-ms: 6293`.
+- Non-prod uncached TTS synthesis now succeeds: unique text request returned `HTTP 200`, `content-type: audio/wav`, `x-tts-cache: MISS`, `x-tts-synth-ms: 3828`.
+
+### Host/GPU Repair Applied
+- Installed the missing signed Ubuntu NVIDIA module package for the running kernel: `linux-modules-nvidia-580-open-6.17.0-29-generic`.
+- Upgraded the NVIDIA 580 driver stack to `580.159.03` through Ubuntu packages.
+- Loaded `nvidia`, `nvidia_uvm`, and `nvidia_drm` modules successfully under Secure Boot.
+- Raised inotify limits persistently in `/etc/sysctl.d/99-zeroqwait-inotify.conf` so the device plugin could create filesystem watchers:
+  - `fs.inotify.max_user_instances=1024`
+  - `fs.inotify.max_user_watches=1048576`
+  - `fs.inotify.max_queued_events=32768`
+- Refreshed `/opt/nvidia-libs/libnvidia-ml.so*` from stale `580.142` to `580.159.03`, resolving the device plugin `ERROR_LIB_RM_VERSION_MISMATCH`.
+- Imported the local Qwen3-TTS image into K3s containerd and restored the missing GHCR tag for the repo-pinned image.
+- Rolled `zeroqwait-ai/tts-service` back from the temporary Piper image to the protected Qwen3-TTS image.
 
 ### Remaining Blockers
-- Actual TTS synthesis still fails with HTTP 502. A tiny production synthesis probe returned `http=502` even though `/tts/health` is green.
-- Root cause is host/GPU runtime, not the Qwen/Vivian application config:
-  - `nvidia-smi` fails on the host: cannot communicate with the NVIDIA driver.
-  - Kubernetes node advertises `nvidia.com/gpu: 0` capacity/allocatable.
-  - `nvidia-device-plugin-daemonset` is CrashLoopBackOff.
-  - `zeroqwait-ai/asr-service` fails with NVML `Driver Not Loaded`.
-  - `zeroqwait-ai/tts-service` is pending due insufficient `nvidia.com/gpu`.
-- Operator action required: repair/reload the NVIDIA host driver/runtime and device plugin, then restart/roll out ASR/TTS pods. Do not change the approved TTS engine, model, voice, or port.
+- None remaining for Redis, voice-mcp, GPU scheduling, or Qwen3-TTS synthesis as of this repair pass.
 - Secret rotation/history purge remains operator-gated. The repo now ignores credential exports, but any previously exposed keys must still be rotated and, if committed historically, removed with a coordinated history rewrite.
 
 ## Artifact Index
