@@ -7,6 +7,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
@@ -44,14 +45,24 @@ class _FakeLLM:
 
 def _load_agent_v2_module():
     sys.modules.pop("routers.agent_v2", None)
-    with patch("agents.checkpoints.get_sync_checkpoint_saver", return_value=_NoopCheckpointerContextManager()):
+    with (
+        patch("agents.checkpoints.get_sync_checkpoint_saver", return_value=_NoopCheckpointerContextManager()),
+        patch("agents.checkpoints.get_pooled_checkpoint_saver", return_value=InMemorySaver()),
+    ):
         return importlib.import_module("routers.agent_v2")
+
+
+@pytest.fixture(autouse=True)
+def _stub_tenant_module_skills():
+    with patch("modules.registry.ModuleRegistry.get_combined_agent_skills", return_value=[]):
+        yield
 
 
 def _build_test_app_with_real_graph():
     agent_v2 = _load_agent_v2_module()
     saver = InMemorySaver()
     setattr(agent_v2, "_SUPERVISOR_RUNNABLE", create_supervisor_runnable(checkpointer=saver))
+    setattr(agent_v2, "_set_tenant_context_for_shop", lambda _shop_id: None)
 
     app = FastAPI()
     app.include_router(agent_v2.router)

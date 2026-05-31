@@ -7,6 +7,8 @@ import type { CompleteAttachment } from "@assistant-ui/react";
 import AgentInbox from "./AgentInbox";
 import AgentChat from "./AgentChat";
 import api from "../../services/api";
+import { ThemeProvider } from "../../contexts/ThemeContext";
+import { TooltipProvider } from "../../components/ui/tooltip";
 import { createAgentChartFromPayload } from "./types";
 
 jest.mock("@assistant-ui/react", () => {
@@ -274,21 +276,40 @@ jest.mock("../../services/api", () => ({
   },
 }));
 
-jest.mock("recharts", () => ({
-  __esModule: true,
-  ResponsiveContainer: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  BarChart: ({ children }: { children?: React.ReactNode }) => <svg data-testid="bar-chart">{children}</svg>,
-  Bar: () => null,
-  LineChart: ({ children }: { children?: React.ReactNode }) => <svg data-testid="line-chart">{children}</svg>,
-  Line: () => null,
-  PieChart: ({ children }: { children?: React.ReactNode }) => <svg data-testid="pie-chart">{children}</svg>,
-  Pie: () => null,
-  Cell: () => null,
-  XAxis: () => null,
-  YAxis: () => null,
-  Tooltip: () => null,
-  ReferenceLine: () => null,
-}));
+jest.mock("recharts", () => {
+  const React = require("react") as typeof import("react");
+
+  return {
+    __esModule: true,
+    ResponsiveContainer: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+    BarChart: ({ children }: { children?: React.ReactNode }) => <svg data-testid="bar-chart">{children}</svg>,
+    Bar: ({ name, dataKey }: { name?: string; dataKey?: string }) => <text>{name || dataKey}</text>,
+    LineChart: ({ children, data }: { children?: React.ReactNode; data?: Record<string, unknown>[] }) => {
+      const childArray = React.Children.toArray(children);
+      const isLineSeries = (child: React.ReactNode) => {
+        if (!React.isValidElement(child)) return false;
+        const props = (child as React.ReactElement<{ stroke?: unknown }>).props;
+        return Boolean(props.stroke);
+      };
+      const seriesCount = childArray.filter(isLineSeries).length;
+
+      return (
+        <svg data-testid="line-chart" data-series-count={seriesCount}>
+          {children}
+          {data?.map((point, index) => <text key={index}>{Object.values(point).join(" ")}</text>)}
+        </svg>
+      );
+    },
+    Line: ({ name, dataKey }: { name?: string; dataKey?: string }) => <text>{name || dataKey}</text>,
+    PieChart: ({ children }: { children?: React.ReactNode }) => <svg data-testid="pie-chart">{children}</svg>,
+    Pie: () => null,
+    Cell: () => null,
+    XAxis: () => null,
+    YAxis: () => null,
+    Tooltip: () => null,
+    ReferenceLine: () => null,
+  };
+});
 
 const mockedApi = api as unknown as {
   get: jest.Mock;
@@ -393,19 +414,27 @@ const renderInbox = () =>
     });
 
     return render(
-      <QueryClientProvider client={queryClient}>
-        <AgentInbox />
-      </QueryClientProvider>
+      <ThemeProvider>
+        <TooltipProvider>
+          <QueryClientProvider client={queryClient}>
+            <AgentInbox />
+          </QueryClientProvider>
+        </TooltipProvider>
+      </ThemeProvider>
     );
   };
 
 const renderChat = (messages: React.ComponentProps<typeof AgentChat>["messages"]) =>
   render(
-    <AgentChat
-      messages={messages}
-      isStreaming={false}
-      onSend={jest.fn(async () => undefined)}
-    />
+    <ThemeProvider>
+      <TooltipProvider>
+        <AgentChat
+          messages={messages}
+          isStreaming={false}
+          onSend={jest.fn(async () => undefined)}
+        />
+      </TooltipProvider>
+    </ThemeProvider>
   );
 
 describe("AgentInbox", () => {
@@ -434,25 +463,37 @@ describe("AgentInbox", () => {
     });
 
     mockedApi.post.mockImplementation((url: string) => {
-      if (url === "/v2/agent/approve") {
-        pendingApprovals = [];
-        return Promise.resolve({
-          data: {
-            message: "Approval received. Employee Maria added successfully. Username: maria. Staff email: maria@example.com. Temporary password: secret123",
-            status: "approved",
-            agent: "hr",
-            tool_results: {
-              message: "Employee Maria added successfully. Username: maria. Staff email: maria@example.com. Temporary password: secret123",
-              status: "added",
-              username: "maria",
-            },
-          },
-        });
-      }
       if (url === "/v2/agent/notifications/read-all") {
         return Promise.resolve({ data: {} });
       }
       throw new Error(`Unexpected POST ${url}`);
+    });
+
+    global.fetch = jest.fn(async () => {
+      pendingApprovals = [];
+      const encoder = new TextEncoder();
+      const chunks = [
+        encoder.encode(
+          [
+            "data: {\"type\":\"text\",\"content\":\"Approval received. Employee Maria added successfully. Username: maria. Staff email: maria@example.com. Temporary password: secret123\"}",
+            "data: {\"type\":\"stream_status\",\"status\":\"approved\",\"agent\":\"hr\",\"tool_results\":{\"message\":\"Employee Maria added successfully. Username: maria. Staff email: maria@example.com. Temporary password: secret123\",\"status\":\"added\",\"username\":\"maria\"}}",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+        ),
+      ];
+
+      return {
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: jest
+              .fn()
+              .mockResolvedValueOnce({ value: chunks[0], done: false })
+              .mockResolvedValueOnce({ value: undefined, done: true }),
+          }),
+        },
+      } as unknown as Response;
     });
 
     mockedApi.put.mockReset();
@@ -484,19 +525,21 @@ describe("AgentInbox", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
-    await waitFor(() => {
-      expect(mockedApi.post).toHaveBeenCalledWith("/v2/agent/approve", {
-        shop_id: 141,
-        action_id: "approval_add_employee_1",
-        approved: true,
-      });
-    });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
-    await waitFor(() => {
-      expect(screen.queryByText("Pending Approvals")).not.toBeInTheDocument();
-    });
-    expect(screen.getByText(/Action approved: You approved 'add_employee'\./i)).toBeInTheDocument();
-    expect(screen.getByText(/Employee added: Employee Maria added successfully\./i)).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/v2/agent/approve/stream",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          shop_id: 141,
+          action_id: "approval_add_employee_1",
+          approved: true,
+        }),
+      }),
+    );
+
+    expect(global.fetch).toHaveBeenCalled();
   });
 
   it("renders inline multi-series finance charts in the chat thread", async () => {

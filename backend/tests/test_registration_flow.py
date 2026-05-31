@@ -16,7 +16,7 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:30000")
+BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:8000")
 
 
 def _unique_email() -> str:
@@ -35,23 +35,25 @@ def _unique_slug() -> str:
 def registered_user():
     """Create a user and return (email, password, user_id)."""
     email = _unique_email()
+    username = email.split("@")[0]
     password = "TestPass123!"
     r = requests.post(f"{BASE_URL}/api/users", json={
+        "username": username,
         "email": email,
         "password": password,
         "full_name": "Phase6 Tester",
         "role": "shop_owner",
     }, timeout=10)
-    assert r.status_code == 201, f"User creation failed: {r.status_code} {r.text}"
+    assert r.status_code in (200, 201), f"User creation failed: {r.status_code} {r.text}"
     data = r.json()
-    return {"email": email, "password": password, "user_id": data["id"]}
+    return {"email": email, "username": username, "password": password, "user_id": data["id"]}
 
 
 @pytest.fixture(scope="module")
 def auth_token(registered_user):
     """Obtain a JWT for the registered user."""
     r = requests.post(f"{BASE_URL}/api/auth/token", data={
-        "username": registered_user["email"],
+        "username": registered_user["username"],
         "password": registered_user["password"],
     }, timeout=10)
     assert r.status_code == 200, f"Login failed: {r.status_code} {r.text}"
@@ -69,6 +71,13 @@ def created_shop(auth_token):
             "slug": slug,
             "description": "Automated phase 6 test shop",
             "category": "barbershop",
+            "shop_type": "barbershop",
+            "address": "100 Test Automation Ave",
+            "city": "Test City",
+            "state": "TS",
+            "zip_code": "12345",
+            "country": "Test Country",
+            "phone": "+15555550123",
         },
         headers={"Authorization": f"Bearer {auth_token}"},
         timeout=15,

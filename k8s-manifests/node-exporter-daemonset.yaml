@@ -17,11 +17,10 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9100"
     spec:
-      hostNetwork: true
       hostPID: true
       containers:
         - name: node-exporter
-          image: prom/node-exporter:latest
+          image: prom/node-exporter:v1.9.1
           args:
             - "--path.procfs=/host/proc"
             - "--path.sysfs=/host/sys"
@@ -58,7 +57,11 @@ spec:
               mountPath: /rootfs
               readOnly: true
           securityContext:
-            privileged: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
       volumes:
         - name: proc
           hostPath:

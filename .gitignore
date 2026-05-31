@@ -65,6 +65,9 @@ backend/verify_voice_streaming_report*.json
 actions-runner/
 
 # Sensitive credential / login-info exports — never commit these
+CREDENTIALS_MASTER.md
+credentials*.md
+*credentials*.md
 *login_info*.txt
 *login_info*.csv
 *shop_login*.txt

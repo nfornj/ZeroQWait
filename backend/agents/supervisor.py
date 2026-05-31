@@ -179,6 +179,7 @@ _FINANCE_OPERATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\bmost\s+(?:profitable|money|revenue)\b.*\bservice\b", re.IGNORECASE),
     re.compile(r"\bservice\b.*\bmost\s+(?:profitable|money|revenue|popular)\b", re.IGNORECASE),
     re.compile(r"\btop\s+(?:earning|revenue|performing|profitable)\s+service\b", re.IGNORECASE),
+    re.compile(r"\b(?:process\s+)?refund(?:s|ed|ing)?\b", re.IGNORECASE),
 )
 
 _HR_PAYROLL_PATTERNS: Tuple[re.Pattern[str], ...] = (

@@ -17,6 +17,17 @@ from datetime import datetime
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+def _with_sanitized_queues(shop, queues, current_user, shop_id: int) -> queue_schemas.ShopWithQueue:
+    shop_with_queue = queue_schemas.ShopWithQueue.model_validate(shop)
+    sanitized_queues = []
+    for queue in queues:
+        queue_payload = queue_schemas.Queue.model_validate(queue).model_dump()
+        safe_payload = sanitize_queue_data_for_public(queue_payload, current_user, shop_id)
+        sanitized_queues.append(queue_schemas.Queue.model_validate(safe_payload))
+    shop_with_queue.queues = sanitized_queues
+    return shop_with_queue
+
 # Ensure upload directory exists
 UPLOAD_DIR = Path("static/uploads/shop-logos")
 try:
@@ -130,7 +141,7 @@ def create_shop(
         )
         qs.create_queue(queue_create, shop_id=db_shop.id)
         
-        return db_shop
+        return shop_service.get_shop(db_shop.id) or db_shop
     except HTTPException:
         raise
     except Exception as e:
@@ -203,10 +214,7 @@ def get_shop(shop_id: int, current_user: Optional[dict] = Depends(get_current_us
         # But our models are standard Pydantic.
         # We need to construct ShopWithQueue.
         
-        # Use queue_schemas.ShopWithQueue
-        shop_with_queue = queue_schemas.ShopWithQueue.model_validate(shop)
-        shop_with_queue.queues = queues
-        return shop_with_queue
+        return _with_sanitized_queues(shop, queues, current_user, shop_id)
     except HTTPException:
         raise
     except Exception as e:
@@ -232,6 +240,8 @@ def update_shop(
             
         updated = shop_service.update_shop(shop_id, updates)
         return updated
+    except HTTPException:
+        raise
     except Exception as e:
          raise HTTPException(status_code=500, detail=str(e))
 
@@ -319,9 +329,7 @@ def get_shop_by_slug(slug: str, current_user: Optional[dict] = Depends(get_curre
         for queue in queues:
             queue.queue_items = qs.get_queue_items(queue.id)
             
-        shop_with_queue = queue_schemas.ShopWithQueue.model_validate(shop)
-        shop_with_queue.queues = queues
-        return shop_with_queue
+        return _with_sanitized_queues(shop, queues, current_user, shop.id)
     except HTTPException:
         raise
     except Exception as e:

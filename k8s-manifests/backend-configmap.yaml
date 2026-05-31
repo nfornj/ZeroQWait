@@ -39,9 +39,8 @@ data:
   # Finance query engine LLM timeout — Ollama qwen3:14b needs up to 600 s for
   # complex multi-table aggregation queries; NVIDIA NIM finishes well under this.
   FINANCE_QUERY_LLM_TIMEOUT_SECONDS: "600"
-  # Dev/test: auto-link any unknown Telegram user to this shop (shop id=501 = "Test" shop).
-  # Remove or set to "" to disable in production.
-  TELEGRAM_DEV_SHOP_ID: "501"
+  # Dev/test only. Empty in production so unknown Telegram users are not auto-linked.
+  TELEGRAM_DEV_SHOP_ID: ""
   # AWS SES (email) + SNS (SMS) — credentials stored in backend-secret
   AWS_REGION: "us-east-1"
   # Verified sender address in SES (must match what you verify in the AWS console)
@@ -54,4 +53,3 @@ data:
   ODOO_URL: "http://odoo.zeroqwait.svc.cluster.local:8069"
   ODOO_DB: "odoo"
   ODOO_USER: "admin"
-  ODOO_PASSWORD: "admin"
