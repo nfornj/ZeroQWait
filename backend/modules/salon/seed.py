@@ -115,16 +115,17 @@ def _seed_services(shop_id: int, tenant_schema: str, db_session: Any) -> None:
 			text(
 				f"""
 				INSERT INTO {tenant_schema}.shop_services (
-					shop_id, name, description, duration_minutes, price_cents,
+					shop_id, name, description, duration_minutes, cost, price_cents,
 					hst_applicable, category, staff_ids, supplies_used, is_active, created_at
 				)
 				SELECT
-					:shop_id, :name, :description, :duration_minutes, :price_cents,
+					:shop_id, :name, :description, :duration_minutes, :cost, :price_cents,
 					:hst_applicable, :category, '{{}}'::integer[], '[]'::jsonb, TRUE, NOW()
 				WHERE NOT EXISTS (
 					SELECT 1 FROM {tenant_schema}.shop_services
 					WHERE shop_id = :shop_id AND LOWER(name) = LOWER(:name)
 				)
+				ON CONFLICT DO NOTHING
 				"""
 			),
 			{
@@ -132,10 +133,23 @@ def _seed_services(shop_id: int, tenant_schema: str, db_session: Any) -> None:
 				"name": service["name"],
 				"description": service.get("description"),
 				"duration_minutes": service["duration_minutes"],
+				"cost": service["price_cents"] / 100,
 				"price_cents": service["price_cents"],
 				"hst_applicable": service["hst_applicable"],
 				"category": service["category"],
 			},
+		)
+		db_session.execute(
+			text(
+				f"""
+				UPDATE {tenant_schema}.shop_services
+				SET cost = :cost
+				WHERE shop_id = :shop_id
+				  AND LOWER(name) = LOWER(:name)
+				  AND cost IS NULL
+				"""
+			),
+			{"shop_id": shop_id, "name": service["name"], "cost": service["price_cents"] / 100},
 		)
 
 

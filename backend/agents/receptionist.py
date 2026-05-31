@@ -268,22 +268,37 @@ def _format_receptionist_response(operation: str, result: Dict[str, Any]) -> str
     if operation == "list_queue":
         items = list(result.get("queue_items") or [])
         live_metrics = dict(result.get("live_metrics") or {})
-        queue_length = live_metrics.get("queue_length", len(items))
+        waiting_items = [item for item in items if str(item.get("status", "")).lower() == "waiting"]
+        waiting_count = _to_int(result.get("waiting_count"))
+        if waiting_count is None:
+            waiting_count = len(waiting_items)
+        serving_count = _to_int(result.get("serving_count")) or 0
         wait_minutes = live_metrics.get("estimated_wait_minutes")
-        if not items:
+        if waiting_count <= 0:
+            if serving_count > 0:
+                return (
+                    f"No one is waiting right now. {serving_count} customer is currently being served. "
+                    f"{_suggest_queue_next_action(result)}"
+                )
             return (
-                "There is no active queue right now. "
+                "There is no active queue wait right now. "
                 f"{_suggest_queue_next_action(result)}"
             )
-        names = [str(item.get("customer_name") or "customer") for item in items[:5]]
+        names = [str(item.get("customer_name") or "customer") for item in waiting_items[:5]]
         names_text = ", ".join(names)
+        if serving_count == 1:
+            serving_text = " 1 customer is currently being served."
+        elif serving_count > 1:
+            serving_text = f" {serving_count} customers are currently being served."
+        else:
+            serving_text = ""
         if wait_minutes is not None:
             return (
-                f"There are {queue_length} people waiting. Estimated wait time is about {wait_minutes} minutes. "
-                f"First in line: {names_text}. {_suggest_queue_next_action(result)}"
+                f"There are {waiting_count} people waiting.{serving_text} Estimated wait time is about {wait_minutes} minutes. "
+                f"First waiting: {names_text}. {_suggest_queue_next_action(result)}"
             )
         return (
-            f"There are {queue_length} people waiting. First in line: {names_text}. "
+            f"There are {waiting_count} people waiting.{serving_text} First waiting: {names_text}. "
             f"{_suggest_queue_next_action(result)}"
         )
     if operation == "get_wait_time":

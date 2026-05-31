@@ -47,8 +47,8 @@ def run_seed(tenant_id: str, db_session: Any) -> None:
 	db_session.execute(
 		text(
 			f"""
-			INSERT INTO {queue_schema}.queues (shop_id, name, is_active, accepting_joins)
-			SELECT :shop_id, 'Main Queue', TRUE, TRUE
+			INSERT INTO {queue_schema}.queues (shop_id, name, date, is_active, accepting_joins)
+			SELECT :shop_id, 'Main Queue', NOW(), TRUE, TRUE
 			WHERE NOT EXISTS (
 				SELECT 1
 				FROM {queue_schema}.queues
@@ -58,6 +58,36 @@ def run_seed(tenant_id: str, db_session: Any) -> None:
 		),
 		{"shop_id": shop_id},
 	)
+	db_session.execute(
+		text(
+			f"""
+			UPDATE {queue_schema}.queues
+			SET date = NOW()
+			WHERE shop_id = :shop_id AND date IS NULL
+			"""
+		),
+		{"shop_id": shop_id},
+	)
+
+	operating_hours_schema = _resolve_optional_shared_schema(db_session, "shop_operating_hours")
+	if operating_hours_schema:
+		db_session.execute(
+			text(
+				f"""
+				INSERT INTO {operating_hours_schema}.shop_operating_hours (
+					shop_id, open_time, close_time, timezone, auto_open_queue,
+					auto_close_queue, pre_close_buffer_minutes, auto_lock_joins,
+					operating_days, created_at, updated_at
+				)
+				VALUES (
+					:shop_id, '09:00:00'::time, '17:00:00'::time, 'UTC', TRUE,
+					TRUE, 15, TRUE, '{{0,1,2,3,4,5,6}}'::integer[], NOW(), NOW()
+				)
+				ON CONFLICT (shop_id) DO NOTHING
+				"""
+			),
+			{"shop_id": shop_id},
+		)
 
 
 def _resolve_queue_schema(shop: dict[str, Any]) -> str:
@@ -67,8 +97,25 @@ def _resolve_queue_schema(shop: dict[str, Any]) -> str:
 	elif shop.get("data_isolation_mode") == "shop_schema":
 		schema = f"tenant_{int(shop['id'])}"
 	else:
-		schema = "public"
+		schema = "platform"
 
-	if schema != "public" and not _TENANT_SCHEMA_RE.match(schema):
+	if schema != "platform" and not _TENANT_SCHEMA_RE.match(schema):
 		raise ValueError(f"Invalid tenant schema name: {schema}")
 	return schema
+
+
+def _resolve_optional_shared_schema(db_session: Any, table_name: str) -> str | None:
+	row = db_session.execute(
+		text(
+			"""
+			SELECT table_schema
+			FROM information_schema.tables
+			WHERE table_name = :table_name
+			  AND table_schema IN ('platform', 'public')
+			ORDER BY CASE table_schema WHEN 'platform' THEN 0 ELSE 1 END
+			LIMIT 1
+			"""
+		),
+		{"table_name": table_name},
+	).first()
+	return str(row[0]) if row else None

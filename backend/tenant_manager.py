@@ -2,9 +2,9 @@
 Tenant Manager — shop-scoped schema isolation primitives for ZeroQWait.
 
 Current runtime behavior remains legacy-compatible:
-    - Shared/public data plane: shop rows live in `public`
+    - Shared/platform data plane: shop rows live in `platform`
     - Shop-schema data plane: shop rows live in `tenant_<shop_id>`
-    - Central tables (users, shops, agent data) always remain in `public`
+    - Central tables (users, shops, agent data) always remain in `platform`
 
 The newer `shops.data_isolation_mode` and `shops.compute_mode` fields make the
 runtime topology explicit so the platform no longer has to infer everything
@@ -48,6 +48,7 @@ TENANT_TABLES = [
 
 # Regex to validate schema names (prevent SQL injection)
 _SCHEMA_RE = re.compile(r"^tenant_\d+$")
+_SOURCE_SCHEMAS = ("platform", "public")
 
 
 def _schema_name(shop_id: int) -> str:
@@ -127,9 +128,10 @@ def create_tenant_schema(db: Session, shop_id: int) -> str:
 
     # Replicate each tenant table's structure (no data) into the new schema.
     for table in TENANT_TABLES:
+        source_schema = _source_schema_for_table(db, table)
         db.execute(text(
             f"CREATE TABLE IF NOT EXISTS {schema}.{table} "
-            f"(LIKE public.{table} INCLUDING ALL)"
+            f"(LIKE {source_schema}.{table} INCLUDING ALL)"
         ))
 
     db.commit()
@@ -204,15 +206,17 @@ def validate_shop_schema_copy(db: Session, shop_id: int) -> dict:
         raise ValueError(f"Schema {schema} does not exist for shop {shop_id}")
 
     counts = {}
+    source_schema = _source_schema_for_table(db, "queues")
     for table in TENANT_TABLES:
+        table_source_schema = _source_schema_for_table(db, table)
         if table == "queue_items":
             public_count = _count_table(
                 db,
                 "queue_items",
-                "public",
+                table_source_schema,
                 shop_id,
                 fk_column="queue_id",
-                fk_subquery=f"SELECT id FROM public.queues WHERE shop_id = {shop_id}",
+                fk_subquery=f"SELECT id FROM {source_schema}.queues WHERE shop_id = {shop_id}",
             )
             schema_count = _count_table(
                 db,
@@ -223,10 +227,10 @@ def validate_shop_schema_copy(db: Session, shop_id: int) -> dict:
                 fk_subquery=f"SELECT id FROM {schema}.queues WHERE shop_id = {shop_id}",
             )
         else:
-            public_count = _count_table(db, table, "public", shop_id)
+            public_count = _count_table(db, table, table_source_schema, shop_id)
             schema_count = _count_table(db, table, schema, shop_id)
         counts[table] = {
-            "public": public_count,
+            table_source_schema: public_count,
             "schema": schema_count,
             "matches": schema_count >= public_count,
         }
@@ -241,13 +245,14 @@ def validate_shop_schema_copy(db: Session, shop_id: int) -> dict:
 
 def migrate_shop_to_schema(db: Session, shop_id: int, *, delete_public: bool = False) -> dict:
     """
-    Copy shop-scoped rows from public into the shop schema.
+    Copy shop-scoped rows from the shared source schema into the shop schema.
 
     The default is non-destructive so a free-shop backfill can be validated
-    before public copies are removed. Set delete_public=True only after counts
-    are verified for the target environment.
+    before shared-schema copies are removed. Set delete_public=True only after
+    counts are verified for the target environment.
     """
     schema = ensure_shop_schema(db, shop_id, mark_isolated=False)
+    source_schema = _source_schema_for_table(db, "queues")
 
     _copy_table(db, "shop_services", schema, shop_id)
     _copy_table(db, "shop_employees", schema, shop_id)
@@ -262,7 +267,7 @@ def migrate_shop_to_schema(db: Session, shop_id: int, *, delete_public: bool = F
         schema,
         shop_id,
         fk_column="queue_id",
-        fk_subquery=f"SELECT id FROM public.queues WHERE shop_id = {shop_id}",
+        fk_subquery=f"SELECT id FROM {source_schema}.queues WHERE shop_id = {shop_id}",
     )
 
     validation = validate_shop_schema_copy(db, shop_id)
@@ -276,7 +281,7 @@ def migrate_shop_to_schema(db: Session, shop_id: int, *, delete_public: bool = F
             "queue_items",
             shop_id,
             fk_column="queue_id",
-            fk_subquery=f"SELECT id FROM public.queues WHERE shop_id = {shop_id}",
+            fk_subquery=f"SELECT id FROM {source_schema}.queues WHERE shop_id = {shop_id}",
         )
         _delete_from_public(db, "queues", shop_id)
         _delete_from_public(db, "daily_analytics", shop_id)
@@ -490,7 +495,7 @@ def tenant_session(shop_id: Optional[int] = None, db: Optional[Session] = None):
             queues = session.query(Queue).filter(Queue.shop_id == 42).all()
 
     If the shop is schema-isolated → search_path = 'tenant_<shop_id>, public'
-    Otherwise                      → search_path = 'public'  (default)
+    Otherwise                      → search_path = 'platform, public'  (default)
     """
     own_session = db is None
     session = db or SessionLocal()
@@ -543,19 +548,20 @@ def get_tenant_session(shop_id: int):
 
 def _copy_table(db: Session, table: str, schema: str, shop_id: int,
                 fk_column: str = "shop_id", fk_subquery: Optional[str] = None):
-    """Copy rows for a shop from public.<table> → <schema>.<table>."""
+    """Copy rows for a shop from the shared source table into a tenant table."""
     _validate_schema(schema)
+    source_schema = _source_schema_for_table(db, table)
     if fk_subquery:
-        sql = f"INSERT INTO {schema}.{table} SELECT * FROM public.{table} WHERE {fk_column} IN ({fk_subquery}) ON CONFLICT DO NOTHING"
+        sql = f"INSERT INTO {schema}.{table} SELECT * FROM {source_schema}.{table} WHERE {fk_column} IN ({fk_subquery}) ON CONFLICT DO NOTHING"
     else:
-        sql = f"INSERT INTO {schema}.{table} SELECT * FROM public.{table} WHERE {fk_column} = :sid ON CONFLICT DO NOTHING"
+        sql = f"INSERT INTO {schema}.{table} SELECT * FROM {source_schema}.{table} WHERE {fk_column} = :sid ON CONFLICT DO NOTHING"
     db.execute(text(sql), {"sid": shop_id} if not fk_subquery else {})
 
 
 def _count_table(db: Session, table: str, schema: str, shop_id: int,
                  fk_column: str = "shop_id", fk_subquery: Optional[str] = None) -> int:
-    """Count rows for a shop in public or a validated tenant schema."""
-    if schema != "public":
+    """Count rows for a shop in a source or validated tenant schema."""
+    if schema not in _SOURCE_SCHEMAS:
         _validate_schema(schema)
     if fk_subquery:
         sql = f"SELECT COUNT(*) FROM {schema}.{table} WHERE {fk_column} IN ({fk_subquery})"
@@ -566,23 +572,44 @@ def _count_table(db: Session, table: str, schema: str, shop_id: int,
 
 def _delete_from_public(db: Session, table: str, shop_id: int,
                         fk_column: str = "shop_id", fk_subquery: Optional[str] = None):
-    """Delete rows for a shop from public.<table>."""
+    """Delete rows for a shop from the shared source table."""
+    source_schema = _source_schema_for_table(db, table)
     if fk_subquery:
-        sql = f"DELETE FROM public.{table} WHERE {fk_column} IN ({fk_subquery})"
+        sql = f"DELETE FROM {source_schema}.{table} WHERE {fk_column} IN ({fk_subquery})"
     else:
-        sql = f"DELETE FROM public.{table} WHERE {fk_column} = :sid"
+        sql = f"DELETE FROM {source_schema}.{table} WHERE {fk_column} = :sid"
     db.execute(text(sql), {"sid": shop_id} if not fk_subquery else {})
 
 
 def _copy_table_reverse(db: Session, table: str, schema: str, shop_id: int,
                         fk_column: str = "shop_id", fk_subquery: Optional[str] = None):
-    """Copy rows from <schema>.<table> → public.<table>."""
+    """Copy rows from <schema>.<table> back to the shared source table."""
     _validate_schema(schema)
+    source_schema = _source_schema_for_table(db, table)
     if fk_subquery:
-        sql = f"INSERT INTO public.{table} SELECT * FROM {schema}.{table} WHERE {fk_column} IN ({fk_subquery})"
+        sql = f"INSERT INTO {source_schema}.{table} SELECT * FROM {schema}.{table} WHERE {fk_column} IN ({fk_subquery})"
     else:
-        sql = f"INSERT INTO public.{table} SELECT * FROM {schema}.{table} WHERE {fk_column} = :sid"
+        sql = f"INSERT INTO {source_schema}.{table} SELECT * FROM {schema}.{table} WHERE {fk_column} = :sid"
     db.execute(text(sql), {"sid": shop_id} if not fk_subquery else {})
+
+
+def _source_schema_for_table(db: Session, table: str) -> str:
+    """Return the shared schema that currently owns a tenant source table."""
+    if table not in TENANT_TABLES:
+        raise ValueError(f"Invalid tenant table: {table}")
+    row = db.execute(text(
+        """
+        SELECT table_schema
+        FROM information_schema.tables
+        WHERE table_name = :table
+          AND table_schema IN ('platform', 'public')
+        ORDER BY CASE table_schema WHEN 'platform' THEN 0 ELSE 1 END
+        LIMIT 1
+        """
+    ), {"table": table}).first()
+    if not row:
+        raise ValueError(f"Tenant source table {table} does not exist in platform or public schema")
+    return str(row[0])
 
 
 # ── Bulk operations ─────────────────────────────────────────────────
@@ -670,7 +697,7 @@ def get_tenant_stats(db: Session, shop_id: int) -> dict:
     if not shop:
         raise ValueError(f"Shop {shop_id} not found")
 
-    schema = resolve_shop_schema_from_metadata(shop) or "public"
+    schema = resolve_shop_schema_from_metadata(shop) or "platform"
 
     stats = {"shop_id": shop_id, "schema": schema, "tables": {}}
     for table in TENANT_TABLES:
