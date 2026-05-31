@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, ForeignKey, Time, ARRAY
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, ForeignKey, Time, ARRAY, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
@@ -33,6 +33,8 @@ class Shop(Base):
     tenant_schema = Column(String, nullable=True, index=True)  # Shop-specific schema name when data is isolated at schema level
     data_isolation_mode = Column(String(32), nullable=False, default="shared_public", index=True)
     compute_mode = Column(String(32), nullable=False, default="shared_instance", index=True)
+    active_modules = Column(JSON, nullable=False, default=list)
+    vertical = Column(String(50), default="generic", index=True)
     odoo_company_id = Column(Integer, nullable=True, index=True)  # Odoo res.company ID for multi-tenant ERP isolation
     created_at = Column(DateTime, default=datetime.utcnow)
 

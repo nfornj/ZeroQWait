@@ -12,7 +12,8 @@ from subscription tier and `tenant_schema` nullability alone.
 
 Isolated tables per shop schema:
     queues, queue_items, shop_services, shop_employees, employee_shifts,
-    daily_analytics, shop_close_days, shop_customers
+    daily_analytics, shop_close_days, shop_customers, appointments,
+    inventory_items, inventory_movements
 """
 
 import logging
@@ -40,6 +41,9 @@ TENANT_TABLES = [
     "daily_analytics",
     "queues",
     "queue_items",
+    "appointments",
+    "inventory_items",
+    "inventory_movements",
 ]
 
 # Regex to validate schema names (prevent SQL injection)

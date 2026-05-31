@@ -11,6 +11,56 @@ from sqlalchemy.types import JSON
 from .base import BaseModule, ModuleManifest
 
 
+VERTICAL_TO_MODULES: dict[str, list[str]] = {
+	"salon": ["core", "salon"],
+	"spa": ["core", "salon"],
+	"barbershop": ["core", "salon"],
+	"lawn_care": ["core", "lawn_care"],
+	"landscaping": ["core", "lawn_care"],
+	"music_lessons": ["core"],
+	"generic": ["core"],
+}
+
+_VERTICAL_ALIASES: dict[str, str] = {
+	"barber": "barbershop",
+	"barber_shop": "barbershop",
+	"barbers": "barbershop",
+	"hair_salon": "salon",
+	"nail_salon": "salon",
+	"spa_wellness": "spa",
+	"spa_and_wellness": "spa",
+	"wellness_spa": "spa",
+	"lawn": "lawn_care",
+	"lawncare": "lawn_care",
+	"lawn_care_service": "lawn_care",
+	"landscape": "landscaping",
+	"music": "music_lessons",
+	"music_lesson": "music_lessons",
+	"other": "generic",
+}
+
+
+def normalize_vertical(value: str | None) -> str:
+	"""Normalize registration business type text to a supported module vertical."""
+	normalized = "_".join(str(value or "generic").strip().lower().replace("&", "and").split())
+	normalized = "".join(char if char.isalnum() or char == "_" else "_" for char in normalized)
+	normalized = "_".join(part for part in normalized.split("_") if part)
+	normalized = _VERTICAL_ALIASES.get(normalized, normalized or "generic")
+	return normalized if normalized in VERTICAL_TO_MODULES else "generic"
+
+
+def modules_for_vertical(value: str | None) -> list[str]:
+	"""Return module names for a registration vertical, defaulting to core."""
+	return list(VERTICAL_TO_MODULES[normalize_vertical(value)])
+
+
+def ensure_builtin_modules_registered() -> None:
+	"""Import built-in modules so their register_module decorators run."""
+	import modules.core  # noqa: F401
+	import modules.salon  # noqa: F401
+	import modules.lawn_care  # noqa: F401
+
+
 class ModuleRegistry:
 	"""Loads and manages active vertical modules for a tenant."""
 
@@ -18,6 +68,7 @@ class ModuleRegistry:
 
 	def get_modules_for_tenant(self, tenant_id: str, db_session: Any) -> list[BaseModule]:
 		"""Return registered module instances listed in the tenant's active_modules column."""
+		ensure_builtin_modules_registered()
 		module_names = self._get_active_module_names(tenant_id, db_session)
 		return [self._get_registered_module(module_name) for module_name in module_names]
 
@@ -28,6 +79,7 @@ class ModuleRegistry:
 		db_session: Any,
 	) -> None:
 		"""Validate, install, seed, and persist active modules for a tenant."""
+		ensure_builtin_modules_registered()
 		activation_order = self._resolve_activation_order(module_names)
 
 		try:

@@ -1,6 +1,6 @@
 from typing import List, Optional
 from datetime import datetime, time
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from shared.schemas import DictModel
 
 class ShopBase(DictModel):
@@ -27,7 +27,7 @@ class ShopBase(DictModel):
     longitude: Optional[float] = None
 
 class ShopCreate(ShopBase):
-    pass
+    vertical: Optional[str] = None
 
 class ShopUpdate(DictModel):
     """Schema for updating shop details - all fields optional"""
@@ -52,12 +52,15 @@ class ShopUpdate(DictModel):
     slug: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    vertical: Optional[str] = None
 
 class Shop(ShopBase):
     id: int
     owner_id: int
     is_active: bool
     created_at: datetime
+    active_modules: List[str] = Field(default_factory=list)
+    vertical: Optional[str] = "generic"
     odoo_company_id: Optional[int] = None
     telegram_chat_id: Optional[str] = None
     telegram_notifications_enabled: bool = False

@@ -5,16 +5,16 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from sqlalchemy import text
+
 _TENANT_SCHEMA_RE = re.compile(r"^tenant_\d+$")
 
 
 def run_schema_migration(tenant_id: str, db_session: Any) -> None:
 	"""Add lawn-care appointment fields inside the tenant schema if missing."""
-	from alembic import op
-
 	schema_name = _tenant_schema_name(tenant_id)
-	op.execute(f"SET search_path TO {schema_name}, platform, public")
-	op.execute(
+	db_session.execute(text(f"SET search_path TO {schema_name}, platform, public"))
+	db_session.execute(text(
 		"""
 		ALTER TABLE appointments
 			ADD COLUMN IF NOT EXISTS property_size_sqft INTEGER,
@@ -22,8 +22,8 @@ def run_schema_migration(tenant_id: str, db_session: Any) -> None:
 			ADD COLUMN IF NOT EXISTS recurring_interval VARCHAR(20),
 			ADD COLUMN IF NOT EXISTS weather_hold BOOLEAN DEFAULT false
 		"""
-	)
-	op.execute("SET search_path TO platform, public")
+	))
+	db_session.execute(text("SET search_path TO platform, public"))
 
 
 def _tenant_schema_name(tenant_id: str) -> str:

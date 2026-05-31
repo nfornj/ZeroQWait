@@ -83,6 +83,66 @@ _GREETING_RESPONSE = (
     "What would you like to do?"
 )
 
+_BASE_SESSION_TOOLS: List[Dict[str, str]] = [
+    {"name": "booking", "agent": "receptionist", "description": "Queue, booking, appointment, service, and wait-time operations."},
+    {"name": "finance", "agent": "finance", "description": "Revenue, analytics, reports, invoices, payments, and customer metrics."},
+    {"name": "inventory", "agent": "inventory", "description": "Stock, supplies, restocking, usage, and product margin operations."},
+    {"name": "hr", "agent": "hr", "description": "Employee, shift, scheduling, payroll, and staffing operations."},
+    {"name": "crm", "agent": "crm", "description": "Contacts, leads, pipeline, companies, notes, and Odoo CRM operations."},
+    {"name": "pos", "agent": "pos", "description": "Checkout, receipts, refunds, and daily sales summary operations."},
+]
+
+
+def _session_tool_metadata(tool: Dict[str, Any]) -> Dict[str, Any]:
+    """Return prompt-safe session tool metadata without callable objects."""
+    return {key: value for key, value in dict(tool).items() if key != "callable"}
+
+
+def _merge_session_tools(base_tools: List[Dict[str, Any]], module_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    merged: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for tool in [*base_tools, *module_tools]:
+        safe_tool = _session_tool_metadata(tool)
+        name = str(safe_tool.get("name") or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        merged.append(safe_tool)
+    return merged
+
+
+def _get_session_tools(state: AgentState) -> List[Dict[str, Any]]:
+    """Merge base supervisor tools with active tenant module skills."""
+    tenant_id = state.get("tenant_id")
+    if not tenant_id:
+        return _merge_session_tools(_BASE_SESSION_TOOLS, [])
+
+    db = SessionLocal()
+    try:
+        from modules.registry import ModuleRegistry
+
+        module_tools = ModuleRegistry().get_combined_agent_skills(str(tenant_id), db)
+        return _merge_session_tools(_BASE_SESSION_TOOLS, module_tools)
+    finally:
+        db.close()
+
+
+def _format_session_tools_for_prompt(session_tools: List[Dict[str, Any]]) -> str:
+    if not session_tools:
+        return ""
+    lines = []
+    for tool in session_tools:
+        name = str(tool.get("name") or "").strip()
+        if not name:
+            continue
+        agent = str(tool.get("agent") or tool.get("module") or "module").strip()
+        description = str(tool.get("description") or "").strip()
+        line = f"- {name} ({agent})"
+        if description:
+            line += f": {description}"
+        lines.append(line)
+    return "\n".join(lines)
+
 _SERVED_TODAY_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\bhow\s+many\s+(?:customers?|people|clients?)\s+(?:were\s+|have\s+been\s+|got\s+)?served\b", re.IGNORECASE),
     re.compile(r"\bhow\s+many\s+(?:customers?|people|clients?)\s+(?:did\s+we\s+)?(?:serve|complete|finish)\b", re.IGNORECASE),
@@ -478,6 +538,9 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route", "pla
             "set is_followup=true and route to the same specialist."
         )
 
+    session_tools = _get_session_tools(state)
+    session_tool_prompt = _format_session_tools_for_prompt(session_tools)
+
     system_prompt = (
         "You are a routing classifier for ZeroQwait, a shop management platform. "
         "Classify the shop owner's message into exactly one specialist.\n\n"
@@ -491,6 +554,7 @@ def classify_intent(state: AgentState) -> Command[Literal["plan_and_route", "pla
         "- crm: CRM leads, contacts, companies, pipeline, deals, Odoo ERP operations, "
         "accounting, journal entries, products catalog\n"
         "- general: greetings, help, capabilities, general chat\n\n"
+        + (f"Active session tools and module skills:\n{session_tool_prompt}\n\n" if session_tool_prompt else "")
         + ("\n".join(context_lines) + "\n" if context_lines else "")
         + "Respond with your classification."
     )
@@ -562,6 +626,8 @@ def plan_and_route(state: AgentState) -> dict:
     """
     intent = state.get("current_agent", "general")
     owner_request = _latest_user_text(state)
+    metadata = state.get("metadata") or {}
+    session_tools = list(metadata.get("session_tools") or _get_session_tools(state))
 
     target_by_intent = {
         "booking": "receptionist",
@@ -587,6 +653,7 @@ def plan_and_route(state: AgentState) -> dict:
             state,
             {
                 "plan": plan,
+                "session_tools": session_tools,
                 "execution_target": execution_target,
                 "route": {
                     "from_intent": intent,
@@ -922,9 +989,12 @@ def synthesize_response(state: AgentState) -> dict:
     except Exception:
         pass
     
+    session_tool_prompt = _format_session_tools_for_prompt(list(metadata.get("session_tools") or _get_session_tools(state)))
+    session_tool_hint = f"\nActive session tools and module skills:\n{session_tool_prompt}\n" if session_tool_prompt else ""
+
     # Build response prompt
     system_prompt = f"""You are ZeroQwait Supervisor Agent, managing the AI operations team for shop owner (shop_id={state.get('tenant_id')}).
-{shop_type_hint}{soul_block}
+{shop_type_hint}{soul_block}{session_tool_hint}
 You have specialized sub-agents available:
 1. Receptionist - handles bookings, queue management, appointments, customer service
 2. Finance Manager - handles revenue, analytics, POS/payments, invoicing, financial reporting

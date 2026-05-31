@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from typing import List, Optional
 from modules.shops import schemas
 from modules.shops.service import shop_service
+from modules.registry import ModuleRegistry, modules_for_vertical, normalize_vertical
 from modules.queues.service import queue_service as qs
 from modules.queues import schemas as queue_schemas
 from shared.auth_utils import get_current_user, get_current_user_optional
@@ -55,6 +56,8 @@ def create_shop(
     
     # shop is a Pydantic model, convert to dict to add owner_id which isn't in schema
     shop_data = shop.model_dump()
+    vertical = normalize_vertical(shop_data.get("vertical") or shop_data.get("shop_type"))
+    shop_data["vertical"] = vertical
     shop_data['slug'] = base_slug
     shop_data['owner_id'] = current_user.id
     
@@ -82,11 +85,17 @@ def create_shop(
             _schema_db = SessionLocal()
             try:
                 ensure_shop_schema(_schema_db, db_shop.id)
-                logger.info("Tenant schema provisioned for shop %s", db_shop.id)
+                ModuleRegistry().activate_modules_for_tenant(
+                    str(db_shop.id),
+                    modules_for_vertical(vertical),
+                    _schema_db,
+                )
+                logger.info("Tenant schema and modules provisioned for shop %s (%s)", db_shop.id, vertical)
             finally:
                 _schema_db.close()
         except Exception as _schema_err:
-            logger.warning("Tenant schema provisioning failed for shop %s (non-blocking): %s", db_shop.id, _schema_err)
+            logger.error("Tenant module provisioning failed for shop %s: %s", db_shop.id, _schema_err, exc_info=True)
+            raise HTTPException(status_code=500, detail="Tenant module provisioning failed")
 
         # Auto-provision an Odoo company for tenant isolation
         try:

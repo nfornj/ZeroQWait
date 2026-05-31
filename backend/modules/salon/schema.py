@@ -5,16 +5,16 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from sqlalchemy import text
+
 _TENANT_SCHEMA_RE = re.compile(r"^tenant_\d+$")
 
 
 def run_schema_migration(tenant_id: str, db_session: Any) -> None:
 	"""Add salon customer-profile columns inside the tenant schema if missing."""
-	from alembic import op
-
 	schema_name = _tenant_schema_name(tenant_id)
-	op.execute(f"SET search_path TO {schema_name}, platform, public")
-	op.execute(
+	db_session.execute(text(f"SET search_path TO {schema_name}, platform, public"))
+	db_session.execute(text(
 		"""
 		DO $$
 		BEGIN
@@ -49,8 +49,8 @@ def run_schema_migration(tenant_id: str, db_session: Any) -> None:
 			END IF;
 		END $$
 		"""
-	)
-	op.execute("SET search_path TO platform, public")
+	))
+	db_session.execute(text("SET search_path TO platform, public"))
 
 
 def _tenant_schema_name(tenant_id: str) -> str:

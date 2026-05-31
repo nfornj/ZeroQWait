@@ -38,6 +38,7 @@ CUSTOMER_STEPS = [
 
 SHOP_TYPE_OPTIONS = [
     "Barber Shop", "Hair Salon", "Nail Salon", "Spa & Wellness",
+    "Lawn Care", "Landscaping", "Music Lessons",
     "Medical Clinic", "Dental Office", "Veterinary Clinic",
     "Auto Repair", "Tire Shop", "Restaurant / Café",
     "Government Office", "Bank / Finance", "Pharmacy", "Other"
@@ -423,15 +424,18 @@ class RegistrationAgent:
             # 2. Create Shop (if shop_owner)
             if account_type == "shop_owner" and data.get("shop_name"):
                 from modules.shops.models import Shop
+                from modules.registry import ModuleRegistry, modules_for_vertical, normalize_vertical
                 import random
                 
                 slug = re.sub(r'[^a-z0-9]+', '-', data["shop_name"].lower()).strip('-')
                 slug = f"{slug}-{random.randint(100, 999)}"
+                vertical = normalize_vertical(data.get("vertical") or data.get("shop_type"))
                 
                 new_shop = Shop(
                     owner_id=new_user.id,
                     name=data["shop_name"],
                     shop_type=data.get("shop_type", "Other"),
+                    vertical=vertical,
                     address=data.get("address", ""),
                     city=data.get("city", ""),
                     state=data.get("state", ""),
@@ -457,6 +461,20 @@ class RegistrationAgent:
                     db.add(default_queue)
                 except Exception as e:
                     logger.warning(f"Default queue creation failed: {e}")
+
+                try:
+                    from tenant_manager import ensure_shop_schema
+
+                    ensure_shop_schema(db, new_shop.id)
+                    ModuleRegistry().activate_modules_for_tenant(
+                        str(new_shop.id),
+                        modules_for_vertical(vertical),
+                        db,
+                    )
+                    logger.info("Tenant schema and modules provisioned for shop %s (%s)", new_shop.id, vertical)
+                except Exception as e:
+                    logger.error("Tenant module provisioning failed for shop %s: %s", new_shop.id, e, exc_info=True)
+                    raise
 
                 shop_data = {"name": data["shop_name"], "slug": slug, "type": data.get("shop_type")}
 
