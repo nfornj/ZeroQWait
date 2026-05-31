@@ -1,0 +1,1 @@
+"""Vertical module package for tenant-scoped ZeroQWait business modules."""

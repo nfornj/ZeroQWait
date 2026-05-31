@@ -19,6 +19,7 @@ from temporalio.service import RPCError, RPCStatusCode
 
 from agents.heartbeat_workflows import AllShopBriefingsWorkflow
 from agents.shop_ops_workflows import (
+    AllLawnCareWeatherCheckWorkflow,
     AllShopsEveningCloseWorkflow,
     AllShopsMorningOpenWorkflow,
     AllShopsPreCloseWorkflow,
@@ -37,6 +38,7 @@ DEFAULT_TIMEZONE = "UTC"
 # Shop ops schedules fire every 30 min so the ±5 min window in each activity
 # catches each shop at the right time regardless of their local timezone.
 DEFAULT_SHOP_OPS_CRON = "*/30 * * * *"
+DEFAULT_LAWN_CARE_WEATHER_CRON = "0 6 * * *"
 
 
 def _schedule_payload(briefing_type: str) -> Dict[str, Any]:
@@ -146,6 +148,36 @@ async def ensure_shop_ops_schedules(client: Client) -> None:
             state=ScheduleState(note=note, paused=False),
         )
         await _create_or_skip(client, schedule_id, schedule, note)
+
+    lawn_weather_cron = os.getenv("TEMPORAL_LAWN_CARE_WEATHER_CRON", DEFAULT_LAWN_CARE_WEATHER_CRON)
+    weather_schedule = Schedule(
+        action=ScheduleActionStartWorkflow(
+            AllLawnCareWeatherCheckWorkflow.run,
+            {"trigger": "scheduled"},
+            id="zeroqwait-lawn-care-weather-check-${SCHEDULED_TIME}",
+            task_queue=TEMPORAL_TASK_QUEUE,
+            execution_timeout=timedelta(minutes=30),
+        ),
+        spec=ScheduleSpec(
+            cron_expressions=[lawn_weather_cron],
+            time_zone_name=timezone,
+        ),
+        policy=SchedulePolicy(
+            overlap=ScheduleOverlapPolicy.SKIP,
+            catchup_window=timedelta(hours=2),
+            pause_on_failure=False,
+        ),
+        state=ScheduleState(
+            note="Daily 06:00: check weather holds for active lawn-care tenants.",
+            paused=False,
+        ),
+    )
+    await _create_or_skip(
+        client,
+        "zeroqwait-lawn-care-weather-check",
+        weather_schedule,
+        "Daily weather-hold check for active lawn-care tenants.",
+    )
 
 
 # ─── Brain schedules (SOUL evolution + commitment sweep) ─────────────────────

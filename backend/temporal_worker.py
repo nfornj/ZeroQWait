@@ -4,6 +4,10 @@ import asyncio
 import logging
 import os
 
+from shared.secrets import load_infisical_secrets
+
+load_infisical_secrets()
+
 from temporalio.client import Client
 from temporalio.worker import Worker
 
@@ -18,6 +22,7 @@ from agents.shop_ops_activities import (
     pre_close_intelligence_activity,
 )
 from agents.shop_ops_workflows import (
+    AllLawnCareWeatherCheckWorkflow,
     AllShopsEveningCloseWorkflow,
     AllShopsMorningOpenWorkflow,
     AllShopsPreCloseWorkflow,
@@ -25,6 +30,7 @@ from agents.shop_ops_workflows import (
     ShopMorningOpenWorkflow,
     ShopPreCloseWorkflow,
 )
+from modules.lawn_care.workflows import WeatherCheckActivity
 from agents.soul_updater import update_shop_soul_activity
 from agents.soul_workflows import (
     AllShopsSoulEvolutionWorkflow,
@@ -99,6 +105,7 @@ async def main() -> None:
             AllShopsMorningOpenWorkflow,
             AllShopsPreCloseWorkflow,
             AllShopsEveningCloseWorkflow,
+            AllLawnCareWeatherCheckWorkflow,
             ShopMorningOpenWorkflow,
             ShopPreCloseWorkflow,
             ShopEveningCloseWorkflow,
@@ -129,6 +136,7 @@ async def main() -> None:
             open_shop_queue_activity,
             pre_close_intelligence_activity,
             close_shop_queue_activity,
+            WeatherCheckActivity,
             # Brain activities
             update_shop_soul_activity,
             list_due_commitments_activity,

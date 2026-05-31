@@ -1,8 +1,9 @@
 # ZeroQwait — Project Rules & Context
 
-> **Last updated**: 2026-04-20
+> **Last updated**: 2026-05-31
 > **Live URL**: https://zeroqwait.com (test ingress: http://192.168.2.134.nip.io)
 > **Product pivot (2026-04-10)**: Transitioning from queue-management SaaS → **Agent-as-a-Service (AaaS)** platform powered by LangGraph
+> **Active product branch**: `salon_focused_product` on `github.com/nfornj/ZeroQWait`
 
 ---
 
@@ -24,7 +25,7 @@
 | ASR engine | faster-whisper (`medium`) | GPU compute budget depends on this model size |
 | Embedding model | `all-MiniLM-L6-v2` | Semantic cache keys are tied to these embeddings |
 | Database engine | PostgreSQL 15 | Alembic migrations + LangGraph checkpoints target this version |
-| Orchestration | K3s namespace `zeroqwait` | All K8s manifests target this namespace |
+| Orchestration | K3s namespaces `zeroqwait`, `zeroqwait-ai`, `zeroqwait-staging`, `monitoring` | Multi-namespace topology — see §9 for layout |
 
 **Before swapping any model/engine/service**: stop, surface the proposal to the user, explain the tradeoffs, and wait for explicit approval.
 
@@ -97,6 +98,17 @@ Rule of thumb:
 - Reuse LangGraph, FastAPI, PostgreSQL, Redis, and current MCP patterns instead of inventing new platform layers
 - Do not build generic framework capabilities unless the user explicitly asks for them or the current product cannot proceed without them
 
+### 0.7 Extend Existing Working Code
+
+The current implementation has working tenant provisioning, LangGraph routing, vertical prompt adaptation, service seeding, and inventory supply defaults. Do **not** rewrite these systems from scratch.
+
+Required behavior for AI assistants:
+- Extend existing modules and local patterns instead of replacing working code.
+- Ask the user before deleting files, removing code paths, or collapsing existing abstractions.
+- Prefer additive vertical modules, focused hooks, migrations, and tests over broad rewrites.
+- Keep the registration/provisioning path idempotent: repeated provisioning should not duplicate services, inventory, queues, or agent configuration.
+- Preserve tenant schema isolation. New vertical behavior must run inside the correct shop schema through `tenant_manager.py` / request tenant context.
+
 ### 0.4 Allowed Without Approval
 
 - Bug fixes that address the actual root cause with proper design
@@ -110,6 +122,40 @@ Rule of thumb:
 ## 1. What Is ZeroQwait
 
 An **Agent-as-a-Service (AaaS) platform** where service businesses (barbers, salons, clinics, auto shops, etc.) each get their own **team of AI agents** — a Receptionist, Finance manager, and HR assistant — orchestrated by a Supervisor agent. Shop owners manage their entire business operations via natural-language chat with Human-in-the-Loop approval workflows. Customers interact with the shop's Receptionist agent to discover services, join queues, and get real-time updates.
+
+### Vertical Module System (Current Build Direction)
+
+ZeroQWait is being extended into a **multi-vertical Agent-as-a-Service platform**. When a shop owner registers, the system should automatically:
+
+1. Create the shop record with its business type / vertical.
+2. Provision the tenant PostgreSQL schema for that shop.
+3. Seed vertical-specific services, inventory items, and service-to-supply mappings.
+4. Activate the right AI agent skills, vocabulary, and operating assumptions for that business type.
+5. Keep all seeded data tenant-scoped and idempotent.
+
+Current vertical module anchors:
+
+| Concern | File | Purpose |
+| ------- | ---- | ------- |
+| Tenant schema provisioning | `backend/tenant_manager.py` | Creates and manages per-shop PostgreSQL schemas. |
+| Registration provisioning hook | `backend/modules/shops/router.py` | Shop creation currently auto-provisions tenant schema and baseline queue/company setup. |
+| Agent vertical tone/vocabulary | `backend/agents/vertical_profiles.py` | Builds vertical-aware system prompt snippets for supervisor/specialists. |
+| Supervisor prompt injection | `backend/agents/supervisor.py` | Reads shop type and injects vertical profile into response synthesis. |
+| Default service catalogue | `backend/agents/service_catalogue.py` | Seeds vertical-specific services such as salon, nail salon, and barbershop offerings. |
+| Inventory + supply defaults | `backend/agents/tools/service_supply_defaults.py` | Seeds inventory items and maps service usage to default supplies. |
+| Backfill helper | `backend/scripts/backfill_service_supplies.py` | Applies service-supply defaults to existing shops. |
+
+When adding a new vertical, update the vertical as a module across these surfaces instead of scattering one-off conditionals:
+
+- Normalize the shop type consistently in vertical helper functions.
+- Add agent language/tone in `vertical_profiles.py`.
+- Add default services in `service_catalogue.py`.
+- Add default inventory items and service supply quantities in `service_supply_defaults.py`.
+- Ensure registration calls the provisioning/seeding path after schema creation.
+- Add or update Alembic migrations for schema changes only; never skip migrations for DB structure changes.
+- Add focused tests covering registration -> tenant schema -> seeded services/inventory -> vertical prompt behavior.
+
+Do not build a generic plugin framework unless the current product flow requires it. The near-term target is a practical vertical module system for real service businesses, starting with salon-focused workflows.
 
 ### Current Product Goal
 
@@ -408,6 +454,9 @@ Each shop owner receives a **team of AI agents** powered by **LangGraph state ma
 | **Finance** | `backend/agents/finance.py` | Owner-facing: revenue summaries, daily/weekly analytics, financial reports |
 | **HR** | `backend/agents/hr.py` | Owner-facing: employee management, shift scheduling, availability |
 | **Checkpoints** | `backend/agents/checkpoints.py` | PostgreSQL-backed `AsyncPostgresSaver` for persistent graph state |
+| **Vertical Profiles** | `backend/agents/vertical_profiles.py` | Adapts agent vocabulary, tone, and service examples to the shop's business type |
+| **Service Catalogue** | `backend/agents/service_catalogue.py` | Seeds vertical-specific service defaults during shop provisioning/backfill |
+| **Service Supply Defaults** | `backend/agents/tools/service_supply_defaults.py` | Seeds vertical-specific inventory and service supply usage mappings |
 
 ### AgentState Schema
 
@@ -463,35 +512,35 @@ Every agent graph invocation is **strictly tenant-scoped**:
 3. **Tool execution**: Every MCP tool call includes `tenant_id` in its context → `tenant_manager.tenant_session(shop_id)` ensures DB queries hit the correct schema
 4. **Checkpoint isolation**: Thread ID format: `tenant_{shop_id}_{user_id}` — ensures checkpoint data is tenant-scoped
 
-### Tier Runtime Isolation Model (2026-05-15)
+### Tier Runtime Isolation Model (2026-05-16)
 
-ZeroQwait is moving to a two-layer isolation model:
+ZeroQwait uses a two-layer isolation model. The full K8s topology is described in §9 — Multi-Namespace Architecture.
 
 | Tier | Data isolation | Compute isolation | Agent runtime |
 | ---- | -------------- | ----------------- | ------------- |
-| **Free** | One PostgreSQL schema per shop in the shared PostgreSQL instance | Shared backend deployment | Shared Temporal/agent worker |
-| **Premium** | One PostgreSQL schema per shop in the shared PostgreSQL instance | Dedicated backend deployment per premium shop | Dedicated Temporal/agent worker/task queue per premium shop |
+| **Free** | One PostgreSQL schema per shop in `postgres-shared` | Shared `backend-shared` deployment | Shared `temporal-worker-free` task queue |
+| **Premium** | Dedicated `postgres-shop-<id>` StatefulSet | Dedicated `backend-shop-<id>` deployment | Dedicated `temporal-worker-<id>` task queue |
 
 Important implementation rules:
 
 - The tenant unit remains **shop_id**, not owner account or subscription row.
 - `subscription_tier` is product entitlement and billing state; it must not be the only infrastructure switch.
 - `shops.data_isolation_mode`, `shops.compute_mode`, and `shop_runtime_assignments` are the runtime placement source of truth.
-- Free shops should eventually have `data_isolation_mode = "shop_schema"`, `compute_mode = "shared_instance"`, and no dedicated runtime assignment.
-- Premium shops should have `data_isolation_mode = "shop_schema"`, `compute_mode = "dedicated_instance"`, and one `shop_runtime_assignments` row with backend service, worker service, route host, and runtime status.
+- Free shops have `data_isolation_mode = "shop_schema"`, `compute_mode = "shared_instance"`, and no `shop_runtime_assignments` row.
+- Premium shops have `data_isolation_mode = "shop_schema"`, `compute_mode = "dedicated_instance"`, and one `shop_runtime_assignments` row with backend service, worker service, route host, and runtime status.
 - Premium dedicated agents mean dedicated backend and worker processes running the same LangGraph agent code for that shop; do not fork the agent framework or create a separate premium-only agent implementation.
-- Keep PostgreSQL, Redis, MCP servers, voice services, ASR, TTS, and LLM endpoints shared for the first rollout. Do not introduce per-premium database, Redis, MCP, TTS, ASR, or LLM stacks unless explicitly approved later.
-- Current local Kubernetes capacity is constrained: the host CPU is an Intel i5-13500H with 20 logical CPUs, but the active local Kubernetes context exposes 8 allocatable CPUs and about 15.4 GiB RAM. With current backend and worker requests, pilot no more than two dedicated premium runtimes before right-sizing or increasing cluster capacity.
-- New premium runtime manifests should be cloud-portable: use GHCR images, environment overlays, labels such as `zeroqwait.io/runtime=dedicated` and `zeroqwait.io/shop-id=<id>`, and avoid hard-coded local IPs or host paths in premium templates.
+- Voice services (TTS, ASR), LLM endpoints, and the shared frontend are always shared infrastructure — do NOT create per-premium TTS, ASR, or LLM stacks.
+- Node capacity: AMD Ryzen 9 9950X, 32 CPU / ~30 GB RAM. With current headroom (~22 CPU / ~11 GB after all namespaces), pilot up to ~4 premium shops before re-evaluating capacity.
+- New premium runtime manifests must be cloud-portable: use `ghcr.io/nfornj` images, environment overlays, labels `zeroqwait.io/tier=premium` and `zeroqwait.io/shop-id=<id>`, and avoid hard-coded local IPs or host paths.
 
-Rollout order:
+Rollout order (see §9 Implementation Phases for detailed steps):
 
-1. Add or verify schema metadata and runtime assignment metadata.
-2. Backfill free shops from `public` into `tenant_<shop_id>` schemas with validation.
-3. Route all free-shop requests through shared compute with schema search_path set per shop.
-4. Assign one pilot premium shop to a dedicated backend and dedicated Temporal/agent worker.
-5. Add explicit ingress rules so the premium shop host routes `/api`, SSE, and WebSockets to the dedicated backend while `/` stays on shared frontend.
-6. Only after health validation, expand to additional premium shops.
+1. Add or verify schema metadata and runtime assignment metadata (✅ done).
+2. Backfill free shops into `tenant_<shop_id>` schemas.
+3. Move TTS + ASR to `zeroqwait-ai` namespace (Phase A).
+4. Relabel free-tier workloads (`backend` → `backend-shared`) (Phase B).
+5. Deploy dedicated PREMIUM stack for one pilot shop (Phase C).
+6. Validate health, then expand to additional premium shops.
 
 ### MCP Tool Servers
 
@@ -670,27 +719,150 @@ Users toggle between **Voice Mode** and **Chat Mode** via a pill button in the t
 ### Deployment Host (Runner Node)
 
 - **Runner host IP**: `192.168.2.134` (Linux x86_64, Ubuntu 24.04)
+- **Node**: AMD Ryzen 9 9950X — 32 CPU / ~30 GB RAM (K3s allocatable: 32 CPU / ~30 GB RAM)
 - **K8s**: K3s v1.34.3 (lightweight Kubernetes)
 - **Docker**: v29.2.0
 - **KUBECONFIG**: `/etc/rancher/k3s/k3s.yaml`
 - **App path**: `/home/neekrishrichu/apps/zeroqwait`
 - **Deployment mode**: GitHub Actions self-hosted runner executes deploy scripts on push
 
-### K8s Layout (namespace: `zeroqwait`)
+---
 
-| Pod             | Service Type         | Port Mapping              |
-| --------------- | -------------------- | ------------------------- |
-| `backend-*`     | NodePort             | 30000 → 8000              |
-| `frontend-*`    | NodePort             | 30001 → 3000 (nginx → 80) |
-| `postgres-0`    | ClusterIP (headless) | 5432                      |
-| `redis-0`       | ClusterIP (headless) | 6379                      |
-| `asr-service-*` | ClusterIP            | 8000                      |
-| `tts-service-*` | ClusterIP            | 8880 (GPU-accelerated)    |
-| `ollama-*`      | ClusterIP + NodePort | 11434 (ClusterIP), 30002 (NodePort) |
+### Multi-Namespace Architecture (Approved 2026-05-16)
+
+All workloads run simultaneously. No scaling-to-zero required. Total headroom after full deployment: ~22 CPU / ~11 GB RAM.
+
+```
+Node: AMD Ryzen 9 9950X — 32 CPU / ~30 GB RAM allocatable
+│
+├── zeroqwait-ai        (GPU inference — always-on)
+│   ├── tts-service        0.5 CPU / 512 MB   GPU: RTX 5070 Ti (shared, time-sliced)
+│   └── asr-service        0.5 CPU / 1.0 GB   GPU: RTX 5070 Ti (shared, time-sliced)
+│   SUBTOTAL:              1.0 CPU / 1.5 GB
+│
+├── zeroqwait-staging   (full staging env — runs simultaneously with prod)
+│   ├── backend            0.5 CPU / 1.0 GB
+│   ├── frontend           0.1 CPU / 128 MB
+│   ├── postgres           0.3 CPU / 512 MB
+│   ├── redis              0.05 CPU / 64 MB
+│   ├── 3× mcp             0.3 CPU / 384 MB
+│   └── temporal+worker    0.3 CPU / 512 MB
+│   SUBTOTAL:              1.55 CPU / 2.6 GB
+│
+├── zeroqwait           (prod — shared infra, always-on services)
+│   ├── frontend           0.1 CPU / 128 MB   NodePort 30001 → 80
+│   ├── temporal-server    0.25 CPU / 512 MB  Shared across all tiers
+│   ├── voice-mcp          0.1 CPU / 128 MB   TTS+ASR proxy (points to zeroqwait-ai)
+│   ├── odoo               0.25 CPU / 512 MB  CRM (port 8069)
+│   └── cloudflared        0.05 CPU / 128 MB  Tunnel to zeroqwait.com
+│   SUBTOTAL (shared infra): 0.75 CPU / 1.4 GB
+│
+│   FREE TIER (up to ~10 shops on shared compute)
+│   ├── backend-shared          1.0 CPU / 2.0 GB   label: tier=free
+│   ├── temporal-worker-free    0.5 CPU / 1.0 GB   task-queue: free-shops
+│   ├── postgres-shared         0.75 CPU / 1.5 GB  all free-shop tenant schemas
+│   ├── redis-shared            0.05 CPU / 256 MB
+│   └── 3× mcp-shared           0.4 CPU / 768 MB   label: tier=free
+│   SUBTOTAL (free tier):       2.7 CPU / 5.5 GB
+│
+│   PREMIUM TIER (per shop, dedicated stack — example: shop-515)
+│   ├── backend-shop-<id>       1.0 CPU / 2.0 GB   label: tier=premium, shop-id=<id>
+│   ├── temporal-worker-<id>    0.5 CPU / 1.0 GB   task-queue: shop-<id>
+│   ├── postgres-shop-<id>      0.75 CPU / 1.5 GB  dedicated DB instance
+│   ├── redis-shop-<id>         0.05 CPU / 256 MB
+│   └── 3× mcp-shop-<id>        0.4 CPU / 768 MB   label: tier=premium, shop-id=<id>
+│   SUBTOTAL per premium shop:  2.7 CPU / 5.5 GB
+│
+├── monitoring          (prometheus + grafana + exporters)
+│   SUBTOTAL:           0.55 CPU / 0.8 GB
+│
+└── K3s system overhead: 1.0 CPU / 2.0 GB
+─────────────────────────────────────────────────────────────────
+GRAND TOTAL (1 premium shop):  10.25 CPU / 19.3 GB
+REMAINING HEADROOM:            21.75 CPU / 10.7 GB  ✅
+```
+
+**Key design rules:**
+- `zeroqwait-ai` is the ONLY namespace that may schedule GPU workloads. TTS and ASR never run elsewhere.
+- All FREE shops share one backend, one postgres (per-shop tenant schema), one redis, one set of MCPs, one Temporal worker.
+- Each PREMIUM shop gets a fully isolated stack: dedicated backend, postgres, redis, MCPs, and Temporal worker. Same code, separate processes.
+- `postgres-shared` and `postgres-shop-<id>` are separate StatefulSets/PVCs. Premium shops do NOT share the free-tier postgres.
+- Shared services (frontend, voice-mcp, temporal-server, odoo, cloudflared) are labeled `zeroqwait.io/tier=shared-infra`.
+- Free-tier workloads are labeled `zeroqwait.io/tier=free`.
+- Premium workloads are labeled `zeroqwait.io/tier=premium` and `zeroqwait.io/shop-id=<id>`.
+- Staging namespace mirrors prod exactly. It runs simultaneously; no port conflicts (uses different NodePorts or ingress host prefixes).
+- CPU/memory requests are flexible starting values — tune upward based on actual profiling, not speculation.
+- Resource limits should be 2× requests for burstable workloads; GPU pods (TTS/ASR) omit CPU limits.
+
+---
+
+### Implementation Status (2026-05-16)
+
+| Component | Status | Notes |
+| --------- | ------ | ----- |
+| DB isolation (tenant schemas per shop) | ✅ Done | `platform.shops.data_isolation_mode`, `tenant_manager.py` |
+| `shop_runtime_assignments` table | ✅ Done | Routes each shop to correct backend/worker |
+| `zeroqwait-ai` namespace | ❌ Pending | TTS/ASR still in `zeroqwait` |
+| `zeroqwait-staging` namespace | ❌ Pending | No staging env yet |
+| FREE TIER separation (`backend-shared`) | ❌ Pending | `backend` not yet renamed/relabeled |
+| PREMIUM per-shop postgres/redis | ❌ Pending | Only 1 shared postgres/redis exists |
+| PREMIUM dedicated Temporal worker | ❌ Pending | One shared worker exists |
+| `monitoring` namespace | ❌ Pending | Prometheus/Grafana not deployed |
+| cloudflared | ❌ Pending | Not deployed yet |
+| `zeroqwait-staging` full stack | ❌ Pending | |
+
+**Implementation phases (do in order, one phase per session with explicit approval):**
+
+- **Phase A** — Move TTS + ASR to `zeroqwait-ai` namespace; update DNS references in backend configmap; right-size TTS resource requests (1 CPU/4GB → 0.5 CPU/512MB CPU; GPU limit stays).
+- **Phase B** — Relabel FREE TIER workloads in `zeroqwait`: rename `backend` → `backend-shared`, `temporal-worker` → `temporal-worker-free`; add `zeroqwait.io/tier` labels; right-size requests to match target table.
+- **Phase C** — Deploy PREMIUM stack template for shop 515: `postgres-shop-515` StatefulSet + PVC, `redis-shop-515`, 3× `mcp-shop-515`, `backend-shop-515`, `temporal-worker-515`. Wire ingress to route `elite-style-studio.zeroqwait.com` to `backend-shop-515`.
+- **Phase D** — Deploy `monitoring` namespace: node-exporter, kube-state-metrics, Prometheus, Grafana. Expose Grafana via ingress at `monitoring.zeroqwait.com`.
+- **Phase E** — Create `zeroqwait-staging` namespace with full prod-mirror stack; expose at `staging.zeroqwait.com`.
+- **Phase F** — Deploy cloudflared in `zeroqwait` to establish production tunnel; retire nip.io fallback.
+
+**Do NOT start any phase without explicit user approval.**
+
+---
+
+### Namespace → Service DNS Reference
+
+Services in one namespace can reach another via full DNS:
+`<service>.<namespace>.svc.cluster.local:<port>`
+
+| Caller namespace | Target service | DNS |
+| ---------------- | -------------- | --- |
+| `zeroqwait` (any tier) | TTS | `tts-service.zeroqwait-ai.svc.cluster.local:8880` |
+| `zeroqwait` (any tier) | ASR | `asr-service.zeroqwait-ai.svc.cluster.local:8000` |
+| `zeroqwait` (any tier) | voice-mcp | `voice-mcp.zeroqwait.svc.cluster.local:8881` |
+| `zeroqwait-staging` | TTS | `tts-service.zeroqwait-ai.svc.cluster.local:8880` |
+
+**`ASR_SERVICE_URL` and `TTS_SERVICE_URL`** in `backend-configmap.yaml` must be updated after Phase A to use the `zeroqwait-ai` namespace DNS.
+
+---
+
+### Current K8s Layout (single `zeroqwait` namespace — pre-reorganization)
+
+> **Note**: This is the current state, not the target. The target is the multi-namespace layout above.
+
+| Pod | Service Type | Port Mapping |
+| --- | ------------ | ------------ |
+| `backend-*` | NodePort | 30000 → 8000 |
+| `frontend-*` | NodePort | 30001 → 3000 (nginx → 80) |
+| `postgres-0` | ClusterIP (headless) | 5432 |
+| `redis-0` | ClusterIP (headless) | 6379 |
+| `asr-service-*` | ClusterIP | 8000 |
+| `tts-service-*` | ClusterIP | 8880 (GPU-accelerated) |
+| `temporal-*` | ClusterIP | 7233 |
+| `temporal-worker-*` | — | (no inbound port) |
+| `booking-mcp-*` | ClusterIP | 8890 |
+| `finance-mcp-*` | ClusterIP | 8891 |
+| `hr-mcp-*` | ClusterIP | 8892 |
+| `voice-mcp-*` | ClusterIP | 8881 |
+| `odoo-*` | ClusterIP | 8069 |
 
 ### Ingress (Traefik)
 
-- Production: `zeroqwait.com` + `*.zeroqwait.com` (added 2026-03-06)
+- Production: `zeroqwait.com` + `*.zeroqwait.com`
 - Base: `192.168.2.134.nip.io` → `/api` → backend, `/` → frontend
 - Wildcard: `*.192.168.2.134.nip.io` (shop subdomains)
 - TLS: Self-signed wildcard cert in `zeroqwait-wildcard-tls` secret
@@ -704,7 +876,7 @@ git push origin <branch>
 # Production auto-deploy
 git push origin prod
 
-# Optional: monitor workflow state
+# Monitor workflow state
 gh run list --workflow deploy-test.yml
 gh run list --workflow deploy-prod.yml
 ```
@@ -722,7 +894,7 @@ Implementation details:
 - **API key**: `NVIDIA_API_KEY` stored in `backend-secret` K8s secret (70-char `nvapi-*` key)
 - **Config**: `LLM_PROVIDER: nvidia` and `NVIDIA_MODEL: meta/llama-3.1-8b-instruct` in `backend-configmap`
 - **Factory**: `backend/agents/llm_factory.py` — activates NVIDIA provider when `NVIDIA_API_KEY` is set; falls back to Ollama only if key is absent
-- **GPU**: RTX 5070 Ti GPU is now fully available for TTS (`tts-service`) and ASR (`asr-service`) — no longer shared with a local LLM
+- **GPU**: RTX 5070 Ti GPU is available for TTS (`tts-service`) and ASR (`asr-service`) via NVIDIA time-slicing (2 virtual GPUs)
 
 ### LLM Fallback (Ollama — scaled to 0, emergency only)
 

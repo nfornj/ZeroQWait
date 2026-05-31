@@ -21,6 +21,7 @@ with workflow.unsafe.imports_passed_through():
         open_shop_queue_activity,
         pre_close_intelligence_activity,
     )
+    from modules.lawn_care.workflows import WeatherCheckActivity
 
 
 # ─── Morning open ────────────────────────────────────────────────────────────
@@ -126,6 +127,21 @@ class AllShopsEveningCloseWorkflow:
             "shops_failed": sum(1 for r in results if not r.get("ok")),
             "results": results,
         }
+
+
+# ─── Lawn care weather checks ────────────────────────────────────────────────
+
+@workflow.defn
+class AllLawnCareWeatherCheckWorkflow:
+    """Run the daily weather check for every active lawn-care tenant."""
+
+    @workflow.run
+    async def run(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return await workflow.execute_activity(
+            WeatherCheckActivity,
+            payload,
+            start_to_close_timeout=timedelta(minutes=20),
+        )
 
 
 # ─── Single-shop variants (for direct trigger / testing) ─────────────────────

@@ -175,9 +175,17 @@ def ensure_shop_schema(db: Session, shop_id: int, *, mark_isolated: bool = True)
             WHERE id = :sid
             """
         ), {"schema": schema, "sid": shop_id})
+        seed_default_shop_config(db, shop_id)
         db.commit()
 
     return schema
+
+
+def seed_default_shop_config(db: Session, shop_id: int) -> None:
+    """Delegate default shop configuration seeding to the core module."""
+    from modules.core import CoreModule
+
+    CoreModule().run_seed(str(shop_id), db)
 
 
 def validate_shop_schema_copy(db: Session, shop_id: int) -> dict:
