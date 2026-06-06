@@ -170,6 +170,7 @@ services:
       - DB_NAME=${DB_NAME:-zeroqwait}
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-zeroqwait_dev}
+      - SECRET_KEY=${SECRET_KEY:-change-me-to-a-long-random-string-at-least-32-chars}
       - HOST=0.0.0.0
       - PORT=8892
     depends_on:
