@@ -15,6 +15,7 @@ from shared.supertokens_auth import (
     is_wrong_credentials,
     sign_in_email_password,
     sign_up_email_password,
+    update_supertokens_password_for_app_user,
 )
 from redis_client import redis_client
 from audit_logger import audit
@@ -224,13 +225,33 @@ async def reset_password(token: str, new_password: str):
         )
 
     password_updated = auth_service.update_user_password(user_id=user_id, new_password=new_password)
-    # Invalidate token regardless of update result to prevent token replay.
-    redis_client.delete(token_key)
-
     if not password_updated:
+        # Invalidate token regardless of update result to prevent token replay.
+        redis_client.delete(token_key)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token",
+        )
+
+    try:
+        supertokens_password_updated = await update_supertokens_password_for_app_user(
+            app_user_id=user_id,
+            new_password=new_password,
+        )
+    except Exception as exc:
+        logger.exception("Failed to sync password reset to SuperTokens for user_id=%s", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password reset failed. Please retry.",
+        ) from exc
+
+    # Invalidate token after successful local + SuperTokens password updates.
+    redis_client.delete(token_key)
+
+    if not supertokens_password_updated:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password reset failed. Please contact support.",
         )
 
     await audit(

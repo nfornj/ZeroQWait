@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse
 from typing import Any
 
 from fastapi import Request
@@ -40,6 +41,31 @@ def init_supertokens() -> None:
     api_domain = getenv("SUPERTOKENS_API_DOMAIN", frontend_url) or frontend_url
     cookie_domain = getenv("COOKIE_DOMAIN") or None
     secure_cookie = (getenv("USE_HTTPS", "false") or "false").lower() == "true" or api_domain.startswith("https://")
+    cookie_same_site = "none" if secure_cookie else "lax"
+
+    api_host = (urlparse(api_domain).hostname or "").lower()
+    frontend_host = (urlparse(frontend_url).hostname or "").lower()
+
+    if cookie_same_site == "none" and not secure_cookie:
+        logger.error("Invalid session cookie config: SameSite=None requires Secure cookies. Falling back to SameSite=lax.")
+        cookie_same_site = "lax"
+
+    if not cookie_domain and api_host and frontend_host and api_host != frontend_host:
+        logger.warning(
+            "COOKIE_DOMAIN is not set while API and frontend hosts differ (api=%s, frontend=%s). "
+            "Set COOKIE_DOMAIN explicitly (for example: .zeroqwait.com).",
+            api_host,
+            frontend_host,
+        )
+
+    logger.info(
+        "SuperTokens cookie config: api_domain=%s frontend_url=%s cookie_domain=%s secure_cookie=%s same_site=%s",
+        api_domain,
+        frontend_url,
+        cookie_domain or "<default>",
+        secure_cookie,
+        cookie_same_site,
+    )
 
     try:
         supertokens_init(
@@ -60,7 +86,7 @@ def init_supertokens() -> None:
                 session.init(
                     cookie_domain=cookie_domain,
                     cookie_secure=secure_cookie,
-                    cookie_same_site="none" if secure_cookie else "lax",
+                    cookie_same_site=cookie_same_site,
                 ),
             ],
         )
@@ -130,12 +156,56 @@ async def create_session_for_local_user(
 
 async def get_session_from_request(request: Request, *, session_required: bool = False) -> SessionContainer | None:
     init_supertokens()
+    auth_header = request.headers.get("authorization", "")
+    has_bearer_header = auth_header.lower().startswith("bearer ")
+
+    # For bearer-token clients (mobile/API), CSRF tokens are not required.
+    anti_csrf_check: bool | None = False if has_bearer_header else None
+
     return await session_asyncio.get_session(
         request,
         session_required=session_required,
-        anti_csrf_check=False,
+        anti_csrf_check=anti_csrf_check,
         check_database=False,
     )
+
+
+async def update_supertokens_password_for_app_user(*, app_user_id: int, new_password: str) -> bool:
+    init_supertokens()
+
+    mapping = None
+    try:
+        mapping = await supertokens_asyncio.get_user_id_mapping(user_id=str(app_user_id), user_id_type="external")
+    except TypeError:
+        mapping = await supertokens_asyncio.get_user_id_mapping(str(app_user_id), "external")
+
+    if mapping is None:
+        logger.warning("No SuperTokens user mapping found for app_user_id=%s", app_user_id)
+        return False
+
+    supertokens_user_id = (
+        getattr(mapping, "supertokens_user_id", None)
+        or getattr(mapping, "super_tokens_user_id", None)
+        or getattr(mapping, "user_id", None)
+    )
+    if not supertokens_user_id:
+        logger.warning("SuperTokens mapping missing user id for app_user_id=%s", app_user_id)
+        return False
+
+    try:
+        await emailpassword_asyncio.update_email_or_password(
+            user_id=str(supertokens_user_id),
+            password=new_password,
+            tenant_id_for_password_policy=SUPERTOKENS_TENANT_ID,
+        )
+    except TypeError:
+        await emailpassword_asyncio.update_email_or_password(
+            recipe_user_id=str(supertokens_user_id),
+            password=new_password,
+            tenant_id_for_password_policy=SUPERTOKENS_TENANT_ID,
+        )
+
+    return True
 
 
 def is_sign_in_ok(result: Any) -> bool:

@@ -24,6 +24,7 @@ if not SECRET_KEY:
     
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
+LEGACY_JWT_FALLBACK_ENABLED = (getenv("LEGACY_JWT_FALLBACK_ENABLED", "false") or "false").lower() == "true"
 
 # Use auto_error=False to allow manual handling (cookie check)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/token", auto_error=False)
@@ -116,6 +117,12 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         
     if not token:
         raise credentials_exception
+
+    if not LEGACY_JWT_FALLBACK_ENABLED:
+        logger.warning(
+            "Legacy JWT fallback rejected (disabled). path=%s", request.url.path
+        )
+        raise credentials_exception
         
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -125,6 +132,12 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         token_data = schemas.TokenData(username=username)
     except JWTError:
         raise credentials_exception
+
+    logger.warning(
+        "Legacy JWT fallback authentication used for username=%s path=%s",
+        token_data.username,
+        request.url.path,
+    )
     
     try:
         from database import set_current_user_for_request
@@ -161,12 +174,21 @@ async def get_current_user_optional(
     
     if not token:
         return None
+
+    if not LEGACY_JWT_FALLBACK_ENABLED:
+        return None
     
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
             return None
+
+        logger.warning(
+            "Legacy JWT optional authentication used for username=%s path=%s",
+            username,
+            request.url.path,
+        )
         
         user = auth_service.get_user_by_username(username)
         if not user:
