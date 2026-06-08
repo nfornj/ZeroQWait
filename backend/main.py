@@ -60,7 +60,56 @@ async def lifespan(app: FastAPI):
     # This replaces the init-database K8s initContainer so the image is self-contained.
     try:
         from database import engine, Base
+        from sqlalchemy import text as _sql_text
         import models  # noqa: F401 — registers all mapped classes with Base
+
+        # Bootstrap core auth schema first so signup/login never depend on optional
+        # extension-backed tables (for example pgvector) being available.
+        with engine.begin() as _conn:
+            _conn.execute(_sql_text("CREATE SCHEMA IF NOT EXISTS platform"))
+            _conn.execute(_sql_text("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_type t
+                        JOIN pg_namespace n ON n.oid = t.typnamespace
+                        WHERE t.typname = 'userrole' AND n.nspname = 'platform'
+                    ) THEN
+                        CREATE TYPE platform.userrole AS ENUM (
+                            'CUSTOMER', 'SHOP_OWNER', 'MANAGER', 'EMPLOYEE', 'SUPER_ADMIN'
+                        );
+                    END IF;
+
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_type t
+                        JOIN pg_namespace n ON n.oid = t.typnamespace
+                        WHERE t.typname = 'subscriptiontier' AND n.nspname = 'platform'
+                    ) THEN
+                        CREATE TYPE platform.subscriptiontier AS ENUM (
+                            'FREE', 'PREMIUM', 'ENTERPRISE'
+                        );
+                    END IF;
+                END
+                $$;
+            """))
+            _conn.execute(_sql_text("""
+                CREATE TABLE IF NOT EXISTS platform.users (
+                    id SERIAL PRIMARY KEY,
+                    email VARCHAR NOT NULL UNIQUE,
+                    username VARCHAR NOT NULL UNIQUE,
+                    hashed_password VARCHAR NOT NULL,
+                    role platform.userrole NOT NULL DEFAULT 'CUSTOMER',
+                    is_active BOOLEAN DEFAULT TRUE,
+                    subscription_tier platform.subscriptiontier DEFAULT 'FREE',
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                )
+            """))
+            _conn.execute(_sql_text("CREATE INDEX IF NOT EXISTS ix_platform_users_id ON platform.users(id)"))
+            _conn.execute(_sql_text("CREATE INDEX IF NOT EXISTS ix_platform_users_email ON platform.users(email)"))
+            _conn.execute(_sql_text("CREATE INDEX IF NOT EXISTS ix_platform_users_username ON platform.users(username)"))
+
         Base.metadata.create_all(bind=engine)
         logger.info("Database schema ready.")
     except Exception as _db_err:
